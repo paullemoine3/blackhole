@@ -1,0 +1,43 @@
+; Inno Setup script — compiled by .github/workflows/windows-release.yml
+; Usage: iscc /DAppVersion=0.1.0 /DExePath=..\target\release\blackhole.exe windows-installer.iss
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
+#ifndef ExePath
+  #define ExePath "..\target\release\blackhole.exe"
+#endif
+
+[Setup]
+AppId={{B1ACC401-E000-4B1A-9C0D-0B1AC4401E00}
+AppName=BlackHole
+AppVersion={#AppVersion}
+AppPublisher=BlackHole
+DefaultDirName={autopf}\BlackHole
+DefaultGroupName=BlackHole
+UninstallDisplayIcon={app}\BlackHole.exe
+OutputDir=..\dist
+OutputBaseFilename=BlackHole-Setup-{#AppVersion}-x64
+Compression=lzma2
+SolidCompression=yes
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+WizardStyle=modern
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
+
+[Files]
+Source: "{#ExePath}"; DestDir: "{app}"; DestName: "BlackHole.exe"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\BlackHole"; Filename: "{app}\BlackHole.exe"
+Name: "{autodesktop}\BlackHole"; Filename: "{app}\BlackHole.exe"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\BlackHole.exe"; Description: "{cm:LaunchProgram,BlackHole}"; Flags: nowait postinstall skipifsilent

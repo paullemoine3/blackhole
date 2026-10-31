@@ -76,3 +76,7 @@ Depuis le panneau ★ Bookmarks, glisse un favori sur la liste des onglets, un d
 ## Icônes de sites
 
 La barre latérale et la page d'accueil affichent l'icône de chaque site (`favicon.js` relève le `<link rel="icon">` déclaré par la page, ou `/favicon.ico`). Aucun service tiers n'est interrogé : l'icône est chargée depuis le site déjà visité, sans referrer, et l'URL est mémorisée par hôte dans `favicons.json` (sans icône : initiale colorée ; l'icône remplace l'initiale). Les signets importés sont repliés par défaut dans la barre latérale.
+
+## Installeur Windows (CI)
+
+Le workflow `.github/workflows/windows-release.yml` compile en release sur `windows-latest`, génère un installeur Inno Setup (`scripts/windows-installer.iss`) et un zip portable. Lancement manuel (Actions → Run workflow) = artefacts ; push d'un tag `vX.Y.Z` = publication dans une release GitHub.
