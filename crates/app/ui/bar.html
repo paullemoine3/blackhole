@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --accent: #7c5cff; --glow: rgba(124,92,255,.35); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; background: #100f17; }
+  body { background: radial-gradient(420px 140px at 0% 0%, var(--glow), transparent 75%), var(--tint, #100f17); border-bottom: 1px solid rgba(255,255,255,.08); }
+  .bar { height: 100%; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
+  body.macos .bar { padding-left: 84px; }
+  button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; opacity: .75; flex: none; }
+  button:hover { background: rgba(255,255,255,.1); opacity: 1; }
+  .side { flex: 1; display: flex; min-width: 0; }
+  .right { justify-content: flex-end; gap: 2px; }
+  .ext { position: relative; width: 30px; height: 30px; }
+  .ext img { width: 18px; height: 18px; border-radius: 4px; }
+  .ext .badge { position: absolute; right: 0; bottom: 1px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--accent); color: #fff; font-size: 9px; line-height: 14px; font-weight: 700; }
+  .center { position: absolute; left: 50%; top: 7px; transform: translateX(-50%); width: min(640px, 46vw); min-width: 180px; }
+  .lock { position: absolute; left: 12px; top: 11px; opacity: .55; pointer-events: none; }
+  #omni { width: 100%; height: 34px; padding: 0 14px; border-radius: 11px; color: inherit; font: inherit; text-align: center; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); opacity: 1; display: block; transition: background .15s; }
+  #omni:hover { background: rgba(255,255,255,.14); }
+  #url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #url.ph { color: rgba(236,234,245,.5); }
+  body.secure #omni { padding-left: 30px; padding-right: 30px; }
+  body.secure .lock { display: block; }
+  .lock { display: none; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar">
+  <div class="side">
+    <button id="back" title="Back (⌘[)">←</button>
+    <button id="forward" title="Forward (⌘])">→</button>
+    <button id="reload" title="Reload (⌘R)">⟳</button>
+    <button id="home" title="Start page">⌂</button>
+  </div>
+  <div class="center">
+    <svg class="lock" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="5.2" width="8" height="6" rx="1.5"/><path d="M3.8 5.2V3.8a2.2 2.2 0 0 1 4.4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+    <button id="omni" type="button"><span id="url"></span></button>
+  </div>
+  <div class="side right" id="exts"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+let current = '';
+const rgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+};
+const pretty = (url) => {
+  try { const u = new URL(url); return u.host.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : ''); } catch (_) { return url; }
+};
+
+window.bh = {
+  render(s) {
+    const root = document.documentElement.style;
+    root.setProperty('--accent', s.color);
+    root.setProperty('--glow', rgba(s.color, .35));
+    root.setProperty('--tint', mix(s.color, .3));
+    document.body.classList.toggle('macos', s.os === 'macos');
+    document.body.classList.toggle('secure', s.url.startsWith('https:'));
+    $('url').textContent = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
+    $('url').classList.toggle('ph', !s.url);
+    $('exts').replaceChildren(...(s.extensions || []).map(e => {
+      const b = document.createElement('button');
+      b.className = 'ext'; b.title = e.label;
+      if (e.icon) { const i = document.createElement('img'); i.src = e.icon; b.append(i); } else b.textContent = (e.label[0] || '•').toUpperCase();
+      if (e.badge) { const g = document.createElement('span'); g.className = 'badge'; g.textContent = e.badge; b.append(g); }
+      b.onclick = () => { const r = b.getBoundingClientRect(); send({ cmd: 'ext_action', id: e.id, x: r.left, y: r.top, w: r.width, h: r.height }); };
+      return b;
+    }));
+  },
+};
+const mix = (hex, r) => {
+  const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
+  return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
+};
+$('omni').onclick = () => send({ cmd: 'palette', mode: 'url' });
+$('back').onclick = () => send({ cmd: 'back' });
+$('forward').onclick = () => send({ cmd: 'forward' });
+$('reload').onclick = () => send({ cmd: 'reload' });
+$('home').onclick = () => send({ cmd: 'home' });
+document.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && !e.target.closest('button, input')) send({ cmd: 'drag_window' });
+});
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[package]
+name = "blackhole-macos-url"
+version.workspace = true
+edition.workspace = true
+description = "The only unsafe code of BlackHole: receives http(s) links from macOS and registers the default browser"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSAppleEventDescriptor", "NSAppleEventManager", "NSString", "NSURL", "NSBundle", "NSError", "block2"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace", "block2"] }
+
+# Objective-C bindings need `unsafe`; it is confined to this crate and the rest of the workspace
+# keeps `unsafe_code = "forbid"`.
+[lints.rust]
+unsafe_code = "allow"

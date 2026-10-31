@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BlackHole Settings</title>
+<style>
+  :root { --accent: #7c5cff; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #100f17; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+  body { display: grid; grid-template-columns: 210px 1fr; background: radial-gradient(700px 420px at 0% 0%, rgba(124,92,255,.28), transparent 70%), #100f17; }
+  nav { padding: 22px 12px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 18px; font-weight: 600; font-size: 15px; }
+  .logo { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
+  nav button { font: inherit; color: inherit; text-align: left; border: 0; background: transparent; border-radius: 9px; padding: 8px 10px; cursor: pointer; opacity: .75; display: flex; gap: 10px; align-items: center; }
+  nav button:hover { background: rgba(255,255,255,.07); opacity: 1; }
+  nav button.on { background: rgba(124,92,255,.28); opacity: 1; }
+  main { overflow-y: auto; padding: 28px 36px 40px; }
+  section { display: none; max-width: 640px; }
+  section.on { display: block; animation: in .18s ease-out both; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .lead { opacity: .55; margin-bottom: 22px; }
+  .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); border-radius: 14px; padding: 6px; margin-bottom: 18px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; padding: 12px 10px 6px; }
+  .opt { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .opt:hover { background: rgba(255,255,255,.07); }
+  .radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); flex: none; }
+  .opt.sel .radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px #1b1a26; }
+  .check { width: 30px; height: 18px; border-radius: 9px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .15s; }
+  .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .opt.sel .check { background: var(--accent); }
+  .opt.sel .check::after { transform: translateX(12px); }
+  .grow { flex: 1; min-width: 0; }
+  .sub { font-size: 12.5px; opacity: .55; }
+  .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.1); }
+  .btn:hover { background: rgba(255,255,255,.18); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; }
+  .ext { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 9px; }
+  .ext .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
+  .ext .name { font-weight: 600; }
+  .empty { padding: 16px 12px; opacity: .55; }
+  code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,255,255,.09); padding: 1px 6px; border-radius: 5px; user-select: text; -webkit-user-select: text; }
+  .keys { display: grid; grid-template-columns: 1fr auto; gap: 2px 18px; padding: 4px 10px 10px; }
+  .keys > div { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .keys > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .keys .k { text-align: right; white-space: nowrap; }
+  kbd { font: 12px ui-monospace, Menlo, Consolas, monospace; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.1); margin-left: 3px; }
+  .bl { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
+  .bl:hover { background: rgba(255,255,255,.05); }
+  .bl .host { font: 13px ui-monospace, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bl .n { min-width: 34px; text-align: center; font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.12); }
+  .note { font-size: 12.5px; opacity: .6; padding: 8px 10px 10px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="brand"><span class="logo"></span>Settings</div>
+  <button data-tab="general" class="on">⚙&ensp;General</button>
+  <button data-tab="shortcuts">⌨&ensp;Shortcuts</button>
+  <button data-tab="extensions">🧩&ensp;Extensions</button>
+  <button data-tab="import">⇪&ensp;Import</button>
+  <button data-tab="privacy">🛡&ensp;Privacy</button>
+</nav>
+<main>
+  <section id="general" class="on">
+    <h1>General</h1><p class="lead">How BlackHole looks, searches and saves memory.</p>
+    <div class="card"><h2>Default search engine</h2><div id="engines"></div></div>
+    <div class="card"><h2>Sidebar</h2><div id="modes"></div></div>
+    <div class="card"><h2>Animations</h2><div id="anim"></div></div>
+    <div class="card" id="hwcard" hidden><h2>Performance</h2><div id="hw"></div><p class="note">Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.</p></div>
+    <div class="card"><h2>Put unused tabs to sleep after</h2><div id="sleep"></div></div>
+    <div class="card"><h2>System</h2><div class="actions"><button class="btn primary" id="default">Make BlackHole the default browser</button></div><p class="note" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</p></div>
+  </section>
+
+  <section id="shortcuts">
+    <h1>Keyboard shortcuts</h1><p class="lead">Everything works from the keyboard. <span id="modname"></span></p>
+    <div class="card"><h2>Navigation</h2><div class="keys" id="k-nav"></div></div>
+    <div class="card"><h2>Windows and layout</h2><div class="keys" id="k-layout"></div></div>
+    <div class="card"><h2>Gestures and mouse</h2><div class="keys" id="k-mouse"></div></div>
+  </section>
+
+  <section id="extensions">
+    <h1>Extensions</h1><p class="lead">Real WebExtensions run on the system's native extension host, plus simple content-script extensions.</p>
+    <div class="card"><h2>Catalog</h2><div id="catalog"></div>
+      <p class="note" id="catnote">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</p>
+    </div>
+    <div class="card" id="appcard"><h2>Found in your apps</h2><div id="appexts"></div>
+      <p class="note">Safari web extensions shipped by apps installed on this Mac (for example Bitwarden). They run on the same native host, with their toolbar button and popup. Features that rely on the app itself (Touch ID unlock, native messaging) are not available.</p>
+    </div>
+    <div class="card"><h2>Installed</h2><div id="exts"></div>
+      <div class="actions">
+        <button class="btn primary" id="sample">Add the example extension</button>
+        <button class="btn" id="folder">Open extensions folder</button>
+        <button class="btn" id="reload">Reload</button>
+      </div>
+      <p class="note">Drop an extension folder (with its <code>manifest.json</code>) in <code id="extdir"></code>, then press Reload. Turning an extension off removes its styles at once; reload the page to stop its scripts.</p>
+    </div>
+  </section>
+
+  <section id="import">
+    <h1>Import</h1><p class="lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</p>
+    <div class="card"><h2>Detected browsers</h2><div id="sources"></div>
+      <p class="note">Bookmarks are read straight from the browser's profile (read-only). Imported bookmarks appear in the command bar search.</p></div>
+    <div class="card"><h2>From a file</h2>
+      <div class="actions">
+        <button class="btn" id="imp-html">Bookmarks (HTML export)…</button>
+        <button class="btn" id="imp-csv">Passwords (CSV export)…</button>
+      </div>
+      <p class="note">Passwords: export them from the other browser's password manager (Chrome, Edge, Brave, Firefox, Waterfox, Safari, Bitwarden…) to a CSV file. They are stored in a vault encrypted with a key kept in the system keychain. Delete the CSV afterwards, it is not encrypted.</p>
+      <p class="note" id="impmsg"></p>
+    </div>
+    <div class="card"><h2>Stored</h2>
+      <div class="opt"><span class="grow">Bookmarks</span><b id="nbm">0</b></div>
+      <div class="opt"><span class="grow">Passwords in the vault</span><b id="nlog">0</b></div>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <h1>Privacy</h1><p class="lead">No telemetry, trackers blocked, history stays on this machine.</p>
+    <div class="card"><h2>This session</h2><div class="opt"><span class="grow">Requests blocked</span><b id="blocked">0</b></div></div>
+    <div class="card"><h2>Blocked hosts</h2><div id="blocklist"></div>
+      <div class="actions"><button class="btn" id="clearblocked">Reset list</button></div></div>
+    <div class="card"><h2>Data</h2><div class="actions"><button class="btn" id="clear">Clear browsing history</button></div></div>
+    <div class="card"><h2>About</h2><div class="opt"><span class="grow">BlackHole</span><span class="sub" id="version"></span></div></div>
+  </section>
+</main>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+const $ = (id) => document.getElementById(id);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',55%,48%)'; }
+function option(label, selected, onclick, toggle) {
+  const b = el('button', 'opt' + (selected ? ' sel' : ''));
+  b.append(el('span', toggle ? 'check' : 'radio'), el('span', 'grow', label));
+  b.onclick = onclick;
+  return b;
+}
+
+function show(tab) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === tab));
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { show(b.dataset.tab); if (b.dataset.tab === 'import') send({ cmd: 'import_scan' }); });
+$('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
+$('imp-csv').onclick = () => send({ cmd: 'import_file', kind: 'logins' });
+
+let mac = true;
+function keyRows(target, rows) {
+  const mod = mac ? '⌘' : 'Ctrl';
+  target.replaceChildren(...rows.flatMap(([label, keys]) => {
+    const k = el('div', 'k');
+    k.append(...keys.map(x => el('kbd', null, x.replace('MOD', mod))));
+    return [el('div', null, label), k];
+  }));
+}
+function renderShortcuts() {
+  $('modname').textContent = mac ? '⌘ is the Command key.' : '';
+  keyRows($('k-nav'), [
+    ['Search or enter an address (command bar)', ['MOD', 'L']],
+    ['New tab and command bar', ['MOD', 'T']],
+    ['Close the current tab', ['MOD', 'W']],
+    ['Reload the page', ['MOD', 'R']],
+    ['Back / forward', ['MOD', '[', ']']],
+    ['Close the command bar or a preview', ['Esc']],
+  ]);
+  keyRows($('k-layout'), [
+    ['Split view with another tab (press again to close)', ['MOD', '\\']],
+    ['Keep the sidebar open / expand on hover', ['MOD', 'B']],
+    ['Open Settings', ['MOD', ',']],
+    ['Open the previewed link as a tab (Peek)', ['↵']],
+  ]);
+  keyRows($('k-mouse'), [
+    ['Back / forward', ['two-finger swipe']],
+    ['Preview a link without leaving the page (Peek)', ['⇧', 'click']],
+    ['Split view from a tab', ['◧ on the tab']],
+    ['Set an emoji for a space', ['right-click it']],
+    ['Set an emoji for a folder', ['click its icon']],
+    ['Pin / unpin a tab', ['right-click it']],
+    ['Boost, always open a site in a space…', ['command bar actions']],
+  ]);
+}
+
+let seenSeq = 0;
+window.bh = {
+  render(s) {
+    mac = s.os === 'macos';
+    renderShortcuts();
+    $('engines').replaceChildren(...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
+    $('modes').replaceChildren(...s.sidebarModes.map(m => option(m.label, m.id === s.sidebarMode, () => send({ cmd: 'set_sidebar_mode', id: m.id }))));
+    $('anim').replaceChildren(option('Black hole animations (launch and new tab)', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true));
+    $('hwcard').hidden = mac;
+    $('hw').replaceChildren(option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true));
+    $('sleep').replaceChildren(...s.tabSleepChoices.map(m => option(m + ' minutes', m === s.tabSleep, () => send({ cmd: 'set_tab_sleep', minutes: m }))));
+    $('blocked').textContent = s.blocked;
+    $('blocklist').replaceChildren(...(s.blockedLog.length ? s.blockedLog.map(b => {
+      const row = el('div', 'bl');
+      const text = el('div', 'grow');
+      text.append(el('div', 'host', b.host), el('div', 'sub', b.site ? 'on ' + b.site : 'navigation'));
+      row.append(text, el('span', 'n', b.count));
+      return row;
+    }) : [el('div', 'empty', 'Nothing blocked yet in this session.')]));
+    if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
+    $('version').textContent = 'Version ' + s.version;
+    $('catalog').replaceChildren(...s.catalog.map(c => {
+      const row = el('div', 'ext');
+      const ico = el('div', 'ico', c.name[0].toUpperCase());
+      ico.style.background = hue(c.name);
+      const text = el('div', 'grow');
+      const labels = { installing: 'Downloading…', loading: 'Starting…', active: 'Active', disabled: 'Turned off', failed: 'Error', available: '' };
+      const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+).'
+        : c.error ? c.error : [labels[c.status], c.description].filter(Boolean).join(' · ');
+      text.append(el('div', 'name', c.name + '  ' + c.version), el('div', 'sub', sub));
+      row.append(ico, text);
+      if (c.supported && !c.installed) {
+        const b = el('button', 'btn primary', c.status === 'installing' ? 'Installing…' : 'Install');
+        b.disabled = c.status === 'installing';
+        b.onclick = () => send({ cmd: 'install_catalog', id: c.id });
+        row.append(b);
+      } else if (c.supported) {
+        const tog = option('', c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled }), true);
+        tog.style.width = 'auto';
+        const rm = el('button', 'btn', 'Remove');
+        rm.onclick = () => send({ cmd: 'remove_catalog', id: c.id });
+        row.append(tog, rm);
+      }
+      return row;
+    }));
+    $('sources').replaceChildren(...(s.import.sources.length ? s.import.sources.map(src => {
+      const row = el('div', 'ext');
+      const ico = el('div', 'ico', src.browser[0]);
+      ico.style.background = hue(src.browser);
+      const text = el('div', 'grow');
+      text.append(el('div', 'name', src.browser), el('div', 'sub', src.profile));
+      const b = el('button', 'btn primary', 'Import bookmarks');
+      b.onclick = () => send({ cmd: 'import_bookmarks', source: src.id });
+      row.append(ico, text, b);
+      return row;
+    }) : [el('div', 'empty', 'No other browser detected. Use a file export below.')]));
+    $('impmsg').textContent = s.import.message;
+    $('nbm').textContent = s.import.bookmarks;
+    $('nlog').textContent = s.import.logins;
+    $('appcard').style.display = s.appExtensions.length ? '' : 'none';
+    $('appexts').replaceChildren(...s.appExtensions.map(a => {
+      const row = el('div', 'ext');
+      const ico = el('div', 'ico', a.name[0].toUpperCase());
+      ico.style.background = hue(a.name);
+      const text = el('div', 'grow');
+      const labels = { loading: 'Starting…', active: 'Active', failed: 'Error', off: '' };
+      text.append(el('div', 'name', a.name), el('div', 'sub', a.error || labels[a.status] || 'Not enabled'));
+      const b = el('button', a.enabled ? 'btn' : 'btn primary', a.enabled ? 'Turn off' : 'Enable');
+      b.disabled = !a.supported;
+      b.onclick = () => send({ cmd: 'set_app_extension', id: a.id, on: !a.enabled });
+      row.append(ico, text, b);
+      return row;
+    }));
+    $('extdir').textContent = s.extensionsDir;
+    $('sample').style.display = s.extensions.some(e => e.id === 'cookie-banner-hider') ? 'none' : '';
+    $('exts').replaceChildren(...(s.extensions.length ? s.extensions.map(e => {
+      const row = el('div', 'ext');
+      const ico = el('div', 'ico', (e.name[0] || '•').toUpperCase());
+      ico.style.background = hue(e.name);
+      const text = el('div', 'grow');
+      text.append(el('div', 'name', e.name + (e.version ? '  ' + e.version : '')),
+        el('div', 'sub', e.description || e.sites.join(', ') || 'No content scripts'));
+      const tog = option('', e.enabled, () => send({ cmd: 'set_extension_enabled', id: e.id, enabled: !e.enabled }), true);
+      tog.style.width = 'auto';
+      row.append(ico, text, tog);
+      return row;
+    }) : [el('div', 'empty', 'No extension installed yet.')]));
+  },
+};
+
+$('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
+$('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
+$('clear').onclick = () => send({ cmd: 'clear_history' });
+$('folder').onclick = () => send({ cmd: 'open_extensions_folder' });
+$('reload').onclick = () => send({ cmd: 'reload_extensions' });
+$('sample').onclick = () => send({ cmd: 'install_sample_extension' });
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); send({ cmd: 'close_settings' }); }
+});
+renderShortcuts();
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

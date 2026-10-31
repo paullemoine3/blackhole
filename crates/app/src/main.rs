@@ -1,0 +1,1990 @@
+//! BlackHole composition root: window, native web views and message routing.
+//! Business rules live in the inner crates; this file only wires them to the platform web engine
+//! (WKWebView on macOS, WebView2 on Windows) through `wry`.
+
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+#[cfg(feature = "devtools")]
+mod devtools;
+mod extensions;
+mod favicons;
+mod ipc;
+mod sidebar;
+mod views;
+
+use blackhole_application::{BrowserService, NavigationOutcome};
+use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SidebarMode, SpaceId, TabId};
+use blackhole_infrastructure::catalog;
+use blackhole_infrastructure::{
+    default_privacy_policy, extensions_dir, load_extensions, JsonWorkspaceRepository,
+};
+use blackhole_infrastructure::{
+    import,
+    store::{BookmarkStore, Vault},
+};
+use ipc::{Mailbox, Msg, PageEvent, UiCommand, Wake};
+use serde_json::json;
+use sidebar::Sidebar;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use url::Url;
+use winit::{
+    application::ApplicationHandler,
+    dpi::LogicalSize,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Window, WindowId},
+};
+use wry::{WebContext, WebView};
+
+const CHROME_HTML: &str = include_str!("../ui/index.html");
+const HOME_HTML: &str = include_str!("../ui/home.html");
+const BAR_HTML: &str = include_str!("../ui/bar.html");
+const PALETTE_HTML: &str = include_str!("../ui/palette.html");
+const SPLITBAR_HTML: &str = include_str!("../ui/splitbar.html");
+const PEEK_HTML: &str = include_str!("../ui/peek.html");
+const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
+/// Gap between the two panes of a split view.
+const SPLIT_GAP: f64 = 8.0;
+/// Height of the strip above a split view that carries each pane's title and close button.
+const SPLIT_HEADER: f64 = 30.0;
+/// Reserved id of the peek page; real tabs start at 1.
+const PEEK_TAB: TabId = TabId(0);
+const SPACE_COLORS: [&str; 5] = ["#7c5cff", "#ff5c8a", "#2fd4a0", "#ffb020", "#3aa0ff"];
+/// Logical height of the top bar that holds the window controls and the address field.
+const BAR_HEIGHT: f64 = 48.0;
+/// Background tabs unused for the configured time release their engine view to save memory.
+const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
+const FRAME: Duration = Duration::from_millis(16);
+
+/// Floating preview of a link (Arc's "Peek"): a dimming scrim plus the page itself.
+struct Peek {
+    scrim: WebView,
+    page: WebView,
+}
+
+/// The settings window. The view is declared first so it is dropped before its window.
+struct SettingsWindow {
+    view: WebView,
+    window: Window,
+}
+
+struct Running {
+    chrome: WebView,
+    bar: WebView,
+    home: WebView,
+    tabs: HashMap<TabId, WebView>,
+    /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
+    autofill: HashMap<TabId, Vec<import::Login>>,
+    last_active: HashMap<TabId, Instant>,
+    svc: BrowserService<JsonWorkspaceRepository>,
+    mailbox: Mailbox,
+    sidebar: Sidebar,
+    web_context: WebContext,
+    blocked: BlockLog,
+    /// Section requested for the settings window; `settings_seq` changes with each request.
+    settings_tab: Option<String>,
+    bookmarks: BookmarkStore,
+    bookmark_list: Vec<import::Bookmark>,
+    import_sources: Vec<import::Source>,
+    import_msg: String,
+    app_ext: Vec<blackhole_macos_webext::AppExtension>,
+    bar_exts: serde_json::Value,
+    bar_exts_at: Instant,
+    vault_count: usize,
+    settings_seq: u32,
+    home_visible: bool,
+    /// Command bar overlay; rebuilt whenever a view is added so it stays on top.
+    splitbar: WebView,
+    palette: WebView,
+    /// Context menu being shown by the overlay (position and items).
+    menu: Option<serde_json::Value>,
+    palette_ready: bool,
+    palette_open: bool,
+    palette_mode: String,
+    /// Space or folder whose emoji the picker is editing.
+    icon_target: Option<(String, u64)>,
+    peek: Option<Peek>,
+    data: std::path::PathBuf,
+    favicons: favicons::Favicons,
+    /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
+    webext: Option<blackhole_macos_webext::ExtensionHost>,
+    installing: std::collections::HashSet<String>,
+    install_errors: HashMap<String, String>,
+    install_tx: std::sync::mpsc::Sender<(String, Result<std::path::PathBuf, String>)>,
+    install_rx: std::sync::mpsc::Receiver<(String, Result<std::path::PathBuf, String>)>,
+    import_tx: std::sync::mpsc::Sender<(Option<String>, usize)>,
+    import_rx: std::sync::mpsc::Receiver<(Option<String>, usize)>,
+    webext_sig: String,
+    settings: Option<SettingsWindow>,
+    settings_wanted: bool,
+    #[cfg(target_os = "macos")]
+    _menu: muda::Menu,
+    #[cfg(feature = "devtools")]
+    dev: Option<devtools::Dev>,
+    // Declared last: web views are children of the window and must be dropped first.
+    window: Window,
+}
+
+/// The Edit menu is what routes Cmd+C/V/X/A/Z to the focused web view on macOS.
+#[cfg(target_os = "macos")]
+fn install_menu() -> muda::Menu {
+    use muda::{Menu, PredefinedMenuItem as Item, Submenu};
+    let menu = Menu::new();
+    let app = Submenu::new("BlackHole", true);
+    let edit = Submenu::new("Edit", true);
+    let _ = app.append_items(&[
+        &Item::about(None, None),
+        &Item::separator(),
+        &Item::hide(None),
+        &Item::hide_others(None),
+        &Item::separator(),
+        &Item::quit(None),
+    ]);
+    let _ = edit.append_items(&[
+        &Item::undo(None),
+        &Item::redo(None),
+        &Item::separator(),
+        &Item::cut(None),
+        &Item::copy(None),
+        &Item::paste(None),
+        &Item::select_all(None),
+    ]);
+    let _ = menu.append_items(&[&app, &edit]);
+    menu.init_for_nsapp();
+    menu
+}
+
+impl Running {
+    fn new(event_loop: &ActiveEventLoop, mailbox: Mailbox) -> Self {
+        #[allow(unused_mut)]
+        let mut attrs = Window::default_attributes()
+            .with_title("BlackHole")
+            .with_theme(Some(winit::window::Theme::Dark))
+            .with_inner_size(LogicalSize::new(1280.0, 820.0))
+            .with_min_inner_size(LogicalSize::new(720.0, 480.0));
+        #[cfg(target_os = "macos")]
+        {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            attrs = attrs
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+                .with_title_hidden(true);
+        }
+        let window = event_loop.create_window(attrs).expect("window");
+
+        // Dev builds use a scratch profile so scripted runs never touch the user's data.
+        #[cfg(feature = "devtools")]
+        let data = std::path::PathBuf::from("/tmp/bh_data");
+        #[cfg(not(feature = "devtools"))]
+        let data = blackhole_infrastructure::data_dir();
+        let mut web_context = WebContext::new(Some(data.join("webview")));
+        let mut svc = BrowserService::start(
+            JsonWorkspaceRepository::new(data.clone()),
+            default_privacy_policy(),
+        );
+        svc.set_extensions(load_extensions(&extensions_dir(&data)));
+        views::set_hardware_acceleration(svc.settings().hardware_acceleration);
+        let sidebar = Sidebar::new(svc.settings().sidebar_mode == SidebarMode::Static);
+
+        let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+        let body = (size.height - BAR_HEIGHT).max(1.0);
+        let chrome_bounds = views::rect(0.0, BAR_HEIGHT, sidebar.width(), body);
+        let bar_bounds = views::rect(0.0, 0.0, size.width, BAR_HEIGHT);
+        let home_bounds = views::rect(
+            sidebar.width(),
+            BAR_HEIGHT,
+            size.width - sidebar.width(),
+            body,
+        );
+        let chrome = views::ui_view(
+            &window,
+            &mut web_context,
+            CHROME_HTML,
+            chrome_bounds,
+            true,
+            false,
+            &mailbox,
+        )
+        .expect("sidebar view");
+        let bar = views::ui_view(
+            &window,
+            &mut web_context,
+            BAR_HTML,
+            bar_bounds,
+            true,
+            false,
+            &mailbox,
+        )
+        .expect("top bar view");
+        let home = views::ui_view(
+            &window,
+            &mut web_context,
+            HOME_HTML,
+            home_bounds,
+            true,
+            false,
+            &mailbox,
+        )
+        .expect("start page view");
+        let splitbar = views::ui_view(
+            &window,
+            &mut web_context,
+            SPLITBAR_HTML,
+            views::rect(
+                sidebar.width(),
+                BAR_HEIGHT,
+                size.width - sidebar.width(),
+                SPLIT_HEADER,
+            ),
+            false,
+            false,
+            &mailbox,
+        )
+        .expect("split bar view");
+        let palette = views::ui_view(
+            &window,
+            &mut web_context,
+            PALETTE_HTML,
+            views::rect(0.0, 0.0, size.width, size.height),
+            false,
+            true,
+            &mailbox,
+        )
+        .expect("command bar view");
+
+        let (install_tx, install_rx) = std::sync::mpsc::channel();
+        let (import_tx, import_rx) = std::sync::mpsc::channel();
+        let webext = blackhole_macos_webext::ExtensionHost::new();
+        let app_ext = blackhole_macos_webext::discover_app_extensions();
+        if let Some(host) = &webext {
+            for e in app_ext
+                .iter()
+                .filter(|e| app_extension_enabled(&data, &e.id))
+            {
+                host.load(&e.id, &e.path);
+            }
+            for entry in catalog::CATALOG {
+                if catalog::is_installed(&data, entry.id) && svc.extension_enabled(entry.id) {
+                    host.load(entry.id, &catalog::package_path(&data, entry.id));
+                }
+            }
+        }
+
+        Self {
+            chrome,
+            bar,
+            home,
+            tabs: HashMap::new(),
+            last_active: HashMap::new(),
+            svc,
+            mailbox,
+            sidebar,
+            web_context,
+            blocked: BlockLog::default(),
+            settings_tab: None,
+            bookmark_list: BookmarkStore::new(&data).load(),
+            bookmarks: BookmarkStore::new(&data),
+            favicons: favicons::Favicons::load(&data),
+            import_sources: import::detect(),
+            import_msg: String::new(),
+            app_ext,
+            bar_exts: json!([]),
+            bar_exts_at: Instant::now(),
+            autofill: HashMap::new(),
+            vault_count: 0,
+            settings_seq: 0,
+            home_visible: true,
+            splitbar,
+            palette,
+            menu: None,
+            palette_ready: false,
+            palette_open: false,
+            palette_mode: String::new(),
+            icon_target: None,
+            peek: None,
+            webext,
+            installing: Default::default(),
+            install_errors: HashMap::new(),
+            install_tx,
+            install_rx,
+            import_tx,
+            import_rx,
+            webext_sig: String::new(),
+            data,
+            settings: None,
+            settings_wanted: false,
+            #[cfg(target_os = "macos")]
+            _menu: install_menu(),
+            #[cfg(feature = "devtools")]
+            dev: devtools::Dev::load(),
+            window,
+        }
+    }
+
+    fn scale(&self) -> f64 {
+        self.window.scale_factor()
+    }
+
+    /// The start page is shown at launch, via the Home button, and whenever no tab is active.
+    fn home_shown(&self) -> bool {
+        self.home_visible || self.svc.workspace().active_tab().is_none()
+    }
+
+    fn active_view(&self) -> &WebView {
+        if self.home_shown() {
+            return &self.home;
+        }
+        self.svc
+            .workspace()
+            .active_tab()
+            .and_then(|t| self.tabs.get(&t.id))
+            .unwrap_or(&self.home)
+    }
+
+    fn window_size(&self) -> winit::dpi::LogicalSize<f64> {
+        self.window.inner_size().to_logical::<f64>(self.scale())
+    }
+
+    /// The pane of the active tab, and the second pane when a split view is showing.
+    fn content_rects(&self) -> (wry::Rect, Option<wry::Rect>) {
+        let size = self.window_size();
+        let offset = self.sidebar.content_offset();
+        let (width, height) = (size.width - offset, size.height - BAR_HEIGHT);
+        if self.split_tab().is_none() {
+            return (views::rect(offset, BAR_HEIGHT, width, height), None);
+        }
+        let half = ((width - SPLIT_GAP) / 2.0).max(1.0);
+        let (top, height) = (BAR_HEIGHT + SPLIT_HEADER, (height - SPLIT_HEADER).max(1.0));
+        (
+            views::rect(offset, top, half, height),
+            Some(views::rect(offset + half + SPLIT_GAP, top, half, height)),
+        )
+    }
+
+    fn full_content_bounds(&self) -> wry::Rect {
+        let size = self.window_size();
+        let offset = self.sidebar.content_offset();
+        views::rect(
+            offset,
+            BAR_HEIGHT,
+            size.width - offset,
+            size.height - BAR_HEIGHT,
+        )
+    }
+
+    fn peek_bounds(&self) -> wry::Rect {
+        let size = self.window_size();
+        views::rect(
+            size.width * 0.1,
+            size.height * 0.07,
+            size.width * 0.8,
+            size.height * 0.84,
+        )
+    }
+
+    /// The tab shown beside the active one, if the split view is valid right now.
+    fn split_tab(&self) -> Option<TabId> {
+        if self.home_shown() {
+            return None;
+        }
+        self.svc.workspace().split_tab()
+    }
+
+    fn view_of(&self, tab: TabId) -> Option<&WebView> {
+        if tab == PEEK_TAB {
+            return self.peek.as_ref().map(|p| &p.page);
+        }
+        self.tabs.get(&tab)
+    }
+
+    /// Positions the views; `all` also resizes background tabs (window resize, tab switch).
+    fn layout(&self, all: bool) {
+        let size = self.window_size();
+        let body = (size.height - BAR_HEIGHT).max(1.0);
+        let _ = self
+            .bar
+            .set_bounds(views::rect(0.0, 0.0, size.width, BAR_HEIGHT));
+        let _ = self
+            .chrome
+            .set_bounds(views::rect(0.0, BAR_HEIGHT, self.sidebar.width(), body));
+        let _ = self
+            .palette
+            .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
+        if let Some(peek) = &self.peek {
+            let _ = peek
+                .scrim
+                .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
+            let _ = peek.page.set_bounds(self.peek_bounds());
+        }
+        if all {
+            let _ = self.home.set_bounds(self.full_content_bounds());
+            for view in self.tabs.values() {
+                let _ = view.set_bounds(self.full_content_bounds());
+            }
+        }
+        let offset = self.sidebar.content_offset();
+        let _ = self.splitbar.set_bounds(views::rect(
+            offset,
+            BAR_HEIGHT,
+            (size.width - offset).max(1.0),
+            SPLIT_HEADER,
+        ));
+        let (main, side) = self.content_rects();
+        let _ = self.active_view().set_bounds(main);
+        if let (Some(id), Some(rect)) = (self.split_tab(), side) {
+            if let Some(view) = self.tabs.get(&id) {
+                let _ = view.set_bounds(rect);
+            }
+        }
+    }
+
+    fn apply_sidebar_mode(&mut self, mode: SidebarMode) {
+        self.svc.set_sidebar_mode(mode);
+        self.sidebar.set_static(mode == SidebarMode::Static);
+        self.ui_state();
+    }
+
+    fn tick_sidebar(&mut self) {
+        if self.sidebar.moving() {
+            self.sidebar.tick();
+            self.layout(false);
+        }
+    }
+
+    // ---- state → UI -------------------------------------------------------------------
+
+    fn ui(&self, js: String) {
+        let _ = self.chrome.evaluate_script(&js);
+    }
+
+    fn ui_state(&self) {
+        let ws = self.svc.workspace();
+        let space = ws.active_space();
+        let state = json!({
+            "os": std::env::consts::OS,
+            "expanded": self.sidebar.expanded(),
+            "locked": self.sidebar.pinned,
+            "sidebarMode": self.svc.settings().sidebar_mode.id(),
+            "sidebarModes": SidebarMode::ALL.iter().map(|m| json!({"id": m.id(), "label": m.label()})).collect::<Vec<_>>(),
+            "engine": self.svc.settings().search_engine.id(),
+            "animations": self.svc.settings().animations,
+            "tabSleep": self.svc.settings().tab_sleep_minutes,
+            "tabSleepChoices": Settings::SLEEP_CHOICES,
+            "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
+            "spaces": ws.spaces().iter().map(|s| json!({"id": s.id.0, "name": s.name, "color": s.color, "icon": s.icon})).collect::<Vec<_>>(),
+            "activeSpace": space.id.0,
+            "color": space.color,
+            "activeTab": if self.home_shown() { None } else { space.active_tab.map(|t| t.0) },
+            "home": self.home_shown(),
+            "blocked": self.blocked.total(),
+            "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
+            "favicons": self.favicons.all(),
+            "bookmarks": self.bookmark_list.iter().map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
+            "tabs": space.tabs.iter().map(|t| json!({
+                "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
+                "folder": t.folder.map(|f| f.0),
+                "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
+                "asleep": !self.tabs.contains_key(&t.id),
+            })).collect::<Vec<_>>(),
+        });
+        self.ui(format!("window.bh&&bh.render({state})"));
+        self.ui_settings();
+        self.ui_bar();
+        self.ui_splitbar();
+        if self.home_shown() {
+            self.ui_home();
+        }
+    }
+
+    /// Titles and visibility of the strip above the split panes.
+    fn ui_splitbar(&self) {
+        let ws = self.svc.workspace();
+        let (active, other) = (ws.active_tab(), self.split_tab());
+        let pane = |t: &blackhole_domain::Tab| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()});
+        let other = other.and_then(|id| ws.active_space().tabs.iter().find(|t| t.id == id));
+        let _ = self
+            .splitbar
+            .set_visible(active.is_some() && other.is_some());
+        if let (Some(left), Some(right)) = (active, other) {
+            let state =
+                json!({"left": pane(left), "right": pane(right), "color": ws.active_space().color});
+            let _ = self
+                .splitbar
+                .evaluate_script(&format!("window.bh&&bh.render({state})"));
+        }
+    }
+
+    fn ui_settings(&self) {
+        let Some(win) = &self.settings else { return };
+        let settings = self.svc.settings();
+        let state = json!({
+            "os": std::env::consts::OS,
+            "version": env!("CARGO_PKG_VERSION"),
+            "engine": settings.search_engine.id(),
+            "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
+            "sidebarMode": settings.sidebar_mode.id(),
+            "sidebarModes": SidebarMode::ALL.iter().map(|m| json!({"id": m.id(), "label": m.label()})).collect::<Vec<_>>(),
+            "animations": settings.animations,
+            "hardwareAcceleration": settings.hardware_acceleration,
+            "tabSleep": settings.tab_sleep_minutes,
+            "tabSleepChoices": Settings::SLEEP_CHOICES,
+            "blocked": self.blocked.total(),
+            "blockedLog": self.blocked.entries().iter().take(100).map(|b| json!({"host": b.host, "count": b.count, "site": b.site})).collect::<Vec<_>>(),
+            "tab": self.settings_tab.clone(),
+            "tabSeq": self.settings_seq,
+            "catalog": self.catalog_state(),
+            "appExtensions": self.app_ext.iter().map(|e| {
+                let on = app_extension_enabled(&self.data, &e.id);
+                let state = self.webext.as_ref().and_then(|h| h.state(&e.id));
+                json!({
+                    "id": e.id, "name": e.name, "enabled": on, "supported": self.webext.is_some(),
+                    "status": match state {
+                        Some(blackhole_macos_webext::LoadState::Loading) => "loading",
+                        Some(blackhole_macos_webext::LoadState::Loaded) => "active",
+                        Some(blackhole_macos_webext::LoadState::Failed(_)) => "failed",
+                        None => "off",
+                    },
+                    "error": match state { Some(blackhole_macos_webext::LoadState::Failed(w)) => Some(w), _ => None },
+                })
+            }).collect::<Vec<_>>(),
+            "import": json!({
+                "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
+                "message": self.import_msg,
+                "bookmarks": self.bookmarks.load().len(),
+                "logins": self.vault_count,
+            }),
+            "extensionsDir": extensions_dir(&self.data).display().to_string(),
+            "extensions": self.svc.extensions().iter().map(|e| json!({
+                "id": e.id, "name": e.name, "version": e.version, "description": e.description,
+                "enabled": self.svc.extension_enabled(&e.id),
+                "sites": e.scripts.iter().flat_map(|s| s.matches.iter().cloned()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        });
+        let _ = win
+            .view
+            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    fn store_dropped(&mut self, list: Vec<import::Bookmark>) -> String {
+        let msg = store_bookmarks(&self.bookmarks, list, "Glisser-déposer");
+        self.bookmark_list = self.bookmarks.load();
+        self.ui_state();
+        self.ui(format!("window.bh&&bh.toast({})", json!(msg)));
+        msg
+    }
+
+    /// Runs blocking import work (file dialog, Keychain) off the UI thread: modal panels
+    /// opened inside the event-loop callback crash AppKit.
+    fn spawn_import(
+        &self,
+        job: impl FnOnce(&BookmarkStore, &Vault) -> Option<String> + Send + 'static,
+    ) {
+        let (tx, data) = (self.import_tx.clone(), self.data.clone());
+        std::thread::spawn(move || {
+            let (bookmarks, vault) = (BookmarkStore::new(&data), Vault::new(&data));
+            let msg = job(&bookmarks, &vault);
+            let _ = tx.send((msg, vault.count()));
+        });
+    }
+
+    fn catalog_state(&self) -> Vec<serde_json::Value> {
+        catalog::CATALOG
+            .iter()
+            .map(|e| {
+                let installed = catalog::is_installed(&self.data, e.id);
+                let loaded = self.webext.as_ref().and_then(|h| h.state(e.id));
+                let status = if self.installing.contains(e.id) {
+                    "installing"
+                } else {
+                    match loaded {
+                        Some(blackhole_macos_webext::LoadState::Loading) => "loading",
+                        Some(blackhole_macos_webext::LoadState::Loaded) => "active",
+                        Some(blackhole_macos_webext::LoadState::Failed(_)) => "failed",
+                        None if installed => "disabled",
+                        None => "available",
+                    }
+                };
+                let error = match self.webext.as_ref().and_then(|h| h.state(e.id)) {
+                    Some(blackhole_macos_webext::LoadState::Failed(why)) => Some(why),
+                    _ => self.install_errors.get(e.id).cloned(),
+                };
+                json!({
+                    "id": e.id, "name": e.name, "description": e.description, "version": e.version,
+                    "homepage": e.homepage, "installed": installed, "status": status, "error": error,
+                    "enabled": self.svc.extension_enabled(e.id),
+                    "supported": self.webext.is_some(),
+                })
+            })
+            .collect()
+    }
+
+    /// Applies finished downloads and refreshes the settings window when a state changed.
+    fn poll_webext(&mut self) {
+        while let Ok((msg, count)) = self.import_rx.try_recv() {
+            if let Some(m) = msg {
+                self.import_msg = m;
+            }
+            self.vault_count = count;
+            self.bookmark_list = self.bookmarks.load();
+            self.ui_state();
+        }
+        while let Ok((id, result)) = self.install_rx.try_recv() {
+            self.installing.remove(&id);
+            match result {
+                Ok(path) => {
+                    self.install_errors.remove(&id);
+                    self.svc.set_enabled_flag(&id, true);
+                    if let Some(host) = &self.webext {
+                        host.load(&id, &path);
+                    }
+                }
+                Err(why) => {
+                    self.install_errors.insert(id, why);
+                }
+            }
+        }
+        self.sync_extension_tab();
+        if let Some(host) = &self.webext {
+            if self.bar_exts_at.elapsed() > Duration::from_millis(800) {
+                self.bar_exts_at = Instant::now();
+                let list = json!(host
+                    .actions()
+                    .iter()
+                    .filter(|a| a.enabled)
+                    .map(|a| json!({
+                        "id": a.id, "label": a.label, "badge": a.badge, "icon": a.icon,
+                    }))
+                    .collect::<Vec<_>>());
+                if list != self.bar_exts {
+                    self.bar_exts = list;
+                    self.ui_bar();
+                }
+            }
+        }
+        let sig = serde_json::to_string(&json!([
+            self.catalog_state(),
+            self.app_ext
+                .iter()
+                .map(|e| self
+                    .webext
+                    .as_ref()
+                    .and_then(|h| h.state(&e.id))
+                    .map(|s| format!("{s:?}")))
+                .collect::<Vec<_>>()
+        ]))
+        .unwrap_or_default();
+        if sig != self.webext_sig {
+            self.webext_sig = sig;
+            self.ui_settings();
+        }
+    }
+
+    /// Tells the extension host which tab is in front, so extensions see a real page.
+    fn sync_extension_tab(&self) {
+        let Some(host) = &self.webext else { return };
+        let tab = if self.home_shown() {
+            None
+        } else {
+            self.svc.workspace().active_tab()
+        };
+        let Some(tab) = tab else {
+            host.set_active_tab(None, "", "");
+            return;
+        };
+        let view = self.tabs.get(&tab.id).and_then(web_view_ptr);
+        host.set_active_tab(view, tab.url.as_str(), &tab.title);
+    }
+
+    fn install_catalog(&mut self, id: &str) {
+        let Some(entry) = catalog::find(id) else {
+            return;
+        };
+        if self.webext.is_none() || !self.installing.insert(id.to_owned()) {
+            return;
+        }
+        self.install_errors.remove(id);
+        let (tx, data) = (self.install_tx.clone(), self.data.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send((entry.id.to_owned(), catalog::install(&data, entry)));
+        });
+    }
+
+    /// Opens (or focuses) the settings window; called from the event loop, which creates windows.
+    fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(win) = &self.settings {
+            win.window.set_minimized(false);
+            win.window.focus_window();
+            return;
+        }
+        let attrs = Window::default_attributes()
+            .with_title("BlackHole Settings")
+            .with_theme(Some(winit::window::Theme::Dark))
+            .with_inner_size(LogicalSize::new(820.0, 600.0))
+            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
+        let Ok(window) = event_loop.create_window(attrs) else {
+            return;
+        };
+        match views::settings_view(&window, &mut self.web_context, SETTINGS_HTML, &self.mailbox) {
+            Ok(view) => self.settings = Some(SettingsWindow { view, window }),
+            Err(err) => tracing::error!("cannot create settings window: {err}"),
+        }
+    }
+
+    fn close_settings(&mut self) {
+        self.settings = None;
+    }
+
+    fn settings_window_id(&self) -> Option<WindowId> {
+        self.settings.as_ref().map(|w| w.window.id())
+    }
+
+    fn reload_extensions(&mut self) {
+        self.svc
+            .set_extensions(load_extensions(&extensions_dir(&self.data)));
+        self.reapply_extensions();
+        self.ui_state();
+    }
+
+    /// Injects the enabled extensions into every open page (also clears the CSS of disabled ones).
+    fn reapply_extensions(&self) {
+        for tab in self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+        {
+            if let Some(view) = self.tabs.get(&tab.id) {
+                let injection = self.svc.injection_for(&tab.url);
+                views::apply_injection(view, &injection.css, &injection.js);
+            }
+        }
+    }
+
+    fn ui_bar(&self) {
+        let ws = self.svc.workspace();
+        let url = if self.home_shown() {
+            String::new()
+        } else {
+            ws.active_tab()
+                .map(|t| t.url.to_string())
+                .unwrap_or_default()
+        };
+        let state = json!({
+            "os": std::env::consts::OS,
+            "url": url,
+            "color": ws.active_space().color,
+            "engine": self.svc.settings().search_engine.label(),
+            "extensions": self.bar_exts,
+        });
+        let _ = self
+            .bar
+            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    fn ui_home(&self) {
+        let state = json!({
+            "engine": self.svc.settings().search_engine.label(),
+            "animations": self.svc.settings().animations,
+            "favicons": self.favicons.all(),
+            "favorites": self.svc.favorites().iter()
+                .map(|f| json!({
+                    "name": f.name, "url": f.url.as_str(),
+                    // Only tabs of the current space can be unpinned from here.
+                    "tab": f.tab.filter(|id| self.svc.workspace().active_space().tabs.iter().any(|t| t.id == *id)).map(|id| id.0),
+                }))
+                .collect::<Vec<_>>(),
+            "recent": self.svc.recent_activity(12).iter()
+                .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
+                .collect::<Vec<_>>(),
+        });
+        let _ = self
+            .home
+            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    fn toast(&self, message: &str) {
+        self.ui(format!("window.bh&&bh.toast({})", json!(message)));
+    }
+
+    // ---- tabs -------------------------------------------------------------------------
+
+    fn ensure_active_view(&mut self) {
+        if self.home_shown() {
+            return;
+        }
+        let Some(tab) = self.svc.workspace().active_tab().cloned() else {
+            return;
+        };
+        self.ensure_view(&tab);
+        let split = self.split_tab().and_then(|id| {
+            self.svc
+                .workspace()
+                .active_space()
+                .tabs
+                .iter()
+                .find(|t| t.id == id)
+                .cloned()
+        });
+        if let Some(tab) = split {
+            self.ensure_view(&tab);
+        }
+    }
+
+    fn ensure_view(&mut self, tab: &blackhole_domain::Tab) {
+        if self.tabs.contains_key(&tab.id) {
+            return;
+        }
+        let bounds = self.full_content_bounds();
+        match views::tab_view(
+            &self.window,
+            &mut self.web_context,
+            tab.id,
+            &tab.url,
+            bounds,
+            self.svc.policy(),
+            &self.mailbox,
+            self.webext.as_ref(),
+        ) {
+            Ok(view) => {
+                self.tabs.insert(tab.id, view);
+                self.raise_palette();
+            }
+            Err(error) => tracing::error!("cannot create web view: {error}"),
+        }
+    }
+
+    /// Native views stack in creation order, so the command bar is recreated above new tabs.
+    fn raise_palette(&mut self) {
+        let size = self.window_size();
+        let bounds = views::rect(0.0, 0.0, size.width, size.height);
+        match views::ui_view(
+            &self.window,
+            &mut self.web_context,
+            PALETTE_HTML,
+            bounds,
+            false,
+            true,
+            &self.mailbox,
+        ) {
+            Ok(view) => {
+                self.palette = view;
+                self.palette_ready = false;
+                self.palette_open = false;
+            }
+            Err(error) => tracing::error!("cannot create command bar: {error}"),
+        }
+    }
+
+    /// Frees the engine view of tabs left in the background; they reload when selected again.
+    fn discard_idle_tabs(&mut self) {
+        let now = Instant::now();
+        if !self.home_shown() {
+            let active = self.svc.workspace().active_tab().map(|t| t.id);
+            for id in active.into_iter().chain(self.split_tab()) {
+                self.last_active.insert(id, now);
+            }
+        }
+        let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
+        let idle: Vec<TabId> = self
+            .tabs
+            .keys()
+            .filter(|id| {
+                let seen = self.last_active.get(id).copied().unwrap_or(now);
+                now.duration_since(seen) >= limit
+            })
+            .copied()
+            .collect();
+        if idle.is_empty() {
+            return;
+        }
+        for id in idle {
+            self.tabs.remove(&id);
+            self.last_active.remove(&id);
+        }
+        self.ui_state();
+    }
+
+    fn sync(&mut self) {
+        self.ensure_active_view();
+        let active = if self.home_shown() {
+            None
+        } else {
+            self.svc.workspace().active_tab().map(|t| t.id)
+        };
+        if let Some(id) = active {
+            self.last_active.insert(id, Instant::now());
+        }
+        let split = self.split_tab();
+        for (id, view) in &self.tabs {
+            let _ = view.set_visible(Some(*id) == active || Some(*id) == split);
+        }
+        let _ = self.home.set_visible(active.is_none());
+        self.layout(true);
+        self.apply_focus();
+        self.ui_state();
+    }
+
+    fn apply_focus(&self) {
+        let _ = if self.palette_open {
+            self.palette.focus()
+        } else if let Some(peek) = &self.peek {
+            peek.page.focus()
+        } else {
+            self.active_view().focus()
+        };
+    }
+
+    fn focus_content(&mut self) {
+        self.close_palette();
+        self.apply_focus();
+    }
+
+    fn open(&mut self, input: &str) {
+        self.close_palette();
+        self.close_peek();
+        match self.svc.resolve(input) {
+            NavigationOutcome::Blocked(why) => self.toast(why),
+            NavigationOutcome::Go(_) => {
+                self.svc.open_tab(input);
+                self.home_visible = false;
+                self.sync();
+            }
+        }
+    }
+
+    fn navigate(&mut self, input: &str) {
+        self.close_palette();
+        let active = if self.home_shown() {
+            None
+        } else {
+            self.svc.workspace().active_tab().map(|t| t.id)
+        };
+        match (active, self.svc.resolve(input)) {
+            (Some(id), NavigationOutcome::Go(url)) => {
+                if let Some(view) = self.tabs.get(&id) {
+                    let _ = view.load_url(url.as_str());
+                }
+                self.focus_content();
+            }
+            (None, _) => self.open(input),
+            (_, NavigationOutcome::Blocked(why)) => self.toast(why),
+        }
+    }
+
+    fn close_active_tab(&mut self) {
+        if self.home_shown() {
+            return;
+        }
+        if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+            self.svc.close_tab(id);
+            self.tabs.remove(&id);
+            self.sync();
+        }
+    }
+
+    /// A new tab is the start page with the command bar open on top of it.
+    fn new_tab(&mut self) {
+        self.close_peek();
+        self.home_visible = true;
+        self.sync();
+        self.open_palette("new");
+    }
+
+    // ---- command bar --------------------------------------------------------------------
+
+    fn open_palette(&mut self, mode: &str) {
+        self.close_peek();
+        self.palette_mode = mode.to_owned();
+        self.palette_open = true;
+        let _ = self.palette.set_visible(true);
+        let _ = self.palette.focus();
+        if self.palette_ready {
+            self.push_palette();
+        }
+    }
+
+    fn push_palette(&self) {
+        let state = self.palette_state();
+        let _ = self
+            .palette
+            .evaluate_script(&format!("window.bh&&bh.open({state})"));
+    }
+
+    fn close_palette(&mut self) {
+        if !self.palette_open {
+            return;
+        }
+        self.palette_open = false;
+        let _ = self.palette.evaluate_script("window.bh&&bh.hide()");
+        let _ = self.palette.set_visible(false);
+        self.apply_focus();
+    }
+
+    fn active_site(&self) -> Option<String> {
+        if self.home_shown() {
+            return None;
+        }
+        self.svc
+            .workspace()
+            .active_tab()?
+            .url
+            .host_str()
+            .map(str::to_owned)
+    }
+
+    fn palette_state(&self) -> serde_json::Value {
+        let ws = self.svc.workspace();
+        let space = ws.active_space();
+        let active = if self.home_shown() {
+            None
+        } else {
+            ws.active_tab()
+        };
+        let site = self.active_site();
+        let mut actions = vec![
+            json!({"id": "new_space", "label": "New Space"}),
+            json!({"id": "new_folder", "label": "New Folder"}),
+            json!({"id": "icon_space", "label": format!("Set emoji for space {}", space.name), "hint": "Emoji"}),
+            json!({"id": "toggle_sidebar", "label": "Toggle sidebar mode", "hint": "⌘B"}),
+            json!({"id": "settings", "label": "Open Settings"}),
+            json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
+            json!({"id": "clear_history", "label": "Clear browsing history"}),
+        ];
+        for folder in &space.folders {
+            actions.push(json!({
+                "id": format!("icon_folder:{}", folder.id.0),
+                "label": format!("Set emoji for folder {}", folder.name),
+                "hint": "Emoji",
+            }));
+        }
+        if self.split_tab().is_some() {
+            actions
+                .push(json!({"id": "close_split", "label": "Close Split View", "hint": "Split"}));
+        }
+        if let Some(current) = active {
+            for tab in space.tabs.iter().filter(|t| t.id != current.id) {
+                let name = if tab.title.is_empty() {
+                    tab.url.as_str()
+                } else {
+                    &tab.title
+                };
+                actions.push(json!({
+                    "id": format!("split:{}", tab.id.0),
+                    "label": format!("Split View with {name}"),
+                    "hint": "Split",
+                }));
+            }
+        }
+        if let Some(site) = &site {
+            actions.push(json!({"id": "boost", "label": format!("Boost {site}"), "hint": "Boost"}));
+            let routed = self.svc.route_for(site);
+            for other in ws.spaces().iter().filter(|s| Some(s.id) != routed) {
+                actions.push(json!({
+                    "id": format!("route:{}", other.id.0),
+                    "label": format!("Always open {site} in {}", other.name),
+                    "hint": "Air Traffic",
+                }));
+            }
+            if routed.is_some() {
+                actions.push(json!({"id": "route_clear", "label": format!("Stop routing {site}"), "hint": "Air Traffic"}));
+            }
+        }
+        let url = match (self.palette_mode.as_str(), active) {
+            ("url", Some(tab)) => tab.url.to_string(),
+            _ => String::new(),
+        };
+        let target = self.icon_target.as_ref().and_then(|(kind, id)| {
+            let (name, icon) = if kind == "space" {
+                let s = ws.spaces().iter().find(|s| s.id.0 == *id)?;
+                (&s.name, &s.icon)
+            } else {
+                let f = space.folders.iter().find(|f| f.id.0 == *id)?;
+                (&f.name, &f.icon)
+            };
+            Some(json!({"kind": kind, "id": id, "name": name, "icon": icon}))
+        });
+        json!({
+            "target": target,
+            "mode": self.palette_mode,
+            "animations": self.svc.settings().animations,
+            "url": url,
+            "engine": self.svc.settings().search_engine.label(),
+            "color": space.color,
+            "menu": self.menu,
+            "boostHost": site,
+            "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
+            "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
+            "favorites": self.svc.favorites().iter().map(|f| json!({"name": f.name, "url": f.url.as_str()})).collect::<Vec<_>>(),
+            "bookmarks": self.bookmarks.load().iter().map(|b| json!({"title": b.title, "url": b.url})).collect::<Vec<_>>(),
+            "recent": self.svc.recent_activity(30).iter().map(|e| json!({"title": e.title, "url": e.url.as_str()})).collect::<Vec<_>>(),
+            "actions": actions,
+        })
+    }
+
+    fn run_action(&mut self, id: &str) {
+        let site = self.active_site();
+        if id == "boost" {
+            self.palette_mode = "boost".to_owned();
+            self.push_palette();
+            return;
+        }
+        self.close_palette();
+        match id {
+            "new_space" => {
+                let n = self.svc.workspace().spaces().len();
+                self.handle_ui(UiCommand::NewSpace {
+                    name: format!("Space {}", n + 1),
+                    color: SPACE_COLORS[n % SPACE_COLORS.len()].to_owned(),
+                });
+            }
+            "new_folder" => self.handle_ui(UiCommand::NewFolder),
+            "toggle_sidebar" => self.handle_ui(UiCommand::Lock),
+            "settings" => self.settings_wanted = true,
+            "clear_history" => {
+                self.svc.clear_history();
+                self.toast("History cleared");
+            }
+            "default_browser" => {
+                let message = if blackhole_macos_url::set_default_browser() {
+                    "Confirm in the system dialog to make BlackHole your default browser"
+                } else {
+                    "Install the BlackHole.app bundle first (scripts/package-macos.sh)"
+                };
+                self.toast(message);
+            }
+            "icon_space" => {
+                let id = self.svc.workspace().active_space().id.0;
+                self.handle_ui(UiCommand::PickIcon {
+                    kind: "space".to_owned(),
+                    id,
+                });
+            }
+            "close_split" => {
+                self.svc.clear_split();
+                self.sync();
+            }
+            "route_clear" => {
+                if let Some(site) = site {
+                    self.svc.set_route(&site, None);
+                    self.toast(&format!("{site} is no longer routed"));
+                }
+            }
+            other => {
+                if let Some(n) = other
+                    .strip_prefix("icon_folder:")
+                    .and_then(|n| n.parse().ok())
+                {
+                    self.handle_ui(UiCommand::PickIcon {
+                        kind: "folder".to_owned(),
+                        id: n,
+                    });
+                } else if let Some(n) = other.strip_prefix("split:").and_then(|n| n.parse().ok()) {
+                    self.svc.set_split(TabId(n));
+                    self.sync();
+                } else if let (Some(n), Some(site)) = (
+                    other.strip_prefix("route:").and_then(|n| n.parse().ok()),
+                    site,
+                ) {
+                    self.svc.set_route(&site, Some(SpaceId(n)));
+                    self.toast(&format!("{site} will open in its own space"));
+                }
+            }
+        }
+    }
+
+    fn save_boost(&mut self, css: &str) {
+        let Some(site) = self.active_site() else {
+            return;
+        };
+        self.svc.set_boost(&site, css);
+        self.close_palette();
+        let key = blackhole_domain::site_key(&site);
+        let matching: Vec<TabId> = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .filter(|t| {
+                t.url
+                    .host_str()
+                    .is_some_and(|h| blackhole_domain::site_key(h) == key)
+            })
+            .map(|t| t.id)
+            .collect();
+        for id in matching {
+            if let Some(view) = self.tabs.get(&id) {
+                views::apply_boost(view, css);
+            }
+        }
+    }
+
+    // ---- peek ---------------------------------------------------------------------------
+
+    fn open_peek(&mut self, url: &Url) {
+        let NavigationOutcome::Go(url) = self.svc.evaluate(url) else {
+            return;
+        };
+        self.close_palette();
+        self.close_peek();
+        let size = self.window_size();
+        let scrim_bounds = views::rect(0.0, 0.0, size.width, size.height);
+        let scrim = views::ui_view(
+            &self.window,
+            &mut self.web_context,
+            PEEK_HTML,
+            scrim_bounds,
+            true,
+            true,
+            &self.mailbox,
+        );
+        let peek_bounds = self.peek_bounds();
+        let page = views::tab_view(
+            &self.window,
+            &mut self.web_context,
+            PEEK_TAB,
+            &url,
+            peek_bounds,
+            self.svc.policy(),
+            &self.mailbox,
+            self.webext.as_ref(),
+        );
+        match (scrim, page) {
+            (Ok(scrim), Ok(page)) => {
+                let _ = page.set_visible(true);
+                let _ = page.focus();
+                self.peek = Some(Peek { scrim, page });
+            }
+            (scrim, page) => {
+                tracing::error!("cannot create peek: {:?} {:?}", scrim.err(), page.err());
+            }
+        }
+    }
+
+    fn close_peek(&mut self) {
+        if self.peek.take().is_some() {
+            self.apply_focus();
+        }
+    }
+
+    fn peek_to_tab(&mut self) {
+        let url = self.peek.as_ref().and_then(|p| p.page.url().ok());
+        self.close_peek();
+        if let Some(url) = url {
+            self.open(&url);
+        }
+    }
+
+    fn with_active_tab(&self, f: impl FnOnce(&WebView)) {
+        if self.home_shown() {
+            return;
+        }
+        if let Some(view) = self
+            .svc
+            .workspace()
+            .active_tab()
+            .and_then(|t| self.tabs.get(&t.id))
+        {
+            f(view);
+        }
+    }
+
+    fn handle_ui(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::Ready => self.sync(),
+            UiCommand::Open { input } => self.open(&input),
+            UiCommand::Home => {
+                self.close_palette();
+                self.close_peek();
+                self.home_visible = true;
+                self.sync();
+            }
+            UiCommand::NewTab => self.new_tab(),
+            UiCommand::Palette { mode } => {
+                if matches!(mode.as_str(), "url" | "new") {
+                    self.open_palette(&mode);
+                }
+            }
+            UiCommand::PaletteReady => {
+                self.palette_ready = true;
+                if self.palette_open {
+                    self.push_palette();
+                }
+            }
+            UiCommand::PaletteClose => self.close_palette(),
+            UiCommand::Action { id } => self.run_action(&id),
+            UiCommand::SaveBoost { css } => self.save_boost(&css),
+            UiCommand::ClosePeek => self.close_peek(),
+            UiCommand::SetTabSleep { minutes } => {
+                self.svc.set_tab_sleep_minutes(minutes);
+                self.ui_state();
+            }
+            UiCommand::SetHardwareAcceleration { on } => {
+                self.svc.set_hardware_acceleration(on);
+                self.ui_state();
+            }
+            UiCommand::SetAnimations { on } => {
+                self.svc.set_animations(on);
+                self.ui_state();
+            }
+            UiCommand::ClearHistory => {
+                self.svc.clear_history();
+                self.ui_state();
+            }
+            UiCommand::Navigate { input } => self.navigate(&input),
+            UiCommand::Activate { id } => {
+                self.close_palette();
+                self.close_peek();
+                self.svc.activate_tab(TabId(id));
+                self.home_visible = false;
+                self.sync();
+            }
+            UiCommand::Close { id } => {
+                self.svc.close_tab(TabId(id));
+                self.tabs.remove(&TabId(id));
+                self.sync();
+            }
+            UiCommand::Split { id } => {
+                if self.svc.set_split(TabId(id)) {
+                    self.home_visible = false;
+                }
+                self.sync();
+            }
+            UiCommand::Menu {
+                origin,
+                x,
+                y,
+                items,
+            } => {
+                let dx = if origin == "home" {
+                    self.sidebar.content_offset()
+                } else {
+                    0.0
+                };
+                self.menu = Some(json!({"x": x + dx, "y": y + BAR_HEIGHT, "items": items}));
+                self.open_palette("menu");
+            }
+            UiCommand::DeleteSpace { id } => {
+                if let Some(tabs) = self.svc.delete_space(SpaceId(id)) {
+                    for tab in tabs {
+                        self.tabs.remove(&tab);
+                    }
+                    self.home_visible = false;
+                    self.sync();
+                }
+            }
+            UiCommand::ClosePane { side } => {
+                if side == "left" {
+                    if let Some(other) = self.split_tab() {
+                        self.svc.activate_tab(other);
+                    }
+                }
+                self.svc.clear_split();
+                self.sync();
+            }
+            UiCommand::PinSite { url } => {
+                self.open(&url);
+                if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+                    self.svc.toggle_pin(id);
+                }
+                self.sync();
+            }
+            UiCommand::HideFavorite { url } => {
+                if let Ok(url) = Url::parse(&url) {
+                    self.svc.hide_favorite(&url);
+                    self.ui_home();
+                }
+            }
+            UiCommand::CloseSplit => {
+                self.svc.clear_split();
+                self.sync();
+            }
+            UiCommand::PickIcon { kind, id } => {
+                self.icon_target = Some((kind, id));
+                self.open_palette("emoji");
+            }
+            UiCommand::SetSpaceIcon { id, icon } => {
+                self.svc.set_space_icon(SpaceId(id), &icon);
+                self.ui_state();
+            }
+            UiCommand::SetFolderIcon { id, icon } => {
+                self.svc.set_folder_icon(FolderId(id), &icon);
+                self.ui_state();
+            }
+            UiCommand::Pin { id } => {
+                self.svc.toggle_pin(TabId(id));
+                self.ui_state();
+            }
+            UiCommand::OpenAt {
+                url,
+                before,
+                folder,
+                pinned,
+            } => {
+                self.open(&url);
+                if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+                    self.svc
+                        .move_tab(id, before.map(TabId), folder.map(FolderId), pinned);
+                }
+                self.sync();
+            }
+            UiCommand::MoveTab {
+                id,
+                before,
+                folder,
+                pinned,
+            } => {
+                self.svc
+                    .move_tab(TabId(id), before.map(TabId), folder.map(FolderId), pinned);
+                self.ui_state();
+            }
+            UiCommand::NewFolder => {
+                self.svc.add_folder("New folder");
+                self.ui_state();
+            }
+            UiCommand::RenameFolder { id, name } => {
+                self.svc.rename_folder(FolderId(id), &name);
+                self.ui_state();
+            }
+            UiCommand::ToggleFolder { id } => {
+                self.svc.toggle_folder(FolderId(id));
+                self.ui_state();
+            }
+            UiCommand::DeleteFolder { id } => {
+                self.svc.delete_folder(FolderId(id));
+                self.ui_state();
+            }
+            UiCommand::Space { id } => {
+                self.svc.switch_space(SpaceId(id));
+                self.home_visible = false;
+                self.sync();
+            }
+            UiCommand::NewSpace { name, color } => {
+                let name = if name.trim().is_empty() {
+                    "Space"
+                } else {
+                    name.as_str()
+                };
+                self.svc.add_space(name, &color);
+                self.sync();
+            }
+            UiCommand::SetEngine { id } => {
+                if let Some(engine) = SearchEngine::from_id(&id) {
+                    self.svc.set_search_engine(engine);
+                    self.ui_state();
+                }
+            }
+            UiCommand::SetSidebarMode { id } => {
+                if let Some(mode) = SidebarMode::from_id(&id) {
+                    self.apply_sidebar_mode(mode);
+                }
+            }
+            UiCommand::Lock => {
+                let mode = self.svc.settings().sidebar_mode.toggled();
+                self.apply_sidebar_mode(mode);
+            }
+            UiCommand::FocusContent => self.focus_content(),
+            UiCommand::DragWindow => {
+                let _ = self.window.drag_window();
+            }
+            UiCommand::Hover { on } => {
+                if on {
+                    self.sidebar.cursor_moved(0.0);
+                } else {
+                    self.sidebar.cursor_left();
+                }
+            }
+            UiCommand::Shortcut { key } => self.shortcut(&key),
+            UiCommand::Back => self.with_active_tab(views::go_back),
+            UiCommand::Forward => self.with_active_tab(views::go_forward),
+            UiCommand::Reload => self.with_active_tab(views::reload),
+            UiCommand::OpenSettings { tab } => {
+                self.settings_tab = tab;
+                self.settings_seq += 1;
+                self.settings_wanted = true;
+            }
+            UiCommand::ClearBlocked => {
+                self.blocked.clear();
+                self.ui_state();
+            }
+            UiCommand::CloseSettings => self.close_settings(),
+            UiCommand::InstallCatalog { id } => self.install_catalog(&id),
+            UiCommand::ExtAction { id, x, y, w, h: hh } => {
+                use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                if let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) {
+                    if let RawWindowHandle::AppKit(view) = handle.as_raw() {
+                        host.show_popup(&id, view.ns_view, (x, y, w, hh));
+                    }
+                }
+            }
+            UiCommand::SetAppExtension { id, on } => {
+                if let Some(e) = self.app_ext.iter().find(|e| e.id == id).cloned() {
+                    set_app_extension_enabled(&self.data, &id, on);
+                    if let Some(host) = &self.webext {
+                        if on {
+                            host.load(&id, &e.path);
+                        } else {
+                            host.unload(&id);
+                        }
+                    }
+                    self.ui_settings();
+                }
+            }
+            UiCommand::ImportScan => {
+                self.import_sources = import::detect();
+                self.ui_settings();
+                self.spawn_import(|_, _| None);
+            }
+            UiCommand::ImportBookmarks { source } => {
+                let found = self.import_sources.iter().find(|s| s.id == source).cloned();
+                self.spawn_import(move |bookmarks, _| {
+                    Some(match found {
+                        Some(s) => match import::read_bookmarks(&s) {
+                            Ok(list) => store_bookmarks(bookmarks, list, &s.browser),
+                            Err(e) => format!("{} : {e}", s.browser),
+                        },
+                        None => "Source introuvable".into(),
+                    })
+                });
+            }
+            UiCommand::AddBookmark { title, url, folder } => {
+                let allowed =
+                    url::Url::parse(&url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
+                self.import_msg = if allowed {
+                    let title = if title.trim().is_empty() {
+                        url.clone()
+                    } else {
+                        title
+                    };
+                    self.store_dropped(vec![import::Bookmark { title, url, folder }])
+                } else {
+                    String::new()
+                };
+            }
+            UiCommand::ImportHtml { text } => {
+                let list = import::parse_html(&text);
+                self.import_msg = self.store_dropped(list);
+            }
+            UiCommand::ImportFile { kind } => {
+                self.spawn_import(move |bookmarks, vault| {
+                    Some(import_file(bookmarks, vault, &kind))
+                });
+            }
+            UiCommand::RemoveCatalog { id } => {
+                if let Some(host) = &self.webext {
+                    host.unload(&id);
+                }
+                catalog::remove(&self.data, &id);
+                self.ui_state();
+            }
+            UiCommand::SetExtensionEnabled { id, enabled } if catalog::find(&id).is_some() => {
+                self.svc.set_enabled_flag(&id, enabled);
+                if let Some(host) = &self.webext {
+                    if enabled && catalog::is_installed(&self.data, &id) {
+                        host.load(&id, &catalog::package_path(&self.data, &id));
+                    } else {
+                        host.unload(&id);
+                    }
+                }
+                self.ui_state();
+            }
+            UiCommand::SetExtensionEnabled { id, enabled } => {
+                self.svc.set_extension_enabled(&id, enabled);
+                self.reapply_extensions();
+                self.ui_state();
+            }
+            UiCommand::ReloadExtensions => self.reload_extensions(),
+            UiCommand::OpenExtensionsFolder => extensions::reveal(&extensions_dir(&self.data)),
+            UiCommand::InstallSampleExtension => {
+                if extensions::install_sample(&extensions_dir(&self.data)).is_ok() {
+                    self.reload_extensions();
+                }
+            }
+        }
+    }
+
+    /// Split view with the first other tab of the space, or closes the current split.
+    fn toggle_split(&mut self) {
+        if self.home_shown() {
+            return;
+        }
+        if self.split_tab().is_some() {
+            self.handle_ui(UiCommand::CloseSplit);
+            return;
+        }
+        let ws = self.svc.workspace();
+        let active = ws.active_tab().map(|t| t.id);
+        let other = ws
+            .active_space()
+            .tabs
+            .iter()
+            .find(|t| Some(t.id) != active && !t.pinned)
+            .map(|t| t.id);
+        match other {
+            Some(id) => self.handle_ui(UiCommand::Split { id: id.0 }),
+            None => self.toast("Open another tab first to use Split View"),
+        }
+    }
+
+    fn shortcut(&mut self, key: &str) {
+        match key {
+            "escape" => {
+                if self.palette_open {
+                    self.close_palette();
+                } else {
+                    self.close_peek();
+                }
+                return;
+            }
+            "enter" => {
+                if self.peek.is_some() {
+                    self.peek_to_tab();
+                } else if self.palette_open && self.palette_mode == "boost" {
+                    let _ = self
+                        .palette
+                        .evaluate_script("window.bh&&bh.save&&bh.save()");
+                }
+                return;
+            }
+            _ if self.peek.is_some() || (self.palette_open && !matches!(key, "l" | "t")) => return,
+            _ => {}
+        }
+        match key {
+            "l" => self.open_palette("url"),
+            "t" => self.new_tab(),
+            "w" => self.close_active_tab(),
+            "r" => self.with_active_tab(views::reload),
+            "b" => self.handle_ui(UiCommand::Lock),
+            "[" => self.handle_ui(UiCommand::Back),
+            "]" => self.handle_ui(UiCommand::Forward),
+            "," => self.settings_wanted = true,
+            "\\" => self.toggle_split(),
+            _ => {}
+        }
+    }
+
+    /// Re-reads the address from the engine; page scripts cannot dictate what the bar shows.
+    fn refresh_url(&mut self, tab: TabId) {
+        let current = self.tabs.get(&tab).and_then(|v| v.url().ok());
+        if let Some(url) = current.and_then(|raw| Url::parse(&raw).ok()) {
+            self.page_url(tab, url);
+        }
+    }
+
+    fn page_url(&mut self, tab: TabId, url: Url) {
+        if url.scheme() == "about" || tab == PEEK_TAB {
+            return;
+        }
+        let boost = url
+            .host_str()
+            .and_then(|h| self.svc.boost_for(h))
+            .map(str::to_owned);
+        if let (Some(css), Some(view)) = (boost, self.tabs.get(&tab)) {
+            views::apply_boost(view, &css);
+        }
+        self.svc.page_changed(tab, Some(url), None);
+        self.ui_state();
+    }
+
+    fn handle_msg(&mut self, msg: Msg) {
+        match msg {
+            Msg::Ui(command) => self.handle_ui(command),
+            Msg::Page(tab, PageEvent::Shortcut { key }) => {
+                let active = self.svc.workspace().active_tab().map(|t| t.id);
+                if Some(tab) == active || Some(tab) == self.split_tab() || tab == PEEK_TAB {
+                    self.shortcut(&key);
+                }
+            }
+            Msg::Page(_, PageEvent::Peek { url }) => {
+                if let Ok(url) = Url::parse(&url) {
+                    self.open_peek(&url);
+                }
+            }
+            Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
+            Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
+            Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),
+            Msg::Page(tab, PageEvent::Favicon { url }) => {
+                let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
+                if let Some(page) = page.and_then(|raw| Url::parse(&raw).ok()) {
+                    if self.favicons.set(&page, &url) {
+                        self.ui_state();
+                    }
+                }
+            }
+            Msg::Page(tab, PageEvent::Blocked { host }) => {
+                let site = self.site_of(tab);
+                self.on_blocked("", &host, &site);
+            }
+            Msg::Url(tab, url) => self.page_url(tab, url),
+            Msg::Loaded(tab, url) => {
+                if tab != PEEK_TAB && url.scheme() != "about" {
+                    let injection = self.svc.injection_for(&url);
+                    if let (false, Some(view)) = (injection.is_empty(), self.tabs.get(&tab)) {
+                        views::apply_injection(view, &injection.css, &injection.js);
+                    }
+                }
+            }
+            Msg::Title(tab, _) if tab == PEEK_TAB => {}
+            Msg::Title(tab, title) => {
+                self.svc.page_changed(tab, None, Some(title));
+                self.ui_state();
+            }
+            Msg::OpenTab(url) => self.open(url.as_str()),
+            Msg::External(url) => {
+                self.window.set_minimized(false);
+                self.window.focus_window();
+                self.open(url.as_str());
+            }
+            Msg::Redirect(tab, url) => {
+                if let Some(view) = self.view_of(tab) {
+                    let _ = view.load_url(url.as_str());
+                }
+            }
+            Msg::Blocked { why, host } => self.on_blocked(why, &host, ""),
+        }
+    }
+
+    /// Offers the vault logins saved for the tab's site. Only https (or localhost) pages of the
+    /// foreground tab are served, and only usernames are sent to the page.
+    fn autofill_query(&mut self, tab: TabId) {
+        let active = self.svc.workspace().active_tab().map(|t| t.id);
+        if Some(tab) != active && Some(tab) != self.split_tab() {
+            return;
+        }
+        // A loaded password-manager extension owns the login fields: two menus would collide.
+        let manager_active = self.webext.as_ref().is_some_and(|h| {
+            matches!(
+                h.state("bitwarden"),
+                Some(blackhole_macos_webext::LoadState::Loaded)
+            )
+        });
+        if manager_active {
+            return;
+        }
+        let host = self.site_of(tab);
+        let secure = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .find(|t| t.id == tab)
+            .is_some_and(|t| t.url.scheme() == "https" || host == "localhost");
+        let logins = if secure && !host.is_empty() {
+            Vault::new(&self.data).for_host(&host).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let names: Vec<String> = logins.iter().map(|l| l.username.clone()).collect();
+        if let Some(view) = self.tabs.get(&tab) {
+            views::autofill_show(view, &names);
+        }
+        self.autofill.insert(tab, logins);
+    }
+
+    fn autofill_fill(&mut self, tab: TabId, index: usize) {
+        let host = self.site_of(tab);
+        let Some(login) = self.autofill.get(&tab).and_then(|l| l.get(index)) else {
+            return;
+        };
+        // The site may have changed since the query.
+        if !blackhole_infrastructure::store::same_site(&login.url, &host) {
+            return;
+        }
+        if let Some(view) = self.tabs.get(&tab) {
+            views::autofill_fill(view, &login.username, &login.password);
+        }
+    }
+
+    fn site_of(&self, tab: TabId) -> String {
+        let ws = self.svc.workspace();
+        let url = ws
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .find(|t| t.id == tab)
+            .map(|t| &t.url);
+        url.and_then(|u| u.host_str())
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    fn on_blocked(&mut self, why: &str, host: &str, site: &str) {
+        self.blocked.record(host, site);
+        if !why.is_empty() {
+            self.toast(why);
+        }
+        self.ui_state();
+    }
+
+    fn service_windows(&mut self, event_loop: &ActiveEventLoop) {
+        if std::mem::take(&mut self.settings_wanted) {
+            self.open_settings(event_loop);
+            self.ui_state();
+        }
+    }
+
+    fn pump(&mut self) {
+        while let Some(msg) = self.mailbox.pop() {
+            self.handle_msg(msg);
+        }
+    }
+}
+
+enum App {
+    Initial(Mailbox),
+    Running(Box<Running>),
+}
+
+impl ApplicationHandler<Wake> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let Self::Initial(mailbox) = self {
+            let mut running = Running::new(event_loop, mailbox.clone());
+            running.pump();
+            *self = Self::Running(Box::new(running));
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        #[allow(unused_mut)]
+        let mut wake = IDLE_CHECK_EVERY;
+        if let Self::Running(app) = self {
+            app.service_windows(event_loop);
+            app.poll_webext();
+            app.discard_idle_tabs();
+            if app.sidebar.moving() {
+                app.tick_sidebar();
+                wake = FRAME;
+            }
+            #[cfg(feature = "devtools")]
+            {
+                app.dev_tick(event_loop);
+                if app.dev_active() {
+                    wake = wake.min(Duration::from_millis(30));
+                }
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + wake));
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, _: Wake) {
+        if let Self::Running(app) = self {
+            app.pump();
+            app.service_windows(event_loop);
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Self::Running(app) = self else { return };
+        app.pump();
+        app.service_windows(event_loop);
+        if app.settings_window_id() == Some(id) {
+            if matches!(event, WindowEvent::CloseRequested) {
+                app.close_settings();
+            }
+            return;
+        }
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => app.layout(true),
+            WindowEvent::Focused(true) => app.apply_focus(),
+            _ => {}
+        }
+    }
+}
+
+fn app_extensions_file(data: &std::path::Path) -> std::path::PathBuf {
+    data.join("app_extensions.json")
+}
+
+fn enabled_app_extensions(data: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(app_extensions_file(data))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn app_extension_enabled(data: &std::path::Path, id: &str) -> bool {
+    enabled_app_extensions(data).iter().any(|e| e == id)
+}
+
+fn set_app_extension_enabled(data: &std::path::Path, id: &str, on: bool) {
+    let mut list = enabled_app_extensions(data);
+    list.retain(|e| e != id);
+    if on {
+        list.push(id.to_owned());
+    }
+    let _ = std::fs::create_dir_all(data);
+    let _ = std::fs::write(
+        app_extensions_file(data),
+        serde_json::to_vec(&list).unwrap_or_default(),
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn web_view_ptr(view: &WebView) -> Option<std::ptr::NonNull<std::ffi::c_void>> {
+    use wry::WebViewExtMacOS;
+    let web_view = view.webview();
+    std::ptr::NonNull::new(std::ptr::from_ref(&*web_view).cast_mut().cast())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn web_view_ptr(_view: &WebView) -> Option<std::ptr::NonNull<std::ffi::c_void>> {
+    None
+}
+
+fn store_bookmarks(store: &BookmarkStore, list: Vec<import::Bookmark>, from: &str) -> String {
+    let total = list.len();
+    match store.merge(list) {
+        Ok(new) => format!(
+            "{from} : {new} favoris ajoutés ({} déjà présents)",
+            total - new
+        ),
+        Err(e) => format!("{from} : {e}"),
+    }
+}
+
+fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str) -> String {
+    let (label, exts): (&str, &[&str]) = if kind == "logins" {
+        ("CSV", &["csv"])
+    } else {
+        ("HTML", &["html", "htm"])
+    };
+    let Some(path) = rfd::FileDialog::new().add_filter(label, exts).pick_file() else {
+        return String::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return "Fichier illisible".into();
+    };
+    if kind == "logins" {
+        return match import::parse_logins_csv(&text).and_then(|l| {
+            let total = l.len();
+            vault.merge(l).map(|new| (new, total))
+        }) {
+            Ok((new, total)) => format!("{new} mots de passe ajoutés au coffre chiffré ({} déjà présents). Supprimez le fichier CSV : il contient vos mots de passe en clair.", total - new),
+            Err(e) => e,
+        };
+    }
+    store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML")
+}
+
+fn main() {
+    let event_loop = EventLoop::with_user_event().build().expect("event loop");
+    let mailbox = Mailbox::new(event_loop.create_proxy());
+    // Registered before the loop starts so a link that launches the app is not lost.
+    let links = mailbox.clone();
+    blackhole_macos_url::register_url_handler(move |link| {
+        if let Some(url) = Url::parse(&link)
+            .ok()
+            .filter(|u| matches!(u.scheme(), "http" | "https"))
+        {
+            links.push(Msg::External(url));
+        }
+    });
+    let mut app = App::Initial(mailbox);
+    event_loop.run_app(&mut app).expect("run");
+}

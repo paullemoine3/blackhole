@@ -1,0 +1,7 @@
+target/
+dist/
+tmp/
+.DS_Store
+**/.DS_Store
+*.png.bak
+probleme_materiel.png

@@ -1,0 +1,24 @@
+[package]
+name = "blackhole-macos-webext"
+version.workspace = true
+edition.workspace = true
+description = "Hosts real WebExtensions (uBlock Origin Lite…) in WKWebView through Apple's WKWebExtensionController (macOS 15.4+)"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSGeometry", "NSValue", "NSString", "NSURL", "NSError", "NSSet", "NSArray", "NSEnumerator", "NSObject", "NSUUID"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPopover", "NSView", "NSResponder", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "std", "block2",
+    "WKWebViewConfiguration", "WKUserScript", "WKUserContentController", "WKWebExtension", "WKWebExtensionContext", "WKWebExtensionController",
+    "WKWebExtensionControllerConfiguration", "WKWebExtensionPermission", "WKWebExtensionMatchPattern",
+    "WKWebExtensionAction", "WKWebExtensionTab", "WKWebExtensionWindow", "WKWebExtensionControllerDelegate", "WKWebView", "objc2-app-kit", "objc2-core-foundation",
+] }
+
+# Objective-C bindings need `unsafe`; like `macos-url`, it is confined to this crate.
+[dependencies]
+base64 = "0.22"
+
+[lints.rust]
+unsafe_code = "allow"

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --accent: #7c5cff; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #100f17; font: 12.5px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
+  main { height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 3px 0 3px; }
+  .pane { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 6px 0 10px; border-radius: 9px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.06); }
+  .pane.focus { background: rgba(255,255,255,.12); box-shadow: inset 0 -2px 0 var(--accent); }
+  .dot { flex: none; width: 14px; height: 14px; border-radius: 5px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: #fff; }
+  .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
+  button { flex: none; width: 20px; height: 20px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; opacity: .6; }
+  button:hover { background: rgba(255,90,90,.85); color: #fff; opacity: 1; }
+</style>
+</head>
+<body>
+<main id="m"></main>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
+const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+function pane(side, p, focus) {
+  const n = document.createElement('div'); n.className = 'pane' + (focus ? ' focus' : '');
+  const d = document.createElement('span'); d.className = 'dot'; d.textContent = (host(p.url)[0] || '•').toUpperCase(); d.style.background = hue(host(p.url));
+  const t = document.createElement('span'); t.className = 't'; t.textContent = p.title || host(p.url);
+  const x = document.createElement('button'); x.textContent = '✕'; x.title = 'Close this pane (the tab stays in the sidebar)';
+  x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close_pane', side }); };
+  n.onclick = () => { if (side === 'right') send({ cmd: 'activate', id: p.id }); };
+  n.append(d, t, x);
+  return n;
+}
+window.bh = {
+  render(s) {
+    document.documentElement.style.setProperty('--accent', s.color);
+    document.getElementById('m').replaceChildren(pane('left', s.left, true), pane('right', s.right, false));
+  },
+};
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --accent: #7c5cff; --glow: rgba(124,92,255,.5); --glow2: rgba(124,92,255,.22); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
+  html { background: #100f17; }
+  body { background: radial-gradient(700px 500px at 0% 0%, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); border-right: 1px solid rgba(255,255,255,.08); }
+  aside { height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; }
+  .row { display: flex; gap: 4px; align-items: center; }
+  .icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; opacity: .75; }
+  .icon:hover { background: rgba(255,255,255,.1); opacity: 1; }
+  .icon.on { color: var(--accent); opacity: 1; }
+  .grow { flex: 1; }
+  .section { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .5; padding: 4px 8px 0; white-space: nowrap; }
+  #pinned { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-radius: 12px; }
+  #pinned:empty { display: none; }
+  body.dragging #pinned:empty { display: block; min-height: 46px; border: 1px dashed rgba(255,255,255,.25); }
+  #pinned .tab { justify-content: center; height: 48px; background: rgba(255,255,255,.07); }
+  #pinned .tab.active { background: rgba(255,255,255,.2); }
+  #pinned .dot { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+  .secrow { display: flex; justify-content: space-between; align-items: center; padding-right: 2px; }
+  .mini { font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 6px; opacity: .8; }
+  .mini:hover { background: rgba(255,255,255,.1); }
+  .folder { display: flex; flex-direction: column; border-radius: 10px; }
+  .fh { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; cursor: pointer; }
+  .fh:hover { background: rgba(255,255,255,.08); }
+  .chev { width: 18px; text-align: center; opacity: .7; flex: none; }
+  .fname { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .count { font-size: 11px; opacity: .5; }
+  .fedit { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text; -webkit-user-select: text; }
+  .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
+  .folder.collapsed .fb { display: none; }
+  body.dropping aside { outline: 2px dashed var(--accent); outline-offset: -4px; }
+  #bmhead { cursor: pointer; margin-top: 4px; } #bmhead[hidden], #bms[hidden] { display: none; }
+  #bms { max-height: 38%; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; flex: none; }
+  #bms .folder:not(.collapsed) > .fh .chev { transform: rotate(90deg); }
+  .bm .dot { background: rgba(255,255,255,.14); }
+  body.rail #bmhead, body.rail #bms { display: none; }
+  .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
+  .tab.dragging { opacity: .35; }
+  .tab.ghost { position: fixed; z-index: 50; width: 220px; pointer-events: none; background: #2a2838; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+  .drop-after { box-shadow: 0 2px 0 0 var(--accent); }
+  #pinned .drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+  #pinned .drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+  .drop-into { background: rgba(255,255,255,.1); outline: 1px dashed var(--accent); }
+  #tabs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; min-height: 120px; }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 13px; border-radius: 9px; cursor: pointer; min-width: 0; }
+  .tab:hover { background: rgba(255,255,255,.08); }
+  .tab.active { background: rgba(255,255,255,.16); }
+  .dot { flex: none; width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+  .dot img, .tile img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+  .dot.ico { background: rgba(255,255,255,.16) !important; padding: 2px; box-sizing: border-box; font-size: 0; }
+  .title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .x { opacity: 0; width: 20px; height: 20px; line-height: 20px; text-align: center; flex: none; }
+  .tab:hover .x { opacity: .7; } .x:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
+  #pinned .title, #pinned .x { display: none; }
+  .new { text-align: left; padding: 8px; opacity: .7; white-space: nowrap; } .new:hover { background: rgba(255,255,255,.08); opacity: 1; }
+  footer { display: flex; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.08); }
+  #spaces { display: flex; gap: 6px; width: 100%; overflow-x: auto; scrollbar-width: none; padding: 2px; margin: -2px; }
+  #spaces::-webkit-scrollbar { display: none; }
+  /* A space is a card: its colour as a background, the emoji (or initial) on top. */
+  .space { flex: 1 1 0; height: 34px; min-width: 34px; border-radius: 11px; border: 0; padding: 0 7px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #fff; font-size: 18px; line-height: 1; font-weight: 700;
+    background: linear-gradient(145deg, var(--c), color-mix(in srgb, var(--c) 55%, #000)); opacity: .62; transition: opacity .15s, transform .15s, box-shadow .15s, flex-grow .3s cubic-bezier(.3,1.2,.4,1); }
+  .space.active { flex-grow: 2.4; }
+  .space:hover { opacity: .92; transform: translateY(-1px); }
+  .space.active { opacity: 1; box-shadow: 0 0 0 2px rgba(255,255,255,.92), 0 5px 14px color-mix(in srgb, var(--c) 60%, transparent); }
+  .space .sname { font-size: 12.5px; font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: none; }
+  .space.active .sname { display: block; }
+  .space .gl { font-size: 18px; }
+  .space:not(.emoji) .gl { font-size: 14px; }
+  .ficon { flex: none; width: 20px; text-align: center; font-size: 14px; border-radius: 6px; }
+  .ficon:hover { background: rgba(255,255,255,.14); }
+  .ficon.def { opacity: .6; filter: grayscale(1); }
+  .tab.split { box-shadow: inset 3px 0 0 var(--accent); background: rgba(255,255,255,.09); }
+  .tab.split.active { background: rgba(255,255,255,.2); }
+  .mo { flex: none; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 5px; opacity: 0; font-size: 14px; }
+  .tab:hover .mo { opacity: .7; } .mo:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
+  #pinned .mo, body.rail .mo { display: none; }
+  .sp { flex: none; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 5px; opacity: 0; font-size: 13px; }
+  .tab:hover .sp { opacity: .7; } .sp:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
+  .tab.split .sp { opacity: 1; color: var(--accent); }
+  #pinned .sp { display: none; }
+  body.rail .sp { display: none; }
+  .shield { font-size: 11px; opacity: .7; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
+  .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
+  #toast { position: fixed; bottom: 54px; left: 10px; right: 10px; padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
+  #toast.show { opacity: 1; }
+
+  /* The layout is continuous between 64px and 280px: labels fade in with --p (set from the
+     live width) instead of switching on a class, so the expansion follows the native resize. */
+  .title, .fname, .count, .section, .full-only, .top { opacity: var(--p, 1); }
+  .tab:not(:hover) .title { opacity: var(--p, 1); }
+
+  /* Collapsed rail (< 100px wide): icons only */
+  body.rail .full-only, body.rail .title, body.rail .x, body.rail .section, body.rail .top { display: none !important; }
+  body.rail .tab { justify-content: center; padding: 8px 0; }
+  body.rail .fname, body.rail .count, body.rail .mini { display: none; }
+  body.rail .fh { justify-content: center; }
+  body.rail .fb { margin-left: 0; padding-left: 0; border-left: 0; }
+  body.rail #pinned { grid-template-columns: 1fr; }
+  body.rail .new { text-align: center; padding: 8px 0; }
+  body.rail footer { flex-direction: column; }
+  body.rail #spaces { flex-direction: column; overflow: visible; }
+  body.rail .space { flex: none; min-width: 36px; padding: 0; }
+  body.rail .space .sname { display: none !important; }
+  body.rail .row { flex-direction: column; }
+</style>
+</head>
+<body class="rail">
+<aside>
+  <div class="row top">
+    <span class="grow"></span>
+    <button class="icon" id="lock" title="Keep sidebar open (Ctrl/⌘+B)">⇤</button>
+  </div>
+  <div id="pinned"></div>
+  <div class="section secrow"><span>Tabs</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
+  <div id="tabs"></div>
+  <div class="section secrow" id="bmhead" hidden><span id="bmtitle">★ Bookmarks</span><span class="count" id="bmcount"></span></div>
+  <div id="bms" hidden></div>
+  <button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button>
+  <div id="spaces"></div>
+  <footer>
+    <button class="icon" id="gear" title="Settings">⚙</button>
+    <button class="shield" id="shield" title="What was blocked this session">🛡<span class="full-only" id="blockedn"> 0</span></button>
+    <span class="grow"></span>
+    <button class="icon" id="addspace" title="New space">＋</button>
+  </footer>
+</aside>
+<div id="toast"></div>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+// The sidebar webview only receives pointer events itself, so it reports hover to the shell.
+document.documentElement.addEventListener('mouseenter', () => send({ cmd: 'hover', on: true }));
+document.documentElement.addEventListener('mouseleave', () => send({ cmd: 'hover', on: false }));
+document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) send({ cmd: 'hover', on: false }); });
+const $ = (id) => document.getElementById(id);
+const PALETTE = ['#7c5cff', '#ff5c8a', '#2fd4a0', '#ffb020', '#3aa0ff'];
+let state = { tabs: [], spaces: [], engines: [], activeTab: null };
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; }
+function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+// The site's own icon replaces the coloured initial; the initial comes back if it fails to load.
+function withIcon(node, url, favicons) {
+  const src = (favicons || {})[host(url)];
+  if (!src) return node;
+  const letter = node.textContent, bg = node.style.background;
+  const img = document.createElement('img');
+  img.referrerPolicy = 'no-referrer';
+  img.decoding = 'async';
+  img.draggable = false;
+  img.onerror = () => { img.remove(); node.textContent = letter; node.style.background = bg; node.classList.remove('ico'); };
+  img.src = src;
+  node.textContent = '';
+  node.style.background = '';
+  node.classList.add('ico');
+  node.append(img);
+  return node;
+}
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
+
+function tabNode(t) {
+  const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : ''));
+  n.title = t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title;
+  n.dataset.tab = t.id;
+  n.dataset.pinned = t.pinned ? '1' : '';
+  n.dataset.folder = t.folder == null ? '' : t.folder;
+  const d = el('span', 'dot', (host(t.url)[0] || '•').toUpperCase());
+  d.style.background = hue(host(t.url));
+  withIcon(d, t.url, state.favicons);
+  if (t.split) n.classList.add('split');
+  if (!t.pinned && (t.split || t.id !== state.activeTab)) {
+    const sp = el('button', 'sp', '◧');
+    sp.title = t.split ? 'Close split view' : 'Open in split view';
+    sp.onmousedown = (e) => e.stopPropagation();
+    sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
+    n.append(d, el('span', 'title', t.title), sp);
+  } else n.append(d, el('span', 'title', t.title));
+  if (!t.pinned) {
+    const mo = el('button', 'mo', '⋯');
+    mo.title = 'Tab options';
+    mo.onmousedown = (e) => e.stopPropagation();
+    mo.onclick = (e) => { e.stopPropagation(); const r = mo.getBoundingClientRect(); tabMenu(t, r.left, r.bottom + 4); };
+    n.append(mo);
+  }
+  const x = el('button', 'x', '✕');
+  x.onmousedown = (e) => e.stopPropagation();
+  x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close', id: t.id }); };
+  n.append(x);
+  n.onmousedown = (e) => { if (e.button === 0) down = { id: t.id, node: n, x: e.clientX, y: e.clientY }; };
+  n.onclick = () => { if (!justDragged) send({ cmd: 'activate', id: t.id }); };
+  n.oncontextmenu = (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); };
+  return n;
+}
+
+function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, items }); }
+
+function tabMenu(t, x, y) {
+  const items = [{ icon: '📌', label: t.pinned ? 'Unpin tab' : 'Pin tab', run: { cmd: 'pin', id: t.id } }];
+  if (!t.pinned) {
+    if (t.split) items.push({ icon: '◧', label: 'Close split view', run: { cmd: 'close_split' } });
+    else if (t.id !== state.activeTab) items.push({ icon: '◧', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
+    if (state.folders.length) {
+      items.push({ sep: true }, { head: 'Move to folder' });
+      for (const f of state.folders) {
+        if (f.id !== t.folder) items.push({ icon: f.icon || '📁', label: f.name, run: { cmd: 'move_tab', id: t.id, before: null, folder: f.id, pinned: false } });
+      }
+      if (t.folder != null) items.push({ icon: '↩', label: 'Remove from folder', run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
+    }
+  }
+  items.push({ sep: true }, { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+  openMenu(x, y, items);
+}
+
+function spaceMenu(sp, x, y) {
+  const items = [
+    { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
+    { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } },
+  ];
+  if (state.spaces.length > 1) items.push({ sep: true }, { icon: '🗑', label: 'Delete space', danger: true, run: { cmd: 'delete_space', id: sp.id } });
+  openMenu(x, y, items);
+}
+
+function folderNode(f, tabs) {
+  const box = el('div', 'folder' + (f.collapsed ? ' collapsed' : ''));
+  const h = el('div', 'fh');
+  h.dataset.folder = f.id;
+  const chev = el('span', 'chev', f.collapsed ? '▸' : '▾');
+  const ficon = el('span', 'ficon' + (f.icon ? '' : ' def'), f.icon || '📁');
+  ficon.title = 'Change emoji';
+  ficon.onmousedown = (e) => e.stopPropagation();
+  ficon.onclick = (e) => { e.stopPropagation(); send({ cmd: 'pick_icon', kind: 'folder', id: f.id }); };
+  const name = el('span', 'fname', f.name);
+  h.title = f.name + ' — double-click to rename, right-click to delete';
+  h.append(chev, ficon, name, el('span', 'count', tabs.length ? String(tabs.length) : ''));
+  h.onclick = () => { if (!justDragged) send({ cmd: 'toggle_folder', id: f.id }); };
+  h.ondblclick = () => editFolder(h, name, f);
+  h.oncontextmenu = (e) => { e.preventDefault(); send({ cmd: 'delete_folder', id: f.id }); };
+  const body = el('div', 'fb');
+  body.dataset.folder = f.id;
+  body.append(...tabs.map(tabNode));
+  box.append(h, body);
+  return { box, name, h, f };
+}
+
+function editFolder(h, name, f) {
+  editing = true;
+  const input = el('input', 'fedit');
+  input.value = f.name;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true; editing = false;
+    if (commit && input.value.trim() && input.value.trim() !== f.name) send({ cmd: 'rename_folder', id: f.id, name: input.value });
+    flush();
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+  input.onblur = () => finish(true);
+  input.onclick = (e) => e.stopPropagation();
+  input.ondblclick = (e) => e.stopPropagation();
+  name.replaceWith(input);
+  input.focus(); input.select();
+}
+
+// ---- drag & drop (pointer based) ---------------------------------
+let down = null, drag = null, justDragged = false, editing = false, deferred = null, newFolderPending = false;
+
+function flush() { if (deferred && !drag && !editing) { const s = deferred; deferred = null; window.bh.render(s); } }
+
+function dropTarget(x, y) {
+  const node = document.elementFromPoint(x, y);
+  if (!node) return null;
+  const tab = node.closest('[data-tab]');
+  if (tab && (drag.url || tab.dataset.tab !== String(drag.id))) {
+    const r = tab.getBoundingClientRect();
+    const pinned = !!tab.dataset.pinned;
+    const after = pinned ? x > r.left + r.width / 2 : y > r.top + r.height / 2;
+    let before = Number(tab.dataset.tab);
+    if (after) {
+      const sib = tab.nextElementSibling;
+      before = sib && sib.dataset.tab ? Number(sib.dataset.tab) : null;
+    }
+    return { el: tab, edge: after ? 'after' : 'before', before, folder: tab.dataset.folder === '' ? null : Number(tab.dataset.folder), pinned };
+  }
+  if (node.closest('#bms')) return null;
+  const fh = node.closest('.fh, .fb');
+  if (fh) return { el: fh.parentElement, edge: 'into', before: null, folder: Number(fh.dataset.folder), pinned: false };
+  if (node.closest('#pinned')) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
+  if (node.closest('#tabs')) return { el: $('tabs'), edge: 'into', before: null, folder: null, pinned: false };
+  return null;
+}
+
+function clearMarks() {
+  document.querySelectorAll('.drop-before, .drop-after, .drop-into').forEach(n => n.classList.remove('drop-before', 'drop-after', 'drop-into'));
+}
+
+function endDrag(commit, x, y) {
+  if (drag) {
+    const target = commit ? dropTarget(x, y) : null;
+    drag.ghost.remove();
+    drag.node.classList.remove('dragging');
+    document.body.classList.remove('dragging');
+    clearMarks();
+    if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
+    else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 0);
+  }
+  drag = null; down = null;
+  flush();
+}
+
+document.addEventListener('mousemove', (e) => {
+  if (down && !drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) {
+    const ghost = down.node.cloneNode(true);
+    ghost.classList.add('ghost');
+    document.body.append(ghost);
+    drag = { id: down.id, url: down.url, node: down.node, ghost };
+    down.node.classList.add('dragging');
+    document.body.classList.add('dragging');
+  }
+  if (!drag) return;
+  drag.ghost.style.left = (e.clientX + 10) + 'px';
+  drag.ghost.style.top = (e.clientY - 14) + 'px';
+  clearMarks();
+  const t = dropTarget(e.clientX, e.clientY);
+  if (t) t.el.classList.add('drop-' + t.edge);
+});
+document.addEventListener('mouseup', (e) => { if (drag) endDrag(true, e.clientX, e.clientY); else down = null; });
+
+const mix = (hex, r) => {
+  const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
+  return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
+};
+
+const bmOpened = new Set();
+let bmSectionOpen = false;
+function bmNode(node, path) {
+  const out = [];
+  for (const [name, child] of node.folders) {
+    const key = path + '/' + name;
+    const box = el('div', 'folder' + (bmOpened.has(key) ? '' : ' collapsed'));
+    box.dataset.path = key.slice(1);
+    const h = el('div', 'fh');
+    h.append(el('span', 'chev', '▸'), el('span', 'ficon', '📁'), el('span', 'fname', name));
+    h.onclick = () => { bmOpened.has(key) ? bmOpened.delete(key) : bmOpened.add(key); box.classList.toggle('collapsed'); };
+    const body = el('div', 'fb');
+    body.append(...bmNode(child, key));
+    box.append(h, body);
+    out.push(box);
+  }
+  for (const b of node.items) {
+    const n = el('div', 'tab bm');
+    n.title = b.url;
+    n.append(withIcon(el('span', 'dot', (b.title[0] || '•').toUpperCase()), b.url, state.favicons), el('span', 'title', b.title || b.url));
+    n.onclick = () => { if (!justDragged) send({ cmd: 'open', input: b.url }); };
+    n.onmousedown = (e) => { if (e.button === 0) down = { url: b.url, node: n, x: e.clientX, y: e.clientY }; };
+    out.push(n);
+  }
+  return out;
+}
+function renderBookmarks(list) {
+  const root = { folders: new Map(), items: [] };
+  for (const b of list) {
+    let node = root;
+    for (const part of b.folder ? b.folder.split('/') : []) {
+      if (!node.folders.has(part)) node.folders.set(part, { folders: new Map(), items: [] });
+      node = node.folders.get(part);
+    }
+    node.items.push(b);
+  }
+  $('bmhead').hidden = !list.length;
+  $('bms').hidden = !list.length || !bmSectionOpen;
+  $('bmcount').textContent = list.length || '';
+  $('bmtitle').textContent = (bmSectionOpen ? '▾ ' : '▸ ') + 'Bookmarks';
+  if (list.length && bmSectionOpen) $('bms').replaceChildren(...bmNode(root, ''));
+}
+// Links, bookmark exports (.html) and .webloc files dropped from another browser or Finder.
+const dropUrl = (u) => /^https?:\/\//i.test(u);
+function dropFolder(t) { const f = t.closest && t.closest('.folder'); return f && f.dataset.path != null ? f.dataset.path : ''; }
+document.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dropping'); });
+document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dropping'); });
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  document.body.classList.remove('dropping');
+  const dt = e.dataTransfer, folder = dropFolder(e.target);
+  let found = 0;
+  for (const f of [...dt.files]) {
+    const text = await f.text();
+    if (/\.html?$/i.test(f.name)) { send({ cmd: 'import_html', text }); found++; }
+    else if (/\.webloc$/i.test(f.name)) {
+      const m = text.match(/<string>(https?:[^<]+)<\/string>/);
+      if (m) { send({ cmd: 'add_bookmark', title: f.name.replace(/\.webloc$/i, ''), url: m[1], folder }); found++; }
+    } else if (/\.url$/i.test(f.name)) {
+      const m = text.match(/URL=(\S+)/);
+      if (m && dropUrl(m[1])) { send({ cmd: 'add_bookmark', title: f.name.replace(/\.url$/i, ''), url: m[1], folder }); found++; }
+    }
+  }
+  if (!found) {
+    // Firefox sends "url\ntitle" in text/x-moz-url; others a plain uri-list.
+    const moz = dt.getData('text/x-moz-url').split('\n');
+    const urls = (dt.getData('text/uri-list') || dt.getData('text/plain')).split(/\r?\n/).filter(l => dropUrl(l.trim()));
+    urls.forEach((u, i) => send({ cmd: 'add_bookmark', title: moz[0] === u ? (moz[1] || u) : u, url: u.trim(), folder }));
+    found = urls.length;
+  }
+  if (!found) bh.toast('Nothing to import from this drop');
+});
+$('bmhead').onclick = () => { bmSectionOpen = !bmSectionOpen; renderBookmarks(state.bookmarks || []); };
+
+window.bh = {
+  render(s) {
+    if (drag || editing) { deferred = s; return; }
+    state = s;
+    const root = document.documentElement.style;
+    root.setProperty('--accent', s.color);
+    root.setProperty('--glow', rgba(s.color, .5));
+    root.setProperty('--glow2', rgba(s.color, .22));
+    root.setProperty('--tint1', mix(s.color, .3));
+    root.setProperty('--tint2', mix(s.color, .12));
+    document.body.classList.toggle('macos', s.os === 'macos');
+    $('lock').classList.toggle('on', s.locked);
+    $('pinned').replaceChildren(...s.tabs.filter(t => t.pinned).map(tabNode));
+    const folders = s.folders.map(f => folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id)));
+    const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
+    $('tabs').replaceChildren(...folders.map(f => f.box), ...loose);
+    if (newFolderPending && folders.length) {
+      newFolderPending = false;
+      const last = folders[folders.length - 1];
+      editFolder(last.h, last.name, last.f);
+    }
+    $('spaces').replaceChildren(...s.spaces.map(sp => {
+      const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
+      b.title = sp.name + ' — right-click for options';
+      b.style.setProperty('--c', sp.color);
+      if (sp.icon) b.classList.add('emoji');
+      b.append(el('span', 'gl', sp.icon || (sp.name[0] || '•').toUpperCase()), el('span', 'sname', sp.name));
+      b.onclick = () => send({ cmd: 'space', id: sp.id });
+      b.oncontextmenu = (e) => { e.preventDefault(); spaceMenu(sp, e.clientX, e.clientY); };
+      return b;
+    }));
+    $('blockedn').textContent = ' ' + s.blocked;
+    renderBookmarks(s.bookmarks || []);
+  },
+  toast(m) {
+    const t = $('toast'); t.textContent = m; t.classList.add('show');
+    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), 2200);
+  },
+};
+
+$('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
+$('new').onclick = () => send({ cmd: 'new_tab' });
+$('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };
+$('lock').onclick = () => send({ cmd: 'lock' });
+$('gear').onclick = () => send({ cmd: 'open_settings' });
+$('addspace').onclick = () => {
+  const n = state.spaces.length;
+  send({ cmd: 'new_space', name: 'Space ' + (n + 1), color: PALETTE[n % PALETTE.length] });
+};
+function fit() {
+  const w = window.innerWidth;
+  document.body.classList.toggle('rail', w < 100);
+  document.documentElement.style.setProperty('--p', Math.max(0, Math.min(1, (w - 100) / 140)).toFixed(3));
+}
+addEventListener('resize', fit);
+fit();
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

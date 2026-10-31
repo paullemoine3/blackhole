@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: rgba(6,5,12,.55); font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; animation: fade .16s ease-out both; }
+  @keyframes fade { from { opacity: 0; } }
+  .hint { position: fixed; bottom: 2.2vh; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: rgba(27,26,38,.95); border: 1px solid rgba(255,255,255,.12); opacity: .9; white-space: nowrap; }
+  kbd { font: inherit; padding: 0 5px; border-radius: 5px; background: rgba(255,255,255,.14); }
+</style>
+</head>
+<body>
+<div class="hint"><kbd>esc</kbd> close · <kbd>⌘</kbd><kbd>↵</kbd> open in tab</div>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+document.addEventListener('mousedown', () => send({ cmd: 'close_peek' }));
+</script>
+</body>
+</html>

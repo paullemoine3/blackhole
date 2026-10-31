@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BlackHole</title>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  html { background: #0c0b12; }
+  html, body { height: 100%; background: #0c0b12; color: #eceaf5; font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { overflow-y: auto; background: radial-gradient(800px 500px at 50% -10%, rgba(124,92,255,.22), transparent 70%), #0c0b12; }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 28px 40px; }
+  .brand { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 26px; }
+  .logo { width: 46px; height: 46px; border-radius: 50%; flex: none;
+    background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%);
+    box-shadow: 0 0 30px rgba(255,120,40,.3); }
+  h1 { font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
+  .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 18px; margin-bottom: 18px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .card h2 button { font: inherit; text-transform: none; letter-spacing: 0; color: inherit; opacity: .8; background: transparent; border: 0; cursor: pointer; border-radius: 6px; padding: 2px 6px; }
+  .card h2 button:hover { background: rgba(255,255,255,.1); }
+  #favs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+  .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
+  .fav, .item { position: relative; }
+  .more { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: inherit; font-size: 16px; line-height: 24px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+  .fav:hover .more, .item:hover .more { opacity: .7; } .more:hover { background: rgba(255,255,255,.14); opacity: 1 !important; }
+  .fav:hover, .item:hover { background: rgba(255,255,255,.09); }
+  .tile img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+  .tile.ico { background: rgba(255,255,255,.1) !important; padding: 7px; box-sizing: border-box; }
+  .tile { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; font-weight: 700; color: #fff; }
+  .fav .name { font-size: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; cursor: pointer; min-width: 0; border: 1px solid rgba(255,255,255,.06); }
+  .item .tile { width: 36px; height: 36px; border-radius: 10px; font-size: 15px; flex: none; }
+  .meta { min-width: 0; flex: 1; }
+  .meta .t, .meta .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta .s { font-size: 12px; opacity: .5; }
+  .empty { opacity: .5; font-size: 13px; }
+  /* Launch splash */
+  #splash { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; overflow: hidden;
+    background: radial-gradient(900px 600px at 50% 45%, rgba(124,92,255,.28), transparent 70%), #07060c; }
+  body.splashing #splash { display: grid; animation: splash-out .55s ease-in 1.9s both; }
+  body.splashing main { animation: emerge .9s cubic-bezier(.2,.7,.2,1) 2s both; }
+  #splash .core { position: relative; width: 150px; height: 150px; display: grid; place-items: center; }
+  #splash .disc { position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle, #000 0 34%, rgba(255,170,60,.95) 38%, rgba(255,90,40,.5) 52%, rgba(124,92,255,.3) 64%, transparent 76%);
+    box-shadow: 0 0 80px rgba(255,120,40,.28), 0 0 160px rgba(124,92,255,.25);
+    animation: disc 1.9s cubic-bezier(.4,0,.2,1) both; }
+  #splash .ring { position: absolute; inset: -14px; border-radius: 50%; border: 2px solid transparent;
+    border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8);
+    animation: swirl 1.9s cubic-bezier(.3,.1,.2,1) both; }
+  #splash .star { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 6px 1px rgba(190,170,255,.9); opacity: 0;
+    animation: fall var(--d) cubic-bezier(.5,0,.8,.6) var(--delay) both; }
+  #splash .word { position: absolute; top: calc(50% + 120px); width: 100%; text-align: center; font-size: 22px; font-weight: 600;
+    letter-spacing: .6em; text-indent: .6em; text-transform: uppercase; color: #eceaf5; animation: word 1.2s ease-out .6s both; }
+  @keyframes disc { 0% { transform: scale(.2); opacity: 0; } 35% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(1); } 100% { transform: scale(1.15); } }
+  @keyframes swirl { 0% { transform: rotate(0) scale(.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: rotate(720deg) scale(1); opacity: .9; } }
+  @keyframes fall {
+    0% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) scale(1); }
+    15% { opacity: 1; }
+    100% { opacity: 0; transform: rotate(calc(var(--a) + 260deg)) translateX(30px) scale(.2); }
+  }
+  @keyframes word { 0% { opacity: 0; transform: translateY(8px); letter-spacing: 1em; } 100% { opacity: .85; transform: none; letter-spacing: .6em; } }
+  @keyframes splash-out { to { opacity: 0; transform: scale(1.35); } }
+</style>
+</head>
+<body>
+<div id="splash"><div class="core"><div class="disc"></div><div class="ring"></div></div><div class="word">BlackHole</div></div>
+<main>
+  <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
+  <section class="card"><h2>Favorites</h2><div id="favs"></div></section>
+  <section class="card"><h2>Recent activity <button id="clear" title="Erase local history">Clear</button></h2><div id="recent"></div></section>
+</main>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+const $ = (id) => document.getElementById(id);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',55%,48%)'; }
+let favicons = {};
+function tile(url) {
+  const t = el('div', 'tile', (host(url)[0] || '•').toUpperCase());
+  const bg = hue(host(url));
+  t.style.background = bg;
+  const src = favicons[host(url)];
+  if (src) {
+    const letter = t.textContent;
+    const img = document.createElement('img');
+    img.referrerPolicy = 'no-referrer'; img.draggable = false;
+    img.onerror = () => { img.remove(); t.textContent = letter; t.style.background = bg; t.classList.remove('ico'); };
+    img.src = src;
+    t.textContent = ''; t.classList.add('ico'); t.append(img);
+  }
+  return t;
+}
+function menu(x, y, items) { send({ cmd: 'menu', origin: 'home', x, y, items }); }
+function more(open) {
+  const b = el('button', 'more', '⋯'); b.title = 'Options';
+  b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); open(r.left, r.bottom + 4); };
+  return b;
+}
+function favMenu(f, x, y) {
+  const items = [{ icon: '↗', label: 'Open', run: { cmd: 'open', input: f.url } }];
+  if (f.tab != null) items.push({ icon: '📌', label: 'Unpin from sidebar', run: { cmd: 'pin', id: f.tab } });
+  else items.push({ icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: f.url } }, { sep: true },
+    { icon: '✕', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
+  menu(x, y, items);
+}
+function recentMenu(r, x, y) {
+  menu(x, y, [{ icon: '↗', label: 'Open', run: { cmd: 'open', input: r.url } }, { icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: r.url } }]);
+}
+function ago(at) {
+  const s = Math.max(0, Date.now() / 1000 - at);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  return Math.floor(s / 86400) + ' d ago';
+}
+let focused = false;
+function splash() {
+  const sp = $('splash');
+  for (let i = 0; i < 36; i++) {
+    const s = el('i', 'star');
+    s.style.setProperty('--a', Math.round(Math.random() * 360) + 'deg');
+    s.style.setProperty('--r', Math.round(160 + Math.random() * 300) + 'px');
+    s.style.setProperty('--d', (0.9 + Math.random() * 0.8).toFixed(2) + 's');
+    s.style.setProperty('--delay', (Math.random() * 0.6).toFixed(2) + 's');
+    sp.querySelector('.core').append(s);
+  }
+  document.body.classList.add('splashing');
+  const end = () => { document.body.classList.remove('splashing'); sp.remove(); };
+  setTimeout(end, 2600);
+  sp.onclick = end;
+}
+window.bh = {
+  render(s) {
+    favicons = s.favicons || {};
+    $('favs').replaceChildren(...s.favorites.map(f => {
+      const n = el('div', 'fav'); n.title = f.url;
+      n.append(tile(f.url), el('div', 'name', f.name));
+      n.onclick = () => send({ cmd: 'open', input: f.url });
+      n.oncontextmenu = (e) => { e.preventDefault(); favMenu(f, e.clientX, e.clientY); };
+      n.append(more((x, y) => favMenu(f, x, y)));
+      return n;
+    }));
+    const items = s.recent.map(r => {
+      const n = el('div', 'item'); n.title = r.url;
+      const m = el('div', 'meta');
+      m.append(el('div', 't', r.title || host(r.url)), el('div', 's', host(r.url) + ' · ' + ago(r.at)));
+      n.append(tile(r.url), m);
+      n.onclick = () => send({ cmd: 'open', input: r.url });
+      n.oncontextmenu = (e) => { e.preventDefault(); recentMenu(r, e.clientX, e.clientY); };
+      n.append(more((x, y) => recentMenu(r, x, y)));
+      return n;
+    });
+    $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', 'Nothing yet — pages you visit will show up here.')]));
+    if (!focused) { focused = true; if (s.animations) splash(); }
+  },
+};
+$('clear').onclick = () => send({ cmd: 'clear_history' });
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

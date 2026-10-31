@@ -1,0 +1,31 @@
+[package]
+name = "blackhole"
+version.workspace = true
+edition.workspace = true
+description = "Privacy-first, Arc-inspired browser powered by the operating system's web engine (WebKit / WebView2)"
+
+[dependencies]
+blackhole-domain.workspace = true
+blackhole-application.workspace = true
+blackhole-infrastructure.workspace = true
+blackhole-macos-url.workspace = true
+blackhole-macos-webext.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+wry = "0.57"
+winit = "0.30"
+tracing = "0.1"
+rfd = "0.17.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = "0.21"
+core-graphics = { version = "0.23", optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+
+[features]
+# Dev-only scripted UI driver that can take screenshots (see src/devtools.rs). macOS only.
+devtools = ["dep:core-graphics", "dep:image"]
+
+[lints]
+workspace = true
