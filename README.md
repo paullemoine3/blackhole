@@ -19,7 +19,7 @@
 ## ✨ Fonctionnalités
 
 ### Une navigation pensée pour s'organiser
-- 🗂️ **Barre latérale intelligente** : rail compact qui se déploie au survol (ou reste ouvert, au choix), avec animation fluide. `Ctrl/Cmd + B` pour basculer.
+- 🗂️ **Barre latérale à la Arc** : un bouton à côté du logo l'affiche en grand ou la masque entièrement, avec animation fluide ; masquée, elle réapparaît en survol quand le curseur touche le bord gauche, sans déplacer la page. Largeur réglable, page en carte surélevée. `Ctrl/Cmd + B` pour basculer.
 - 🌌 **Espaces** : des contextes cloisonnés, colorés, avec emoji. Chaque espace teinte l'interface à ses couleurs.
 - 📌 **Onglets** : épinglés en grille, dossiers, glisser-déposer, mise en veille automatique des onglets inactifs (5/10/15 min). Ouvrir une adresse déjà ouverte bascule sur l'onglet existant.
 - ⌨️ **Barre de commandes** (`Ctrl/Cmd + L`) : recherche, saisie d'URL, changement d'onglet, favoris, historique et actions rapides. `Ctrl/Cmd + T` ouvre un nouvel onglet sur la page d'accueil.

@@ -7,8 +7,9 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   html { background: #100f17; }
-  body { background: radial-gradient(700px 500px at 0% 0%, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); border-right: 1px solid rgba(255,255,255,.08); }
-  aside { height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  body { background: radial-gradient(700px 500px at 0% -48px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
+  body.flyout { box-shadow: 6px 0 24px rgba(0,0,0,.45); border-right: 1px solid rgba(255,255,255,.1); }
+  aside { width: var(--sw, 240px); height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; }
   .row { display: flex; gap: 4px; align-items: center; }
   .icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; opacity: .75; }
@@ -39,7 +40,6 @@
   #bms { max-height: 38%; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; flex: none; }
   #bms .folder:not(.collapsed) > .fh .chev { transform: rotate(90deg); }
   .bm .dot { background: rgba(255,255,255,.14); }
-  body.rail #bmhead, body.rail #bms { display: none; }
   .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
   .tab.dragging { opacity: .35; }
   .tab.ghost { position: fixed; z-index: 50; width: 220px; pointer-events: none; background: #2a2838; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
@@ -80,35 +80,17 @@
   .tab.split.active { background: rgba(255,255,255,.2); }
   .mo { flex: none; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 5px; opacity: 0; font-size: 14px; }
   .tab:hover .mo { opacity: .7; } .mo:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
-  #pinned .mo, body.rail .mo { display: none; }
+  #pinned .mo { display: none; }
   .sp { flex: none; width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 5px; opacity: 0; font-size: 13px; }
   .tab:hover .sp { opacity: .7; } .sp:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
   .tab.split .sp { opacity: 1; color: var(--accent); }
   #pinned .sp { display: none; }
-  body.rail .sp { display: none; }
   .shield { font-size: 11px; opacity: .7; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
-  #toast { position: fixed; bottom: 54px; left: 10px; right: 10px; padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
+  #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
 
-  /* The layout is continuous between 64px and 280px: labels fade in with --p (set from the
-     live width) instead of switching on a class, so the expansion follows the native resize. */
-  .title, .fname, .count, .section, .full-only, .top { opacity: var(--p, 1); }
-  .tab:not(:hover) .title { opacity: var(--p, 1); }
 
-  /* Collapsed rail (< 100px wide): icons only */
-  body.rail .full-only, body.rail .title, body.rail .x, body.rail .section, body.rail .top { display: none !important; }
-  body.rail .tab { justify-content: center; padding: 8px 0; }
-  body.rail .fname, body.rail .count, body.rail .mini { display: none; }
-  body.rail .fh { justify-content: center; }
-  body.rail .fb { margin-left: 0; padding-left: 0; border-left: 0; }
-  body.rail #pinned { grid-template-columns: 1fr; }
-  body.rail .new { text-align: center; padding: 8px 0; }
-  body.rail footer { flex-direction: column; }
-  body.rail #spaces { flex-direction: column; overflow: visible; }
-  body.rail .space { flex: none; min-width: 36px; padding: 0; }
-  body.rail .space .sname { display: none !important; }
-  body.rail .row { flex-direction: column; }
 
   /* Update button: only present when a newer release is available */
   .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: transform .2s ease, box-shadow .2s ease; }
@@ -125,15 +107,10 @@
   @keyframes up-shine { to { transform: translateX(120%); } }
   @keyframes up-spin { to { transform: rotate(360deg); } }
   body.noanim .update, body.noanim .update * { animation: none !important; transition: none !important; }
-  body.rail .update { justify-content: center; padding: 8px 0; }
 </style>
 </head>
-<body class="rail">
+<body>
 <aside>
-  <div class="row top">
-    <span class="grow"></span>
-    <button class="icon" id="lock" title="Keep sidebar open (Ctrl/⌘+B)">⇤</button>
-  </div>
   <div id="pinned"></div>
   <div class="section secrow"><span>Tabs</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
   <div id="tabs"></div>
@@ -152,10 +129,6 @@
 <div id="toast"></div>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
-// The sidebar webview only receives pointer events itself, so it reports hover to the shell.
-document.documentElement.addEventListener('mouseenter', () => send({ cmd: 'hover', on: true }));
-document.documentElement.addEventListener('mouseleave', () => send({ cmd: 'hover', on: false }));
-document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) send({ cmd: 'hover', on: false }); });
 const $ = (id) => document.getElementById(id);
 const PALETTE = ['#7c5cff', '#ff5c8a', '#2fd4a0', '#ffb020', '#3aa0ff'];
 let state = { tabs: [], spaces: [], engines: [], activeTab: null };
@@ -433,14 +406,15 @@ window.bh = {
   render(s) {
     if (drag || editing) { deferred = s; return; }
     state = s;
+    document.body.classList.toggle('flyout', window.bh.role === 'flyout');
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);
     root.setProperty('--glow', rgba(s.color, .5));
     root.setProperty('--glow2', rgba(s.color, .22));
     root.setProperty('--tint1', mix(s.color, .3));
-    root.setProperty('--tint2', mix(s.color, .12));
+    root.setProperty('--tint2', mix(s.color, .24));
+    root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
-    $('lock').classList.toggle('on', s.locked);
     $('pinned').replaceChildren(...s.tabs.filter(t => t.pinned).map(tabNode));
     const folders = s.folders.map(f => folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id)));
     const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
@@ -488,19 +462,19 @@ $('update').onclick = () => { if (!$('update').classList.contains('busy')) send(
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
 $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };
-$('lock').onclick = () => send({ cmd: 'lock' });
 $('gear').onclick = () => send({ cmd: 'open_settings' });
 $('addspace').onclick = () => {
   const n = state.spaces.length;
   send({ cmd: 'new_space', name: 'Space ' + (n + 1), color: PALETTE[n % PALETTE.length] });
 };
-function fit() {
-  const w = window.innerWidth;
-  document.body.classList.toggle('rail', w < 100);
-  document.documentElement.style.setProperty('--p', Math.max(0, Math.min(1, (w - 100) / 140)).toFixed(3));
-}
-addEventListener('resize', fit);
-fit();
+// Hidden sidebar: touching the left edge floats a copy over the page; leaving it slides it back.
+let peeking = false;
+const peek = (on) => { if (peeking !== on) { peeking = on; send({ cmd: 'peek', on }); } };
+document.addEventListener('mousemove', (e) => {
+  if (window.bh.role === 'flyout' || state.sidebarOpen !== false) return;
+  if (e.clientX < state.sidebarWidth + 6) peek(true);
+});
+document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') peek(false); });
 send({ cmd: 'ready' });
 </script>
 </body>

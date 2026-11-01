@@ -87,6 +87,7 @@ impl Running {
                         None => return delay,
                     },
                     "chrome" => &self.chrome,
+                    "flyout" => &self.flyout,
                     "bar" => &self.bar,
                     "home" => &self.home,
                     "palette" => &self.palette,

@@ -3,7 +3,7 @@
 use blackhole_application::{StorageError, WorkspaceRepository};
 use blackhole_domain::{
     ContentScript, Extension, Folder, FolderId, History, HistoryEntry, PrivacyPolicy, SearchEngine,
-    Settings, SidebarMode, Space, SpaceId, Tab, TabId, Workspace,
+    Settings, Space, SpaceId, Tab, TabId, Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
@@ -267,7 +267,11 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             serde_json::from_str(&raw).map_err(|e| StorageError(e.to_string()))?;
         Ok(Some(Settings {
             search_engine: SearchEngine::from_id(&dto.search_engine).unwrap_or_default(),
-            sidebar_mode: SidebarMode::from_id(&dto.sidebar_mode).unwrap_or_default(),
+            sidebar_width: if Settings::SIDEBAR_WIDTH_CHOICES.contains(&dto.sidebar_width) {
+                dto.sidebar_width
+            } else {
+                Settings::DEFAULT_SIDEBAR_WIDTH
+            },
             animations: dto.animations,
             hardware_acceleration: dto.hardware_acceleration,
             tab_sleep_minutes: if Settings::SLEEP_CHOICES.contains(&dto.tab_sleep_minutes) {
@@ -289,7 +293,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
     fn save_settings(&self, settings: &Settings) -> Result<(), StorageError> {
         let dto = SettingsDto {
             search_engine: settings.search_engine.id().to_owned(),
-            sidebar_mode: settings.sidebar_mode.id().to_owned(),
+            sidebar_width: settings.sidebar_width,
             animations: settings.animations,
             hardware_acceleration: settings.hardware_acceleration,
             tab_sleep_minutes: settings.tab_sleep_minutes,
@@ -359,7 +363,7 @@ struct HistoryDto {
 struct SettingsDto {
     search_engine: String,
     #[serde(default)]
-    sidebar_mode: String,
+    sidebar_width: u32,
     #[serde(default = "default_true")]
     animations: bool,
     #[serde(default = "default_true")]
@@ -453,7 +457,7 @@ mod tests {
         let repo = JsonWorkspaceRepository::new(dir.path().into());
         let s = Settings {
             search_engine: SearchEngine::Brave,
-            sidebar_mode: SidebarMode::Static,
+            sidebar_width: 280,
             animations: false,
             hardware_acceleration: false,
             tab_sleep_minutes: 15,
@@ -475,7 +479,7 @@ mod tests {
         .unwrap();
         let old = repo.load_settings().unwrap().unwrap();
         assert_eq!(old.search_engine, SearchEngine::Qwant);
-        assert_eq!(old.sidebar_mode, SidebarMode::Hover);
+        assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration);
         assert_eq!(old.tab_sleep_minutes, 10);
         assert!(old.boosts.is_empty() && old.routes.is_empty());

@@ -66,9 +66,9 @@
   <section id="general" class="on">
     <h1>General</h1><p class="lead">How BlackHole looks, searches and saves memory.</p>
     <div class="card"><h2>Default search engine</h2><div id="engines"></div></div>
-    <div class="card"><h2>Sidebar</h2><div id="modes"></div></div>
     <div class="card"><h2>Animations</h2><div id="anim"></div></div>
     <div class="card" id="hwcard" hidden><h2>Performance</h2><div id="hw"></div><p class="note">Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.</p></div>
+    <div class="card"><h2>Sidebar width</h2><div id="sbw"></div></div>
     <div class="card"><h2>Put unused tabs to sleep after</h2><div id="sleep"></div></div>
     <div class="card"><h2>System</h2><div class="actions"><button class="btn primary" id="default">Make BlackHole the default browser</button></div><p class="note" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</p></div>
   </section>
@@ -166,7 +166,7 @@ function renderShortcuts() {
   ]);
   keyRows($('k-layout'), [
     ['Split view with another tab (press again to close)', ['MOD', '\\']],
-    ['Keep the sidebar open / expand on hover', ['MOD', 'B']],
+    ['Show / hide the sidebar', ['MOD', 'B']],
     ['Open Settings', ['MOD', ',']],
     ['Open the previewed link as a tab (Peek)', ['↵']],
   ]);
@@ -187,10 +187,10 @@ window.bh = {
     mac = s.os === 'macos';
     renderShortcuts();
     $('engines').replaceChildren(...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
-    $('modes').replaceChildren(...s.sidebarModes.map(m => option(m.label, m.id === s.sidebarMode, () => send({ cmd: 'set_sidebar_mode', id: m.id }))));
     $('anim').replaceChildren(option('Black hole animations (launch and new tab)', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true));
     $('hwcard').hidden = mac;
     $('hw').replaceChildren(option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true));
+    $('sbw').replaceChildren(...s.sidebarWidths.map(w => option(w + ' px', w === s.sidebarWidth, () => send({ cmd: 'set_sidebar_width', width: w }))));
     $('sleep').replaceChildren(...s.tabSleepChoices.map(m => option(m + ' minutes', m === s.tabSleep, () => send({ cmd: 'set_tab_sleep', minutes: m }))));
     $('blocked').textContent = s.blocked;
     $('blocklist').replaceChildren(...(s.blockedLog.length ? s.blockedLog.map(b => {

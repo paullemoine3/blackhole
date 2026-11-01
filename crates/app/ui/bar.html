@@ -6,7 +6,7 @@
   :root { --accent: #7c5cff; --glow: rgba(124,92,255,.35); }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; background: #100f17; }
-  body { background: radial-gradient(420px 140px at 0% 0%, var(--glow), transparent 75%), var(--tint, #100f17); border-bottom: 1px solid rgba(255,255,255,.08); }
+  body { background: radial-gradient(700px 500px at 0% 0%, var(--glow), transparent 70%), var(--tint, #100f17); }
   .bar { height: 100%; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
   body.macos .bar { padding-left: 84px; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; width: 32px; height: 32px; display: grid; place-items: center; opacity: .75; flex: none; }
@@ -38,6 +38,7 @@
 <body>
 <div class="bar" id="bar">
   <div class="side">
+    <button id="sidebar" title="Toggle sidebar (⌘B)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="2.2"/><path d="M6 2.9v10.2"/></svg></button>
     <button id="back" title="Back (⌘[)">←</button>
     <button id="forward" title="Forward (⌘])">→</button>
     <button id="reload" title="Reload (⌘R)">⟳</button>
@@ -70,7 +71,7 @@ window.bh = {
   render(s) {
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);
-    root.setProperty('--glow', rgba(s.color, .35));
+    root.setProperty('--glow', rgba(s.color, .5));
     root.setProperty('--tint', mix(s.color, .3));
     document.body.classList.toggle('macos', s.os === 'macos');
     document.body.classList.toggle('windows', s.os === 'windows');
@@ -93,6 +94,7 @@ const mix = (hex, r) => {
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
 };
 $('omni').onclick = () => send({ cmd: 'palette', mode: 'url' });
+$('sidebar').onclick = () => send({ cmd: 'lock' });
 $('back').onclick = () => send({ cmd: 'back' });
 $('forward').onclick = () => send({ cmd: 'forward' });
 $('reload').onclick = () => send({ cmd: 'reload' });

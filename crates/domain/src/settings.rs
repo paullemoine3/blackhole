@@ -1,50 +1,12 @@
 use crate::{SearchEngine, SpaceId};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// How the left sidebar behaves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SidebarMode {
-    /// Collapsed rail that expands while the cursor hovers it.
-    #[default]
-    Hover,
-    /// Always expanded.
-    Static,
-}
-
-impl SidebarMode {
-    pub const ALL: [SidebarMode; 2] = [Self::Hover, Self::Static];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Hover => "hover",
-            Self::Static => "static",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Hover => "Expand on hover",
-            Self::Static => "Always expanded",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|m| m.id() == id)
-    }
-
-    pub fn toggled(self) -> Self {
-        match self {
-            Self::Hover => Self::Static,
-            Self::Static => Self::Hover,
-        }
-    }
-}
-
 /// User preferences. New settings are added here with a sensible private default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub search_engine: SearchEngine,
-    pub sidebar_mode: SidebarMode,
+    /// Width of the open sidebar in logical pixels (one of `SIDEBAR_WIDTH_CHOICES`).
+    pub sidebar_width: u32,
     /// Plays the black-hole animation when a new tab opens.
     pub animations: bool,
     /// GPU rendering and decoding. Takes effect at the next launch; only the Windows engine
@@ -70,13 +32,15 @@ pub fn site_key(host: &str) -> String {
 impl Settings {
     pub const SLEEP_CHOICES: [u32; 3] = [5, 10, 15];
     pub const DEFAULT_SLEEP_MINUTES: u32 = 10;
+    pub const SIDEBAR_WIDTH_CHOICES: [u32; 3] = [200, 240, 280];
+    pub const DEFAULT_SIDEBAR_WIDTH: u32 = 240;
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             search_engine: SearchEngine::default(),
-            sidebar_mode: SidebarMode::default(),
+            sidebar_width: Self::DEFAULT_SIDEBAR_WIDTH,
             animations: true,
             hardware_acceleration: true,
             tab_sleep_minutes: Self::DEFAULT_SLEEP_MINUTES,

@@ -11,5 +11,5 @@ pub use extension::{matches_pattern, ContentScript, Extension, Injection};
 pub use history::{History, HistoryEntry};
 pub use omnibox::{resolve_input, SearchEngine};
 pub use privacy::{BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy};
-pub use settings::{site_key, Settings, SidebarMode};
+pub use settings::{site_key, Settings};
 pub use workspace::{sanitize_icon, Folder, FolderId, Space, SpaceId, Tab, TabId, Workspace};

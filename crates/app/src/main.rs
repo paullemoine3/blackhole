@@ -15,7 +15,7 @@ mod sidebar;
 mod views;
 
 use blackhole_application::{BrowserService, NavigationOutcome};
-use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SidebarMode, SpaceId, TabId};
+use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
 use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
@@ -62,6 +62,44 @@ const PEEK_TAB: TabId = TabId(0);
 const SPACE_COLORS: [&str; 5] = ["#7c5cff", "#ff5c8a", "#2fd4a0", "#ffb020", "#3aa0ff"];
 /// Logical height of the top bar that holds the window controls and the address field.
 const BAR_HEIGHT: f64 = 48.0;
+
+/// Margin between the page card and the window frame (the card floats above the tinted frame).
+const CARD_GAP: f64 = 8.0;
+
+/// The sidebar keeps its full width and slides out to the left as `width` shrinks to zero.
+/// The view spans the rest of the window so its tint also paints the frame around the card.
+fn chrome_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    let x = sidebar.width() - sidebar.full();
+    views::rect(
+        x,
+        BAR_HEIGHT,
+        (window.width - x).max(1.0),
+        (window.height - BAR_HEIGHT).max(1.0),
+    )
+}
+
+/// The floating sidebar: full width, sliding in from the left edge below the top bar.
+fn flyout_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    views::rect(
+        sidebar.flyout_width() - sidebar.full(),
+        BAR_HEIGHT,
+        sidebar.full(),
+        (window.height - BAR_HEIGHT).max(1.0),
+    )
+}
+
+/// Where the page lives: a card inset from the sidebar and the window edges.
+/// The gap on its left narrows while a sidebar is beside it.
+fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, f64, f64, f64) {
+    let open = (sidebar.width() / sidebar.full()).clamp(0.0, 1.0);
+    let x = sidebar.width() + CARD_GAP * (1.0 - open / 2.0);
+    (
+        x,
+        BAR_HEIGHT,
+        (window.width - x - CARD_GAP).max(1.0),
+        (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
+    )
+}
 /// Background tabs unused for the configured time release their engine view to save memory.
 const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
@@ -104,6 +142,8 @@ struct SettingsWindow {
 
 struct Running {
     chrome: WebView,
+    /// Copy of the sidebar floating over the page while the real one is hidden.
+    flyout: WebView,
     bar: WebView,
     home: WebView,
     tabs: HashMap<TabId, WebView>,
@@ -242,18 +282,13 @@ impl Running {
         );
         svc.set_extensions(load_extensions(&extensions_dir(&data)));
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
-        let sidebar = Sidebar::new(svc.settings().sidebar_mode == SidebarMode::Static);
+        let sidebar = Sidebar::new(f64::from(svc.settings().sidebar_width));
 
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-        let body = (size.height - BAR_HEIGHT).max(1.0);
-        let chrome_bounds = views::rect(0.0, BAR_HEIGHT, sidebar.width(), body);
+        let chrome_bounds = chrome_rect(&sidebar, &size);
         let bar_bounds = views::rect(0.0, 0.0, size.width, BAR_HEIGHT);
-        let home_bounds = views::rect(
-            sidebar.width(),
-            BAR_HEIGHT,
-            size.width - sidebar.width(),
-            body,
-        );
+        let (cx, cy, cw, ch) = card_rect(&sidebar, &size);
+        let home_bounds = views::rect(cx, cy, cw, ch);
         let chrome = views::ui_view(
             &window,
             &mut web_context,
@@ -288,17 +323,22 @@ impl Running {
             &window,
             &mut web_context,
             SPLITBAR_HTML,
-            views::rect(
-                sidebar.width(),
-                BAR_HEIGHT,
-                size.width - sidebar.width(),
-                SPLIT_HEADER,
-            ),
+views::rect(cx, cy, cw, SPLIT_HEADER),
             false,
             false,
             &mailbox,
         )
         .expect("split bar view");
+        let flyout = views::ui_view(
+            &window,
+            &mut web_context,
+            CHROME_HTML,
+            flyout_rect(&sidebar, &size),
+            false,
+            false,
+            &mailbox,
+        )
+        .expect("sidebar flyout view");
         let palette = views::ui_view(
             &window,
             &mut web_context,
@@ -335,6 +375,7 @@ impl Running {
 
         Self {
             chrome,
+            flyout,
             bar,
             home,
             tabs: HashMap::new(),
@@ -421,8 +462,7 @@ impl Running {
     /// The pane of the active tab, and the second pane when a split view is showing.
     fn content_rects(&self) -> (wry::Rect, Option<wry::Rect>) {
         let size = self.window_size();
-        let offset = self.sidebar.content_offset();
-        let (width, height) = (size.width - offset, size.height - BAR_HEIGHT);
+        let (offset, _, width, height) = card_rect(&self.sidebar, &size);
         if self.split_tab().is_none() {
             return (views::rect(offset, BAR_HEIGHT, width, height), None);
         }
@@ -435,14 +475,8 @@ impl Running {
     }
 
     fn full_content_bounds(&self) -> wry::Rect {
-        let size = self.window_size();
-        let offset = self.sidebar.content_offset();
-        views::rect(
-            offset,
-            BAR_HEIGHT,
-            size.width - offset,
-            size.height - BAR_HEIGHT,
-        )
+        let (x, y, w, h) = card_rect(&self.sidebar, &self.window_size());
+        views::rect(x, y, w, h)
     }
 
     fn peek_bounds(&self) -> wry::Rect {
@@ -473,13 +507,14 @@ impl Running {
     /// Positions the views; `all` also resizes background tabs (window resize, tab switch).
     fn layout(&self, all: bool) {
         let size = self.window_size();
-        let body = (size.height - BAR_HEIGHT).max(1.0);
         let _ = self
             .bar
             .set_bounds(views::rect(0.0, 0.0, size.width, BAR_HEIGHT));
         let _ = self
             .chrome
-            .set_bounds(views::rect(0.0, BAR_HEIGHT, self.sidebar.width(), body));
+            .set_bounds(chrome_rect(&self.sidebar, &size));
+        let _ = self.flyout.set_bounds(flyout_rect(&self.sidebar, &size));
+        let _ = self.flyout.set_visible(self.sidebar.flyout_shown());
         let _ = self
             .palette
             .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
@@ -495,13 +530,10 @@ impl Running {
                 let _ = view.set_bounds(self.full_content_bounds());
             }
         }
-        let offset = self.sidebar.content_offset();
-        let _ = self.splitbar.set_bounds(views::rect(
-            offset,
-            BAR_HEIGHT,
-            (size.width - offset).max(1.0),
-            SPLIT_HEADER,
-        ));
+        let (cx, cy, cw, _) = card_rect(&self.sidebar, &size);
+        let _ = self
+            .splitbar
+            .set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
         let (main, side) = self.content_rects();
         let _ = self.active_view().set_bounds(main);
         if let (Some(id), Some(rect)) = (self.split_tab(), side) {
@@ -511,10 +543,15 @@ impl Running {
         }
     }
 
-    fn apply_sidebar_mode(&mut self, mode: SidebarMode) {
-        self.svc.set_sidebar_mode(mode);
-        self.sidebar.set_static(mode == SidebarMode::Static);
-        self.ui_state();
+    fn set_sidebar_width(&mut self, width: u32) {
+        self.svc.set_sidebar_width(width);
+        self.sidebar.set_full(f64::from(self.svc.settings().sidebar_width));
+        self.layout(true);
+    }
+
+    /// The sidebar is either hidden or fully open, like Arc's.
+    fn toggle_sidebar(&mut self) {
+        self.sidebar.toggle();
     }
 
     fn tick_sidebar(&mut self) {
@@ -528,6 +565,9 @@ impl Running {
 
     fn ui(&self, js: String) {
         let _ = self.chrome.evaluate_script(&js);
+        let _ = self
+            .flyout
+            .evaluate_script(&format!("window.bh&&(bh.role='flyout');{js}"));
     }
 
     fn ui_state(&self) {
@@ -535,10 +575,8 @@ impl Running {
         let space = ws.active_space();
         let state = json!({
             "os": std::env::consts::OS,
-            "expanded": self.sidebar.expanded(),
-            "locked": self.sidebar.pinned,
-            "sidebarMode": self.svc.settings().sidebar_mode.id(),
-            "sidebarModes": SidebarMode::ALL.iter().map(|m| json!({"id": m.id(), "label": m.label()})).collect::<Vec<_>>(),
+            "sidebarWidth": self.sidebar.full(),
+            "sidebarOpen": self.sidebar.is_open(),
             "engine": self.svc.settings().search_engine.id(),
             "animations": self.svc.settings().animations,
             "tabSleep": self.svc.settings().tab_sleep_minutes,
@@ -597,8 +635,8 @@ impl Running {
             "version": env!("CARGO_PKG_VERSION"),
             "engine": settings.search_engine.id(),
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
-            "sidebarMode": settings.sidebar_mode.id(),
-            "sidebarModes": SidebarMode::ALL.iter().map(|m| json!({"id": m.id(), "label": m.label()})).collect::<Vec<_>>(),
+            "sidebarWidth": settings.sidebar_width,
+            "sidebarWidths": Settings::SIDEBAR_WIDTH_CHOICES,
             "animations": settings.animations,
             "hardwareAcceleration": settings.hardware_acceleration,
             "tabSleep": settings.tab_sleep_minutes,
@@ -1015,6 +1053,18 @@ impl Running {
     /// Native views stack in creation order, so the command bar is recreated above new tabs.
     fn raise_palette(&mut self) {
         let size = self.window_size();
+        match views::ui_view(
+            &self.window,
+            &mut self.web_context,
+            CHROME_HTML,
+            flyout_rect(&self.sidebar, &size),
+            self.sidebar.flyout_shown(),
+            false,
+            &self.mailbox,
+        ) {
+            Ok(view) => self.flyout = view,
+            Err(error) => tracing::error!("cannot create sidebar flyout: {error}"),
+        }
         let bounds = views::rect(0.0, 0.0, size.width, size.height);
         match views::ui_view(
             &self.window,
@@ -1561,7 +1611,7 @@ impl Running {
                 items,
             } => {
                 let dx = if origin == "home" {
-                    self.sidebar.content_offset()
+                    card_rect(&self.sidebar, &self.window_size()).0
                 } else {
                     0.0
                 };
@@ -1678,15 +1728,12 @@ impl Running {
                     self.ui_state();
                 }
             }
-            UiCommand::SetSidebarMode { id } => {
-                if let Some(mode) = SidebarMode::from_id(&id) {
-                    self.apply_sidebar_mode(mode);
-                }
+            UiCommand::Lock => self.toggle_sidebar(),
+            UiCommand::Peek { on } => {
+                self.sidebar.peek(on);
+                self.layout(false);
             }
-            UiCommand::Lock => {
-                let mode = self.svc.settings().sidebar_mode.toggled();
-                self.apply_sidebar_mode(mode);
-            }
+            UiCommand::SetSidebarWidth { width } => self.set_sidebar_width(width),
             UiCommand::FocusContent => self.focus_content(),
             UiCommand::DragWindow => {
                 let _ = self.window.drag_window();
@@ -1694,13 +1741,6 @@ impl Running {
             UiCommand::WindowMinimize => self.window.set_minimized(true),
             UiCommand::WindowMaximize => self.window.set_maximized(!self.window.is_maximized()),
             UiCommand::WindowClose => self.quit = true,
-            UiCommand::Hover { on } => {
-                if on {
-                    self.sidebar.cursor_moved(0.0);
-                } else {
-                    self.sidebar.cursor_left();
-                }
-            }
             UiCommand::Shortcut { key } => self.shortcut(&key),
             UiCommand::Back => self.with_active_tab(views::go_back),
             UiCommand::Forward => self.with_active_tab(views::go_forward),

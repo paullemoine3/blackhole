@@ -89,10 +89,13 @@ pub enum UiCommand {
     SetEngine {
         id: String,
     },
-    SetSidebarMode {
-        id: String,
-    },
     Lock,
+    Peek {
+        on: bool,
+    },
+    SetSidebarWidth {
+        width: u32,
+    },
     Palette {
         mode: String,
     },
@@ -111,9 +114,6 @@ pub enum UiCommand {
     WindowMinimize,
     WindowMaximize,
     WindowClose,
-    Hover {
-        on: bool,
-    },
     Shortcut {
         key: String,
     },

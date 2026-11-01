@@ -2,7 +2,7 @@
 
 use blackhole_domain::{
     resolve_input, site_key, Extension, FolderId, History, HistoryEntry, Injection,
-    PrivacyDecision, PrivacyPolicy, SearchEngine, Settings, SidebarMode, SpaceId, TabId, Workspace,
+    PrivacyDecision, PrivacyPolicy, SearchEngine, Settings, SpaceId, TabId, Workspace,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
@@ -136,9 +136,11 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
-    pub fn set_sidebar_mode(&mut self, mode: SidebarMode) {
-        self.settings.sidebar_mode = mode;
-        let _ = self.repo.save_settings(&self.settings);
+    pub fn set_sidebar_width(&mut self, width: u32) {
+        if Settings::SIDEBAR_WIDTH_CHOICES.contains(&width) {
+            self.settings.sidebar_width = width;
+            let _ = self.repo.save_settings(&self.settings);
+        }
     }
 
     pub fn set_hardware_acceleration(&mut self, on: bool) {

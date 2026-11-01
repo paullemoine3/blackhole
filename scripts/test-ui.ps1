@@ -48,16 +48,22 @@ cmd {"cmd":"home"}
 wait 1000
 shot 10-home-again
 cmd {"cmd":"set_animations","on":true}
-cmd {"cmd":"hover","on":true}
+cmd {"cmd":"lock"}
 wait 80
-eval chrome window.innerWidth
-shot 11-sidebar-mid-expand
+eval home window.innerWidth
+shot 11-sidebar-mid-hide
 wait 700
-eval chrome window.innerWidth
-shot 12-sidebar-expanded
-cmd {"cmd":"hover","on":false}
+eval home window.innerWidth
+shot 12-sidebar-hidden
+cmd {"cmd":"peek","on":true}
+wait 500
+eval home window.innerWidth
+shot 12b-sidebar-flyout
+cmd {"cmd":"peek","on":false}
+wait 500
+cmd {"cmd":"lock"}
 wait 700
-eval chrome window.innerWidth
+eval home window.innerWidth
 cmd {"cmd":"palette","mode":"new"}
 wait 100
 eval palette document.body.className
@@ -74,7 +80,6 @@ eval palette document.body.className
 cmd {"cmd":"palette_close"}
 wait 300
 cmd {"cmd":"set_animations","on":true}
-cmd {"cmd":"hover","on":true}
 wait 700
 eval chrome (bh.render({...state, update:{state:'available',version:'9.9.9'}}), document.getElementById('update').hidden + '|' + document.getElementById('updtxt').textContent)
 wait 300
@@ -87,7 +92,6 @@ eval chrome (bh.render({...state, update:{state:'downloading',version:'9.9.9'}})
 wait 300
 shot 16-update-downloading
 eval chrome (bh.render({...state, update:null}), String(document.getElementById('update').hidden))
-cmd {"cmd":"hover","on":false}
 wait 300
 cmd {"cmd":"window_maximize"}
 wait 800
@@ -118,20 +122,21 @@ Check ($evals[2] -match 'example\.org') 'navigate: example.org loads'
 Check ($evals[3] -match 'example\.com') 'back: returns to example.com'
 Check ($evals[4] -match 'catalog') 'settings: extension catalog present'
 function Width($line) { if ($line -match '(\d+(\.\d+)?)\s*$') { [double]$Matches[1] } else { -1 } }
-$mid = Width $evals[5]; $full = Width $evals[6]; $rail = Width $evals[7]
-Check ($mid -gt 64 -and $mid -lt 280) "sidebar animation: mid-expand width is between rail and full ($mid)"
-Check ($full -eq 280) "sidebar: hover expands to full width ($full)"
-Check ($rail -eq 64) "sidebar: leaving collapses to the rail ($rail)"
-Check ($evals[8] -match 'open' -and $evals[8] -match 'pre|pop|intro') 'palette animation: opening plays the intro/pop classes'
-Check ($evals[9] -match 'open') 'palette: open after animation'
-Check ($evals[10] -notmatch 'open') 'palette: closes'
-Check ($evals[11] -match 'open' -and $evals[11] -notmatch 'pre|pop|intro') 'animations off: palette opens without animation classes'
-Check ($evals[12] -match 'false\|Update to v9\.9\.9') 'update button: shown with the new version'
-Check ($evals[14] -match 'up-bounce') 'update button: hover animation runs'
-Check ($evals[15] -match 'Updating to v9\.9\.9') 'update button: downloading state'
-Check ($evals[16] -match 'true') 'update button: hidden when up to date'
-Check ($evals[17] -match 'windows' -and $evals[17] -match 'maxed') 'window: maximize button state follows the window'
-Check ($evals[18] -match 'windows' -and $evals[18] -notmatch 'maxed') 'window: restore clears the maximized state'
-Check ($saved.Count -eq 16) "screenshots saved ($($saved.Count)/16)"
+$mid = Width $evals[5]; $hidden = Width $evals[6]; $peek = Width $evals[7]; $open = Width $evals[8]
+Check ($mid -gt $open -and $mid -lt $hidden) "sidebar animation: page width is mid-way while hiding ($mid)"
+Check (($hidden - $open) -gt 200 -and ($hidden - $open) -lt 260) "sidebar: hiding gives its width to the page ($hidden vs $open)"
+Check ($open -gt 0 -and $open -lt $hidden) "sidebar: toggling again reopens it ($open)"
+Check ($peek -eq $hidden) "sidebar flyout: floats over the page without pushing it ($peek)"
+Check ($evals[9] -match 'open' -and $evals[9] -match 'pre|pop|intro') 'palette animation: opening plays the intro/pop classes'
+Check ($evals[10] -match 'open') 'palette: open after animation'
+Check ($evals[11] -notmatch 'open') 'palette: closes'
+Check ($evals[12] -match 'open' -and $evals[12] -notmatch 'pre|pop|intro') 'animations off: palette opens without animation classes'
+Check ($evals[13] -match 'false\|Update to v9\.9\.9') 'update button: shown with the new version'
+Check ($evals[15] -match 'up-bounce') 'update button: hover animation runs'
+Check ($evals[16] -match 'Updating to v9\.9\.9') 'update button: downloading state'
+Check ($evals[17] -match 'true') 'update button: hidden when up to date'
+Check ($evals[18] -match 'windows' -and $evals[18] -match 'maxed') 'window: maximize button state follows the window'
+Check ($evals[19] -match 'windows' -and $evals[19] -notmatch 'maxed') 'window: restore clears the maximized state'
+Check ($saved.Count -eq 17) "screenshots saved ($($saved.Count)/16)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

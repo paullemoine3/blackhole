@@ -36,7 +36,7 @@ cargo test --workspace
 ```
 - Tests unitaires dans le crate concerné (domaine/application/infra en priorité). Tout nouveau comportement logique reçoit un test ciblé.
 - **Scénarios UI Windows** (feature `devtools`, harnais `crates/app/src/devtools.rs`) :
-  - `scripts\test-ui.ps1` : navigation, palette, paramètres, animations (sidebar, palette), bouton de mise à jour, maximize/restore. 16 captures dans `%TEMP%\bh_shots`.
+  - `scripts\test-ui.ps1` : navigation, palette, paramètres, animations (sidebar, palette), bouton de mise à jour, maximize/restore. 17 captures dans `%TEMP%\bh_shots`.
   - `scripts\test-ext.ps1` : installe Dark Reader depuis le catalogue et vérifie l'injection (utiliser une page claire comme info.cern.ch ; example.com gère déjà le mode sombre).
   - Profil jetable `%TEMP%\bh_data` ; le script lit `%TEMP%\bh_script.txt`.
   - Protocole du script : `wait MS`, `shot NOM`, `shots NOM` (fenêtre des paramètres), `cmd JSON` (un `UiCommand`), `eval chrome|bar|home|palette|peek|settings|content JS`, `quit`. Les contrôles lisent les `eval` par indice : **ajouter un `eval` décale les indices suivants**, mettre à jour les `Check`.
@@ -60,7 +60,7 @@ cargo test --workspace
   iscc /DAppVersion=X.Y.Z /DExePath=..\target\release\blackhole.exe scripts\windows-installer.iss
   ```
   Sortie dans `dist\`. L'icône vient de `scripts/make_icon.py` (PNG macOS + `.ico` Windows).
-- Mise à jour dans l'app (`updater.rs`) : bouton `#update` en bas de la sidebar ; Windows lance l'installeur en silencieux, macOS remplace le `.app`. Désactivée pour les builds `cargo` (dossier `target`) et `devtools`.
+- Mise à jour dans l'app (`updater.rs`) : bouton `#update` en bas de la sidebar (le flyout de survol est une 2e vue chrome, recréée avant la palette dans `raise_palette`) ; Windows lance l'installeur en silencieux, macOS remplace le `.app`. Désactivée pour les builds `cargo` (dossier `target`) et `devtools`.
 
 ## Environnement PowerShell (Windows)
 - Pas de `&&`/`||` : utiliser `;` et `if ($?)`. Le code de sortie 1 peut venir du stderr de cargo sans gravité.
