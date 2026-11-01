@@ -1476,14 +1476,31 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
         }
     }
 
+    /// Shows an extension's native popover under `rect`; false when it has none to show.
+    #[cfg(target_os = "macos")]
+    fn show_native_popup(&self, id: &str, rect: (f64, f64, f64, f64)) -> bool {
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) else {
+            return false;
+        };
+        match handle.as_raw() {
+            RawWindowHandle::AppKit(view) => host.show_popup(id, view.ns_view, rect),
+            _ => false,
+        }
+    }
+
     /// Opens the popup of an extension under its toolbar button (`rect` is the button).
     #[cfg(windows)]
     fn open_ext_popup(&mut self, url: &str, rect: (f64, f64, f64, f64)) {
         let was_open = self.ext_popup.is_some();
         self.close_ext_popup();
-        if was_open {
-            return;
+        if !was_open {
+            self.show_ext_popup(url, rect);
         }
+    }
+
+    #[cfg(windows)]
+    fn show_ext_popup(&mut self, url: &str, rect: (f64, f64, f64, f64)) {
         let size = self.window_size();
         let (width, height) = (380.0_f64.min(size.width - 16.0), 560.0_f64.min(size.height - BAR_HEIGHT - 16.0));
         let x = (rect.0 + rect.2 - width).clamp(8.0, (size.width - width - 8.0).max(8.0));
@@ -1759,14 +1776,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             UiCommand::ApplyUpdate => self.start_update(),
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
                 #[cfg(target_os = "macos")]
-                {
-                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    if let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) {
-                        if let RawWindowHandle::AppKit(view) = handle.as_raw() {
-                            host.show_popup(&id, view.ns_view, (x, y, w, hh));
-                        }
-                    }
-                }
+                self.show_native_popup(&id, (x, y, w, hh));
                 #[cfg(windows)]
                 {
                     let url = self.webext.as_ref().and_then(|host| host.popup_url(&id));
@@ -1991,6 +2001,20 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
                 self.svc.page_changed(tab, None, Some(title));
                 self.ui_state();
             }
+            // An extension asking for a window (Bitwarden's unlock) gets a popup, not a tab.
+            #[cfg(windows)]
+            Msg::OpenTab(url) if blackhole_domain::is_extension_page(&url) => {
+                self.close_ext_popup();
+                let width = self.window_size().width;
+                self.show_ext_popup(url.as_str(), (width, BAR_HEIGHT, 0.0, 0.0));
+            }
+            #[cfg(target_os = "macos")]
+            Msg::OpenTab(url)
+                if blackhole_domain::is_extension_page(&url)
+                    && self.show_native_popup(
+                        url.host_str().unwrap_or_default(),
+                        (self.window_size().width, BAR_HEIGHT, 0.0, 0.0),
+                    ) => {}
             Msg::OpenTab(url) => self.open(url.as_str()),
             Msg::External(url) => {
                 self.window.set_minimized(false);

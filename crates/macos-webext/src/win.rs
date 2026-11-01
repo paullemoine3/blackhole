@@ -12,7 +12,7 @@ use std::{
 };
 use webview2_com::{
     take_pwstr, BrowserExtensionRemoveCompletedHandler, Microsoft::Web::WebView2::Win32::*,
-    ProfileAddBrowserExtensionCompletedHandler,
+    ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
 };
 use windows_core::{Interface, HSTRING, PWSTR};
 use wry::WebViewExtWindows;
@@ -37,6 +37,8 @@ struct Ext {
 #[derive(Default)]
 struct Inner {
     profile: Option<ICoreWebView2Profile7>,
+    /// True once extensions left in the profile by a previous run have been removed.
+    ready: bool,
     exts: HashMap<String, Ext>,
 }
 
@@ -60,9 +62,62 @@ impl ExtensionHost {
             self.fail_all("this WebView2 runtime has no extension support");
             return;
         };
+        self.0.borrow_mut().profile = Some(profile.clone());
+        self.clear_previous_run(&profile);
+    }
+
+    /// WebView2 keeps installed extensions in the profile between runs (after an update they
+    /// point at the old install and refuse to be added again), so start from a clean slate.
+    fn clear_previous_run(&self, profile: &ICoreWebView2Profile7) {
+        let host = Self(Rc::clone(&self.0));
+        let handler = ProfileGetBrowserExtensionsCompletedHandler::create(Box::new(
+            move |_, list| {
+                let mut stale = Vec::new();
+                if let Some(list) = list {
+                    let mut count = 0;
+                    let _ = unsafe { list.Count(&mut count) };
+                    for i in 0..count {
+                        if let Ok(ext) = unsafe { list.GetValueAtIndex(i) } {
+                            stale.push(ext);
+                        }
+                    }
+                }
+                if stale.is_empty() {
+                    host.finish_clearing();
+                    return Ok(());
+                }
+                let pending = Rc::new(std::cell::Cell::new(stale.len()));
+                for ext in stale {
+                    let (counter, host) = (Rc::clone(&pending), Self(Rc::clone(&host.0)));
+                    let done = BrowserExtensionRemoveCompletedHandler::create(Box::new(move |_| {
+                        counter.set(counter.get() - 1);
+                        if counter.get() == 0 {
+                            host.finish_clearing();
+                        }
+                        Ok(())
+                    }));
+                    if unsafe { ext.Remove(&done) }.is_err() {
+                        pending.set(pending.get() - 1);
+                    }
+                }
+                if pending.get() == 0 {
+                    host.finish_clearing();
+                }
+                Ok(())
+            },
+        ));
+        if unsafe { profile.GetBrowserExtensions(&handler) }.is_err() {
+            self.finish_clearing();
+        }
+    }
+
+    fn finish_clearing(&self) {
         let waiting: Vec<String> = {
             let mut inner = self.0.borrow_mut();
-            inner.profile = Some(profile);
+            if inner.ready {
+                return;
+            }
+            inner.ready = true;
             inner
                 .exts
                 .iter()
@@ -102,7 +157,8 @@ impl ExtensionHost {
                 chromium_id: String::new(),
             },
         );
-        if self.0.borrow().profile.is_some() {
+        let ready = self.0.borrow().ready;
+        if ready {
             self.add(id);
         }
     }

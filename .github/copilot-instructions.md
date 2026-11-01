@@ -18,6 +18,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 - Imports spécifiques : les placer dans le bloc `cfg` correspondant (sinon avertissements `unused_imports`/`dead_code` sur l'autre plateforme).
 - Exemples : `ExtAction` (macOS : popover natif ; Windows : vue popup + scrim `extpopup.html`), fenêtre sans décorations + boutons dans `ui/bar.html` sous Windows (`body.windows`), `backdrop.rs` (softbuffer) contre les bords blancs, icône via `build.rs` (`winresource`).
 - Windows : toutes les vues d'un même dossier de données doivent avoir les mêmes réglages moteur (extensions activées, GPU, arguments) → toujours passer par `views::builder()`.
+- **Parité systématique :** toute modification ou demande réalisable sur les deux OS est appliquée aux deux dans la même passe (logique commune dans domain/pplication/HTML, branches cfg pour le natif). Si un côté est impossible ou non testable, le dire explicitement et laisser un repli, jamais l'ignorer en silence. Ex. : un popout d'extension s'ouvre en popup sur Windows (show_ext_popup) et en popover natif sur macOS (show_native_popup).
 - Je ne peux pas compiler macOS sous Windows : rester prudent, utiliser `cfg`, et signaler que macOS n'a pas été testé.
 
 ## Sécurité et qualité

@@ -137,6 +137,6 @@ Check ($evals[16] -match 'Updating to v9\.9\.9') 'update button: downloading sta
 Check ($evals[17] -match 'true') 'update button: hidden when up to date'
 Check ($evals[18] -match 'windows' -and $evals[18] -match 'maxed') 'window: maximize button state follows the window'
 Check ($evals[19] -match 'windows' -and $evals[19] -notmatch 'maxed') 'window: restore clears the maximized state'
-Check ($saved.Count -eq 17) "screenshots saved ($($saved.Count)/16)"
+Check ($saved.Count -eq 17) "screenshots saved ($($saved.Count)/17)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail
