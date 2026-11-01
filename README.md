@@ -1,90 +1,142 @@
-# BlackHole
+<div align="center">
 
-Navigateur Rust inspiré d'Arc, basé sur le moteur web natif de l'OS via [`wry`](https://github.com/tauri-apps/wry) : **WKWebView** (macOS) et **WebView2** (Windows). Léger, rapide et compatible avec le web réel.
+# 🕳️ BlackHole
 
-## Fonctionnalités
-- Barre latérale à gauche, redimensionnant la page : rail de 84 px (couvre les boutons macOS fermer/réduire/agrandir) qui s'agrandit au survol (280 px) ou, au choix dans les Paramètres, toujours ouverte. `Cmd/Ctrl+B` (ou le bouton ⇤) bascule entre les deux modes.
-- Spaces, onglets épinglés (clic droit sur un onglet), omnibox, session restaurée.
-- **Paramètres** (⚙ ou ⌘,) : vraie fenêtre séparée — général (moteur de recherche, animations, navigateur par défaut), aide aux **raccourcis** (⌘L, ⌘T, ⌘\ split, ⌘B…), extensions, confidentialité. Persisté dans `settings.json`.
-- **Extensions** : deux niveaux.
-  - **Vraies WebExtensions (macOS 15.4+)** via l'hôte natif d'Apple (`WKWebExtensionController`, crate `macos-webext`). Un **catalogue** intégré (Paramètres → Extensions) propose l'installation en un clic de **uBlock Origin Lite**, **Dark Reader** et **SponsorBlock** : téléchargement HTTPS depuis la release officielle, **SHA-256 épinglé** vérifié avant installation, stocké dans `<données>/webext/`. Menus contextuels (⋯ / clic droit) sur onglets, accès rapides et espaces (suppression incluse), en-tête de fermeture par panneau en split view. Limites : uBOL est la version « Lite » (MV3, `declarativeNetRequest`), sa page d'options n'est pas exposée ; pas de popup d'extension ; l'adaptateur Windows est décrit ci-dessous.
-  - **Vraies WebExtensions (Windows)** via WebView2 (`ICoreWebView2Profile7::AddBrowserExtension`, même crate, module `win`) : vrai moteur Chromium MV3 (service worker, `declarativeNetRequest`, content scripts, `chrome.*`). Même catalogue ; Bitwarden utilise son build Chromium (SHA-256 épinglé). Les zips sont dépaquetés dans `<données>/webext/unpacked/<id>`. Chaque extension à popup a son bouton dans la barre du haut ; le popup s'ouvre sous le bouton (vue enfant sur le même profil, clic ailleurs pour fermer). Test : `scripts\test-ext.ps1`. Limite : l'API d'extensions de WebView2 est limitée (pas de pastille/badge ni d'onglet actif exposé).
-  - **Content scripts simples** (`manifest.json` + `content_scripts`) à déposer dans `<données>/extensions/<id>/`.
-  - Test e2e : `scripts/test-webext.sh` (installe uBOL, vérifie le blocage réseau actif/inactif, retrait).
-- **Navigateur par défaut (macOS)** : installer avec `scripts/package-macos.sh --install` (copie dans `/Applications`, requis pour apparaître dans Réglages Système → Bureau et Dock).
-- **Bloqués** : le bouton 🛡 du bas de la barre latérale ouvre Paramètres → Confidentialité, avec la liste des hôtes bloqués (compteur, site d'origine) et un bouton de remise à zéro.
-- **Espaces** : affichés comme des cartes (couleur en fond + emoji ou initiale) ; l'espace actif affiche son nom ; clic droit pour choisir un emoji.
-- Barre latérale à animation continue (easing) ; animation du trou noir dans la palette de nouvel onglet.
-- Raccourcis : `Cmd/Ctrl + L / T / W / R / B / [ / ]`. Geste trackpad à deux doigts : page précédente/suivante avec l'aperçu natif de la page (macOS), changement d'espace sur la barre latérale.
-- Onglets : glisser-déposer (réordonner, dossiers, épinglés en grille), dossiers (double-clic pour renommer, clic droit pour supprimer), mise en veille des onglets inactifs (5/10/15 min dans les Paramètres). Comme dans Arc, ouvrir une adresse déjà ouverte (Command Bar, favori, lien, historique) bascule sur l'onglet existant, actif ou en veille, de l'espace courant (les espaces restent cloisonnés), sans le dupliquer (fragment `#…` ignoré).
-- **Command Bar** (`Cmd/Ctrl + T` ou `L`) : panneau flottant centré — recherche/URL, « Switch to Tab », favoris, historique et actions rapides (nouvel espace, dossier, réglages, split, boost…).
-- **Split View** : action « Split View with … » de la Command Bar (deux pages côte à côte ; cliquer l'onglet de droite échange les panneaux).
-- **Peek** : `Shift+clic` sur un lien ouvre un aperçu flottant ; `Esc` ferme, `Cmd/Ctrl+Entrée` l'ouvre dans un onglet.
-- **Boosts** : action « Boost <site> » — CSS personnalisé par site (presets inclus), appliqué à chaque chargement.
-- **Air Traffic Control** : action « Always open <site> in <espace> » — les liens de ce site s'ouvrent dans leur espace.
-- Chaque espace teinte la barre latérale et la barre du haut à sa couleur.
-- **Emojis** pour les espaces (clic droit sur l'espace) et les dossiers (clic sur l'icône), via un sélecteur ; persistés.
-- **Split view** persistée par espace : bouton ◧ sur un onglet, marqueur sur les deux onglets du duo, clic sur l'autre panneau = échange.
-- **Navigateur par défaut (macOS)** : `scripts/package-macos.sh [--install]` produit `dist/BlackHole.app` (http/https), puis action « Make BlackHole the default browser ». Les liens externes (démarrage à froid ou app ouverte) ouvrent un onglet. Windows : à faire.
-- Non implémenté : fenêtre flottante Little Arc.
-- Animations « trou noir » au lancement et à l'ouverture d'un onglet (désactivables dans les Paramètres).
+**Un navigateur rapide, élégant et respectueux de votre vie privée.**
+Écrit en Rust, il s'appuie sur le moteur web natif de votre système : WebKit sur macOS, WebView2 sur Windows.
 
-## Vie privée et sécurité
-- DuckDuckGo par défaut, aucune télémétrie.
-- Blocage des traqueurs à la navigation et dans la page (fetch, XHR, beacons, balises ; script `ui/page_guard.js`), liste dans `crates/infrastructure/blocklist.txt`.
-- Mise à niveau HTTP → HTTPS, suppression des paramètres de tracking, seuls http(s) autorisés.
-- `unsafe` interdit partout sauf dans le crate `macos-url` (Apple Events / navigateur par défaut), CSP et `textContent` dans l'UI, écritures atomiques.
-- Topbar centrale (adresse/recherche), fond blanc par défaut des pages transparentes.
-- Limite connue : wry n'expose pas de hook réseau, le blocage de traqueurs dans la page est donc best-effort. Suite prévue : `WKContentRuleList` (macOS) et interception de requêtes WebView2 (Windows).
-- Servo a été retiré (trop d'incompatibilités CSS/JS).
+![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
+![macOS](https://img.shields.io/badge/macOS-WKWebView-black?logo=apple)
+![Windows](https://img.shields.io/badge/Windows-WebView2-0078D6?logo=windows)
+![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 
-## Architecture (clean architecture)
-`domain` → `application` → `infrastructure` → `app` (composition root : winit + wry).
+[Fonctionnalités](#-fonctionnalités) · [Installation](#-installation) · [Extensions](#-extensions) · [Vie privée](#-vie-privée) · [Développement](#-développement)
 
-## Lancer
-```
-cargo run -p blackhole            # profil dev : profil dev optimisé
-cargo run --release -p blackhole  # performances maximales
+</div>
+
+---
+
+## ✨ Fonctionnalités
+
+### Une navigation pensée pour s'organiser
+- 🗂️ **Barre latérale intelligente** : rail compact qui se déploie au survol (ou reste ouvert, au choix), avec animation fluide. `Ctrl/Cmd + B` pour basculer.
+- 🌌 **Espaces** : des contextes cloisonnés, colorés, avec emoji. Chaque espace teinte l'interface à ses couleurs.
+- 📌 **Onglets** : épinglés en grille, dossiers, glisser-déposer, mise en veille automatique des onglets inactifs (5/10/15 min). Ouvrir une adresse déjà ouverte bascule sur l'onglet existant.
+- ⌨️ **Barre de commandes** (`Ctrl/Cmd + T` ou `L`) : recherche, saisie d'URL, changement d'onglet, favoris, historique et actions rapides.
+- ◧ **Vue scindée** : deux pages côte à côte, mémorisée par espace.
+- 👀 **Aperçu** : `Maj + clic` sur un lien l'ouvre dans une fenêtre flottante (`Échap` ferme, `Ctrl/Cmd + Entrée` l'ouvre dans un onglet).
+- 🎨 **Boosts** : du CSS personnalisé par site, appliqué à chaque chargement.
+- 🚦 **Routage des liens** : « toujours ouvrir ce site dans tel espace ».
+- ★ **Favoris** : import, dossiers, glisser-déposer depuis la barre latérale ou d'autres navigateurs.
+
+### Pensé pour chaque système
+| | macOS | Windows |
+|---|---|---|
+| Moteur | WKWebView | WebView2 (Chromium) |
+| Extensions | `WKWebExtensionController` (15.4+) | `AddBrowserExtension` |
+| Installation | `BlackHole.app` / `.dmg` | Installeur et zip portable |
+| Fenêtre | Barre système | Barre de titre intégrée à l'app |
+| Mise à jour | Remplacement du `.app` | Installeur silencieux |
+
+---
+
+## 📦 Installation
+
+Les versions sont publiées dans les [releases GitHub](../../releases).
+
+- **Windows** : lancez `BlackHole-Setup-X.Y.Z-x64.exe` (ou utilisez le zip portable).
+- **macOS** : ouvrez le `.dmg` / le zip et glissez `BlackHole.app` dans `/Applications`. Pour l'avoir comme navigateur par défaut, installez-le depuis `scripts/package-macos.sh --install`.
+
+**Mises à jour intégrées** : quand une nouvelle version existe, un bouton « Update to vX.Y.Z » apparaît en bas du panneau de gauche. Un clic télécharge la release (HTTPS, hôte github.com uniquement), vérifie son SHA-256 puis met à jour et relance l'app.
+
+---
+
+## 🧩 Extensions
+
+BlackHole exécute de **vraies WebExtensions**, installables en un clic depuis **Paramètres → Extensions** :
+
+| Extension | Rôle |
+|---|---|
+| uBlock Origin Lite | Blocage de publicités |
+| Dark Reader | Mode sombre sur tous les sites |
+| SponsorBlock | Saute les segments sponsorisés |
+| Bitwarden | Gestionnaire de mots de passe |
+
+Chaque paquet est téléchargé depuis sa release officielle et vérifié par **SHA-256 épinglé** avant installation. Les extensions ayant un popup ont un bouton dans la barre du haut.
+
+Vous pouvez aussi déposer de simples content scripts (`manifest.json` + `content_scripts`) dans `<données>/extensions/<id>/`.
+
+**Limites** : sous macOS, pas de Touch ID ni de messagerie native ; sous Windows, l'API d'extensions de WebView2 n'expose ni badge ni onglet actif.
+
+---
+
+## 🔒 Vie privée
+
+- Moteur de recherche **DuckDuckGo** par défaut, **aucune télémétrie**.
+- Blocage des traqueurs (navigation, `fetch`, XHR, balises), liste dans `crates/infrastructure/blocklist.txt` ; compteur et journal dans Paramètres → Confidentialité.
+- Passage automatique de HTTP vers HTTPS, suppression des paramètres de suivi.
+- Mots de passe importés rangés dans un **coffre chiffré** (ChaCha20-Poly1305) dont la clé est dans le trousseau du système.
+- Code sûr : `unsafe` interdit hors des crates d'intégration système (`macos-url`, `macos-webext`).
+
+> Le blocage dans la page est au mieux de ses possibilités : `wry` n'expose pas de hook réseau.
+
+---
+
+## 📥 Import
+
+Paramètres → Import détecte automatiquement les profils **Chrome, Edge, Brave, Vivaldi, Opera, Firefox, Waterfox, LibreWolf, Zen** et d'autres navigateurs Chromium. Favoris en lecture seule (ou via export HTML), mots de passe depuis l'export CSV.
+
+---
+
+## 🍎 Spécificités macOS
+
+macOS reste une plateforme de premier rang : tout ce qui suit est conservé et fonctionne en parallèle de la version Windows.
+
+- **Extensions natives (15.4+)** via `WKWebExtensionController` (crate `macos-webext`). Menus contextuels (⋯ / clic droit) sur onglets, accès rapides et espaces, en-tête de fermeture par panneau en vue scindée. uBlock Origin Lite est la version « Lite » (MV3, `declarativeNetRequest`) ; sa page d'options n'est pas exposée.
+- **Popups d'extensions** : le bouton (icône + badge) à droite de la barre du haut ouvre le popup natif (`WKWebExtensionAction.popupPopover`). L'onglet actif est exposé aux extensions (`WKWebExtensionTab` / `Window`), ce qui permet à uBlock Origin Lite d'afficher le site courant.
+- **Extensions des apps installées** : Paramètres → Extensions → « Trouvées dans vos apps » liste les extensions Safari de `/Applications` et `~/Applications` (`*.app/Contents/PlugIns/*.appex`) et permet de les activer (`app_extensions.json`). Limites : pas de Touch ID ni de native messaging.
+- **Compatibilité Bitwarden / Dark Reader** :
+  - API `privacy` émulée (`privacy_shim.js`) : WebKit ne l'a pas, et sans elle le réglage « gestionnaire de mots de passe par défaut » de Bitwarden se décoche seul.
+  - Extensions chargées avec le token d'agent `Firefox/128.0` (requis par Bitwarden, build Firefox).
+  - Cadres d'extension (menu d'autofill, barre de notification) autorisés dans les pages.
+  - Extensions à page d'arrière-plan persistante (Bitwarden) servies sous `safari-web-extension://<id>` : le menu d'autofill refuse toute autre URL d'iframe. Les extensions à service worker ne reçoivent pas ce schéma (sinon WebKit ne livre plus les messages des content scripts et Dark Reader reste sur son style de secours).
+- **Navigateur par défaut** : `scripts/package-macos.sh [--install]` produit `dist/BlackHole.app` (http/https) et l'installe dans `/Applications` ; ensuite, action « Make BlackHole the default browser ». Les liens externes (démarrage à froid ou app ouverte) ouvrent un onglet.
+- **Gestes trackpad** : deux doigts pour page précédente/suivante (aperçu natif de la page) et changement d'espace sur la barre latérale.
+- **Rail de 84 px** : couvre les boutons système fermer/réduire/agrandir.
+- **Vidéo** : WKWebView compose et décode déjà sur GPU, aucun réglage n'est nécessaire. (Annoncer `Safari/605.1.15` dans le user-agent rendait YouTube très lent : écarté.)
+- **Mise à jour** : remplacement de `BlackHole.app` puis relance ; désactivée hors bundle `.app`. Le bundle est signé ad hoc (pas de notarisation).
+- **Autoremplissage natif** : au focus d'un champ identifiant/mot de passe d'une page https (ou localhost), BlackHole propose les identifiants du coffre (menu dans un shadow root fermé). Désactivé tant que l'extension Bitwarden est active ; le mot de passe n'est injecté qu'après un clic.
+- **Tests** : `scripts/test-webext.sh` (installe uBOL, vérifie le blocage actif/inactif, retrait) et harnais `devtools` avec captures CoreGraphics (`/tmp/bh_script.txt` → `/tmp/bh_shots/`).
+
+## 🛠️ Développement
+
+Architecture en couches : `domain` → `application` → `infrastructure` → `app` (winit + wry).
+
+```bash
+cargo run -p blackhole             # développement
+cargo run --release -p blackhole   # performances maximales
 cargo test --workspace
 ```
 
-### Harnais de test visuel (feature `devtools`)
-`cargo run -p blackhole --features devtools` exécute le script `/tmp/bh_script.txt` (profil jetable `/tmp/bh_data`) et écrit des captures dans `/tmp/bh_shots/`. Captures macOS uniquement (CoreGraphics). Commandes : `wait MS`, `shot NOM`, `cmd JSON`, `eval chrome|bar|home|content JS`, `quit`.
+**Tests d'interface** (feature `devtools`) :
+- Windows : `scripts\test-ui.ps1` (scénarios, animations, captures) et `scripts\test-ext.ps1` (extensions).
+- macOS : `scripts/test-webext.sh` et captures via le harnais `devtools`.
 
-## Roadmap
-Blocage natif des traqueurs, popups, téléchargements, extensions, import/export de signets, packaging Mac/Windows.
+**Installeur Windows** :
+```powershell
+cargo build --release -p blackhole
+iscc /DAppVersion=0.1.0 /DExePath=..\target\release\blackhole.exe scripts\windows-installer.iss
+```
 
-## Popups d'extensions et extensions des apps installées
+**Publier une version** : mettre à jour `version` dans `Cargo.toml`, committer et pousser sur `main` (ou pousser le tag `vX.Y.Z`). Le workflow `release.yml` teste, construit l'installeur Windows, le binaire macOS universel et publie les artefacts avec `SHA256SUMS.txt`.
 
-Les extensions actives ont un bouton (icône + badge) à droite de la barre du haut ; un clic ouvre leur popup native (`WKWebExtensionAction.popupPopover`). Paramètres → Extensions → « Trouvées dans vos apps » liste les extensions Safari embarquées dans `/Applications` et `~/Applications` (`*.app/Contents/PlugIns/*.appex`) et permet de les activer (persisté dans `app_extensions.json`). Limites : pas de Touch ID ni de native messaging (le handler vit dans le process de l'appex)  L'onglet actif est exposé aux extensions (objets `WKWebExtensionTab`/`Window`), ce qui permet à uBlock Origin Lite d'afficher le site courant et à la popup Bitwarden (build Firefox, user-agent Safari) de s'ouvrir. L'import (dialogue de fichier, trousseau) tourne hors du thread UI.
+---
 
-## Import depuis un autre navigateur
+## 🗺️ Roadmap
+- Blocage réseau natif (`WKContentRuleList` sur macOS, interception de requêtes WebView2 sur Windows)
+- Fenêtre flottante compacte
+- Notarisation macOS
 
-Les pages d'extension reçoivent une API `privacy` émulée (`privacy_shim.js`, valeurs gardées dans le stockage de l'extension) : WebKit ne l'a pas, et sans elle le réglage « gestionnaire de mots de passe par défaut » de Bitwarden se décoche seul. Les extensions sont chargées avec le token d'agent `Firefox/128.0` (popup et page d'arrière-plan cohérents, requis par Bitwarden), et les cadres d'extension (menu d'autofill, barre de notification) sont autorisés dans les pages. Les extensions sont servies sous le schéma `safari-web-extension://<id>` (et non `webkit-extension://`) : le menu d'autofill de Bitwarden refuse toute autre URL d'iframe et restait vide. Seules les extensions à page d'arrière-plan persistante (Bitwarden) reçoivent ce schéma : avec une URL de base personnalisée, WebKit ne livre plus les messages des content scripts aux extensions à service worker, et Dark Reader restait bloqué sur son style de secours (page sombre sans images ni textes).
+---
 
-**Remplissage automatique natif** : au focus d'un champ identifiant/mot de passe d'une page https (ou localhost), BlackHole propose les identifiants du coffre chiffré correspondant au site (menu dans un shadow root fermé). Il se désactive tant que l'extension Bitwarden est active, pour éviter deux menus sur les mêmes champs. Seuls les identifiants sont envoyés à la page ; le mot de passe n'y est injecté qu'après un clic de l'utilisateur sur une suggestion.
-
-Paramètres → Import : détection automatique des profils Chrome, Edge, Brave, Vivaldi, Opera, Arc (Chromium) et Firefox, Waterfox, LibreWolf, Zen (Firefox). Les **favoris** sont lus en lecture seule dans le profil (copie temporaire de `places.sqlite`) ou via un export HTML, et deviennent cherchables dans la barre de commande et s'affichent dans la sidebar (section « Bookmarks », arborescence par dossiers, repliable). Les **mots de passe** s'importent depuis l'export CSV du navigateur d'origine (Chrome, Firefox, Safari, Bitwarden…) : ils sont rangés dans un coffre chiffré (ChaCha20-Poly1305) dont la clé est dans le trousseau système (Keychain / Gestionnaire d'identifiants). Pas encore d'autoremplissage.
-
-### Drag & drop de bookmarks
-
-Glisse un lien, un favori depuis un autre navigateur, un fichier `.webloc`/`.url` ou un export de favoris `.html` sur la barre latérale : ils sont ajoutés aux bookmarks (déposer sur un dossier du panneau ★ Bookmarks les range dedans).
-
-Depuis le panneau ★ Bookmarks, glisse un favori sur la liste des onglets, un dossier ou les tuiles épinglées pour l'ouvrir à cet endroit (déposé sur les tuiles, il est épinglé).
-
-**Vidéo / accélération matérielle** : WKWebView compose et décode déjà sur GPU (macOS), il n'existe pas de réglage à activer. Sous **Windows** (WebView2), Paramètres → Général → Performance propose « Hardware acceleration (GPU) » (activée par défaut, effet au prochain lancement ; désactivée = `--disable-gpu`). Ce réglage Windows n'a été que relu, pas exécuté. Essai écarté : annoncer `Safari/605.1.15` dans le user-agent rendait YouTube très lent et incomplet.
-
-## Icônes de sites
-
-La barre latérale et la page d'accueil affichent l'icône de chaque site (`favicon.js` relève le `<link rel="icon">` déclaré par la page, ou `/favicon.ico`). Aucun service tiers n'est interrogé : l'icône est chargée depuis le site déjà visité, sans referrer, et l'URL est mémorisée par hôte dans `favicons.json` (sans icône : initiale colorée ; l'icône remplace l'initiale). Les signets importés sont repliés par défaut dans la barre latérale.
-
-## Releases et mise à jour (CI)
-
-Le workflow `.github/workflows/release.yml` lance les tests (Windows + macOS), puis construit :
-- **Windows** : installeur Inno Setup (`BlackHole-Setup-X.Y.Z-x64.exe`, `scripts/windows-installer.iss`) et zip portable ;
-- **macOS** : binaire universel (arm64 + x86_64) empaqueté par `scripts/package-macos.sh` → `BlackHole-macos-universal.zip` / `.dmg`.
-
-Publier une version : mettre à jour `version` dans `Cargo.toml` (et `Cargo.lock`), committer, puis pousser le tag `vX.Y.Z` (le workflow refuse un tag différent de `Cargo.toml`). Les artefacts + `SHA256SUMS.txt` sont publiés dans la release GitHub. Lancement manuel (Actions → Run workflow) = artefacts sans publication.
-
-**Mise à jour dans l'app** (`crates/infrastructure/src/updater.rs`) : 15 s après le démarrage puis toutes les 6 h, l'app lit `releases/latest` du dépôt. Si la version est plus récente, un bouton « Update to vX.Y.Z » apparaît en bas du panneau de gauche (animation au survol). Au clic : téléchargement HTTPS (hôte github.com uniquement), vérification SHA-256 d'après `SHA256SUMS.txt`, puis Windows lance l'installeur en silencieux (il ferme et relance l'app) et macOS remplace `BlackHole.app` puis le relance. Désactivée pour les builds `cargo` (dossier `target`), devtools et macOS hors bundle `.app`. Sous Windows, la mise à jour passe toujours par l'installeur, même pour une installation issue du zip portable.
-Limites : le bundle macOS est signé ad hoc (pas de notarisation) ; la somme de contrôle protège de la corruption, pas d'une release compromise.
+<div align="center">Fait avec ❤️ et Rust</div>
