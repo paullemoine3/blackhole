@@ -54,6 +54,10 @@ impl PrivacyPolicy {
     }
 
     pub fn evaluate(&self, url: &Url) -> PrivacyDecision {
+        // Pages of installed extensions (e.g. a password manager's unlock popout) are local.
+        if crate::omnibox::is_extension_page(url) {
+            return PrivacyDecision::Allow;
+        }
         match url.scheme() {
             "https" | "http" | "about" | "data" | "blob" => {}
             _ => return PrivacyDecision::Block("unsupported scheme"),

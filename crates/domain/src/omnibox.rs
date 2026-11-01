@@ -66,12 +66,23 @@ impl SearchEngine {
     }
 }
 
+/// Page served by an installed browser extension (chrome-extension://<id>/...).
+pub fn is_extension_page(url: &Url) -> bool {
+    matches!(
+        url.scheme(),
+        "chrome-extension" | "safari-web-extension" | "webkit-extension"
+    ) && url.host_str().is_some()
+}
+
 /// Turns what the user typed in the command bar into a navigable URL.
 /// Bare hosts become `https://`; anything else is a search query.
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Url {
     let input = input.trim();
     if let Ok(url) = Url::parse(input) {
         if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() {
+            return url;
+        }
+        if is_extension_page(&url) {
             return url;
         }
     }
@@ -112,6 +123,12 @@ mod tests {
             assert_eq!(SearchEngine::from_id(e.id()), Some(e));
         }
         assert_eq!(SearchEngine::from_id("nope"), None);
+    }
+
+    #[test]
+    fn extension_pages_open_as_is() {
+        let raw = "chrome-extension://abcdefgh/popup/index.html?uilocation=popout";
+        assert_eq!(resolve_input(raw, Default::default()).as_str(), raw);
     }
 
     #[test]
