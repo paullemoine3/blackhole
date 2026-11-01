@@ -1141,12 +1141,12 @@ impl Running {
         }
     }
 
-    /// A new tab is the start page with the command bar open on top of it.
+    /// A new tab is just the start page; the command bar stays closed (Ctrl/Cmd+L opens it).
     fn new_tab(&mut self) {
+        self.close_palette();
         self.close_peek();
         self.home_visible = true;
         self.sync();
-        self.open_palette("new");
     }
 
     // ---- command bar --------------------------------------------------------------------

@@ -61,6 +61,15 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     sha256: "7c8e3dc8b5e560b480ae8efdf28f4f1101fce0cc32434562a336a89e4962eda3",
     windows: None,
 }, CatalogEntry {
+    id: "ghostify",
+    name: "Ghostify",
+    description: "Masque les indicateurs de lecture, de saisie et de vues de stories sur Instagram, Facebook et Messenger.",
+    version: "2.1.1",
+    homepage: "https://github.com/Hendrizzzz/ghostify",
+    url: "https://github.com/Hendrizzzz/ghostify/releases/download/v2.1.1/ghostify-v2.1.1-chrome-web-store.zip",
+    sha256: "527e9ca664f8af2231dc09b19a32b8e30ecbc7a79701726b322e42eda5d1e23c",
+    windows: None,
+}, CatalogEntry {
     id: "bitwarden",
     name: "Bitwarden",
     description: "Gestionnaire de mots de passe (popup dans la barre d'outils).",

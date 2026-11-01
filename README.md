@@ -22,7 +22,7 @@
 - 🗂️ **Barre latérale intelligente** : rail compact qui se déploie au survol (ou reste ouvert, au choix), avec animation fluide. `Ctrl/Cmd + B` pour basculer.
 - 🌌 **Espaces** : des contextes cloisonnés, colorés, avec emoji. Chaque espace teinte l'interface à ses couleurs.
 - 📌 **Onglets** : épinglés en grille, dossiers, glisser-déposer, mise en veille automatique des onglets inactifs (5/10/15 min). Ouvrir une adresse déjà ouverte bascule sur l'onglet existant.
-- ⌨️ **Barre de commandes** (`Ctrl/Cmd + T` ou `L`) : recherche, saisie d'URL, changement d'onglet, favoris, historique et actions rapides.
+- ⌨️ **Barre de commandes** (`Ctrl/Cmd + L`) : recherche, saisie d'URL, changement d'onglet, favoris, historique et actions rapides. `Ctrl/Cmd + T` ouvre un nouvel onglet sur la page d'accueil.
 - ◧ **Vue scindée** : deux pages côte à côte, mémorisée par espace.
 - 👀 **Aperçu** : `Maj + clic` sur un lien l'ouvre dans une fenêtre flottante (`Échap` ferme, `Ctrl/Cmd + Entrée` l'ouvre dans un onglet).
 - 🎨 **Boosts** : du CSS personnalisé par site, appliqué à chaque chargement.
