@@ -1,0 +1,329 @@
+//! WebExtensions on Windows: WebView2 runs Chromium extensions (service workers, content scripts,
+//! `declarativeNetRequest`…) loaded from unpacked folders through the profile's browser-extension
+//! API. Extensions are added and removed at runtime, no restart needed.
+
+use crate::{ActionInfo, LoadState};
+use base64::Engine;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
+use webview2_com::{
+    take_pwstr, BrowserExtensionRemoveCompletedHandler, Microsoft::Web::WebView2::Win32::*,
+    ProfileAddBrowserExtensionCompletedHandler,
+};
+use windows_core::{Interface, HSTRING, PWSTR};
+use wry::WebViewExtWindows;
+
+/// The parts of `manifest.json` the toolbar needs.
+#[derive(Debug, Default, Clone)]
+struct Manifest {
+    name: String,
+    popup: Option<String>,
+    icon: Option<PathBuf>,
+}
+
+struct Ext {
+    dir: PathBuf,
+    manifest: Manifest,
+    state: LoadState,
+    browser_ext: Option<ICoreWebView2BrowserExtension>,
+    /// Chromium's id of the extension, the host of its `chrome-extension://` pages.
+    chromium_id: String,
+}
+
+#[derive(Default)]
+struct Inner {
+    profile: Option<ICoreWebView2Profile7>,
+    exts: HashMap<String, Ext>,
+}
+
+/// Lives on the UI thread, like every WebView2 object.
+pub struct ExtensionHost(Rc<RefCell<Inner>>);
+
+impl ExtensionHost {
+    pub fn new() -> Option<Self> {
+        Some(Self(Rc::default()))
+    }
+
+    /// Gives the host the browser profile (shared by every view). Extensions requested before
+    /// are loaded now.
+    pub fn attach(&self, view: &wry::WebView) {
+        let profile = view
+            .webview()
+            .cast::<ICoreWebView2_13>()
+            .and_then(|w| unsafe { w.Profile() })
+            .and_then(|p| p.cast::<ICoreWebView2Profile7>());
+        let Ok(profile) = profile else {
+            self.fail_all("this WebView2 runtime has no extension support");
+            return;
+        };
+        let waiting: Vec<String> = {
+            let mut inner = self.0.borrow_mut();
+            inner.profile = Some(profile);
+            inner
+                .exts
+                .iter()
+                .filter(|(_, e)| e.state == LoadState::Loading)
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        for id in waiting {
+            self.add(&id);
+        }
+    }
+
+    fn fail_all(&self, why: &str) {
+        for e in self.0.borrow_mut().exts.values_mut() {
+            e.state = LoadState::Failed(why.to_owned());
+        }
+    }
+
+    /// `path` is either an unpacked extension folder or the `.zip` of a Chromium build.
+    pub fn load(&self, id: &str, path: &Path) {
+        self.unload(id);
+        let dir = match unpack(id, path) {
+            Ok(dir) => dir,
+            Err(why) => {
+                self.set_failed(id, path, why);
+                return;
+            }
+        };
+        let manifest = read_manifest(&dir);
+        self.0.borrow_mut().exts.insert(
+            id.to_owned(),
+            Ext {
+                dir,
+                manifest,
+                state: LoadState::Loading,
+                browser_ext: None,
+                chromium_id: String::new(),
+            },
+        );
+        if self.0.borrow().profile.is_some() {
+            self.add(id);
+        }
+    }
+
+    fn set_failed(&self, id: &str, path: &Path, why: String) {
+        self.0.borrow_mut().exts.insert(
+            id.to_owned(),
+            Ext {
+                dir: path.to_owned(),
+                manifest: Manifest::default(),
+                state: LoadState::Failed(why),
+                browser_ext: None,
+                chromium_id: String::new(),
+            },
+        );
+    }
+
+    fn add(&self, id: &str) {
+        let (profile, dir) = {
+            let inner = self.0.borrow();
+            let (Some(profile), Some(ext)) = (inner.profile.clone(), inner.exts.get(id)) else {
+                return;
+            };
+            (profile, ext.dir.clone())
+        };
+        let (state, key) = (Rc::clone(&self.0), id.to_owned());
+        let handler = ProfileAddBrowserExtensionCompletedHandler::create(Box::new(
+            move |result, extension| {
+                if let Some(ext) = state.borrow_mut().exts.get_mut(&key) {
+                    match (result, extension) {
+                        (Ok(()), Some(extension)) => {
+                            ext.chromium_id = extension_id(&extension);
+                            ext.browser_ext = Some(extension);
+                            ext.state = LoadState::Loaded;
+                        }
+                        (Err(err), _) => ext.state = LoadState::Failed(err.message()),
+                        _ => ext.state = LoadState::Failed("WebView2 returned no extension".into()),
+                    }
+                }
+                Ok(())
+            },
+        ));
+        if let Err(err) = unsafe { profile.AddBrowserExtension(&HSTRING::from(dir.as_path()), &handler) } {
+            if let Some(ext) = self.0.borrow_mut().exts.get_mut(id) {
+                ext.state = LoadState::Failed(err.message());
+            }
+        }
+    }
+
+    pub fn unload(&self, id: &str) {
+        let removed = self.0.borrow_mut().exts.remove(id);
+        if let Some(Ext {
+            browser_ext: Some(extension),
+            ..
+        }) = removed
+        {
+            let done = BrowserExtensionRemoveCompletedHandler::create(Box::new(|_| Ok(())));
+            let _ = unsafe { extension.Remove(&done) };
+        }
+    }
+
+    pub fn state(&self, id: &str) -> Option<LoadState> {
+        self.0.borrow().exts.get(id).map(|e| e.state.clone())
+    }
+
+    /// Toolbar buttons of the loaded extensions that have a popup.
+    pub fn actions(&self) -> Vec<ActionInfo> {
+        let inner = self.0.borrow();
+        let mut out: Vec<ActionInfo> = inner
+            .exts
+            .iter()
+            .filter(|(_, e)| e.state == LoadState::Loaded && e.manifest.popup.is_some())
+            .map(|(id, e)| ActionInfo {
+                id: id.clone(),
+                label: e.manifest.name.clone(),
+                badge: String::new(),
+                enabled: true,
+                icon: e.manifest.icon.as_deref().and_then(data_url),
+            })
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out
+    }
+
+    /// Address of the extension's popup page, to show in a web view of the same profile.
+    pub fn popup_url(&self, id: &str) -> Option<String> {
+        let inner = self.0.borrow();
+        let ext = inner.exts.get(id)?;
+        let page = ext.manifest.popup.as_ref()?;
+        (ext.state == LoadState::Loaded && !ext.chromium_id.is_empty())
+            .then(|| format!("chrome-extension://{}/{}", ext.chromium_id, page))
+    }
+
+    /// Extensions see the real tab on their own; nothing to forward on Windows.
+    pub fn set_active_tab(
+        &self,
+        _view: Option<std::ptr::NonNull<std::ffi::c_void>>,
+        _url: &str,
+        _title: &str,
+    ) {
+    }
+
+    pub fn show_popup(
+        &self,
+        _id: &str,
+        _view: std::ptr::NonNull<std::ffi::c_void>,
+        _rect: (f64, f64, f64, f64),
+    ) -> bool {
+        false
+    }
+}
+
+fn extension_id(extension: &ICoreWebView2BrowserExtension) -> String {
+    let mut raw = PWSTR::null();
+    match unsafe { extension.Id(&mut raw) } {
+        Ok(()) => take_pwstr(raw),
+        Err(_) => String::new(),
+    }
+}
+
+/// Extracts a Chromium `.zip` next to it (`unpacked/<id>`); a folder is used as is.
+fn unpack(id: &str, path: &Path) -> Result<PathBuf, String> {
+    if path.is_dir() {
+        return Ok(path.to_owned());
+    }
+    let parent = path.parent().ok_or("invalid package path")?;
+    let dest = parent.join("unpacked").join(id);
+    let stamp = dest.join(".package");
+    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len().to_string();
+    if dest.join("manifest.json").is_file() && std::fs::read_to_string(&stamp).ok().as_deref() == Some(&size) {
+        return Ok(dest);
+    }
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    archive.extract(&dest).map_err(|e| e.to_string())?;
+    // Some builds nest everything in one folder.
+    let root = if dest.join("manifest.json").is_file() {
+        dest.clone()
+    } else {
+        std::fs::read_dir(&dest)
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.join("manifest.json").is_file())
+            .ok_or("no manifest.json in the package")?
+    };
+    if root != dest {
+        return Ok(root);
+    }
+    let _ = std::fs::write(&stamp, size);
+    Ok(dest)
+}
+
+fn read_manifest(dir: &Path) -> Manifest {
+    let Ok(text) = std::fs::read_to_string(dir.join("manifest.json")) else {
+        return Manifest::default();
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default();
+    let action = json.get("action").or_else(|| json.get("browser_action"));
+    let name = action
+        .and_then(|a| a.get("default_title"))
+        .or_else(|| json.get("name"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.starts_with("__MSG_"))
+        .map(str::to_owned)
+        .or_else(|| dir.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    let popup = action
+        .and_then(|a| a.get("default_popup"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim_start_matches('/').to_owned());
+    let icon = action
+        .and_then(|a| a.get("default_icon"))
+        .or_else(|| json.get("icons"))
+        .and_then(|icons| match icons {
+            serde_json::Value::String(path) => Some(path.clone()),
+            serde_json::Value::Object(map) => map
+                .iter()
+                .filter_map(|(size, p)| Some((size.parse::<u32>().ok()?, p.as_str()?)))
+                .max_by_key(|(size, _)| *size)
+                .map(|(_, p)| p.to_owned()),
+            _ => None,
+        })
+        .map(|p| dir.join(p.trim_start_matches('/')));
+    Manifest { name, popup, icon }
+}
+
+fn data_url(path: &Path) -> Option<String> {
+    let mime = match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "svg" => "image/svg+xml",
+        "jpg" | "jpeg" => "image/jpeg",
+        _ => return None,
+    };
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_toolbar_info_of_a_manifest() {
+        let dir = std::env::temp_dir().join(format!("bh-manifest-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"name":"__MSG_name__","action":{"default_title":"Dark Reader","default_popup":"/ui/popup.html","default_icon":{"16":"i16.png","128":"i128.png"}}}"#,
+        )
+        .unwrap();
+        let m = read_manifest(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(m.name, "Dark Reader");
+        assert_eq!(m.popup.as_deref(), Some("ui/popup.html"));
+        assert!(m.icon.unwrap().ends_with("i128.png"));
+    }
+}

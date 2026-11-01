@@ -91,7 +91,12 @@ mod tabs;
 #[cfg(target_os = "macos")]
 pub use host::ExtensionHost;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+mod win;
+#[cfg(windows)]
+pub use win::ExtensionHost;
+
+#[cfg(not(any(target_os = "macos", windows)))]
 mod stub {
     use super::LoadState;
     use std::path::Path;
@@ -128,7 +133,7 @@ mod stub {
         }
     }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub use stub::ExtensionHost;
 
 #[cfg(test)]

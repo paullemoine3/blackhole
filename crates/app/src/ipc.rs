@@ -105,6 +105,7 @@ pub enum UiCommand {
         css: String,
     },
     ClosePeek,
+    CloseExtPopup,
     FocusContent,
     DragWindow,
     WindowMinimize,

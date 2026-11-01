@@ -50,6 +50,8 @@ const BAR_HTML: &str = include_str!("../ui/bar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 const SPLITBAR_HTML: &str = include_str!("../ui/splitbar.html");
 const PEEK_HTML: &str = include_str!("../ui/peek.html");
+#[cfg(windows)]
+const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
 /// Gap between the two panes of a split view.
 const SPLIT_GAP: f64 = 8.0;
@@ -82,6 +84,14 @@ const FRAME: Duration = Duration::from_millis(16);
 
 /// Floating preview of a link (Arc's "Peek"): a dimming scrim plus the page itself.
 struct Peek {
+    scrim: WebView,
+    page: WebView,
+}
+
+/// An extension's toolbar popup, shown under its button; a click anywhere else closes it.
+#[cfg(windows)]
+#[allow(dead_code)] // held only to keep the views alive
+struct ExtPopup {
     scrim: WebView,
     page: WebView,
 }
@@ -128,6 +138,8 @@ struct Running {
     /// Space or folder whose emoji the picker is editing.
     icon_target: Option<(String, u64)>,
     peek: Option<Peek>,
+    #[cfg(windows)]
+    ext_popup: Option<ExtPopup>,
     data: std::path::PathBuf,
     favicons: favicons::Favicons,
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
@@ -303,6 +315,10 @@ impl Running {
         let (import_tx, import_rx) = std::sync::mpsc::channel();
         let webext = blackhole_macos_webext::ExtensionHost::new();
         let app_ext = blackhole_macos_webext::discover_app_extensions();
+        #[cfg(windows)]
+        if let Some(host) = &webext {
+            host.attach(&chrome);
+        }
         if let Some(host) = &webext {
             for e in app_ext
                 .iter()
@@ -349,6 +365,8 @@ impl Running {
             palette_mode: String::new(),
             icon_target: None,
             peek: None,
+            #[cfg(windows)]
+            ext_popup: None,
             webext,
             installing: Default::default(),
             update: UpdateState::Idle,
@@ -1408,6 +1426,51 @@ impl Running {
         }
     }
 
+    /// Opens the popup of an extension under its toolbar button (`rect` is the button).
+    #[cfg(windows)]
+    fn open_ext_popup(&mut self, url: &str, rect: (f64, f64, f64, f64)) {
+        let was_open = self.ext_popup.is_some();
+        self.close_ext_popup();
+        if was_open {
+            return;
+        }
+        let size = self.window_size();
+        let (width, height) = (380.0_f64.min(size.width - 16.0), 560.0_f64.min(size.height - BAR_HEIGHT - 16.0));
+        let x = (rect.0 + rect.2 - width).clamp(8.0, (size.width - width - 8.0).max(8.0));
+        let scrim = views::ui_view(
+            &self.window,
+            &mut self.web_context,
+            EXT_POPUP_HTML,
+            views::rect(0.0, 0.0, size.width, size.height),
+            true,
+            true,
+            &self.mailbox,
+        );
+        let page = views::extension_popup(
+            &self.window,
+            &mut self.web_context,
+            url,
+            views::rect(x, BAR_HEIGHT - 4.0, width, height),
+            &self.mailbox,
+        );
+        match (scrim, page) {
+            (Ok(scrim), Ok(page)) => {
+                let _ = page.focus();
+                self.ext_popup = Some(ExtPopup { scrim, page });
+            }
+            (scrim, page) => {
+                tracing::error!("cannot open extension popup: {:?} {:?}", scrim.err(), page.err());
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn close_ext_popup(&mut self) {
+        if self.ext_popup.take().is_some() {
+            self.apply_focus();
+        }
+    }
+
     fn peek_to_tab(&mut self) {
         let url = self.peek.as_ref().and_then(|p| p.page.url().ok());
         self.close_peek();
@@ -1655,12 +1718,26 @@ impl Running {
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
             UiCommand::ApplyUpdate => self.start_update(),
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
-                use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                if let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) {
-                    if let RawWindowHandle::AppKit(view) = handle.as_raw() {
-                        host.show_popup(&id, view.ns_view, (x, y, w, hh));
+                #[cfg(target_os = "macos")]
+                {
+                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    if let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) {
+                        if let RawWindowHandle::AppKit(view) = handle.as_raw() {
+                            host.show_popup(&id, view.ns_view, (x, y, w, hh));
+                        }
                     }
                 }
+                #[cfg(windows)]
+                {
+                    let url = self.webext.as_ref().and_then(|host| host.popup_url(&id));
+                    if let Some(url) = url {
+                        self.open_ext_popup(&url, (x, y, w, hh));
+                    }
+                }
+            }
+            UiCommand::CloseExtPopup => {
+                #[cfg(windows)]
+                self.close_ext_popup();
             }
             UiCommand::SetAppExtension { id, on } => {
                 if let Some(e) = self.app_ext.iter().find(|e| e.id == id).cloned() {
@@ -2041,6 +2118,8 @@ impl ApplicationHandler<Wake> for App {
                     backdrop.paint();
                 }
                 app.layout(true);
+                #[cfg(windows)]
+                app.close_ext_popup();
                 if app.window.is_maximized() != app.maximized {
                     app.maximized = !app.maximized;
                     app.ui_bar();

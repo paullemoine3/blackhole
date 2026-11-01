@@ -208,7 +208,7 @@ window.bh = {
       ico.style.background = hue(c.name);
       const text = el('div', 'grow');
       const labels = { installing: 'Downloading…', loading: 'Starting…', active: 'Active', disabled: 'Turned off', failed: 'Error', available: '' };
-      const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+).'
+      const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+ or Windows with WebView2).'
         : c.error ? c.error : [labels[c.status], c.description].filter(Boolean).join(' · ');
       text.append(el('div', 'name', c.name + '  ' + c.version), el('div', 'sub', sub));
       row.append(ico, text);

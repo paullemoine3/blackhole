@@ -25,6 +25,12 @@ pub fn set_hardware_acceleration(on: bool) {
 /// Every view comes from here so they all share the same engine flags (WebView2 requires it).
 fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     let builder = WebViewBuilder::new_with_web_context(ctx);
+    // Browser extensions are a property of the engine: every view must agree on it.
+    #[cfg(windows)]
+    let builder = {
+        use wry::WebViewBuilderExtWindows;
+        builder.with_browser_extensions_enabled(true)
+    };
     #[cfg(windows)]
     let builder = if HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
         builder
@@ -191,7 +197,10 @@ pub fn tab_view(
                 return false;
             };
             // Extension UI frames (autofill menu, notification bar) are embedded in pages.
-            if matches!(target.scheme(), "webkit-extension" | "safari-web-extension") {
+            if matches!(
+                target.scheme(),
+                "webkit-extension" | "safari-web-extension" | "chrome-extension"
+            ) {
                 return true;
             }
             match policy.evaluate(&target) {
@@ -221,6 +230,31 @@ pub fn tab_view(
                 }
                 load.push(Msg::Url(tab, url));
             }
+        })
+        .build_as_child(window)
+}
+
+/// Toolbar popup of an extension: a page of the extension itself, in the shared profile.
+#[cfg(windows)]
+pub fn extension_popup(
+    window: &Window,
+    ctx: &mut WebContext,
+    url: &str,
+    bounds: Rect,
+    mailbox: &Mailbox,
+) -> wry::Result<WebView> {
+    let links = mailbox.clone();
+    builder(ctx)
+        .with_url(url)
+        .with_bounds(bounds)
+        .with_background_color(PAGE_BG)
+        .with_devtools(cfg!(debug_assertions))
+        .with_navigation_handler(|raw| raw.starts_with("chrome-extension:"))
+        .with_new_window_req_handler(move |raw, _| {
+            if let Ok(url) = Url::parse(&raw) {
+                links.push(Msg::OpenTab(url));
+            }
+            NewWindowResponse::Deny
         })
         .build_as_child(window)
 }

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { height: 100%; margin: 0; background: rgba(0,0,0,.01); }
+</style>
+</head>
+<body>
+<script>
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+document.addEventListener('mousedown', () => send({ cmd: 'close_ext_popup' }));
+</script>
+</body>
+</html>

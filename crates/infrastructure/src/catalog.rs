@@ -19,6 +19,18 @@ pub struct CatalogEntry {
     pub homepage: &'static str,
     pub url: &'static str,
     pub sha256: &'static str,
+    /// Chromium build (URL, SHA-256) when Windows needs another package than macOS.
+    pub windows: Option<(&'static str, &'static str)>,
+}
+
+impl CatalogEntry {
+    /// Package (URL, SHA-256) for the running platform.
+    pub fn source(&self) -> (&'static str, &'static str) {
+        match self.windows {
+            Some(win) if cfg!(windows) => win,
+            _ => (self.url, self.sha256),
+        }
+    }
 }
 
 pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
@@ -29,6 +41,7 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     homepage: "https://github.com/uBlockOrigin/uBOL-home",
     url: "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1026.1812/uBOLite_2026.1026.1812.chromium.zip",
     sha256: "d3788eac9f0a44c67f3745a43c3fd446ef33d56b1121f469b19e0fa0a836c2b5",
+    windows: None,
 }, CatalogEntry {
     id: "dark-reader",
     name: "Dark Reader",
@@ -37,6 +50,7 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     homepage: "https://github.com/darkreader/darkreader",
     url: "https://github.com/darkreader/darkreader/releases/download/v4.9.134/darkreader-chrome-mv3.zip",
     sha256: "40402188ad23154a1b8fa094171f2b6908209ed6673ccf58276b75ce661acfaf",
+    windows: None,
 }, CatalogEntry {
     id: "sponsorblock",
     name: "SponsorBlock",
@@ -45,6 +59,7 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     homepage: "https://github.com/ajayyy/SponsorBlock",
     url: "https://github.com/ajayyy/SponsorBlock/releases/download/6.1.7/ChromeExtension.zip",
     sha256: "7c8e3dc8b5e560b480ae8efdf28f4f1101fce0cc32434562a336a89e4962eda3",
+    windows: None,
 }, CatalogEntry {
     id: "bitwarden",
     name: "Bitwarden",
@@ -53,6 +68,11 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     homepage: "https://github.com/bitwarden/clients",
     url: "https://github.com/bitwarden/clients/releases/download/browser-v2026.10.1/dist-firefox-2026.10.1.zip",
     sha256: "80b19fe076e3a86c9eaa33c18d0be1401862cf97638eacaa284b6ea7deae3e9d",
+    // WebView2 runs Chromium extensions: the Firefox/Safari-style build above is for macOS.
+    windows: Some((
+        "https://github.com/bitwarden/clients/releases/download/browser-v2026.10.1/dist-chrome-2026.10.1.zip",
+        "d7c2d924f0d21ccb36f57e39bdaf732732644e94db95d5dd967629d8b878b93a",
+    )),
 }];
 
 pub fn find(id: &str) -> Option<&'static CatalogEntry> {
@@ -73,6 +93,7 @@ pub fn is_installed(data: &Path, id: &str) -> bool {
 
 pub fn remove(data: &Path, id: &str) {
     let _ = fs::remove_file(package_path(data, id));
+    let _ = fs::remove_dir_all(webext_dir(data).join("unpacked").join(id));
 }
 
 /// Fails unless `bytes` hash to `expected` (hex SHA-256).
@@ -90,7 +111,7 @@ pub fn verify(bytes: &[u8], expected: &str) -> Result<(), String> {
 
 /// Stores a verified package atomically (temp file then rename).
 pub fn store(data: &Path, entry: &CatalogEntry, bytes: &[u8]) -> Result<PathBuf, String> {
-    verify(bytes, entry.sha256)?;
+    verify(bytes, entry.source().1)?;
     let dest = package_path(data, entry.id);
     fs::create_dir_all(webext_dir(data)).map_err(|e| e.to_string())?;
     let tmp = dest.with_extension("part");
@@ -101,10 +122,11 @@ pub fn store(data: &Path, entry: &CatalogEntry, bytes: &[u8]) -> Result<PathBuf,
 
 /// Blocking download + verification + install. Run it off the UI thread.
 pub fn install(data: &Path, entry: &CatalogEntry) -> Result<PathBuf, String> {
-    if !entry.url.starts_with("https://") {
+    let url = entry.source().0;
+    if !url.starts_with("https://") {
         return Err("refusing non-HTTPS source".into());
     }
-    let resp = ureq::get(entry.url).call().map_err(|e| e.to_string())?;
+    let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     resp.into_reader()
         .take(MAX_BYTES + 1)
@@ -129,6 +151,7 @@ mod tests {
         url: "https://x",
         // sha256("abc")
         sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        windows: None,
     };
 
     #[test]
@@ -150,6 +173,9 @@ mod tests {
     #[test]
     fn catalog_ids_are_unique_and_pinned() {
         for e in CATALOG {
+            let (url, sha) = e.source();
+            assert_eq!(sha.len(), 64);
+            assert!(url.starts_with("https://"));
             assert_eq!(e.sha256.len(), 64);
             assert!(e.url.starts_with("https://"));
         }
