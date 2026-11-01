@@ -1,0 +1,141 @@
+name: Release
+
+# Tag vX.Y.Z (must equal the version in Cargo.toml) -> build macOS + Windows, publish a GitHub release.
+# The in-app updater reads that release: it installs BlackHole-Setup-*-x64.exe (Windows) or
+# BlackHole-macos-universal.zip (macOS) after checking them against SHA256SUMS.txt.
+# Manual run (Actions -> Run workflow) builds the same artifacts without publishing.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --locked
+
+  version:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: ver
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version (bump it and Cargo.lock first)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: [test, version]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --locked -p blackhole
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=${{ needs.version.outputs.version }}" "/DExePath=..\target\release\blackhole.exe" scripts\windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\portable | Out-Null
+          Copy-Item target\release\blackhole.exe dist\portable\BlackHole.exe
+          Compress-Archive -Path dist\portable\BlackHole.exe -DestinationPath dist\BlackHole-windows-x64.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlackHole-windows
+          path: |
+            dist/BlackHole-Setup-*-x64.exe
+            dist/BlackHole-windows-x64.zip
+
+  macos:
+    needs: [test, version]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build universal binary
+        run: |
+          cargo build --release --locked -p blackhole --target aarch64-apple-darwin
+          cargo build --release --locked -p blackhole --target x86_64-apple-darwin
+          mkdir -p target/universal
+          lipo -create -output target/universal/blackhole \
+            target/aarch64-apple-darwin/release/blackhole \
+            target/x86_64-apple-darwin/release/blackhole
+
+      - name: Bundle BlackHole.app
+        run: BLACKHOLE_BIN=target/universal/blackhole scripts/package-macos.sh
+
+      - name: Zip (used by the updater) and DMG
+        run: |
+          cd dist
+          ditto -c -k --keepParent BlackHole.app BlackHole-macos-universal.zip
+          hdiutil create -volname BlackHole -srcfolder BlackHole.app -ov -format UDZO BlackHole-macos-universal.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlackHole-macos
+          path: |
+            dist/BlackHole-macos-universal.zip
+            dist/BlackHole-macos-universal.dmg
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum BlackHole-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/BlackHole-Setup-*-x64.exe
+            dist/BlackHole-windows-x64.zip
+            dist/BlackHole-macos-universal.zip
+            dist/BlackHole-macos-universal.dmg
+            dist/SHA256SUMS.txt

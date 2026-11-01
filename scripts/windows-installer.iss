@@ -23,6 +23,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+CloseApplications=yes
 WizardStyle=modern
 
 [Languages]
@@ -40,4 +41,6 @@ Name: "{group}\BlackHole"; Filename: "{app}\BlackHole.exe"
 Name: "{autodesktop}\BlackHole"; Filename: "{app}\BlackHole.exe"; Tasks: desktopicon
 
 [Run]
+; Interactive installs offer to launch the app; silent runs (self-update) relaunch it directly.
 Filename: "{app}\BlackHole.exe"; Description: "{cm:LaunchProgram,BlackHole}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\BlackHole.exe"; Flags: nowait; Check: WizardSilent

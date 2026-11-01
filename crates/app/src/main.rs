@@ -15,6 +15,7 @@ mod views;
 use blackhole_application::{BrowserService, NavigationOutcome};
 use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SidebarMode, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
+use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
     default_privacy_policy, extensions_dir, load_extensions, JsonWorkspaceRepository,
 };
@@ -27,6 +28,7 @@ use serde_json::json;
 use sidebar::Sidebar;
 use std::{
     collections::HashMap,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 use url::Url;
@@ -57,6 +59,22 @@ const SPACE_COLORS: [&str; 5] = ["#7c5cff", "#ff5c8a", "#2fd4a0", "#ffb020", "#3
 const BAR_HEIGHT: f64 = 48.0;
 /// Background tabs unused for the configured time release their engine view to save memory.
 const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
+const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
+const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
+
+/// Where the self-update stands; shown as a button at the bottom of the sidebar.
+enum UpdateState {
+    Idle,
+    Available(Release),
+    Downloading(Release),
+    Failed(Release, String),
+}
+
+enum UpdateMsg {
+    Found(Release),
+    Downloaded(PathBuf),
+    Failed(String),
+}
 const FRAME: Duration = Duration::from_millis(16);
 
 /// Floating preview of a link (Arc's "Peek"): a dimming scrim plus the page itself.
@@ -112,6 +130,11 @@ struct Running {
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
+    update: UpdateState,
+    update_tx: std::sync::mpsc::Sender<UpdateMsg>,
+    update_rx: std::sync::mpsc::Receiver<UpdateMsg>,
+    next_update_check: Option<Instant>,
+    quit_for_update: bool,
     install_errors: HashMap<String, String>,
     install_tx: std::sync::mpsc::Sender<(String, Result<std::path::PathBuf, String>)>,
     install_rx: std::sync::mpsc::Receiver<(String, Result<std::path::PathBuf, String>)>,
@@ -177,7 +200,7 @@ impl Running {
 
         // Dev builds use a scratch profile so scripted runs never touch the user's data.
         #[cfg(feature = "devtools")]
-        let data = std::path::PathBuf::from("/tmp/bh_data");
+        let data = devtools::scratch().join("bh_data");
         #[cfg(not(feature = "devtools"))]
         let data = blackhole_infrastructure::data_dir();
         let mut web_context = WebContext::new(Some(data.join("webview")));
@@ -256,6 +279,7 @@ impl Running {
         .expect("command bar view");
 
         let (install_tx, install_rx) = std::sync::mpsc::channel();
+        let (update_tx, update_rx) = std::sync::mpsc::channel();
         let (import_tx, import_rx) = std::sync::mpsc::channel();
         let webext = blackhole_macos_webext::ExtensionHost::new();
         let app_ext = blackhole_macos_webext::discover_app_extensions();
@@ -307,6 +331,11 @@ impl Running {
             peek: None,
             webext,
             installing: Default::default(),
+            update: UpdateState::Idle,
+            update_tx,
+            update_rx,
+            next_update_check: updates_enabled().then(|| Instant::now() + FIRST_UPDATE_CHECK),
+            quit_for_update: false,
             install_errors: HashMap::new(),
             install_tx,
             install_rx,
@@ -480,6 +509,8 @@ impl Running {
             "activeTab": if self.home_shown() { None } else { space.active_tab.map(|t| t.0) },
             "home": self.home_shown(),
             "blocked": self.blocked.total(),
+            "version": env!("CARGO_PKG_VERSION"),
+            "update": self.update_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
             "bookmarks": self.bookmark_list.iter().map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
@@ -623,6 +654,7 @@ impl Running {
 
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
+        self.poll_update();
         while let Ok((msg, count)) = self.import_rx.try_recv() {
             if let Some(m) = msg {
                 self.import_msg = m;
@@ -696,6 +728,72 @@ impl Running {
         };
         let view = self.tabs.get(&tab.id).and_then(web_view_ptr);
         host.set_active_tab(view, tab.url.as_str(), &tab.title);
+    }
+
+    fn update_json(&self) -> serde_json::Value {
+        match &self.update {
+            UpdateState::Idle => json!(null),
+            UpdateState::Available(r) => json!({"state": "available", "version": r.version}),
+            UpdateState::Downloading(r) => json!({"state": "downloading", "version": r.version}),
+            UpdateState::Failed(r, why) => {
+                json!({"state": "error", "version": r.version, "error": why})
+            }
+        }
+    }
+
+    /// Runs the periodic release check and applies what the background threads report.
+    fn poll_update(&mut self) {
+        if let Some(at) = self.next_update_check {
+            if Instant::now() >= at {
+                self.next_update_check = Some(Instant::now() + UPDATE_CHECK_EVERY);
+                let tx = self.update_tx.clone();
+                std::thread::spawn(move || match updater::check(env!("CARGO_PKG_VERSION")) {
+                    Ok(Some(release)) => {
+                        let _ = tx.send(UpdateMsg::Found(release));
+                    }
+                    Ok(None) => {}
+                    Err(why) => tracing::warn!("update check failed: {why}"),
+                });
+            }
+        }
+        while let Ok(msg) = self.update_rx.try_recv() {
+            match (msg, std::mem::replace(&mut self.update, UpdateState::Idle)) {
+                (UpdateMsg::Found(release), UpdateState::Idle | UpdateState::Available(_)) => {
+                    self.update = UpdateState::Available(release);
+                }
+                (UpdateMsg::Downloaded(path), UpdateState::Downloading(release)) => {
+                    match updater::apply(&path) {
+                        Ok(()) => {
+                            self.quit_for_update = true;
+                            self.update = UpdateState::Downloading(release);
+                        }
+                        Err(why) => self.update = UpdateState::Failed(release, why),
+                    }
+                }
+                (UpdateMsg::Failed(why), UpdateState::Downloading(release)) => {
+                    self.update = UpdateState::Failed(release, why);
+                }
+                (_, state) => self.update = state,
+            }
+            self.ui_state();
+        }
+    }
+
+    /// Sidebar button: downloads the new version, then the installer takes over and restarts.
+    fn start_update(&mut self) {
+        let release = match &self.update {
+            UpdateState::Available(r) | UpdateState::Failed(r, _) => r.clone(),
+            _ => return,
+        };
+        self.update = UpdateState::Downloading(release.clone());
+        let (tx, data) = (self.update_tx.clone(), self.data.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(match updater::download(&data, &release) {
+                Ok(path) => UpdateMsg::Downloaded(path),
+                Err(why) => UpdateMsg::Failed(why),
+            });
+        });
+        self.ui_state();
     }
 
     fn install_catalog(&mut self, id: &str) {
@@ -1513,6 +1611,7 @@ impl Running {
             }
             UiCommand::CloseSettings => self.close_settings(),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
+            UiCommand::ApplyUpdate => self.start_update(),
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
                 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
                 if let (Some(host), Ok(handle)) = (&self.webext, self.window.window_handle()) {
@@ -1854,6 +1953,10 @@ impl ApplicationHandler<Wake> for App {
         let mut wake = IDLE_CHECK_EVERY;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
+            if app.quit_for_update {
+                event_loop.exit();
+                return;
+            }
             app.poll_webext();
             app.discard_idle_tabs();
             if app.sidebar.moving() {
@@ -1970,6 +2073,11 @@ fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str) -> String {
         };
     }
     store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML")
+}
+
+/// Scripted devtools runs and cargo builds never look for (or install) updates.
+fn updates_enabled() -> bool {
+    !cfg!(feature = "devtools") && updater::supported()
 }
 
 fn main() {

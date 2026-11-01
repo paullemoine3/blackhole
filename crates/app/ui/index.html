@@ -109,6 +109,23 @@
   body.rail .space { flex: none; min-width: 36px; padding: 0; }
   body.rail .space .sname { display: none !important; }
   body.rail .row { flex-direction: column; }
+
+  /* Update button: only present when a newer release is available */
+  .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: transform .2s ease, box-shadow .2s ease; }
+  .update[hidden] { display: none; }
+  .update .ico { flex: none; display: inline-block; width: 18px; text-align: center; font-size: 15px; line-height: 1; }
+  .update::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%); background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); pointer-events: none; }
+  .update:hover, .update.hov { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255,255,255,.3), 0 6px 20px var(--glow); }
+  .update:hover .ico, .update.hov .ico { animation: up-bounce .7s ease-in-out infinite; }
+  .update:hover::after, .update.hov::after { animation: up-shine .9s ease-out; }
+  .update.busy { cursor: progress; opacity: .85; }
+  .update.busy .ico { animation: up-spin 1s linear infinite; }
+  .update.error { background: linear-gradient(135deg, #b4443c, rgba(255,255,255,.18)); }
+  @keyframes up-bounce { 0%, 100% { transform: translateY(2px); } 50% { transform: translateY(-3px); } }
+  @keyframes up-shine { to { transform: translateX(120%); } }
+  @keyframes up-spin { to { transform: rotate(360deg); } }
+  body.noanim .update, body.noanim .update * { animation: none !important; transition: none !important; }
+  body.rail .update { justify-content: center; padding: 8px 0; }
 </style>
 </head>
 <body class="rail">
@@ -124,6 +141,7 @@
   <div id="bms" hidden></div>
   <button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button>
   <div id="spaces"></div>
+  <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
   <footer>
     <button class="icon" id="gear" title="Settings">⚙</button>
     <button class="shield" id="shield" title="What was blocked this session">🛡<span class="full-only" id="blockedn"> 0</span></button>
@@ -443,6 +461,8 @@ window.bh = {
       return b;
     }));
     $('blockedn').textContent = ' ' + s.blocked;
+    document.body.classList.toggle('noanim', s.animations === false);
+    renderUpdate(s.update, s.version);
     renderBookmarks(s.bookmarks || []);
   },
   toast(m) {
@@ -451,6 +471,20 @@ window.bh = {
   },
 };
 
+function renderUpdate(u, current) {
+  const b = $('update');
+  b.hidden = !u;
+  if (!u) return;
+  const busy = u.state === 'downloading';
+  b.classList.toggle('busy', busy);
+  b.classList.toggle('error', u.state === 'error');
+  b.querySelector('.ico').textContent = busy ? '⟳' : u.state === 'error' ? '⚠' : '⭳';
+  $('updtxt').textContent = busy ? 'Updating to v' + u.version + '…'
+    : u.state === 'error' ? 'Update failed — retry' : 'Update to v' + u.version;
+  b.title = busy ? 'Downloading BlackHole ' + u.version + '; the app restarts when ready'
+    : u.state === 'error' ? u.error : 'BlackHole ' + u.version + ' is available (you have ' + current + ')';
+}
+$('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
 $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };

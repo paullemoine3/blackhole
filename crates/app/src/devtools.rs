@@ -1,14 +1,25 @@
-//! Dev-only UI driver (`--features devtools`): replays `/tmp/bh_script.txt` and saves
-//! screenshots of the app window to `/tmp/bh_shots/` (macOS only).
+//! Dev-only UI driver (`--features devtools`): replays `bh_script.txt` and saves
+//! screenshots of the app window to `bh_shots/` (macOS and Windows).
+//! The scratch directory is `/tmp` on macOS and the system temp dir elsewhere.
 //!
 //! Script lines: `wait MS`, `shot NAME`, `cmd JSON` (a `UiCommand`),
 //! `eval chrome|bar|home|palette|peek|settings|content JS`, `shots NAME` (settings window), `quit`.
 
 use super::*;
 use std::fs;
+use std::path::PathBuf;
 
-const SCRIPT: &str = "/tmp/bh_script.txt";
-const SHOTS: &str = "/tmp/bh_shots";
+pub fn scratch() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+fn shots_dir() -> PathBuf {
+    scratch().join("bh_shots")
+}
 
 pub struct Dev {
     steps: Vec<String>,
@@ -18,14 +29,14 @@ pub struct Dev {
 
 impl Dev {
     pub fn load() -> Option<Self> {
-        let raw = fs::read_to_string(SCRIPT).ok()?;
+        let raw = fs::read_to_string(scratch().join("bh_script.txt")).ok()?;
         let steps = raw
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty() && !l.starts_with('#'))
             .map(str::to_owned)
             .collect();
-        let _ = fs::create_dir_all(SHOTS);
+        let _ = fs::create_dir_all(shots_dir());
         Some(Self {
             steps,
             idx: 0,
@@ -94,46 +105,74 @@ impl Running {
         delay
     }
 
-    /// Grabs the window region in-process: CoreGraphics lets an app capture its own windows
-    /// without the Screen Recording permission that the `screencapture` tool would need.
     fn dev_capture(&self, window: &Window, name: &str) {
-        use core_graphics::{
-            display::CGDisplay,
-            geometry::{CGPoint, CGRect, CGSize},
-            window::{kCGNullWindowID, kCGWindowImageDefault, kCGWindowListOptionOnScreenOnly},
-        };
-        let scale = window.scale_factor();
-        let Ok(origin) = window.inner_position() else {
-            return;
-        };
-        let origin = origin.to_logical::<f64>(scale);
-        let size = window.inner_size().to_logical::<f64>(scale);
-        let rect = CGRect::new(
-            &CGPoint::new(origin.x, origin.y),
-            &CGSize::new(size.width, size.height),
-        );
-        let path = format!("{SHOTS}/{name}.png");
-        let Some(shot) = CGDisplay::screenshot(
-            rect,
-            kCGWindowListOptionOnScreenOnly,
-            kCGNullWindowID,
-            kCGWindowImageDefault,
-        ) else {
-            eprintln!("[dev] screenshot failed");
-            return;
-        };
-        let (w, h, stride) = (shot.width(), shot.height(), shot.bytes_per_row());
-        let data = shot.data();
-        let bytes = data.bytes();
-        let mut rgba = Vec::with_capacity(w * h * 4);
-        for y in 0..h {
-            for px in bytes[y * stride..y * stride + w * 4].chunks_exact(4) {
-                rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
-            }
-        }
-        match image::RgbaImage::from_raw(w as u32, h as u32, rgba) {
-            Some(img) if img.save(&path).is_ok() => eprintln!("[dev] saved {path}"),
-            _ => eprintln!("[dev] screenshot failed"),
+        let path = shots_dir().join(format!("{name}.png"));
+        match capture_rgba(window) {
+            Some((w, h, rgba)) => match image::RgbaImage::from_raw(w, h, rgba) {
+                Some(img) if img.save(&path).is_ok() => {
+                    eprintln!("[dev] saved {}", path.display());
+                }
+                _ => eprintln!("[dev] screenshot failed"),
+            },
+            None => eprintln!("[dev] screenshot failed"),
         }
     }
+}
+
+/// Grabs the window region in-process: CoreGraphics lets an app capture its own windows
+/// without the Screen Recording permission that the `screencapture` tool would need.
+#[cfg(target_os = "macos")]
+fn capture_rgba(window: &Window) -> Option<(u32, u32, Vec<u8>)> {
+    use core_graphics::{
+        display::CGDisplay,
+        geometry::{CGPoint, CGRect, CGSize},
+        window::{kCGNullWindowID, kCGWindowImageDefault, kCGWindowListOptionOnScreenOnly},
+    };
+    let scale = window.scale_factor();
+    let origin = window.inner_position().ok()?.to_logical::<f64>(scale);
+    let size = window.inner_size().to_logical::<f64>(scale);
+    let rect = CGRect::new(
+        &CGPoint::new(origin.x, origin.y),
+        &CGSize::new(size.width, size.height),
+    );
+    let shot = CGDisplay::screenshot(
+        rect,
+        kCGWindowListOptionOnScreenOnly,
+        kCGNullWindowID,
+        kCGWindowImageDefault,
+    )?;
+    let (w, h, stride) = (shot.width(), shot.height(), shot.bytes_per_row());
+    let data = shot.data();
+    let bytes = data.bytes();
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for px in bytes[y * stride..y * stride + w * 4].chunks_exact(4) {
+            rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
+        }
+    }
+    Some((w as u32, h as u32, rgba))
+}
+
+/// Crops the window's client area out of a monitor capture (the web views are composed by
+/// the compositor, so the window must be visible and not covered).
+#[cfg(windows)]
+fn capture_rgba(window: &Window) -> Option<(u32, u32, Vec<u8>)> {
+    let origin = window.inner_position().ok()?;
+    let size = window.inner_size();
+    let monitor = xcap::Monitor::from_point(origin.x, origin.y).ok()?;
+    let shot = monitor.capture_image().ok()?;
+    let (left, top) = (origin.x - monitor.x().ok()?, origin.y - monitor.y().ok()?);
+    let (left, top) = (u32::try_from(left).ok()?, u32::try_from(top).ok()?);
+    let w = size.width.min(shot.width().saturating_sub(left));
+    let h = size.height.min(shot.height().saturating_sub(top));
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let (full_w, pixels) = (shot.width() as usize, shot.into_raw());
+    let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
+    for y in top..top + h {
+        let start = (y as usize * full_w + left as usize) * 4;
+        rgba.extend_from_slice(&pixels[start..start + w as usize * 4]);
+    }
+    Some((w, h, rgba))
 }

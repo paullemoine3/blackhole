@@ -12,6 +12,7 @@ use url::Url;
 pub mod catalog;
 pub mod import;
 pub mod store;
+pub mod updater;
 
 const BLOCKLIST: &str = include_str!("../blocklist.txt");
 

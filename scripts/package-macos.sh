@@ -9,11 +9,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
 APP=dist/BlackHole.app
+# BLACKHOLE_BIN lets CI bundle a prebuilt (universal) binary instead of building one.
+BIN=${BLACKHOLE_BIN:-target/release/blackhole}
 
-cargo build --release -p blackhole
+if [[ -z "${BLACKHOLE_BIN:-}" ]]; then cargo build --release -p blackhole; fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp target/release/blackhole "$APP/Contents/MacOS/BlackHole"
+cp "$BIN" "$APP/Contents/MacOS/BlackHole"
 
 ICONSET=$(mktemp -d)/BlackHole.iconset
 mkdir -p "$ICONSET"

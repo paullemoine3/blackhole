@@ -134,6 +134,8 @@ pub enum UiCommand {
     InstallCatalog {
         id: String,
     },
+    /// Sidebar update button: installs the release found by the background check.
+    ApplyUpdate,
     /// Toolbar click on an extension: opens its popup under the button (window coordinates).
     ExtAction {
         id: String,

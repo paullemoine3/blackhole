@@ -77,6 +77,13 @@ Depuis le panneau ★ Bookmarks, glisse un favori sur la liste des onglets, un d
 
 La barre latérale et la page d'accueil affichent l'icône de chaque site (`favicon.js` relève le `<link rel="icon">` déclaré par la page, ou `/favicon.ico`). Aucun service tiers n'est interrogé : l'icône est chargée depuis le site déjà visité, sans referrer, et l'URL est mémorisée par hôte dans `favicons.json` (sans icône : initiale colorée ; l'icône remplace l'initiale). Les signets importés sont repliés par défaut dans la barre latérale.
 
-## Installeur Windows (CI)
+## Releases et mise à jour (CI)
 
-Le workflow `.github/workflows/windows-release.yml` compile en release sur `windows-latest`, génère un installeur Inno Setup (`scripts/windows-installer.iss`) et un zip portable. Lancement manuel (Actions → Run workflow) = artefacts ; push d'un tag `vX.Y.Z` = publication dans une release GitHub.
+Le workflow `.github/workflows/release.yml` lance les tests (Windows + macOS), puis construit :
+- **Windows** : installeur Inno Setup (`BlackHole-Setup-X.Y.Z-x64.exe`, `scripts/windows-installer.iss`) et zip portable ;
+- **macOS** : binaire universel (arm64 + x86_64) empaqueté par `scripts/package-macos.sh` → `BlackHole-macos-universal.zip` / `.dmg`.
+
+Publier une version : mettre à jour `version` dans `Cargo.toml` (et `Cargo.lock`), committer, puis pousser le tag `vX.Y.Z` (le workflow refuse un tag différent de `Cargo.toml`). Les artefacts + `SHA256SUMS.txt` sont publiés dans la release GitHub. Lancement manuel (Actions → Run workflow) = artefacts sans publication.
+
+**Mise à jour dans l'app** (`crates/infrastructure/src/updater.rs`) : 15 s après le démarrage puis toutes les 6 h, l'app lit `releases/latest` du dépôt. Si la version est plus récente, un bouton « Update to vX.Y.Z » apparaît en bas du panneau de gauche (animation au survol). Au clic : téléchargement HTTPS (hôte github.com uniquement), vérification SHA-256 d'après `SHA256SUMS.txt`, puis Windows lance l'installeur en silencieux (il ferme et relance l'app) et macOS remplace `BlackHole.app` puis le relance. Désactivée pour les builds `cargo` (dossier `target`), devtools et macOS hors bundle `.app`. Sous Windows, la mise à jour passe toujours par l'installeur, même pour une installation issue du zip portable.
+Limites : le bundle macOS est signé ad hoc (pas de notarisation) ; la somme de contrôle protège de la corruption, pas d'une release compromise.
