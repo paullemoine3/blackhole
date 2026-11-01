@@ -4,6 +4,8 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+#[cfg(windows)]
+mod backdrop;
 #[cfg(feature = "devtools")]
 mod devtools;
 mod extensions;
@@ -29,6 +31,7 @@ use sidebar::Sidebar;
 use std::{
     collections::HashMap,
     path::PathBuf,
+    rc::Rc,
     time::{Duration, Instant},
 };
 use url::Url;
@@ -134,7 +137,8 @@ struct Running {
     update_tx: std::sync::mpsc::Sender<UpdateMsg>,
     update_rx: std::sync::mpsc::Receiver<UpdateMsg>,
     next_update_check: Option<Instant>,
-    quit_for_update: bool,
+    quit: bool,
+    maximized: bool,
     install_errors: HashMap<String, String>,
     install_tx: std::sync::mpsc::Sender<(String, Result<std::path::PathBuf, String>)>,
     install_rx: std::sync::mpsc::Receiver<(String, Result<std::path::PathBuf, String>)>,
@@ -147,8 +151,10 @@ struct Running {
     _menu: muda::Menu,
     #[cfg(feature = "devtools")]
     dev: Option<devtools::Dev>,
+    #[cfg(windows)]
+    backdrop: Option<backdrop::Backdrop>,
     // Declared last: web views are children of the window and must be dropped first.
-    window: Window,
+    window: Rc<Window>,
 }
 
 /// The Edit menu is what routes Cmd+C/V/X/A/Z to the focused web view on macOS.
@@ -188,6 +194,18 @@ impl Running {
             .with_theme(Some(winit::window::Theme::Dark))
             .with_inner_size(LogicalSize::new(1280.0, 820.0))
             .with_min_inner_size(LogicalSize::new(720.0, 480.0));
+        // The top bar draws its own minimize / maximize / close buttons.
+        #[cfg(windows)]
+        {
+            use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+            attrs = attrs.with_decorations(false).with_undecorated_shadow(true);
+            // Resource 1 is the icon embedded by build.rs.
+            if let Ok(icon) = winit::window::Icon::from_resource(1, None) {
+                attrs = attrs
+                    .with_window_icon(Some(icon.clone()))
+                    .with_taskbar_icon(Some(icon));
+            }
+        }
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
@@ -196,7 +214,9 @@ impl Running {
                 .with_fullsize_content_view(true)
                 .with_title_hidden(true);
         }
-        let window = event_loop.create_window(attrs).expect("window");
+        let window = Rc::new(event_loop.create_window(attrs).expect("window"));
+        #[cfg(windows)]
+        let backdrop = backdrop::Backdrop::new(&window);
 
         // Dev builds use a scratch profile so scripted runs never touch the user's data.
         #[cfg(feature = "devtools")]
@@ -335,7 +355,8 @@ impl Running {
             update_tx,
             update_rx,
             next_update_check: updates_enabled().then(|| Instant::now() + FIRST_UPDATE_CHECK),
-            quit_for_update: false,
+            quit: false,
+            maximized: false,
             install_errors: HashMap::new(),
             install_tx,
             install_rx,
@@ -349,6 +370,8 @@ impl Running {
             _menu: install_menu(),
             #[cfg(feature = "devtools")]
             dev: devtools::Dev::load(),
+            #[cfg(windows)]
+            backdrop,
             window,
         }
     }
@@ -764,7 +787,7 @@ impl Running {
                 (UpdateMsg::Downloaded(path), UpdateState::Downloading(release)) => {
                     match updater::apply(&path) {
                         Ok(()) => {
-                            self.quit_for_update = true;
+                            self.quit = true;
                             self.update = UpdateState::Downloading(release);
                         }
                         Err(why) => self.update = UpdateState::Failed(release, why),
@@ -817,14 +840,29 @@ impl Running {
             win.window.focus_window();
             return;
         }
-        let attrs = Window::default_attributes()
+        #[allow(unused_mut)]
+        let mut attrs = Window::default_attributes()
             .with_title("BlackHole Settings")
             .with_theme(Some(winit::window::Theme::Dark))
             .with_inner_size(LogicalSize::new(820.0, 600.0))
             .with_min_inner_size(LogicalSize::new(640.0, 440.0));
+        // Owned by the main window so it always stays above it.
+        #[cfg(windows)]
+        {
+            use winit::{
+                platform::windows::WindowAttributesExtWindows,
+                raw_window_handle::{HasWindowHandle, RawWindowHandle},
+            };
+            if let Ok(handle) = self.window.window_handle() {
+                if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                    attrs = attrs.with_owner_window(h.hwnd.get());
+                }
+            }
+        }
         let Ok(window) = event_loop.create_window(attrs) else {
             return;
         };
+        window.focus_window();
         match views::settings_view(&window, &mut self.web_context, SETTINGS_HTML, &self.mailbox) {
             Ok(view) => self.settings = Some(SettingsWindow { view, window }),
             Err(err) => tracing::error!("cannot create settings window: {err}"),
@@ -873,6 +911,7 @@ impl Running {
         };
         let state = json!({
             "os": std::env::consts::OS,
+            "maximized": self.window.is_maximized(),
             "url": url,
             "color": ws.active_space().color,
             "engine": self.svc.settings().search_engine.label(),
@@ -1589,6 +1628,9 @@ impl Running {
             UiCommand::DragWindow => {
                 let _ = self.window.drag_window();
             }
+            UiCommand::WindowMinimize => self.window.set_minimized(true),
+            UiCommand::WindowMaximize => self.window.set_maximized(!self.window.is_maximized()),
+            UiCommand::WindowClose => self.quit = true,
             UiCommand::Hover { on } => {
                 if on {
                     self.sidebar.cursor_moved(0.0);
@@ -1953,7 +1995,7 @@ impl ApplicationHandler<Wake> for App {
         let mut wake = IDLE_CHECK_EVERY;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
-            if app.quit_for_update {
+            if app.quit {
                 event_loop.exit();
                 return;
             }
@@ -1993,7 +2035,23 @@ impl ApplicationHandler<Wake> for App {
         }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => app.layout(true),
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                #[cfg(windows)]
+                if let Some(backdrop) = &mut app.backdrop {
+                    backdrop.paint();
+                }
+                app.layout(true);
+                if app.window.is_maximized() != app.maximized {
+                    app.maximized = !app.maximized;
+                    app.ui_bar();
+                }
+            }
+            #[cfg(windows)]
+            WindowEvent::RedrawRequested => {
+                if let Some(backdrop) = &mut app.backdrop {
+                    backdrop.paint();
+                }
+            }
             WindowEvent::Focused(true) => app.apply_focus(),
             _ => {}
         }

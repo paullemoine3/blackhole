@@ -89,6 +89,12 @@ shot 16-update-downloading
 eval chrome (bh.render({...state, update:null}), String(document.getElementById('update').hidden))
 cmd {"cmd":"hover","on":false}
 wait 300
+cmd {"cmd":"window_maximize"}
+wait 800
+eval bar document.body.className
+cmd {"cmd":"window_maximize"}
+wait 800
+eval bar document.body.className
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -124,6 +130,8 @@ Check ($evals[12] -match 'false\|Update to v9\.9\.9') 'update button: shown with
 Check ($evals[14] -match 'up-bounce') 'update button: hover animation runs'
 Check ($evals[15] -match 'Updating to v9\.9\.9') 'update button: downloading state'
 Check ($evals[16] -match 'true') 'update button: hidden when up to date'
+Check ($evals[17] -match 'windows' -and $evals[17] -match 'maxed') 'window: maximize button state follows the window'
+Check ($evals[18] -match 'windows' -and $evals[18] -notmatch 'maxed') 'window: restore clears the maximized state'
 Check ($saved.Count -eq 16) "screenshots saved ($($saved.Count)/16)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

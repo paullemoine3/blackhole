@@ -1,11 +1,14 @@
 name: Release
 
-# Tag vX.Y.Z (must equal the version in Cargo.toml) -> build macOS + Windows, publish a GitHub release.
+# Push on main with a Cargo.toml version that has no release yet, or a tag vX.Y.Z (must equal the
+# Cargo.toml version) -> build macOS + Windows, publish a GitHub release (tag vX.Y.Z).
+# Other pushes and pull requests only build and test.
 # The in-app updater reads that release: it installs BlackHole-Setup-*-x64.exe (Windows) or
 # BlackHole-macos-universal.zip (macOS) after checking them against SHA256SUMS.txt.
 # Manual run (Actions -> Run workflow) builds the same artifacts without publishing.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -34,17 +37,26 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
+      release: ${{ steps.ver.outputs.release }}
     steps:
       - uses: actions/checkout@v4
       - id: ver
         shell: bash
         run: |
           version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
-          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$version" ]]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version (bump it and Cargo.lock first)"
-            exit 1
+          release=false
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            if [[ "${GITHUB_REF_NAME#v}" != "$version" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version (bump it and Cargo.lock first)"
+              exit 1
+            fi
+            release=true
+          elif [[ "$GITHUB_REF" == refs/heads/main ]] && ! git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            # A new version landed on main: publish it (the release creates the tag).
+            release=true
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   windows:
     needs: [test, version]
@@ -115,8 +127,8 @@ jobs:
             dist/BlackHole-macos-universal.dmg
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos]
+    if: needs.version.outputs.release == 'true'
+    needs: [version, windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -132,6 +144,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             dist/BlackHole-Setup-*-x64.exe

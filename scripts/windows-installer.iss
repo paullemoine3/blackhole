@@ -15,6 +15,7 @@ AppPublisher=BlackHole
 DefaultDirName={autopf}\BlackHole
 DefaultGroupName=BlackHole
 UninstallDisplayIcon={app}\BlackHole.exe
+SetupIconFile=..\crates\app\assets\blackhole.ico
 OutputDir=..\dist
 OutputBaseFilename=BlackHole-Setup-{#AppVersion}-x64
 Compression=lzma2

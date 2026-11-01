@@ -107,6 +107,9 @@ pub enum UiCommand {
     ClosePeek,
     FocusContent,
     DragWindow,
+    WindowMinimize,
+    WindowMaximize,
+    WindowClose,
     Hover {
         on: bool,
     },
