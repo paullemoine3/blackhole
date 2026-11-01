@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+// Page views swallow mouse events, so the hidden sidebar needs its own view to notice the cursor.
+// Thin (left-edge strip): the cursor arrived, show the flyout. Wide (over the page, while the
+// flyout is out): the cursor left the flyout, hide it.
+const move = () => window.ipc.postMessage(JSON.stringify({ cmd: 'peek', on: window.innerWidth < 100 }));
+document.addEventListener('mouseenter', move);
+document.addEventListener('mousemove', move);
+</script>
+</body>
+</html>

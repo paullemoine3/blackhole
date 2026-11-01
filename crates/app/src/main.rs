@@ -50,6 +50,7 @@ const BAR_HTML: &str = include_str!("../ui/bar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 const SPLITBAR_HTML: &str = include_str!("../ui/splitbar.html");
 const PEEK_HTML: &str = include_str!("../ui/peek.html");
+const HOTZONE_HTML: &str = include_str!("../ui/hotzone.html");
 #[cfg(windows)]
 const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
@@ -76,6 +77,21 @@ fn chrome_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry:
         (window.width - x).max(1.0),
         (window.height - BAR_HEIGHT).max(1.0),
     )
+}
+
+/// Invisible view over the page while the sidebar is hidden. Page views swallow mouse events, so
+/// it is the one that notices the cursor: a thin strip on the left edge reveals the sidebar, and
+/// once the flyout is out it covers the rest of the page to hide it when the cursor leaves.
+const HOTZONE_WIDTH: f64 = 12.0;
+
+fn hotzone_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    let (x, width) = if sidebar.flyout_shown() {
+        let x = sidebar.full();
+        (x, (window.width - x).max(1.0))
+    } else {
+        (0.0, HOTZONE_WIDTH)
+    };
+    views::rect(x, BAR_HEIGHT, width, (window.height - BAR_HEIGHT).max(1.0))
 }
 
 /// The floating sidebar: full width, sliding in from the left edge below the top bar.
@@ -159,6 +175,7 @@ struct Running {
     chrome: WebView,
     /// Copy of the sidebar floating over the page while the real one is hidden.
     flyout: WebView,
+    hotzone: WebView,
     bar: WebView,
     home: WebView,
     tabs: HashMap<TabId, WebView>,
@@ -344,6 +361,16 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             &mailbox,
         )
         .expect("split bar view");
+        let hotzone = views::ui_view(
+            &window,
+            &mut web_context,
+            HOTZONE_HTML,
+            hotzone_rect(&sidebar, &size),
+            !sidebar.is_open(),
+            true,
+            &mailbox,
+        )
+        .expect("sidebar hotzone view");
         let flyout = views::ui_view(
             &window,
             &mut web_context,
@@ -391,6 +418,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
         Self {
             chrome,
             flyout,
+            hotzone,
             bar,
             home,
             tabs: HashMap::new(),
@@ -530,6 +558,10 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             .set_bounds(chrome_rect(&self.sidebar, &size));
         let _ = self.flyout.set_bounds(flyout_rect(&self.sidebar, &size));
         let _ = self.flyout.set_visible(self.sidebar.flyout_shown());
+        let _ = self
+            .hotzone
+            .set_bounds(hotzone_rect(&self.sidebar, &size));
+        let _ = self.hotzone.set_visible(!self.sidebar.is_open());
         let _ = self
             .palette
             .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
@@ -1068,6 +1100,18 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
     /// Native views stack in creation order, so the command bar is recreated above new tabs.
     fn raise_palette(&mut self) {
         let size = self.window_size();
+        match views::ui_view(
+            &self.window,
+            &mut self.web_context,
+            HOTZONE_HTML,
+            hotzone_rect(&self.sidebar, &size),
+            !self.sidebar.is_open(),
+            true,
+            &self.mailbox,
+        ) {
+            Ok(view) => self.hotzone = view,
+            Err(error) => tracing::error!("cannot create sidebar hotzone: {error}"),
+        }
         match views::ui_view(
             &self.window,
             &mut self.web_context,
