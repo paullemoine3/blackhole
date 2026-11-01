@@ -37,8 +37,10 @@ struct Ext {
 #[derive(Default)]
 struct Inner {
     profile: Option<ICoreWebView2Profile7>,
-    /// True once extensions left in the profile by a previous run have been removed.
+    /// False while stale extensions are being removed after a failed add; loads wait for it.
     ready: bool,
+    /// Extensions already retried once after clearing the profile.
+    retried: std::collections::HashSet<String>,
     exts: HashMap<String, Ext>,
 }
 
@@ -62,12 +64,17 @@ impl ExtensionHost {
             self.fail_all("this WebView2 runtime has no extension support");
             return;
         };
-        self.0.borrow_mut().profile = Some(profile.clone());
-        self.clear_previous_run(&profile);
+        {
+            let mut inner = self.0.borrow_mut();
+            inner.profile = Some(profile);
+            inner.ready = false;
+        }
+        self.finish_clearing();
     }
 
-    /// WebView2 keeps installed extensions in the profile between runs (after an update they
-    /// point at the old install and refuse to be added again), so start from a clean slate.
+    /// WebView2 keeps installed extensions in the profile between runs. Reusing them avoids a
+    /// fresh install (and the welcome page extensions open for it) at each launch; only when adding
+    /// fails (e.g. a stale copy after an update) the profile is cleared and the add retried.
     fn clear_previous_run(&self, profile: &ICoreWebView2Profile7) {
         let host = Self(Rc::clone(&self.0));
         let handler = ProfileGetBrowserExtensionsCompletedHandler::create(Box::new(
@@ -187,6 +194,20 @@ impl ExtensionHost {
         let (state, key) = (Rc::clone(&self.0), id.to_owned());
         let handler = ProfileAddBrowserExtensionCompletedHandler::create(Box::new(
             move |result, extension| {
+                if result.is_err() && state.borrow_mut().retried.insert(key.clone()) {
+                    let profile = {
+                        let mut inner = state.borrow_mut();
+                        inner.ready = false;
+                        if let Some(ext) = inner.exts.get_mut(&key) {
+                            ext.state = LoadState::Loading;
+                        }
+                        inner.profile.clone()
+                    };
+                    if let Some(profile) = profile {
+                        Self(Rc::clone(&state)).clear_previous_run(&profile);
+                        return Ok(());
+                    }
+                }
                 if let Some(ext) = state.borrow_mut().exts.get_mut(&key) {
                     match (result, extension) {
                         (Ok(()), Some(extension)) => {

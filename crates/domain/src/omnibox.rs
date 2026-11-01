@@ -74,6 +74,16 @@ pub fn is_extension_page(url: &Url) -> bool {
     ) && url.host_str().is_some()
 }
 
+/// Extension page meant to be shown in the toolbar popup (e.g. Bitwarden's unlock popout),
+/// as opposed to a full page such as options or onboarding.
+pub fn is_extension_popout(url: &Url) -> bool {
+    is_extension_page(url)
+        && (url.path().contains("/popup/")
+            || url
+                .query_pairs()
+                .any(|(k, v)| k == "singleActionPopout" || (k == "uilocation" && v == "popout")))
+}
+
 /// Turns what the user typed in the command bar into a navigable URL.
 /// Bare hosts become `https://`; anything else is a search query.
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Url {
@@ -129,6 +139,14 @@ mod tests {
     fn extension_pages_open_as_is() {
         let raw = "chrome-extension://abcdefgh/popup/index.html?uilocation=popout";
         assert_eq!(resolve_input(raw, Default::default()).as_str(), raw);
+    }
+
+    #[test]
+    fn only_popup_pages_are_popouts() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        assert!(is_extension_popout(&u("chrome-extension://abc/popup/index.html?uilocation=popout")));
+        assert!(!is_extension_popout(&u("chrome-extension://abc/options.html")));
+        assert!(!is_extension_popout(&u("https://example.com/popup/")));
     }
 
     #[test]

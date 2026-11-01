@@ -132,7 +132,22 @@ struct Peek {
 struct ExtPopup {
     scrim: WebView,
     page: WebView,
+    /// Right edge of the popup: it grows leftwards from its toolbar button.
+    right: f64,
+    size: (f64, f64),
+    probes_left: u8,
+    /// After the first fit the popup only grows: shrinking toggles scrollbars and makes it flicker.
+    fitted: bool,
+    next_probe: Instant,
+    measured: std::sync::mpsc::Receiver<String>,
+    measure: std::sync::mpsc::Sender<String>,
 }
+
+/// Popup limits: it never gets narrower than the usual toolbar popup, nor larger than Chromium's maximum.
+#[cfg(windows)]
+const POPUP_MIN: (f64, f64) = (300.0, 120.0);
+#[cfg(windows)]
+const POPUP_MAX: (f64, f64) = (800.0, 600.0);
 
 /// The settings window. The view is declared first so it is dropped before its window.
 struct SettingsWindow {
@@ -1502,7 +1517,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
     #[cfg(windows)]
     fn show_ext_popup(&mut self, url: &str, rect: (f64, f64, f64, f64)) {
         let size = self.window_size();
-        let (width, height) = (380.0_f64.min(size.width - 16.0), 560.0_f64.min(size.height - BAR_HEIGHT - 16.0));
+        let (width, height) = (380.0_f64.min(size.width - 16.0), 600.0_f64.min(size.height - BAR_HEIGHT - 16.0));
         let x = (rect.0 + rect.2 - width).clamp(8.0, (size.width - width - 8.0).max(8.0));
         let scrim = views::ui_view(
             &self.window,
@@ -1520,15 +1535,84 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             views::rect(x, BAR_HEIGHT - 4.0, width, height),
             &self.mailbox,
         );
+        let (measure, measured) = std::sync::mpsc::channel();
         match (scrim, page) {
             (Ok(scrim), Ok(page)) => {
                 let _ = page.focus();
-                self.ext_popup = Some(ExtPopup { scrim, page });
+                self.ext_popup = Some(ExtPopup {
+                    scrim,
+                    page,
+                    right: x + width,
+                    size: (width, height),
+                    probes_left: 8,
+                    fitted: false,
+                    next_probe: Instant::now() + Duration::from_millis(300),
+                    measured,
+                    measure,
+                });
             }
             (scrim, page) => {
                 tracing::error!("cannot open extension popup: {:?} {:?}", scrim.err(), page.err());
             }
         }
+    }
+
+    /// Asks the popup how big its content is and applies the answers that came back.
+    #[cfg(windows)]
+    fn probe_ext_popup(&mut self) {
+        let Some(popup) = &mut self.ext_popup else {
+            return;
+        };
+        let answers: Vec<String> = popup.measured.try_iter().collect();
+        for raw in answers {
+            self.fit_ext_popup(&raw);
+        }
+        let Some(popup) = &mut self.ext_popup else {
+            return;
+        };
+        if popup.probes_left == 0 || Instant::now() < popup.next_probe {
+            return;
+        }
+        popup.probes_left -= 1;
+        popup.next_probe = Instant::now() + Duration::from_millis(250);
+        let measure = popup.measure.clone();
+        let _ = popup.page.evaluate_script_with_callback(
+            "(()=>{const b=document.body,d=document.documentElement;if(!b)return '';const w=Math.max(b.scrollWidth,d.scrollWidth>innerWidth?d.scrollWidth:0),h=Math.max(b.scrollHeight,d.scrollHeight>innerHeight?d.scrollHeight:0);return Math.ceil(w+innerWidth-d.clientWidth)+'x'+Math.ceil(h+innerHeight-d.clientHeight)})()",
+            move |raw| {
+                let _ = measure.send(raw);
+            },
+        );
+    }
+
+    /// Resizes the popup to its content (within the limits), keeping its right edge.
+    #[cfg(windows)]
+    fn fit_ext_popup(&mut self, raw: &str) {
+        let max_h = (self.window_size().height - BAR_HEIGHT - 16.0).min(POPUP_MAX.1);
+        let Some(popup) = &mut self.ext_popup else {
+            return;
+        };
+        let Some((w, h)) = raw.trim_matches('"').split_once('x') else {
+            return;
+        };
+        let (Ok(w), Ok(h)) = (w.parse::<f64>(), h.parse::<f64>()) else {
+            return;
+        };
+        let w = w.clamp(POPUP_MIN.0, POPUP_MAX.0);
+        let h = h.clamp(POPUP_MIN.1, max_h.max(POPUP_MIN.1));
+        let (w, h) = if popup.fitted {
+            (w.max(popup.size.0), h.max(popup.size.1))
+        } else {
+            (w, h)
+        };
+        if (w - popup.size.0).abs() < 4.0 && (h - popup.size.1).abs() < 4.0 {
+            return;
+        }
+        popup.fitted = true;
+        popup.size = (w, h);
+        let x = (popup.right - w).max(8.0);
+        let _ = popup
+            .page
+            .set_bounds(views::rect(x, BAR_HEIGHT - 4.0, w, h));
     }
 
     #[cfg(windows)]
@@ -2003,14 +2087,14 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             }
             // An extension asking for a window (Bitwarden's unlock) gets a popup, not a tab.
             #[cfg(windows)]
-            Msg::OpenTab(url) if blackhole_domain::is_extension_page(&url) => {
+            Msg::OpenTab(url) if blackhole_domain::is_extension_popout(&url) => {
                 self.close_ext_popup();
                 let width = self.window_size().width;
                 self.show_ext_popup(url.as_str(), (width, BAR_HEIGHT, 0.0, 0.0));
             }
             #[cfg(target_os = "macos")]
             Msg::OpenTab(url)
-                if blackhole_domain::is_extension_page(&url)
+                if blackhole_domain::is_extension_popout(&url)
                     && self.show_native_popup(
                         url.host_str().unwrap_or_default(),
                         (self.window_size().width, BAR_HEIGHT, 0.0, 0.0),
@@ -2142,6 +2226,11 @@ impl ApplicationHandler<Wake> for App {
             }
             app.poll_webext();
             app.discard_idle_tabs();
+            #[cfg(windows)]
+            if app.ext_popup.is_some() {
+                app.probe_ext_popup();
+                wake = wake.min(Duration::from_millis(250));
+            }
             if app.sidebar.moving() {
                 app.tick_sidebar();
                 wake = FRAME;
