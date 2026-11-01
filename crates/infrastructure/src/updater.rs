@@ -223,6 +223,20 @@ fn apply_impl(installer: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    if !install_dir_writable() {
+        let quoted = installer.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Start-Process -FilePath '{quoted}' -Verb RunAs -ArgumentList \
+             '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS'"
+        );
+        return std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
     // The installer relaunches BlackHole itself once it is done (silent runs only).
     std::process::Command::new(installer)
         .args([
@@ -235,6 +249,22 @@ fn apply_impl(installer: &Path) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// Installations in `Program Files` (made by an elevated setup) cannot be replaced by a plain
+/// process: ask Windows for elevation (one UAC prompt) instead of failing silently.
+#[cfg(windows)]
+fn install_dir_writable() -> bool {
+    let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    else {
+        return true;
+    };
+    let probe = dir.join(".blackhole-write-test");
+    let ok = fs::write(&probe, b"").is_ok();
+    let _ = fs::remove_file(probe);
+    ok
 }
 
 /// Waits for the old process to exit, swaps the bundle (restoring it on failure), relaunches.
@@ -254,6 +284,17 @@ fn apply_impl(zip: &Path) -> Result<(), String> {
         .ok()
         .and_then(|exe| bundle_path(&exe))
         .ok_or("not running from an app bundle")?;
+    // The swap needs write access to the folder holding the app (e.g. /Applications for a
+    // standard user); fail visibly rather than relaunching the old version.
+    let parent = target.parent().ok_or("bad app location")?;
+    let probe = parent.join(".blackhole-write-test");
+    if fs::write(&probe, b"").is_err() {
+        return Err(format!(
+            "cannot write to {}: move BlackHole to a folder you own (e.g. ~/Applications)",
+            parent.display()
+        ));
+    }
+    let _ = fs::remove_file(probe);
     let stage = zip.with_extension("app-stage");
     let _ = fs::remove_dir_all(&stage);
     let status = std::process::Command::new("ditto")
