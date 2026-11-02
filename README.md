@@ -10,7 +10,7 @@
 ![Windows](https://img.shields.io/badge/Windows-WebView2-0078D6?logo=windows)
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 
-[Fonctionnalités](#-fonctionnalités) · [Installation](#-installation) · [Extensions](#-extensions) · [Vie privée](#-vie-privée) · [Performances](#-performances) · [Développement](#-développement)
+[Fonctionnalités](#-fonctionnalités) · [Installation](#-installation) · [Extensions](#-extensions) · [Vie privée](#-vie-privée) · [Développement](#-développement)
 
 ![Barre latérale, onglets épinglés et espaces](docs/screenshots/sidebar.png)
 
@@ -48,23 +48,6 @@
 | Installation | `BlackHole.app` / `.dmg` | Installeur et zip portable |
 | Fenêtre | Barre système | Barre de titre intégrée à l'app |
 | Mise à jour | Remplacement du `.app` | Installeur silencieux |
-
----
-
-## 📊 Performances
-
-Même page (une vidéo YouTube 720p en lecture, muette) ouverte dans un seul onglet, mesurée sur 60 s après 28 s de chargement, macOS (Apple Silicon), sans extension.
-
-| | Google Chrome 155 | BlackHole 0.5.0 |
-|---|---|---|
-| Mémoire moyenne (footprint, tous processus) | ≈ 990 Mo | ≈ 1 080 Mo |
-| Pic mémoire | ≈ 1 320 Mo | ≈ 1 090 Mo |
-| Processus | 13 | 12 |
-| CPU moyen (% d'un cœur) | 41,5 % | 19,6 % |
-
-À retenir : la consommation CPU en lecture vidéo est environ **2× plus faible**, la mémoire est comparable (BlackHole embarque plusieurs vues web pour son interface) et le pic est plus bas.
-
-> Mesure unique, non scientifique : machine non isolée, qualité YouTube automatique, profil Chrome vierge. Sous BlackHole, les processus WebKit (services système partagés) sont repérés par différence avec un état de base, ce qui peut inclure d'autres activités WebKit simultanées. Les résultats varient selon la machine et la vidéo.
 
 ---
 

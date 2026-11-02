@@ -24,6 +24,8 @@ pub struct Settings {
     pub hidden_favorites: BTreeSet<String>,
     /// Version whose release notes the user was last shown (empty before the first launch).
     pub last_seen_version: String,
+    /// Installed extensions also run in private windows (off by default: they can see pages).
+    pub extensions_in_private: bool,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -51,6 +53,7 @@ impl Default for Settings {
             disabled_extensions: BTreeSet::new(),
             hidden_favorites: BTreeSet::new(),
             last_seen_version: String::new(),
+            extensions_in_private: false,
         }
     }
 }

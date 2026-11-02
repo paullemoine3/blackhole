@@ -168,6 +168,11 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         self.persist();
     }
 
+    pub fn set_extensions_in_private(&mut self, on: bool) {
+        self.settings.extensions_in_private = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     pub fn set_animations(&mut self, on: bool) {
         self.settings.animations = on;
         let _ = self.repo.save_settings(&self.settings);

@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.5.1",
+        &[
+            "Installed extensions can now be allowed in private windows (Settings → Extensions)",
+            "The \"Private\" badge no longer overlaps the address bar",
+            "Local network addresses (e.g. http://192.168.1.90:7878/) keep http and their port, whether pasted or typed",
+            "Drag and drop of tabs, grid tabs and spaces shows a dotted card where the item will land",
+            "Sidebar and top-bar icons are properly centered",
+            "Tabs now have three states: quick-access grid, pinned (folders and the tabs inside them) or regular",
+            "Pinned folders sit in their own section, with a separator above your regular tabs",
+        ],
+    ),
+    (
         "0.5.0",
         &["Pinned tabs are immutable: searching from one opens a new tab instead of replacing it"],
     ),

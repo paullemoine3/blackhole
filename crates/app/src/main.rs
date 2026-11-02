@@ -14,7 +14,7 @@ mod ipc;
 mod sidebar;
 mod views;
 
-use blackhole_application::{BrowserService, NavigationOutcome};
+use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
 use blackhole_infrastructure::updater::{self, Release};
@@ -215,6 +215,9 @@ struct Running {
     #[cfg(windows)]
     ext_popup: Option<ExtPopup>,
     data: std::path::PathBuf,
+    /// Where installed extensions are read from: the profile itself, or, in a private window
+    /// that allows extensions, the main profile.
+    ext_src: std::path::PathBuf,
     favicons: favicons::Favicons,
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
@@ -313,23 +316,42 @@ impl Running {
 
         // Dev builds use a scratch profile so scripted runs never touch the user's data.
         #[cfg(feature = "devtools")]
-        let data = if private_mode() {
-            private_data_dir()
-        } else {
-            devtools::scratch().join("bh_data")
-        };
+        let profile = devtools::scratch().join("bh_data");
         #[cfg(not(feature = "devtools"))]
+        let profile = blackhole_infrastructure::data_dir();
         let data = if private_mode() {
             private_data_dir()
         } else {
-            blackhole_infrastructure::data_dir()
+            profile.clone()
         };
         let mut web_context = WebContext::new(Some(data.join("webview")));
         let mut svc = BrowserService::start(
             JsonWorkspaceRepository::new(data.clone()),
             default_privacy_policy(),
         );
-        svc.set_extensions(load_extensions(&extensions_dir(&data)));
+        // A private window has no extensions unless the main profile's settings allow them.
+        let ext_src = if private_mode() {
+            let shared = JsonWorkspaceRepository::new(profile.clone())
+                .load_settings()
+                .ok()
+                .flatten()
+                .filter(|s| s.extensions_in_private);
+            match shared {
+                Some(s) => {
+                    for id in &s.disabled_extensions {
+                        svc.set_enabled_flag(id, false);
+                    }
+                    Some(profile.clone())
+                }
+                None => None,
+            }
+        } else {
+            Some(data.clone())
+        };
+        let ext_src_dir = ext_src.clone().unwrap_or_else(|| data.clone());
+        if let Some(src) = &ext_src {
+            svc.set_extensions(load_extensions(&extensions_dir(src)));
+        }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
         let sidebar = Sidebar::new(f64::from(svc.settings().sidebar_width));
 
@@ -418,16 +440,16 @@ impl Running {
         if let Some(host) = &webext {
             host.attach(&chrome);
         }
-        if let Some(host) = &webext {
+        if let (Some(host), Some(src)) = (&webext, &ext_src) {
             for e in app_ext
                 .iter()
-                .filter(|e| app_extension_enabled(&data, &e.id))
+                .filter(|e| app_extension_enabled(src, &e.id))
             {
                 host.load(&e.id, &e.path);
             }
             for entry in catalog::CATALOG {
-                if catalog::is_installed(&data, entry.id) && svc.extension_enabled(entry.id) {
-                    host.load(entry.id, &catalog::package_path(&data, entry.id));
+                if catalog::is_installed(src, entry.id) && svc.extension_enabled(entry.id) {
+                    host.load(entry.id, &catalog::package_path(src, entry.id));
                 }
             }
         }
@@ -491,6 +513,7 @@ impl Running {
             import_rx,
             webext_sig: String::new(),
             data,
+            ext_src: ext_src_dir,
             settings: None,
             settings_wanted: false,
             #[cfg(target_os = "macos")]
@@ -708,6 +731,7 @@ impl Running {
             "sidebarWidths": Settings::SIDEBAR_WIDTH_CHOICES,
             "animations": settings.animations,
             "hardwareAcceleration": settings.hardware_acceleration,
+            "extensionsInPrivate": settings.extensions_in_private,
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
             "blocked": self.blocked.total(),
@@ -1015,7 +1039,7 @@ impl Running {
 
     fn reload_extensions(&mut self) {
         self.svc
-            .set_extensions(load_extensions(&extensions_dir(&self.data)));
+            .set_extensions(load_extensions(&extensions_dir(&self.ext_src)));
         self.reapply_extensions();
         self.ui_state();
     }
@@ -1767,6 +1791,10 @@ impl Running {
             }
             UiCommand::SetHardwareAcceleration { on } => {
                 self.svc.set_hardware_acceleration(on);
+                self.ui_state();
+            }
+            UiCommand::SetExtensionsInPrivate { on } => {
+                self.svc.set_extensions_in_private(on);
                 self.ui_state();
             }
             UiCommand::SetAnimations { on } => {

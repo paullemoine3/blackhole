@@ -116,7 +116,8 @@ fn version_path(data: &Path, id: &str) -> PathBuf {
 /// Version recorded when the package was stored; `None` for installs that predate the record.
 pub fn installed_version(data: &Path, id: &str) -> Option<String> {
     let v = fs::read_to_string(version_path(data, id)).ok()?;
-    Some(v.trim().to_owned()).filter(|v| !v.is_empty())
+    let v = v.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    Some(v.trim_start_matches('v').to_owned()).filter(|v| !v.is_empty())
 }
 
 /// An installed extension is outdated when the catalog pins another version than the one stored

@@ -102,6 +102,12 @@ pub fn resolve_input(input: &str, engine: SearchEngine) -> Url {
         && !input.ends_with('.');
     if looks_like_host {
         if let Ok(url) = Url::parse(&format!("https://{input}")) {
+            // A bare LAN address (nas:5000, 192.168.1.90:7878) cannot serve https.
+            if crate::privacy::is_local(&url) {
+                if let Ok(http) = Url::parse(&format!("http://{input}")) {
+                    return http;
+                }
+            }
             return url;
         }
     }
@@ -117,6 +123,14 @@ mod tests {
         assert_eq!(
             resolve_input("rust-lang.org", Default::default()).as_str(),
             "https://rust-lang.org/"
+        );
+    }
+
+    #[test]
+    fn bare_lan_address_keeps_http_and_port() {
+        assert_eq!(
+            resolve_input("192.168.1.90:7878", Default::default()).as_str(),
+            "http://192.168.1.90:7878/"
         );
     }
 

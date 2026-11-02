@@ -100,11 +100,23 @@ impl PrivacyPolicy {
     }
 }
 
-fn is_local(url: &Url) -> bool {
-    matches!(
-        url.host_str(),
-        Some("localhost") | Some("127.0.0.1") | Some("[::1]")
-    )
+/// Hosts that cannot serve a public https certificate: loopback, private/link-local IPs,
+/// single-label names and `.local`/`.lan` names. They stay on plain http.
+pub(crate) fn is_local(url: &Url) -> bool {
+    use url::Host;
+    match url.host() {
+        Some(Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Some(Host::Ipv6(ip)) => {
+            ip.is_loopback()
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+        Some(Host::Domain(d)) => {
+            let d = d.trim_end_matches('.');
+            !d.contains('.') || d.ends_with(".local") || d.ends_with(".lan") || d.ends_with(".localhost")
+        }
+        None => false,
+    }
 }
 
 /// One blocked host, with how often it was hit and on which sites.
@@ -203,6 +215,21 @@ mod tests {
     fn localhost_stays_http() {
         let url = Url::parse("http://localhost:3000/").unwrap();
         assert_eq!(policy().evaluate(&url), PrivacyDecision::Allow);
+    }
+
+    #[test]
+    fn lan_hosts_stay_http_with_their_port() {
+        for raw in [
+            "http://192.168.1.90:7878/",
+            "http://10.0.0.2:8080/x",
+            "http://nas:5000/",
+            "http://printer.local/",
+        ] {
+            let url = Url::parse(raw).unwrap();
+            assert_eq!(policy().evaluate(&url), PrivacyDecision::Allow, "{raw}");
+        }
+        let public = Url::parse("http://8.8.8.8:80/").unwrap();
+        assert!(matches!(policy().evaluate(&public), PrivacyDecision::Rewrite(_)));
     }
 
     #[test]

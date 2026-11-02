@@ -24,6 +24,9 @@ pub enum UiCommand {
     SetHardwareAcceleration {
         on: bool,
     },
+    SetExtensionsInPrivate {
+        on: bool,
+    },
     SetTabSleep {
         minutes: u32,
     },

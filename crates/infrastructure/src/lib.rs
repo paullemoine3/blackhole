@@ -288,6 +288,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             disabled_extensions: dto.disabled_extensions.into_iter().collect(),
             hidden_favorites: dto.hidden_favorites.into_iter().collect(),
             last_seen_version: dto.last_seen_version,
+            extensions_in_private: dto.extensions_in_private,
         }))
     }
 
@@ -307,6 +308,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             disabled_extensions: settings.disabled_extensions.iter().cloned().collect(),
             hidden_favorites: settings.hidden_favorites.iter().cloned().collect(),
             last_seen_version: settings.last_seen_version.clone(),
+            extensions_in_private: settings.extensions_in_private,
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -382,6 +384,8 @@ struct SettingsDto {
     hidden_favorites: Vec<String>,
     #[serde(default)]
     last_seen_version: String,
+    #[serde(default)]
+    extensions_in_private: bool,
 }
 
 fn default_true() -> bool {
@@ -474,6 +478,7 @@ mod tests {
             disabled_extensions: ["dark".to_owned()].into(),
             hidden_favorites: ["proton.me".to_owned()].into(),
             last_seen_version: "0.3.0".to_owned(),
+            extensions_in_private: true,
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -489,6 +494,7 @@ mod tests {
         assert_eq!(old.tab_sleep_minutes, 10);
         assert!(old.boosts.is_empty() && old.routes.is_empty());
         assert_eq!(old.last_seen_version, "");
+        assert!(!old.extensions_in_private);
     }
 
     #[test]
