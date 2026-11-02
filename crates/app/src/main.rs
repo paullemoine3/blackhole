@@ -217,6 +217,8 @@ struct Running {
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
+    /// Outdated extensions found by the last "Check for updates"; `None` until it is pressed.
+    catalog_checked: Option<usize>,
     update: UpdateState,
     update_tx: std::sync::mpsc::Sender<UpdateMsg>,
     update_rx: std::sync::mpsc::Receiver<UpdateMsg>,
@@ -368,7 +370,7 @@ impl Running {
             &window,
             &mut web_context,
             SPLITBAR_HTML,
-views::rect(cx, cy, cw, SPLIT_HEADER),
+            views::rect(cx, cy, cw, SPLIT_HEADER),
             false,
             false,
             &mailbox,
@@ -466,6 +468,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             ext_popup: None,
             webext,
             installing: Default::default(),
+            catalog_checked: None,
             update: UpdateState::Idle,
             update_tx,
             update_rx,
@@ -566,14 +569,10 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
         let _ = self
             .bar
             .set_bounds(views::rect(0.0, 0.0, size.width, BAR_HEIGHT));
-        let _ = self
-            .chrome
-            .set_bounds(chrome_rect(&self.sidebar, &size));
+        let _ = self.chrome.set_bounds(chrome_rect(&self.sidebar, &size));
         let _ = self.flyout.set_bounds(flyout_rect(&self.sidebar, &size));
         let _ = self.flyout.set_visible(self.sidebar.flyout_shown());
-        let _ = self
-            .hotzone
-            .set_bounds(hotzone_rect(&self.sidebar, &size));
+        let _ = self.hotzone.set_bounds(hotzone_rect(&self.sidebar, &size));
         let _ = self.hotzone.set_visible(!self.sidebar.is_open());
         let _ = self
             .palette
@@ -605,7 +604,8 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
 
     fn set_sidebar_width(&mut self, width: u32) {
         self.svc.set_sidebar_width(width);
-        self.sidebar.set_full(f64::from(self.svc.settings().sidebar_width));
+        self.sidebar
+            .set_full(f64::from(self.svc.settings().sidebar_width));
         self.layout(true);
     }
 
@@ -706,6 +706,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             "tab": self.settings_tab.clone(),
             "tabSeq": self.settings_seq,
             "catalog": self.catalog_state(),
+            "catalogChecked": self.catalog_checked,
             "appExtensions": self.app_ext.iter().map(|e| {
                 let on = app_extension_enabled(&self.data, &e.id);
                 let state = self.webext.as_ref().and_then(|h| h.state(&e.id));
@@ -784,6 +785,8 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
                 json!({
                     "id": e.id, "name": e.name, "description": e.description, "version": e.version,
                     "homepage": e.homepage, "installed": installed, "status": status, "error": error,
+                    "installedVersion": catalog::installed_version(&self.data, e.id),
+                    "outdated": catalog::needs_update(&self.data, e),
                     "enabled": self.svc.extension_enabled(e.id),
                     "supported": self.webext.is_some(),
                 })
@@ -933,6 +936,14 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             });
         });
         self.ui_state();
+    }
+
+    fn outdated_extensions(&self) -> Vec<&'static str> {
+        catalog::CATALOG
+            .iter()
+            .filter(|e| catalog::needs_update(&self.data, e))
+            .map(|e| e.id)
+            .collect()
     }
 
     fn install_catalog(&mut self, id: &str) {
@@ -1575,7 +1586,10 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
     #[cfg(windows)]
     fn show_ext_popup(&mut self, url: &str, rect: (f64, f64, f64, f64)) {
         let size = self.window_size();
-        let (width, height) = (380.0_f64.min(size.width - 16.0), 600.0_f64.min(size.height - BAR_HEIGHT - 16.0));
+        let (width, height) = (
+            380.0_f64.min(size.width - 16.0),
+            600.0_f64.min(size.height - BAR_HEIGHT - 16.0),
+        );
         let x = (rect.0 + rect.2 - width).clamp(8.0, (size.width - width - 8.0).max(8.0));
         let scrim = views::ui_view(
             &self.window,
@@ -1610,7 +1624,11 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
                 });
             }
             (scrim, page) => {
-                tracing::error!("cannot open extension popup: {:?} {:?}", scrim.err(), page.err());
+                tracing::error!(
+                    "cannot open extension popup: {:?} {:?}",
+                    scrim.err(),
+                    page.err()
+                );
             }
         }
     }
@@ -1915,6 +1933,17 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
             }
             UiCommand::CloseSettings => self.close_settings(),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
+            UiCommand::CheckCatalogUpdates => {
+                self.catalog_checked = Some(self.outdated_extensions().len());
+                self.ui_state();
+            }
+            UiCommand::UpdateAllCatalog => {
+                for id in self.outdated_extensions() {
+                    self.install_catalog(id);
+                }
+                self.catalog_checked = Some(0);
+                self.ui_state();
+            }
             UiCommand::ApplyUpdate => self.start_update(),
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
                 #[cfg(target_os = "macos")]

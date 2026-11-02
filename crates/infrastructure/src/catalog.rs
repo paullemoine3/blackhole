@@ -70,6 +70,15 @@ pub const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     sha256: "527e9ca664f8af2231dc09b19a32b8e30ecbc7a79701726b322e42eda5d1e23c",
     windows: None,
 }, CatalogEntry {
+    id: "ghostery",
+    name: "Ghostery",
+    description: "Bloqueur de publicités et de traqueurs (Manifest V3, declarativeNetRequest).",
+    version: "10.6.10",
+    homepage: "https://github.com/ghostery/ghostery-extension",
+    url: "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.10/ghostery-chromium-10.6.10.zip",
+    sha256: "26eefef7c787f606fb99481898e13ba655adbb97704f28cbff41dfca5ee6e2a2",
+    windows: None,
+}, CatalogEntry {
     id: "bitwarden",
     name: "Bitwarden",
     description: "Gestionnaire de mots de passe (popup dans la barre d'outils).",
@@ -100,8 +109,26 @@ pub fn is_installed(data: &Path, id: &str) -> bool {
     package_path(data, id).is_file()
 }
 
+fn version_path(data: &Path, id: &str) -> PathBuf {
+    webext_dir(data).join(format!("{id}.version"))
+}
+
+/// Version recorded when the package was stored; `None` for installs that predate the record.
+pub fn installed_version(data: &Path, id: &str) -> Option<String> {
+    let v = fs::read_to_string(version_path(data, id)).ok()?;
+    Some(v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+/// An installed extension is outdated when the catalog pins another version than the one stored
+/// (or when no version was recorded, which is treated as outdated: reinstalling is harmless).
+pub fn needs_update(data: &Path, entry: &CatalogEntry) -> bool {
+    is_installed(data, entry.id)
+        && installed_version(data, entry.id).as_deref() != Some(entry.version)
+}
+
 pub fn remove(data: &Path, id: &str) {
     let _ = fs::remove_file(package_path(data, id));
+    let _ = fs::remove_file(version_path(data, id));
     let _ = fs::remove_dir_all(webext_dir(data).join("unpacked").join(id));
 }
 
@@ -126,6 +153,10 @@ pub fn store(data: &Path, entry: &CatalogEntry, bytes: &[u8]) -> Result<PathBuf,
     let tmp = dest.with_extension("part");
     fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+    let version = version_path(data, entry.id);
+    let tmp = version.with_extension("part");
+    fs::write(&tmp, entry.version).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &version).map_err(|e| e.to_string())?;
     Ok(dest)
 }
 
@@ -177,6 +208,23 @@ mod tests {
         assert!(is_installed(dir.path(), "t"));
         remove(dir.path(), "t");
         assert!(!is_installed(dir.path(), "t"));
+    }
+
+    #[test]
+    fn detects_outdated_install() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!needs_update(dir.path(), &ENTRY));
+        store(dir.path(), &ENTRY, b"abc").unwrap();
+        assert!(!needs_update(dir.path(), &ENTRY));
+        let newer = CatalogEntry {
+            version: "2",
+            ..ENTRY
+        };
+        assert!(needs_update(dir.path(), &newer));
+        fs::remove_file(version_path(dir.path(), "t")).unwrap();
+        assert!(needs_update(dir.path(), &ENTRY));
+        remove(dir.path(), "t");
+        assert!(!needs_update(dir.path(), &newer));
     }
 
     #[test]

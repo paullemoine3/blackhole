@@ -138,6 +138,10 @@ pub enum UiCommand {
     InstallCatalog {
         id: String,
     },
+    /// Compares installed catalog extensions with the versions pinned by this build.
+    CheckCatalogUpdates,
+    /// Updates every outdated catalog extension.
+    UpdateAllCatalog,
     /// Sidebar update button: installs the release found by the background check.
     ApplyUpdate,
     /// Toolbar click on an extension: opens its popup under the button (window coordinates).

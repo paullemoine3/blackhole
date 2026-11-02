@@ -82,7 +82,13 @@
 
   <section id="extensions">
     <h1>Extensions</h1><p class="lead">Real WebExtensions run on the system's native extension host, plus simple content-script extensions.</p>
-    <div class="card"><h2>Catalog</h2><div id="catalog"></div>
+    <div class="card"><h2>Catalog</h2>
+      <div class="actions">
+        <button class="btn" id="chk-ext">Check for updates</button>
+        <button class="btn primary" id="upd-all" hidden>Update all</button>
+        <span class="note" id="chk-msg"></span>
+      </div>
+      <div id="catalog"></div>
       <p class="note" id="catnote">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</p>
     </div>
     <div class="card" id="appcard"><h2>Found in your apps</h2><div id="appexts"></div>
@@ -142,6 +148,8 @@ function show(tab) {
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === tab));
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { show(b.dataset.tab); if (b.dataset.tab === 'import') send({ cmd: 'import_scan' }); });
+$('chk-ext').onclick = () => send({ cmd: 'check_catalog_updates' });
+$('upd-all').onclick = () => send({ cmd: 'update_all_catalog' });
 $('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
 $('imp-csv').onclick = () => send({ cmd: 'import_file', kind: 'logins' });
 
@@ -204,6 +212,10 @@ window.bh = {
     }) : [el('div', 'empty', 'Nothing blocked yet in this session.')]));
     if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
     $('version').textContent = 'Version ' + s.version;
+    const outdated = s.catalog.filter(c => c.outdated && c.supported);
+    $('upd-all').hidden = !outdated.length;
+    $('chk-msg').textContent = s.catalogChecked == null ? '' : outdated.length
+      ? outdated.length + (outdated.length > 1 ? ' updates available' : ' update available') : 'All extensions are up to date.';
     $('catalog').replaceChildren(...s.catalog.map(c => {
       const row = el('div', 'ext');
       const ico = el('div', 'ico', c.name[0].toUpperCase());
@@ -212,7 +224,7 @@ window.bh = {
       const labels = { installing: 'Downloading…', loading: 'Starting…', active: 'Active', disabled: 'Turned off', failed: 'Error', available: '' };
       const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+ or Windows with WebView2).'
         : c.error ? c.error : [labels[c.status], c.description].filter(Boolean).join(' · ');
-      text.append(el('div', 'name', c.name + '  ' + c.version), el('div', 'sub', sub));
+      text.append(el('div', 'name', c.name + '  ' + (c.installed && c.installedVersion ? c.installedVersion : c.version)), el('div', 'sub', sub));
       row.append(ico, text);
       if (c.supported && !c.installed) {
         const b = el('button', 'btn primary', c.status === 'installing' ? 'Installing…' : 'Install');
@@ -224,6 +236,12 @@ window.bh = {
         tog.style.width = 'auto';
         const rm = el('button', 'btn', 'Remove');
         rm.onclick = () => send({ cmd: 'remove_catalog', id: c.id });
+        if (c.outdated) {
+          const up = el('button', 'btn primary', c.status === 'installing' ? 'Updating…' : 'Update to ' + c.version);
+          up.disabled = c.status === 'installing';
+          up.onclick = () => send({ cmd: 'install_catalog', id: c.id });
+          row.append(up);
+        }
         row.append(tog, rm);
       }
       return row;
