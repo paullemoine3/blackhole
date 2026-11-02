@@ -3,7 +3,8 @@
 //! The scratch directory is `/tmp` on macOS and the system temp dir elsewhere.
 //!
 //! Script lines: `wait MS`, `shot NAME`, `cmd JSON` (a `UiCommand`),
-//! `eval chrome|bar|home|palette|peek|settings|content JS`, `shots NAME` (settings window), `quit`.
+//! `eval chrome|bar|home|palette|peek|settings|easel|content JS`, `shots NAME` (settings window),
+//! `shote NAME` (easel window), `quit`.
 
 use super::*;
 use std::fs;
@@ -75,6 +76,11 @@ impl Running {
                     self.dev_capture(&win.window, rest.trim());
                 }
             }
+            "shote" => {
+                if let Some(win) = &self.easel {
+                    self.dev_capture(&win.window, rest.trim());
+                }
+            }
             "cmd" => match serde_json::from_str::<UiCommand>(rest) {
                 Ok(command) => self.handle_ui(command),
                 Err(e) => eprintln!("[dev] bad cmd {rest}: {e}"),
@@ -83,6 +89,10 @@ impl Running {
                 let (target, js) = rest.split_once(' ').unwrap_or(("chrome", rest));
                 let view = match target {
                     "settings" => match &self.settings {
+                        Some(win) => &win.view,
+                        None => return delay,
+                    },
+                    "easel" => match &self.easel {
                         Some(win) => &win.view,
                         None => return delay,
                     },

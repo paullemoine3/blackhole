@@ -158,8 +158,12 @@ mod tests {
     #[test]
     fn only_popup_pages_are_popouts() {
         let u = |s: &str| Url::parse(s).unwrap();
-        assert!(is_extension_popout(&u("chrome-extension://abc/popup/index.html?uilocation=popout")));
-        assert!(!is_extension_popout(&u("chrome-extension://abc/options.html")));
+        assert!(is_extension_popout(&u(
+            "chrome-extension://abc/popup/index.html?uilocation=popout"
+        )));
+        assert!(!is_extension_popout(&u(
+            "chrome-extension://abc/options.html"
+        )));
         assert!(!is_extension_popout(&u("https://example.com/popup/")));
     }
 

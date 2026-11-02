@@ -113,7 +113,10 @@ pub(crate) fn is_local(url: &Url) -> bool {
         }
         Some(Host::Domain(d)) => {
             let d = d.trim_end_matches('.');
-            !d.contains('.') || d.ends_with(".local") || d.ends_with(".lan") || d.ends_with(".localhost")
+            !d.contains('.')
+                || d.ends_with(".local")
+                || d.ends_with(".lan")
+                || d.ends_with(".localhost")
         }
         None => false,
     }
@@ -229,7 +232,10 @@ mod tests {
             assert_eq!(policy().evaluate(&url), PrivacyDecision::Allow, "{raw}");
         }
         let public = Url::parse("http://8.8.8.8:80/").unwrap();
-        assert!(matches!(policy().evaluate(&public), PrivacyDecision::Rewrite(_)));
+        assert!(matches!(
+            policy().evaluate(&public),
+            PrivacyDecision::Rewrite(_)
+        ));
     }
 
     #[test]

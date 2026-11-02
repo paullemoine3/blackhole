@@ -15,7 +15,7 @@ mod sidebar;
 mod views;
 
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
-use blackhole_domain::{BlockLog, FolderId, SearchEngine, Settings, SpaceId, TabId};
+use blackhole_domain::{BlockLog, Easels, FolderId, SearchEngine, Settings, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
 use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
@@ -23,7 +23,7 @@ use blackhole_infrastructure::{
 };
 use blackhole_infrastructure::{
     import,
-    store::{BookmarkStore, Vault},
+    store::{BookmarkStore, EaselStore, Vault},
 };
 use ipc::{Mailbox, Msg, PageEvent, UiCommand, Wake};
 use serde_json::json;
@@ -54,6 +54,7 @@ const HOTZONE_HTML: &str = include_str!("../ui/hotzone.html");
 #[cfg(windows)]
 const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
+const EASEL_HTML: &str = include_str!("../ui/easel.html");
 /// Gap between the two panes of a split view.
 const SPLIT_GAP: f64 = 8.0;
 /// Height of the strip above a split view that carries each pane's title and close button.
@@ -171,6 +172,18 @@ struct SettingsWindow {
     window: Window,
 }
 
+/// The Easel window, laid out like the settings window.
+struct EaselWindow {
+    view: WebView,
+    window: Window,
+}
+
+/// A page snapshot read by `capture_to_easel`: address from the engine, the rest from the page.
+struct Capture {
+    url: String,
+    page: String,
+}
+
 struct Running {
     chrome: WebView,
     /// Copy of the sidebar floating over the page while the real one is hidden.
@@ -238,6 +251,13 @@ struct Running {
     webext_sig: String,
     settings: Option<SettingsWindow>,
     settings_wanted: bool,
+    easels: Easels,
+    easel_store: EaselStore,
+    easel_current: Option<u64>,
+    easel: Option<EaselWindow>,
+    easel_wanted: bool,
+    capture_tx: std::sync::mpsc::Sender<Capture>,
+    capture_rx: std::sync::mpsc::Receiver<Capture>,
     #[cfg(target_os = "macos")]
     _menu: muda::Menu,
     #[cfg(feature = "devtools")]
@@ -434,6 +454,9 @@ impl Running {
         let (install_tx, install_rx) = std::sync::mpsc::channel();
         let (update_tx, update_rx) = std::sync::mpsc::channel();
         let (import_tx, import_rx) = std::sync::mpsc::channel();
+        let (capture_tx, capture_rx) = std::sync::mpsc::channel();
+        let easel_store = EaselStore::new(&data);
+        let easels = easel_store.load();
         let webext = blackhole_macos_webext::ExtensionHost::new();
         let app_ext = blackhole_macos_webext::discover_app_extensions();
         #[cfg(windows)]
@@ -441,10 +464,7 @@ impl Running {
             host.attach(&chrome);
         }
         if let (Some(host), Some(src)) = (&webext, &ext_src) {
-            for e in app_ext
-                .iter()
-                .filter(|e| app_extension_enabled(src, &e.id))
-            {
+            for e in app_ext.iter().filter(|e| app_extension_enabled(src, &e.id)) {
                 host.load(&e.id, &e.path);
             }
             for entry in catalog::CATALOG {
@@ -516,6 +536,13 @@ impl Running {
             ext_src: ext_src_dir,
             settings: None,
             settings_wanted: false,
+            easel_current: easels.all().first().map(|e| e.id),
+            easels,
+            easel_store,
+            easel: None,
+            easel_wanted: false,
+            capture_tx,
+            capture_rx,
             #[cfg(target_os = "macos")]
             _menu: install_menu(),
             #[cfg(feature = "devtools")]
@@ -694,6 +721,7 @@ impl Running {
         });
         self.ui(format!("window.bh&&bh.render({state})"));
         self.ui_settings();
+        self.ui_easel();
         self.ui_bar();
         self.ui_splitbar();
         if self.home_shown() {
@@ -830,6 +858,7 @@ impl Running {
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
         self.poll_update();
+        self.poll_captures();
         while let Ok((msg, count)) = self.import_rx.try_recv() {
             if let Some(m) = msg {
                 self.import_msg = m;
@@ -1035,6 +1064,245 @@ impl Running {
 
     fn settings_window_id(&self) -> Option<WindowId> {
         self.settings.as_ref().map(|w| w.window.id())
+    }
+
+    // ---- easels ---------------------------------------------------------------------------
+
+    /// Opens (or focuses) the Easel window; called from the event loop, which creates windows.
+    fn open_easel(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(win) = &self.easel {
+            win.window.set_minimized(false);
+            win.window.focus_window();
+            return;
+        }
+        #[allow(unused_mut)]
+        let mut attrs = Window::default_attributes()
+            .with_title("BlackHole Easel")
+            .with_theme(Some(winit::window::Theme::Dark))
+            .with_inner_size(LogicalSize::new(1100.0, 720.0))
+            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
+        #[cfg(windows)]
+        {
+            use winit::{
+                platform::windows::WindowAttributesExtWindows,
+                raw_window_handle::{HasWindowHandle, RawWindowHandle},
+            };
+            if let Ok(handle) = self.window.window_handle() {
+                if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                    attrs = attrs.with_owner_window(h.hwnd.get());
+                }
+            }
+        }
+        let Ok(window) = event_loop.create_window(attrs) else {
+            return;
+        };
+        window.focus_window();
+        match views::settings_view(&window, &mut self.web_context, EASEL_HTML, &self.mailbox) {
+            Ok(view) => self.easel = Some(EaselWindow { view, window }),
+            Err(err) => tracing::error!("cannot create easel window: {err}"),
+        }
+    }
+
+    fn close_easel(&mut self) {
+        self.easel = None;
+    }
+
+    fn easel_window_id(&self) -> Option<WindowId> {
+        self.easel.as_ref().map(|w| w.window.id())
+    }
+
+    /// The easel being edited; falls back to the first one when the selection is gone.
+    fn current_easel(&mut self) -> Option<u64> {
+        if !self
+            .easel_current
+            .is_some_and(|id| self.easels.get(id).is_some())
+        {
+            self.easel_current = self.easels.all().first().map(|e| e.id);
+        }
+        self.easel_current
+    }
+
+    /// The current easel, created on first use so a capture never fails for lack of a board.
+    fn easel_or_create(&mut self) -> Option<u64> {
+        if self.current_easel().is_none() {
+            self.easel_current = self.easels.create("");
+        }
+        self.easel_current
+    }
+
+    fn ui_easel(&self) {
+        let Some(win) = &self.easel else { return };
+        let state = json!({
+            "current": self.easel_current,
+            "easels": self.easels.all().iter().map(|e| json!({
+                "id": e.id,
+                "name": e.name,
+                "items": e.items.iter().map(|i| json!({
+                    "id": i.id, "kind": i.kind.id(), "x": i.x, "y": i.y, "w": i.w, "h": i.h,
+                    "text": i.text, "title": i.title, "url": i.url, "color": i.color,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "colors": blackhole_domain::easel::COLORS,
+        });
+        let _ = win
+            .view
+            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    /// Persists after a change and refreshes the window; `false` changes nothing.
+    fn easel_changed(&mut self, changed: bool) {
+        if changed {
+            self.easel_persist();
+            self.ui_easel();
+        }
+    }
+
+    fn easel_persist(&mut self) {
+        if let Err(e) = self.easel_store.save(&self.easels) {
+            tracing::error!("cannot save easels: {e}");
+            self.toast("Could not save your easels");
+        }
+    }
+
+    /// Reads the page in front. The address comes from the engine; the title and the selection
+    /// come from the page and are only ever stored as text.
+    fn capture_to_easel(&mut self) {
+        let Some(view) = (if self.home_shown() {
+            None
+        } else {
+            self.svc
+                .workspace()
+                .active_tab()
+                .and_then(|t| self.tabs.get(&t.id))
+        }) else {
+            self.toast("Open a web page to capture it");
+            return;
+        };
+        let Ok(url) = view.url() else { return };
+        let tx = self.capture_tx.clone();
+        let result = view.evaluate_script_with_callback(
+            "({title:document.title,text:String(getSelection()||'').slice(0,2000)})",
+            move |page| {
+                let _ = tx.send(Capture {
+                    url: url.clone(),
+                    page,
+                });
+            },
+        );
+        if result.is_err() {
+            self.toast("This page cannot be captured");
+        }
+    }
+
+    fn poll_captures(&mut self) {
+        while let Ok(cap) = self.capture_rx.try_recv() {
+            let page: serde_json::Value = serde_json::from_str(&cap.page).unwrap_or_default();
+            let text = |key| page.get(key).and_then(|v| v.as_str()).unwrap_or_default();
+            let Some(easel) = self.easel_or_create() else {
+                self.toast("Too many easels");
+                continue;
+            };
+            match self
+                .easels
+                .capture(easel, &cap.url, text("title"), text("text"))
+            {
+                Ok(_) => {
+                    let name = self
+                        .easels
+                        .get(easel)
+                        .map(|e| e.name.clone())
+                        .unwrap_or_default();
+                    self.easel_changed(true);
+                    self.toast(&format!("Captured to {name}"));
+                }
+                Err(why) => self.toast(why),
+            }
+        }
+    }
+
+    fn handle_easel(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::OpenEasel { id } => {
+                if let Some(id) = id.filter(|id| self.easels.get(*id).is_some()) {
+                    self.easel_current = Some(id);
+                }
+                self.easel_or_create();
+                self.easel_changed(true);
+                self.easel_wanted = true;
+            }
+            UiCommand::CloseEasel => self.close_easel(),
+            UiCommand::NewEasel { name } => {
+                match self.easels.create(&name) {
+                    Some(id) => self.easel_current = Some(id),
+                    None => self.toast("Too many easels"),
+                }
+                self.easel_changed(true);
+            }
+            UiCommand::SelectEasel { id } => {
+                if self.easels.get(id).is_some() {
+                    self.easel_current = Some(id);
+                    self.ui_easel();
+                }
+            }
+            UiCommand::RenameEasel { id, name } => {
+                let ok = self.easels.rename(id, &name);
+                self.easel_changed(ok);
+            }
+            UiCommand::DeleteEasel { id } => {
+                let ok = self.easels.delete(id);
+                self.easel_changed(ok);
+            }
+            UiCommand::CaptureToEasel => self.capture_to_easel(),
+            UiCommand::EaselAddNote { x, y } => {
+                if let Some(easel) = self.easel_or_create() {
+                    let at = x.zip(y);
+                    let added = self.easels.add_note(easel, at).is_some();
+                    self.easel_changed(added);
+                }
+            }
+            UiCommand::EaselOpenLink { item } => {
+                let url = self
+                    .current_easel()
+                    .and_then(|id| self.easels.get(id))
+                    .and_then(|e| e.items.iter().find(|i| i.id == item))
+                    .and_then(|i| i.url.clone());
+                if let Some(url) = url {
+                    self.open(&url);
+                    self.toast("Opened in a new tab");
+                }
+            }
+            other => {
+                let Some(easel) = self.current_easel() else {
+                    return;
+                };
+                // Text, moves and resizes are already on screen: re-rendering would steal the
+                // caret or interrupt a drag.
+                let silent = match &other {
+                    UiCommand::EaselSetText { item, text } => {
+                        self.easels.set_text(easel, *item, text)
+                    }
+                    UiCommand::EaselMove { item, x, y } => {
+                        self.easels.move_item(easel, *item, *x, *y)
+                    }
+                    UiCommand::EaselResize { item, w, h } => {
+                        self.easels.resize_item(easel, *item, *w, *h)
+                    }
+                    _ => false,
+                };
+                if silent {
+                    self.easel_persist();
+                    return;
+                }
+                let changed = match other {
+                    UiCommand::EaselColor { item, color } => {
+                        self.easels.set_color(easel, item, &color)
+                    }
+                    UiCommand::EaselRemove { item } => self.easels.remove_item(easel, item),
+                    _ => false,
+                };
+                self.easel_changed(changed);
+            }
+        }
     }
 
     fn reload_extensions(&mut self) {
@@ -1378,6 +1646,8 @@ impl Running {
             json!({"id": "new_folder", "label": "New Folder"}),
             json!({"id": "icon_space", "label": format!("Set emoji for space {}", space.name), "hint": "Emoji"}),
             json!({"id": "toggle_sidebar", "label": "Toggle sidebar mode", "hint": "⌘B"}),
+            json!({"id": "new_easel", "label": "New Easel", "hint": "Easel"}),
+            json!({"id": "open_easel", "label": "Open Easel", "hint": "⌘⇧E"}),
             json!({"id": "settings", "label": "Open Settings"}),
             json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
             json!({"id": "clear_history", "label": "Clear browsing history"}),
@@ -1406,6 +1676,11 @@ impl Running {
                     "hint": "Split",
                 }));
             }
+        }
+        if active.is_some() {
+            actions.push(
+                json!({"id": "capture_easel", "label": "Capture this page to Easel", "hint": "⌘⇧S"}),
+            );
         }
         if let Some(site) = &site {
             actions.push(json!({"id": "boost", "label": format!("Boost {site}"), "hint": "Boost"}));
@@ -1472,6 +1747,14 @@ impl Running {
             "new_folder" => self.handle_ui(UiCommand::NewFolder),
             "toggle_sidebar" => self.handle_ui(UiCommand::Lock),
             "settings" => self.settings_wanted = true,
+            "new_easel" => {
+                self.handle_ui(UiCommand::NewEasel {
+                    name: String::new(),
+                });
+                self.easel_wanted = true;
+            }
+            "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
+            "capture_easel" => self.handle_ui(UiCommand::CaptureToEasel),
             "clear_history" => {
                 self.svc.clear_history();
                 self.toast("History cleared");
@@ -1983,6 +2266,20 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::CloseSettings => self.close_settings(),
+            command @ (UiCommand::OpenEasel { .. }
+            | UiCommand::CloseEasel
+            | UiCommand::NewEasel { .. }
+            | UiCommand::SelectEasel { .. }
+            | UiCommand::RenameEasel { .. }
+            | UiCommand::DeleteEasel { .. }
+            | UiCommand::CaptureToEasel
+            | UiCommand::EaselAddNote { .. }
+            | UiCommand::EaselSetText { .. }
+            | UiCommand::EaselMove { .. }
+            | UiCommand::EaselResize { .. }
+            | UiCommand::EaselColor { .. }
+            | UiCommand::EaselRemove { .. }
+            | UiCommand::EaselOpenLink { .. }) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
             UiCommand::CheckCatalogUpdates => {
                 self.catalog_checked = Some(self.outdated_extensions().len());
@@ -2154,6 +2451,8 @@ impl Running {
             "[" => self.handle_ui(UiCommand::Back),
             "]" => self.handle_ui(UiCommand::Forward),
             "," => self.settings_wanted = true,
+            "shift+e" => self.handle_ui(UiCommand::OpenEasel { id: None }),
+            "shift+s" => self.handle_ui(UiCommand::CaptureToEasel),
             "\\" => self.toggle_split(),
             _ => {}
         }
@@ -2332,6 +2631,10 @@ impl Running {
             self.open_settings(event_loop);
             self.ui_state();
         }
+        if std::mem::take(&mut self.easel_wanted) {
+            self.open_easel(event_loop);
+            self.ui_easel();
+        }
     }
 
     fn pump(&mut self) {
@@ -2400,6 +2703,12 @@ impl ApplicationHandler<Wake> for App {
         if app.settings_window_id() == Some(id) {
             if matches!(event, WindowEvent::CloseRequested) {
                 app.close_settings();
+            }
+            return;
+        }
+        if app.easel_window_id() == Some(id) {
+            if matches!(event, WindowEvent::CloseRequested) {
+                app.close_easel();
             }
             return;
         }

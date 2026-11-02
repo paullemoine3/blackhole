@@ -13,9 +13,9 @@ use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSRectEdge, NSSize};
 use objc2_foundation::{NSError, NSString, NSURL};
 use objc2_web_kit::{
     WKUserScript, WKUserScriptInjectionTime, WKWebExtension, WKWebExtensionContext,
-    WKWebExtensionContextPermissionStatus, WKWebExtensionController, WKWebExtensionMatchPattern,
-    WKWebExtensionControllerConfiguration, WKWebExtensionTabChangedProperties, WKWebView,
-    WKWebViewConfiguration,
+    WKWebExtensionContextPermissionStatus, WKWebExtensionController,
+    WKWebExtensionControllerConfiguration, WKWebExtensionMatchPattern,
+    WKWebExtensionTabChangedProperties, WKWebView, WKWebViewConfiguration,
 };
 use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 use std::{ffi::c_void, ptr::NonNull};

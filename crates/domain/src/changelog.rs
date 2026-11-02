@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.5.2",
+        &[
+            "Easel: free-form boards for notes and clips of web pages, in their own window (Cmd/Ctrl + Shift + E)",
+            "Capture the page in front to an Easel with Cmd/Ctrl + Shift + S or from the command bar; each clip links back to its page",
+        ],
+    ),
+    (
         "0.5.1",
         &[
             "Installed extensions can now be allowed in private windows (Settings → Extensions)",

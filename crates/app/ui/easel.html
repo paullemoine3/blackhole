@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>BlackHole Easel</title>
+<style>
+  :root { --accent: #7c5cff; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #100f17; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { display: grid; grid-template-columns: 220px 1fr; }
+  nav { padding: 18px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); overflow-y: auto; user-select: none; -webkit-user-select: none; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 14px; font-weight: 600; font-size: 15px; }
+  .logo { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
+  .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 12px; background: rgba(255,255,255,.1); }
+  .btn:hover { background: rgba(255,255,255,.18); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.danger:hover { background: #c2455b; }
+  .easel { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; padding: 8px 10px; border-radius: 9px; cursor: pointer; opacity: .75; }
+  .easel:hover { background: rgba(255,255,255,.07); opacity: 1; }
+  .easel.on { background: rgba(124,92,255,.28); opacity: 1; }
+  .easel .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .easel .count { font-size: 11px; opacity: .6; }
+  section { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  #title { flex: 1; min-width: 0; font-family: inherit; font-size: 18px; font-weight: 600; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px 8px; }
+  #title:hover, #title:focus { border-color: rgba(255,255,255,.18); outline: none; }
+  #board { position: relative; overflow: auto; background-color: #14131c; background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 24px 24px; }
+  #surface { position: relative; min-width: 100%; min-height: 100%; }
+  #empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; opacity: .5; pointer-events: none; padding: 40px; }
+  .card { position: absolute; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.14); overflow: hidden; }
+  .card .bar { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; background: rgba(0,0,0,.25); cursor: grab; user-select: none; -webkit-user-select: none; }
+  .card.drag .bar { cursor: grabbing; }
+  .card .kind { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .07em; flex: 1; }
+  .card .tool { font: inherit; font-size: 12px; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; padding: 1px 6px; opacity: .7; }
+  .card .tool:hover { background: rgba(255,255,255,.18); opacity: 1; }
+  .card .link { display: block; padding: 8px 10px 0; font-weight: 600; color: #fff; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .link:hover { text-decoration: underline; }
+  .card .host { padding: 0 10px 4px; font-size: 11.5px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card textarea { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 8px 10px; }
+  .card .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.4) 50%); }
+  .colors { display: none; gap: 4px; padding: 0 4px; }
+  .card.pick .colors { display: flex; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); cursor: pointer; padding: 0; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2b2a3a; border: 1px solid rgba(255,255,255,.14); padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="brand"><span class="logo"></span>Easels</div>
+  <button class="btn primary" id="new">+ New Easel</button>
+  <div id="list"></div>
+</nav>
+<section>
+  <header>
+    <input id="title" aria-label="Easel name" maxlength="80" spellcheck="false">
+    <button class="btn" id="note">＋ Note</button>
+    <button class="btn" id="capture" title="Clip the page open in the browser">📷 Capture page</button>
+    <button class="btn danger" id="delete">Delete</button>
+  </header>
+  <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (⌘/Ctrl + Shift + S).</div></div></div>
+</section>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let state = { current: null, easels: [], colors: [] };
+const pending = new Map();
+let timer = null;
+
+function flush() {
+  clearTimeout(timer);
+  for (const [item, text] of pending) send({ cmd: 'easel_set_text', item, text });
+  pending.clear();
+}
+function queueText(item, text) {
+  pending.set(item, text);
+  clearTimeout(timer);
+  timer = setTimeout(flush, 200);
+}
+const current = () => state.easels.find(e => e.id === state.current) || null;
+const host = (url) => { try { return new URL(url).host; } catch (_) { return ''; } };
+
+function drag(card, item, mode) {
+  return (ev) => {
+    if (ev.button !== 0 || ev.target.closest('.tool,.dot')) return;
+    ev.preventDefault();
+    const sx = ev.clientX, sy = ev.clientY, ox = item.x, oy = item.y, ow = item.w, oh = item.h;
+    card.classList.add('drag');
+    const move = (e) => {
+      if (mode === 'move') {
+        item.x = Math.max(0, Math.round(ox + e.clientX - sx));
+        item.y = Math.max(0, Math.round(oy + e.clientY - sy));
+      } else {
+        item.w = Math.max(120, Math.round(ow + e.clientX - sx));
+        item.h = Math.max(80, Math.round(oh + e.clientY - sy));
+      }
+      place(card, item);
+      fit();
+    };
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      card.classList.remove('drag');
+      send(mode === 'move' ? { cmd: 'easel_move', item: item.id, x: item.x, y: item.y }
+                           : { cmd: 'easel_resize', item: item.id, w: item.w, h: item.h });
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  };
+}
+function place(card, item) {
+  card.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px;background:${item.color}`;
+}
+// The surface always extends past the farthest card so the board can scroll to it.
+function fit() {
+  const e = current();
+  const items = e ? e.items : [];
+  $('surface').style.width = Math.max(0, ...items.map(i => i.x + i.w)) + 200 + 'px';
+  $('surface').style.height = Math.max(0, ...items.map(i => i.y + i.h)) + 200 + 'px';
+}
+function card(item) {
+  const c = el('div', 'card ' + item.kind);
+  c.dataset.id = item.id;
+  place(c, item);
+  const bar = el('div', 'bar');
+  const colors = el('div', 'colors');
+  for (const col of state.colors) {
+    const d = el('button', 'dot');
+    d.style.background = col;
+    d.title = col;
+    d.onclick = () => send({ cmd: 'easel_color', item: item.id, color: col });
+    colors.append(d);
+  }
+  const paint = el('button', 'tool', '🎨');
+  paint.title = 'Colour';
+  paint.onclick = () => c.classList.toggle('pick');
+  const remove = el('button', 'tool remove', '✕');
+  remove.title = 'Remove';
+  remove.onclick = () => { pending.delete(item.id); send({ cmd: 'easel_remove', item: item.id }); };
+  bar.append(el('span', 'kind', item.kind === 'clip' ? 'Clip' : 'Note'), colors, paint, remove);
+  bar.onpointerdown = drag(c, item, 'move');
+  c.append(bar);
+  if (item.kind === 'clip') {
+    const link = el('a', 'link', item.title);
+    link.title = item.url;
+    link.onclick = (e) => { e.preventDefault(); send({ cmd: 'easel_open_link', item: item.id }); };
+    c.append(link, el('div', 'host', host(item.url)));
+  }
+  const area = el('textarea');
+  area.value = item.text;
+  area.placeholder = item.kind === 'clip' ? 'Add a comment…' : 'Write something…';
+  area.oninput = () => { item.text = area.value; queueText(item.id, area.value); };
+  area.onblur = flush;
+  c.append(area);
+  const grip = el('div', 'grip');
+  grip.onpointerdown = drag(c, item, 'resize');
+  c.append(grip);
+  return c;
+}
+
+window.bh = {
+  render(s) {
+    for (const e of s.easels) for (const i of e.items) if (pending.has(i.id) && e.id === s.current) i.text = pending.get(i.id);
+    flush();
+    state = s;
+    const e = current();
+    $('list').replaceChildren(...s.easels.map(x => {
+      const b = el('button', 'easel' + (x.id === s.current ? ' on' : ''));
+      b.append(el('span', 'name', x.name), el('span', 'count', x.items.length));
+      b.onclick = () => send({ cmd: 'select_easel', id: x.id });
+      return b;
+    }));
+    if (document.activeElement !== $('title')) $('title').value = e ? e.name : '';
+    $('title').disabled = $('note').disabled = $('capture').disabled = $('delete').disabled = !e;
+    $('surface').replaceChildren(...(e ? e.items.map(card) : []));
+    $('empty').style.display = e && e.items.length ? 'none' : '';
+    fit();
+  },
+  toast(msg) {
+    $('toast').textContent = msg;
+    $('toast').classList.add('on');
+    clearTimeout(bh.t);
+    bh.t = setTimeout(() => $('toast').classList.remove('on'), 2200);
+  },
+};
+
+$('new').onclick = () => send({ cmd: 'new_easel', name: '' });
+$('note').onclick = () => send({ cmd: 'easel_add_note' });
+$('capture').onclick = () => send({ cmd: 'capture_to_easel' });
+// Native webviews do not show confirm(): a second click within 3 s confirms.
+let arm = null;
+$('delete').onclick = () => {
+  const e = current();
+  if (!e) return;
+  if (arm) { clearTimeout(arm); arm = null; $('delete').textContent = 'Delete'; send({ cmd: 'delete_easel', id: e.id }); return; }
+  $('delete').textContent = 'Click again to delete';
+  arm = setTimeout(() => { arm = null; $('delete').textContent = 'Delete'; }, 3000);
+};
+$('title').onchange = () => { const e = current(); if (e) send({ cmd: 'rename_easel', id: e.id, name: $('title').value }); };
+$('title').onkeydown = (ev) => { if (ev.key === 'Enter') ev.target.blur(); };
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); flush(); send({ cmd: 'close_easel' }); }
+});
+send({ cmd: 'ready' });
+</script>
+</body>
+</html>

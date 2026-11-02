@@ -43,6 +43,7 @@ cargo test --workspace
   - Protocole du script : `wait MS`, `shot NOM`, `shots NOM` (fenêtre des paramètres), `cmd JSON` (un `UiCommand`), `eval chrome|bar|home|palette|peek|settings|content JS`, `quit`. Les contrôles lisent les `eval` par indice : **ajouter un `eval` décale les indices suivants**, mettre à jour les `Check`.
   - Les captures sont prises à l'écran : la fenêtre doit être visible et non recouverte. Vérifier visuellement les images.
   - Si l'appli reste en vie après un timeout, arrêter le process par son id (`Stop-Process -Id`) avant de relancer.
+- **Easel** (fenêtre dédiée, `ui/easel.html`, logique dans `domain/easel.rs`, persistance `EaselStore`) : `scripts/test-easel.sh` (macOS) et `scripts\test-easel.ps1` (Windows), cible devtools `eval easel` et `shote NOM`. Ne pas appeler `focus_window()` sur la fenêtre principale depuis un handler : panique winit sur macOS.
 - **macOS** : `scripts/test-webext.sh` (installe uBOL, vérifie le blocage actif/inactif, retrait) et le harnais `devtools` avec captures CoreGraphics (`/tmp/bh_script.txt` → `/tmp/bh_shots/`).
 - Toute nouvelle fonctionnalité d'UI : ajouter un scénario (et un `Check`) dans le script de la plateforme concernée, avec capture ; toute animation : tester l'état intermédiaire et le mode animations désactivées.
 

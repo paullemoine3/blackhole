@@ -4,10 +4,12 @@
 //! (macOS Keychain / Windows Credential Manager), never next to the data.
 
 use crate::import::{Bookmark, Login};
+use blackhole_domain::{Easel, EaselItem, EaselItemKind, Easels};
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     ChaCha20Poly1305, Key, Nonce,
 };
+use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
 fn create_parent(path: &std::path::Path) -> Result<(), String> {
@@ -49,6 +51,110 @@ impl BookmarkStore {
             .map_err(|e| e.to_string())?;
         fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
         Ok(all.len() - before)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ItemDto {
+    id: u64,
+    kind: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    color: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct EaselDto {
+    id: u64,
+    name: String,
+    #[serde(default)]
+    items: Vec<ItemDto>,
+}
+
+/// Easels as one JSON file (`easels.json`), written atomically.
+pub struct EaselStore {
+    path: PathBuf,
+}
+
+impl EaselStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("easels.json"),
+        }
+    }
+
+    pub fn load(&self) -> Easels {
+        let dtos: Vec<EaselDto> = fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        Easels::from_stored(
+            dtos.into_iter()
+                .map(|e| Easel {
+                    id: e.id,
+                    name: e.name,
+                    items: e
+                        .items
+                        .into_iter()
+                        .filter_map(|i| {
+                            Some(EaselItem {
+                                id: i.id,
+                                kind: EaselItemKind::from_id(&i.kind)?,
+                                x: i.x,
+                                y: i.y,
+                                w: i.w,
+                                h: i.h,
+                                text: i.text,
+                                title: i.title,
+                                url: i.url,
+                                color: i.color,
+                            })
+                        })
+                        .collect(),
+                })
+                .collect(),
+        )
+    }
+
+    pub fn save(&self, easels: &Easels) -> Result<(), String> {
+        let dtos: Vec<EaselDto> = easels
+            .all()
+            .iter()
+            .map(|e| EaselDto {
+                id: e.id,
+                name: e.name.clone(),
+                items: e
+                    .items
+                    .iter()
+                    .map(|i| ItemDto {
+                        id: i.id,
+                        kind: i.kind.id().to_owned(),
+                        x: i.x,
+                        y: i.y,
+                        w: i.w,
+                        h: i.h,
+                        text: i.text.clone(),
+                        title: i.title.clone(),
+                        url: i.url.clone(),
+                        color: i.color.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        let tmp = self.path.with_extension("tmp");
+        create_parent(&self.path)?;
+        fs::write(&tmp, serde_json::to_vec(&dtos).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &self.path).map_err(|e| e.to_string())
     }
 }
 
@@ -197,6 +303,23 @@ mod tests {
         let found = v.for_host("www.a.com").unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].username, "x");
+    }
+
+    #[test]
+    fn easels_roundtrip_on_disk_and_survive_a_corrupt_file() {
+        let t = tempfile::tempdir().unwrap();
+        let s = EaselStore::new(&t.path().join("not-yet-created"));
+        assert!(s.load().all().is_empty());
+        let mut easels = Easels::default();
+        let id = easels.create("Ideas").unwrap();
+        easels
+            .capture(id, "https://a.com/", "A", "snippet")
+            .unwrap();
+        easels.add_note(id, Some((10.0, 20.0)));
+        s.save(&easels).unwrap();
+        assert_eq!(s.load(), easels);
+        fs::write(t.path().join("not-yet-created/easels.json"), "{oops").unwrap();
+        assert!(s.load().all().is_empty());
     }
 
     #[test]

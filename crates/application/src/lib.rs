@@ -608,7 +608,10 @@ mod tests {
     fn release_notes_are_shown_once_after_an_update() {
         let repo = Memory::default();
         let mut first = BrowserService::start(repo.clone(), PrivacyPolicy::default());
-        assert!(first.take_release_notes("0.3.0").is_empty(), "fresh install");
+        assert!(
+            first.take_release_notes("0.3.0").is_empty(),
+            "fresh install"
+        );
 
         let mut updated = BrowserService::start(repo.clone(), PrivacyPolicy::default());
         assert_eq!(updated.take_release_notes("0.4.0")[0].0, "0.4.0");

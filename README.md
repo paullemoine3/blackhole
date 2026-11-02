@@ -36,6 +36,7 @@
 - ◧ **Vue scindée** : deux pages côte à côte, mémorisée par espace.
 - 👀 **Aperçu** : `Maj + clic` sur un lien l'ouvre dans une fenêtre flottante (`Échap` ferme, `Ctrl/Cmd + Entrée` l'ouvre dans un onglet).
 - 🎨 **Boosts** : du CSS personnalisé par site, appliqué à chaque chargement.
+- 🖼️ **Easel** (`Ctrl/Cmd + Maj + E`) : des tableaux libres, dans une fenêtre dédiée, où poser des notes et des **captures de pages** (`Ctrl/Cmd + Maj + S`, ou « Capture this page to Easel » dans la barre de commandes : titre, texte sélectionné et lien vers la page). Cartes déplaçables, redimensionnables, colorées ; un clic sur le titre d'une capture rouvre la page dans un onglet. Enregistrés dans `easels.json`. Pas de capture « live » ni de partage pour l'instant.
 - 🚦 **Routage des liens** : « toujours ouvrir ce site dans tel espace ».
 - ★ **Favoris** : import, dossiers, glisser-déposer depuis la barre latérale ou d'autres navigateurs.
 - 🆕 **Nouveautés** : après une mise à jour, la page d'accueil présente le changelog, une seule fois au premier redémarrage.
@@ -132,6 +133,7 @@ cargo test --workspace
 **Tests d'interface** (feature `devtools`) :
 - Windows : `scripts\test-ui.ps1` (scénarios, animations, captures) et `scripts\test-ext.ps1` (extensions).
 - macOS : `scripts/test-webext.sh` et captures via le harnais `devtools`.
+- Easel (bout en bout, les deux OS) : `scripts/test-easel.sh` (macOS) et `scripts\test-easel.ps1` (Windows).
 
 **Installeur Windows** :
 ```powershell

@@ -77,8 +77,8 @@ impl ExtensionHost {
     /// fails (e.g. a stale copy after an update) the profile is cleared and the add retried.
     fn clear_previous_run(&self, profile: &ICoreWebView2Profile7) {
         let host = Self(Rc::clone(&self.0));
-        let handler = ProfileGetBrowserExtensionsCompletedHandler::create(Box::new(
-            move |_, list| {
+        let handler =
+            ProfileGetBrowserExtensionsCompletedHandler::create(Box::new(move |_, list| {
                 let mut stale = Vec::new();
                 if let Some(list) = list {
                     let mut count = 0;
@@ -96,13 +96,14 @@ impl ExtensionHost {
                 let pending = Rc::new(std::cell::Cell::new(stale.len()));
                 for ext in stale {
                     let (counter, host) = (Rc::clone(&pending), Self(Rc::clone(&host.0)));
-                    let done = BrowserExtensionRemoveCompletedHandler::create(Box::new(move |_| {
-                        counter.set(counter.get() - 1);
-                        if counter.get() == 0 {
-                            host.finish_clearing();
-                        }
-                        Ok(())
-                    }));
+                    let done =
+                        BrowserExtensionRemoveCompletedHandler::create(Box::new(move |_| {
+                            counter.set(counter.get() - 1);
+                            if counter.get() == 0 {
+                                host.finish_clearing();
+                            }
+                            Ok(())
+                        }));
                     if unsafe { ext.Remove(&done) }.is_err() {
                         pending.set(pending.get() - 1);
                     }
@@ -111,8 +112,7 @@ impl ExtensionHost {
                     host.finish_clearing();
                 }
                 Ok(())
-            },
-        ));
+            }));
         if unsafe { profile.GetBrowserExtensions(&handler) }.is_err() {
             self.finish_clearing();
         }
@@ -222,7 +222,9 @@ impl ExtensionHost {
                 Ok(())
             },
         ));
-        if let Err(err) = unsafe { profile.AddBrowserExtension(&HSTRING::from(dir.as_path()), &handler) } {
+        if let Err(err) =
+            unsafe { profile.AddBrowserExtension(&HSTRING::from(dir.as_path()), &handler) }
+        {
             if let Some(ext) = self.0.borrow_mut().exts.get_mut(id) {
                 ext.state = LoadState::Failed(err.message());
             }
@@ -308,8 +310,13 @@ fn unpack(id: &str, path: &Path) -> Result<PathBuf, String> {
     let parent = path.parent().ok_or("invalid package path")?;
     let dest = parent.join("unpacked").join(id);
     let stamp = dest.join(".package");
-    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len().to_string();
-    if dest.join("manifest.json").is_file() && std::fs::read_to_string(&stamp).ok().as_deref() == Some(&size) {
+    let size = std::fs::metadata(path)
+        .map_err(|e| e.to_string())?
+        .len()
+        .to_string();
+    if dest.join("manifest.json").is_file()
+        && std::fs::read_to_string(&stamp).ok().as_deref() == Some(&size)
+    {
         return Ok(dest);
     }
     let _ = std::fs::remove_dir_all(&dest);

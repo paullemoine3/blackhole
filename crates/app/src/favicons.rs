@@ -15,7 +15,10 @@ pub struct Favicons {
 /// Host key shared by tabs and icons: lower-case, without a leading `www.`.
 pub fn host_key(url: &Url) -> Option<String> {
     let host = url.host_str()?.to_ascii_lowercase();
-    Some(host.strip_prefix("www.").map_or(host.clone(), str::to_owned))
+    Some(
+        host.strip_prefix("www.")
+            .map_or(host.clone(), str::to_owned),
+    )
 }
 
 impl Favicons {
@@ -67,7 +70,10 @@ mod tests {
         assert!(!f.set(&page, "https://example.com/icon.png"));
         assert!(!f.set(&page, "javascript:alert(1)"));
         assert_eq!(
-            Favicons::load(&dir).all().get("example.com").map(String::as_str),
+            Favicons::load(&dir)
+                .all()
+                .get("example.com")
+                .map(String::as_str),
             Some("https://example.com/icon.png")
         );
         let _ = std::fs::remove_dir_all(dir);

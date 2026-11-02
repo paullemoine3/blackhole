@@ -212,6 +212,59 @@ pub enum UiCommand {
     RemoveCatalog {
         id: String,
     },
+    /// Opens (or focuses) the Easel window, optionally on a given easel.
+    OpenEasel {
+        #[serde(default)]
+        id: Option<u64>,
+    },
+    CloseEasel,
+    NewEasel {
+        #[serde(default)]
+        name: String,
+    },
+    SelectEasel {
+        id: u64,
+    },
+    RenameEasel {
+        id: u64,
+        name: String,
+    },
+    DeleteEasel {
+        id: u64,
+    },
+    /// Clips the page in front (address, title, selected text) to the current easel.
+    CaptureToEasel,
+    EaselAddNote {
+        #[serde(default)]
+        x: Option<f64>,
+        #[serde(default)]
+        y: Option<f64>,
+    },
+    EaselSetText {
+        item: u64,
+        text: String,
+    },
+    EaselMove {
+        item: u64,
+        x: f64,
+        y: f64,
+    },
+    EaselResize {
+        item: u64,
+        w: f64,
+        h: f64,
+    },
+    EaselColor {
+        item: u64,
+        color: String,
+    },
+    EaselRemove {
+        item: u64,
+    },
+    /// A clip's link was clicked: opens it in a tab of the main window.
+    EaselOpenLink {
+        item: u64,
+    },
 }
 
 /// Events a web page may raise. Pages are untrusted: this is deliberately a tiny vocabulary
@@ -341,6 +394,23 @@ mod tests {
         let remove: UiCommand =
             serde_json::from_str(r#"{"cmd":"remove_catalog","id":"x"}"#).unwrap();
         assert!(matches!(remove, UiCommand::RemoveCatalog { id } if id == "x"));
+    }
+
+    #[test]
+    fn easel_commands_parse_and_pages_cannot_send_them() {
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"easel_add_note"}"#).unwrap();
+        assert!(matches!(c, UiCommand::EaselAddNote { x: None, y: None }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"easel_move","item":2,"x":1.5,"y":-3}"#).unwrap();
+        assert!(matches!(c, UiCommand::EaselMove { item: 2, .. }));
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"capture_to_easel"}"#).unwrap(),
+            UiCommand::CaptureToEasel
+        ));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
+        assert!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()
+        );
     }
 
     #[test]
