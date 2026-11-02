@@ -274,8 +274,13 @@ impl Running {
     fn new(event_loop: &ActiveEventLoop, mailbox: Mailbox) -> Self {
         #[allow(unused_mut)]
         let mut attrs = Window::default_attributes()
-            .with_title("BlackHole")
+            .with_title(if private_mode() {
+                "BlackHole (Private)"
+            } else {
+                "BlackHole"
+            })
             .with_theme(Some(winit::window::Theme::Dark))
+            .with_maximized(true)
             .with_inner_size(LogicalSize::new(1280.0, 820.0))
             .with_min_inner_size(LogicalSize::new(720.0, 480.0));
         // The top bar draws its own minimize / maximize / close buttons.
@@ -304,9 +309,17 @@ impl Running {
 
         // Dev builds use a scratch profile so scripted runs never touch the user's data.
         #[cfg(feature = "devtools")]
-        let data = devtools::scratch().join("bh_data");
+        let data = if private_mode() {
+            private_data_dir()
+        } else {
+            devtools::scratch().join("bh_data")
+        };
         #[cfg(not(feature = "devtools"))]
-        let data = blackhole_infrastructure::data_dir();
+        let data = if private_mode() {
+            private_data_dir()
+        } else {
+            blackhole_infrastructure::data_dir()
+        };
         let mut web_context = WebContext::new(Some(data.join("webview")));
         let mut svc = BrowserService::start(
             JsonWorkspaceRepository::new(data.clone()),
@@ -1015,6 +1028,7 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
         let state = json!({
             "os": std::env::consts::OS,
             "maximized": self.window.is_maximized(),
+            "private": private_mode(),
             "url": url,
             "color": ws.active_space().color,
             "engine": self.svc.settings().search_engine.label(),
@@ -2052,6 +2066,8 @@ views::rect(cx, cy, cw, SPLIT_HEADER),
         match key {
             "l" => self.open_palette("url"),
             "t" => self.new_tab(),
+            "n" => open_window(false),
+            "shift+n" => open_window(true),
             "w" => self.close_active_tab(),
             "r" => self.with_active_tab(views::reload),
             "b" => self.handle_ui(UiCommand::Lock),
@@ -2411,7 +2427,30 @@ fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str) -> String {
 
 /// Scripted devtools runs and cargo builds never look for (or install) updates.
 fn updates_enabled() -> bool {
-    !cfg!(feature = "devtools") && updater::supported()
+    !cfg!(feature = "devtools") && !private_mode() && updater::supported()
+}
+
+/// A private window runs in its own process with a throwaway profile (cookies, history, tabs,
+/// bookmarks), deleted when it closes.
+fn private_mode() -> bool {
+    static PRIVATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PRIVATE.get_or_init(|| std::env::args().any(|a| a == "--private"))
+}
+
+fn private_data_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("BlackHole-private-{}", std::process::id()))
+}
+
+/// Each window is its own process: a private one gets `--private` and a temporary profile.
+fn open_window(private: bool) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut cmd = std::process::Command::new(exe);
+    if private {
+        cmd.arg("--private");
+    }
+    let _ = cmd.spawn();
 }
 
 fn main() {
@@ -2429,4 +2468,8 @@ fn main() {
     });
     let mut app = App::Initial(mailbox);
     event_loop.run_app(&mut app).expect("run");
+    drop(app);
+    if private_mode() {
+        let _ = std::fs::remove_dir_all(private_data_dir());
+    }
 }

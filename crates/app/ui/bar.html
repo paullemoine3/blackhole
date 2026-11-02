@@ -25,6 +25,8 @@
   body.secure #omni { padding-left: 30px; padding-right: 30px; }
   body.secure .lock { display: block; }
   .lock { display: none; }
+  .priv { flex: none; align-self: center; margin-right: 8px; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgba(255,255,255,.14); }
+  .priv[hidden] { display: none; }
   .win { display: none; flex: none; align-self: stretch; margin-right: -12px; margin-left: 6px; }
   body.windows .win { display: flex; }
   .win button { width: 46px; height: 100%; border-radius: 0; opacity: .8; }
@@ -48,6 +50,7 @@
     <svg class="lock" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="5.2" width="8" height="6" rx="1.5"/><path d="M3.8 5.2V3.8a2.2 2.2 0 0 1 4.4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
     <button id="omni" type="button"><span id="url"></span></button>
   </div>
+  <span class="priv" id="priv" hidden>Private</span>
   <div class="side right" id="exts"></div>
   <div class="win">
     <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
@@ -76,6 +79,7 @@ window.bh = {
     document.body.classList.toggle('macos', s.os === 'macos');
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
+    $('priv').hidden = !s.private;
     document.body.classList.toggle('secure', s.url.startsWith('https:'));
     $('url').textContent = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
     $('url').classList.toggle('ph', !s.url);

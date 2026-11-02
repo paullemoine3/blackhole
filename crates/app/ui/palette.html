@@ -136,6 +136,8 @@
   </div>
 </div>
 <script>
+// The list navigation below uses Ctrl+N, so it must not open a window from here.
+window.keepCtrlN = true;
 const $ = (id) => document.getElementById(id);
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const PRESETS = {
