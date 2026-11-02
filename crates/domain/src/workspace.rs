@@ -162,6 +162,20 @@ impl Workspace {
         Some(removed.tabs.iter().map(|t| t.id).collect())
     }
 
+    /// Drag & drop: places a space before `before` (or last). The active space is unchanged.
+    pub fn move_space(&mut self, id: SpaceId, before: Option<SpaceId>) -> bool {
+        let Some(pos) = self.spaces.iter().position(|s| s.id == id) else {
+            return false;
+        };
+        let space = self.spaces.remove(pos);
+        let at = before
+            .filter(|b| *b != id)
+            .and_then(|b| self.spaces.iter().position(|s| s.id == b))
+            .unwrap_or(self.spaces.len());
+        self.spaces.insert(at, space);
+        true
+    }
+
     pub fn set_space_icon(&mut self, id: SpaceId, icon: &str) -> bool {
         match self.spaces.iter_mut().find(|s| s.id == id) {
             Some(space) => {
@@ -432,6 +446,21 @@ mod tests {
         assert_eq!(ws.delete_space(second), Some(vec![tab]));
         assert_eq!(ws.active_space().id, first);
         assert_eq!(ws.spaces().len(), 1);
+    }
+
+    #[test]
+    fn spaces_can_be_reordered() {
+        let mut ws = Workspace::new();
+        let a = ws.active_space().id;
+        let b = ws.add_space("B", "#fff");
+        let c = ws.add_space("C", "#fff");
+        assert!(ws.move_space(c, Some(a)));
+        let ids = |ws: &Workspace| ws.spaces().iter().map(|s| s.id).collect::<Vec<_>>();
+        assert_eq!(ids(&ws), vec![c, a, b]);
+        assert!(ws.move_space(c, None));
+        assert_eq!(ids(&ws), vec![a, b, c]);
+        assert_eq!(ws.active_space().id, a);
+        assert!(!ws.move_space(SpaceId(999), None));
     }
 
     #[test]

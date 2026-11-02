@@ -66,6 +66,10 @@ pub enum UiCommand {
     Space {
         id: u64,
     },
+    MoveSpace {
+        id: u64,
+        before: Option<u64>,
+    },
     Split {
         id: u64,
     },
@@ -201,6 +205,7 @@ pub enum UiCommand {
     HideFavorite {
         url: String,
     },
+    DismissReleaseNotes,
     RemoveCatalog {
         id: String,
     },

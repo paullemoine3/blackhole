@@ -35,6 +35,14 @@
   .meta .t, .meta .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta .s { font-size: 12px; opacity: .5; }
   .empty { opacity: .5; font-size: 13px; }
+  .news { background: linear-gradient(135deg, rgba(124,92,255,.22), rgba(255,255,255,.04)); border-color: rgba(124,92,255,.45); }
+  .news[hidden] { display: none; }
+  .news h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .news ul { margin: 0 0 12px 18px; padding: 0; }
+  .news li { margin: 3px 0; }
+  .news .ver + .ver { margin-top: 14px; }
+  .news button { font: inherit; color: #fff; background: rgba(124,92,255,.85); border: 0; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+  .news button:hover { background: rgb(124,92,255); }
   /* Launch splash */
   #splash { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; overflow: hidden;
     background: radial-gradient(900px 600px at 50% 45%, rgba(124,92,255,.28), transparent 70%), #07060c; }
@@ -68,6 +76,7 @@
 <div id="splash"><div class="core"><div class="disc"></div><div class="ring"></div></div><div class="word">BlackHole</div></div>
 <main>
   <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
+  <section class="card news" id="news" hidden></section>
   <section class="card"><h2>Favorites</h2><div id="favs"></div></section>
   <section class="card"><h2>Recent activity <button id="clear" title="Erase local history">Clear</button></h2><div id="recent"></div></section>
 </main>
@@ -102,8 +111,8 @@ function more(open) {
 function favMenu(f, x, y) {
   const items = [{ icon: '↗', label: 'Open', run: { cmd: 'open', input: f.url } }];
   if (f.tab != null) items.push({ icon: '📌', label: 'Unpin from sidebar', run: { cmd: 'pin', id: f.tab } });
-  else items.push({ icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: f.url } }, { sep: true },
-    { icon: '✕', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
+  else items.push({ icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: f.url } });
+  items.push({ sep: true }, { icon: '✕', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
   menu(x, y, items);
 }
 function recentMenu(r, x, y) {
@@ -135,6 +144,15 @@ function splash() {
 window.bh = {
   render(s) {
     favicons = s.favicons || {};
+    const notes = s.releaseNotes || [];
+    $('news').hidden = !notes.length;
+    $('news').replaceChildren(...notes.map(r => {
+      const box = el('div', 'ver');
+      const list = el('ul');
+      list.append(...r.items.map(i => el('li', null, i)));
+      box.append(el('h3', null, "What's new in BlackHole " + r.version), list);
+      return box;
+    }), ...(notes.length ? [Object.assign(el('button', null, 'Got it'), { onclick: () => send({ cmd: 'dismiss_release_notes' }) })] : []));
     $('favs').replaceChildren(...s.favorites.map(f => {
       const n = el('div', 'fav'); n.title = f.url;
       n.append(tile(f.url), el('div', 'name', f.name));

@@ -53,13 +53,17 @@ pub struct BrowserService<R: WorkspaceRepository> {
     policy: PrivacyPolicy,
     extensions: Vec<Extension>,
     repo: R,
+    /// No settings file existed at startup: a brand-new installation.
+    fresh: bool,
 }
 
 impl<R: WorkspaceRepository> BrowserService<R> {
     pub fn start(repo: R, policy: PrivacyPolicy) -> Self {
         // A corrupt or missing session must never prevent the browser from starting.
         let workspace = repo.load().ok().flatten().unwrap_or_default();
-        let settings = repo.load_settings().ok().flatten().unwrap_or_default();
+        let stored = repo.load_settings().ok().flatten();
+        let fresh = stored.is_none();
+        let settings = stored.unwrap_or_default();
         let history = repo.load_history().ok().flatten().unwrap_or_default();
         Self {
             workspace,
@@ -68,7 +72,25 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             policy,
             extensions: Vec::new(),
             repo,
+            fresh,
         }
+    }
+
+    /// Release notes to show once after an update; remembers `current` so they never come back.
+    pub fn take_release_notes(
+        &mut self,
+        current: &str,
+    ) -> Vec<(&'static str, &'static [&'static str])> {
+        let notes = blackhole_domain::changelog::pending(
+            &self.settings.last_seen_version,
+            current,
+            self.fresh,
+        );
+        if self.settings.last_seen_version != current {
+            self.settings.last_seen_version = current.to_owned();
+            let _ = self.repo.save_settings(&self.settings);
+        }
+        notes
     }
 
     /// Pinned tabs first, then the built-in defaults, one per host.
@@ -103,9 +125,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
                 .unwrap_or_default()
                 .trim_start_matches("www.")
                 .to_owned();
-            if !seen.contains(&host)
-                && !(fav.tab.is_none() && self.settings.hidden_favorites.contains(&host))
-            {
+            if !seen.contains(&host) && !self.settings.hidden_favorites.contains(&host) {
                 seen.push(host);
                 out.push(fav);
             }
@@ -305,6 +325,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    pub fn move_space(&mut self, id: SpaceId, before: Option<SpaceId>) -> bool {
+        let ok = self.workspace.move_space(id, before);
+        self.persist();
+        ok
+    }
+
     pub fn add_folder(&mut self, name: &str) -> FolderId {
         let id = self.workspace.add_folder(name);
         self.persist();
@@ -338,7 +364,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         Some(removed)
     }
 
-    /// Removes a built-in favorite from the start page.
+    /// Removes a site from the start page grid; a pinned tab for it stays in the sidebar.
     pub fn hide_favorite(&mut self, url: &Url) {
         let host = url
             .host_str()
@@ -557,6 +583,33 @@ mod tests {
             .favorites()
             .iter()
             .all(|f| f.url.host_str() != url.host_str()));
+    }
+
+    #[test]
+    fn a_pinned_tab_can_be_removed_from_the_favorites_grid() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let id = svc.open_tab("https://github.com/rust-lang").unwrap();
+        svc.toggle_pin(id);
+        let url = svc.favorites()[0].url.clone();
+        svc.hide_favorite(&url);
+        assert!(svc
+            .favorites()
+            .iter()
+            .all(|f| f.url.host_str() != Some("github.com")));
+        assert!(svc.workspace().active_space().tabs[0].pinned);
+    }
+
+    #[test]
+    fn release_notes_are_shown_once_after_an_update() {
+        let repo = Memory::default();
+        let mut first = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert!(first.take_release_notes("0.3.0").is_empty(), "fresh install");
+
+        let mut updated = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert_eq!(updated.take_release_notes("0.4.0")[0].0, "0.4.0");
+
+        let mut restarted = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(restarted.take_release_notes("0.4.0").is_empty());
     }
 
     #[test]

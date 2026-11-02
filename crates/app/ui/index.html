@@ -7,7 +7,7 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   html { background: #100f17; }
-  body { background: radial-gradient(700px 500px at 0% -48px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
+  body { background: radial-gradient(700px 500px at 0% -38px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
   body.flyout { box-shadow: 6px 0 24px rgba(0,0,0,.45); border-right: 1px solid rgba(255,255,255,.1); }
   aside { width: var(--sw, 240px); height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; }
@@ -20,7 +20,9 @@
   #pinned { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-radius: 12px; }
   #pinned:empty { display: none; }
   body.dragging #pinned:empty { display: block; min-height: 46px; border: 1px dashed rgba(255,255,255,.25); }
-  #pinned .tab { justify-content: center; height: 48px; background: rgba(255,255,255,.07); }
+  #pinned .tab { justify-content: center; height: 48px; padding: 0; background: rgba(255,255,255,.07); }
+  #pinsep { height: 1px; flex: none; margin: 0 6px; background: rgba(255,255,255,.14); }
+  #pinned:empty + #pinsep { display: none; }
   #pinned .tab.active { background: rgba(255,255,255,.2); }
   #pinned .dot { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
   .secrow { display: flex; justify-content: space-between; align-items: center; padding-right: 2px; }
@@ -67,6 +69,9 @@
   .space { flex: 1 1 0; height: 34px; min-width: 34px; border-radius: 11px; border: 0; padding: 0 7px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #fff; font-size: 18px; line-height: 1; font-weight: 700;
     background: linear-gradient(145deg, var(--c), color-mix(in srgb, var(--c) 55%, #000)); opacity: .62; transition: opacity .15s, transform .15s, box-shadow .15s, flex-grow .3s cubic-bezier(.3,1.2,.4,1); }
   .space.active { flex-grow: 2.4; }
+  .space.sdragging { opacity: .3; }
+  .space.sdrop-before { box-shadow: -3px 0 0 0 #fff; }
+  .space.sdrop-after { box-shadow: 3px 0 0 0 #fff; }
   .space:hover { opacity: .92; transform: translateY(-1px); }
   .space.active { opacity: 1; box-shadow: 0 0 0 2px rgba(255,255,255,.92), 0 5px 14px color-mix(in srgb, var(--c) 60%, transparent); }
   .space .sname { font-size: 12.5px; font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: none; }
@@ -112,6 +117,7 @@
 <body>
 <aside>
   <div id="pinned"></div>
+  <div id="pinsep"></div>
   <div class="section secrow"><span>Tabs</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
   <div id="tabs"></div>
   <div class="section secrow" id="bmhead" hidden><span id="bmtitle">★ Bookmarks</span><span class="count" id="bmcount"></span></div>
@@ -260,7 +266,58 @@ function editFolder(h, name, f) {
 // ---- drag & drop (pointer based) ---------------------------------
 let down = null, drag = null, justDragged = false, editing = false, deferred = null, newFolderPending = false;
 
-function flush() { if (deferred && !drag && !editing) { const s = deferred; deferred = null; window.bh.render(s); } }
+function flush() { if (deferred && !drag && !sdrag && !editing) { const s = deferred; deferred = null; window.bh.render(s); } }
+
+// Spaces: drag a card to reorder; a horizontal two-finger swipe switches space.
+let sdown = null, sdrag = null, sJustDragged = false;
+function spaceDrop(x, y) {
+  const b = document.elementFromPoint(x, y)?.closest('[data-space]');
+  if (!b || b === sdrag.node) return null;
+  const r = b.getBoundingClientRect();
+  const after = x > r.left + r.width / 2;
+  const sib = after ? b.nextElementSibling : b;
+  return { el: b, edge: after ? 'after' : 'before', before: sib && sib.dataset.space ? Number(sib.dataset.space) : null };
+}
+function clearSpaceMarks() {
+  document.querySelectorAll('.sdrop-before, .sdrop-after').forEach(n => n.classList.remove('sdrop-before', 'sdrop-after'));
+}
+document.addEventListener('mousemove', (e) => {
+  if (sdown && !sdrag && Math.hypot(e.clientX - sdown.x, e.clientY - sdown.y) > 5) {
+    sdrag = sdown;
+    sdrag.node.classList.add('sdragging');
+  }
+  if (!sdrag) return;
+  clearSpaceMarks();
+  const t = spaceDrop(e.clientX, e.clientY);
+  if (t) t.el.classList.add('sdrop-' + t.edge);
+});
+document.addEventListener('mouseup', (e) => {
+  if (sdrag) {
+    const t = spaceDrop(e.clientX, e.clientY);
+    sdrag.node.classList.remove('sdragging');
+    clearSpaceMarks();
+    if (t) send({ cmd: 'move_space', id: sdrag.id, before: t.before });
+    sJustDragged = true;
+    setTimeout(() => { sJustDragged = false; }, 0);
+    sdrag = null;
+    flush();
+  }
+  sdown = null;
+});
+let swipeX = 0, swipeLock = false, swipeIdle = null;
+document.addEventListener('wheel', (e) => {
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  clearTimeout(swipeIdle);
+  swipeIdle = setTimeout(() => { swipeX = 0; swipeLock = false; }, 160);
+  if (swipeLock) return;
+  swipeX += e.deltaX;
+  if (Math.abs(swipeX) < 60) return;
+  const i = state.spaces.findIndex(s => s.id === state.activeSpace);
+  const next = state.spaces[i + (swipeX > 0 ? 1 : -1)];
+  swipeLock = true; swipeX = 0;
+  if (next) send({ cmd: 'space', id: next.id });
+}, { passive: false });
 
 function dropTarget(x, y) {
   const node = document.elementFromPoint(x, y);
@@ -404,7 +461,7 @@ $('bmhead').onclick = () => { bmSectionOpen = !bmSectionOpen; renderBookmarks(st
 
 window.bh = {
   render(s) {
-    if (drag || editing) { deferred = s; return; }
+    if (drag || editing || sdrag) { deferred = s; return; }
     state = s;
     document.body.classList.toggle('flyout', window.bh.role === 'flyout');
     const root = document.documentElement.style;
@@ -430,7 +487,9 @@ window.bh = {
       b.style.setProperty('--c', sp.color);
       if (sp.icon) b.classList.add('emoji');
       b.append(el('span', 'gl', sp.icon || (sp.name[0] || '•').toUpperCase()), el('span', 'sname', sp.name));
-      b.onclick = () => send({ cmd: 'space', id: sp.id });
+      b.dataset.space = sp.id;
+      b.onclick = () => { if (!sJustDragged) send({ cmd: 'space', id: sp.id }); };
+      b.onmousedown = (e) => { if (e.button === 0) sdown = { id: sp.id, node: b, x: e.clientX, y: e.clientY }; };
       b.oncontextmenu = (e) => { e.preventDefault(); spaceMenu(sp, e.clientX, e.clientY); };
       return b;
     }));

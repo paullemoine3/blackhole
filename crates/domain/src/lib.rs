@@ -1,5 +1,6 @@
 //! Pure business rules. No I/O, no framework: only `url` for URL parsing.
 
+pub mod changelog;
 pub mod extension;
 pub mod history;
 pub mod omnibox;

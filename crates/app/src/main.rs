@@ -62,7 +62,7 @@ const SPLIT_HEADER: f64 = 30.0;
 const PEEK_TAB: TabId = TabId(0);
 const SPACE_COLORS: [&str; 5] = ["#7c5cff", "#ff5c8a", "#2fd4a0", "#ffb020", "#3aa0ff"];
 /// Logical height of the top bar that holds the window controls and the address field.
-const BAR_HEIGHT: f64 = 48.0;
+const BAR_HEIGHT: f64 = 38.0;
 
 /// Margin between the page card and the window frame (the card floats above the tinted frame).
 const CARD_GAP: f64 = 8.0;
@@ -199,6 +199,8 @@ struct Running {
     vault_count: usize,
     settings_seq: u32,
     home_visible: bool,
+    /// "What's new" shown on the start page until dismissed; empty when there is nothing to show.
+    release_notes: Vec<serde_json::Value>,
     /// Command bar overlay; rebuilt whenever a view is added so it stays on top.
     splitbar: WebView,
     palette: WebView,
@@ -430,7 +432,14 @@ impl Running {
             }
         }
 
+        let release_notes: Vec<serde_json::Value> = svc
+            .take_release_notes(env!("CARGO_PKG_VERSION"))
+            .into_iter()
+            .map(|(version, items)| json!({"version": version, "items": items}))
+            .collect();
+
         Self {
+            release_notes,
             chrome,
             flyout,
             hotzone,
@@ -1065,6 +1074,7 @@ impl Running {
             "recent": self.svc.recent_activity(12).iter()
                 .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
                 .collect::<Vec<_>>(),
+            "releaseNotes": self.release_notes,
         });
         let _ = self
             .home
@@ -1250,7 +1260,12 @@ impl Running {
         let active = if self.home_shown() {
             None
         } else {
-            self.svc.workspace().active_tab().map(|t| t.id)
+            // A pinned tab is immutable: a new search opens another tab.
+            self.svc
+                .workspace()
+                .active_tab()
+                .filter(|t| !t.pinned)
+                .map(|t| t.id)
         };
         match (active, self.svc.resolve(input)) {
             (Some(id), NavigationOutcome::Go(url)) => {
@@ -1820,6 +1835,10 @@ impl Running {
                 }
                 self.sync();
             }
+            UiCommand::DismissReleaseNotes => {
+                self.release_notes.clear();
+                self.ui_home();
+            }
             UiCommand::HideFavorite { url } => {
                 if let Ok(url) = Url::parse(&url) {
                     self.svc.hide_favorite(&url);
@@ -1889,6 +1908,10 @@ impl Running {
                 self.svc.switch_space(SpaceId(id));
                 self.home_visible = false;
                 self.sync();
+            }
+            UiCommand::MoveSpace { id, before } => {
+                self.svc.move_space(SpaceId(id), before.map(SpaceId));
+                self.ui_state();
             }
             UiCommand::NewSpace { name, color } => {
                 let name = if name.trim().is_empty() {

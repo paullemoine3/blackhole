@@ -10,24 +10,35 @@
 ![Windows](https://img.shields.io/badge/Windows-WebView2-0078D6?logo=windows)
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 
-[Fonctionnalités](#-fonctionnalités) · [Installation](#-installation) · [Extensions](#-extensions) · [Vie privée](#-vie-privée) · [Développement](#-développement)
+[Fonctionnalités](#-fonctionnalités) · [Installation](#-installation) · [Extensions](#-extensions) · [Vie privée](#-vie-privée) · [Performances](#-performances) · [Développement](#-développement)
+
+![Barre latérale, onglets épinglés et espaces](docs/screenshots/sidebar.png)
 
 </div>
 
 ---
 
+## 🖼️ Aperçu
+
+| Page d'accueil | Nouveautés après mise à jour |
+|---|---|
+| ![Accueil](docs/screenshots/home.png) | ![Nouveautés](docs/screenshots/whatsnew.png) |
+
+![Réglages](docs/screenshots/settings.png)
+
 ## ✨ Fonctionnalités
 
 ### Une navigation pensée pour s'organiser
 - 🗂️ **Barre latérale à la Arc** : un bouton à côté du logo l'affiche en grand ou la masque entièrement, avec animation fluide ; masquée, elle réapparaît en survol quand le curseur touche le bord gauche, sans déplacer la page. Largeur réglable, page en carte surélevée. `Ctrl/Cmd + B` pour basculer.
-- 🌌 **Espaces** : des contextes cloisonnés, colorés, avec emoji. Chaque espace teinte l'interface à ses couleurs.
-- 📌 **Onglets** : épinglés en grille, dossiers, glisser-déposer, mise en veille automatique des onglets inactifs (5/10/15 min). Ouvrir une adresse déjà ouverte bascule sur l'onglet existant.
+- 🌌 **Espaces** : des contextes cloisonnés, colorés, avec emoji. Chaque espace teinte l'interface à ses couleurs. Réorganisables par glisser-déposer ; balayage à deux doigts (ou molette horizontale) sur la barre latérale pour en changer.
+- 📌 **Onglets** : épinglés en grille en haut de la barre latérale, séparés des onglets classiques par un séparateur (un onglet épinglé n'est pas forcément un favori, et inversement), dossiers, glisser-déposer, mise en veille automatique des onglets inactifs (5/10/15 min). Ouvrir une adresse déjà ouverte bascule sur l'onglet existant.
 - ⌨️ **Barre de commandes** (`Ctrl/Cmd + L`) : recherche, saisie d'URL, changement d'onglet, favoris, historique et actions rapides. `Ctrl/Cmd + T` ouvre un nouvel onglet sur la page d'accueil. `Ctrl/Cmd + N` ouvre une nouvelle fenêtre (processus séparé, démarrage maximisé) ; `Ctrl/Cmd + Maj + N` une fenêtre privée (profil temporaire supprimé à la fermeture, pas de mise à jour automatique).
 - ◧ **Vue scindée** : deux pages côte à côte, mémorisée par espace.
 - 👀 **Aperçu** : `Maj + clic` sur un lien l'ouvre dans une fenêtre flottante (`Échap` ferme, `Ctrl/Cmd + Entrée` l'ouvre dans un onglet).
 - 🎨 **Boosts** : du CSS personnalisé par site, appliqué à chaque chargement.
 - 🚦 **Routage des liens** : « toujours ouvrir ce site dans tel espace ».
 - ★ **Favoris** : import, dossiers, glisser-déposer depuis la barre latérale ou d'autres navigateurs.
+- 🆕 **Nouveautés** : après une mise à jour, la page d'accueil présente le changelog, une seule fois au premier redémarrage.
 
 ### Pensé pour chaque système
 | | macOS | Windows |
@@ -37,6 +48,23 @@
 | Installation | `BlackHole.app` / `.dmg` | Installeur et zip portable |
 | Fenêtre | Barre système | Barre de titre intégrée à l'app |
 | Mise à jour | Remplacement du `.app` | Installeur silencieux |
+
+---
+
+## 📊 Performances
+
+Même page (une vidéo YouTube 720p en lecture, muette) ouverte dans un seul onglet, mesurée sur 60 s après 28 s de chargement, macOS (Apple Silicon), sans extension.
+
+| | Google Chrome 155 | BlackHole 0.5.0 |
+|---|---|---|
+| Mémoire moyenne (footprint, tous processus) | ≈ 990 Mo | ≈ 1 080 Mo |
+| Pic mémoire | ≈ 1 320 Mo | ≈ 1 090 Mo |
+| Processus | 13 | 12 |
+| CPU moyen (% d'un cœur) | 41,5 % | 19,6 % |
+
+À retenir : la consommation CPU en lecture vidéo est environ **2× plus faible**, la mémoire est comparable (BlackHole embarque plusieurs vues web pour son interface) et le pic est plus bas.
+
+> Mesure unique, non scientifique : machine non isolée, qualité YouTube automatique, profil Chrome vierge. Sous BlackHole, les processus WebKit (services système partagés) sont repérés par différence avec un état de base, ce qui peut inclure d'autres activités WebKit simultanées. Les résultats varient selon la machine et la vidéo.
 
 ---
 

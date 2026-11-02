@@ -22,6 +22,8 @@ pub struct Settings {
     pub disabled_extensions: BTreeSet<String>,
     /// Default favorites the user removed from the start page, by site key.
     pub hidden_favorites: BTreeSet<String>,
+    /// Version whose release notes the user was last shown (empty before the first launch).
+    pub last_seen_version: String,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -48,6 +50,7 @@ impl Default for Settings {
             routes: BTreeMap::new(),
             disabled_extensions: BTreeSet::new(),
             hidden_favorites: BTreeSet::new(),
+            last_seen_version: String::new(),
         }
     }
 }
