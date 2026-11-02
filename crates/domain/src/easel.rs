@@ -8,10 +8,15 @@ pub const MAX_ITEMS: usize = 500;
 pub const MAX_NAME: usize = 80;
 pub const MAX_TEXT: usize = 20_000;
 pub const MAX_TITLE: usize = 300;
+pub const MAX_SELECTOR: usize = 500;
+/// Height of a card's title bar and footer: live cards add it to the captured area's height.
+pub const BAR_HEIGHT: f64 = 44.0;
 /// Board coordinates are clamped so a bad value can never push an item out of reach.
 pub const COORD_LIMIT: f64 = 100_000.0;
 pub const MIN_SIZE: (f64, f64) = (120.0, 80.0);
 pub const MAX_SIZE: (f64, f64) = (1200.0, 1200.0);
+/// Live cards may be as tall as the largest card allows.
+const MIN_SIZE_LIVE: (f64, f64) = (120.0, MAX_SIZE.1);
 pub const DEFAULT_SIZE: (f64, f64) = (240.0, 160.0);
 pub const COLORS: [&str; 6] = [
     "#2b2a3a", "#7c5cff", "#2e8b6e", "#c9822b", "#c2455b", "#2f6fb5",
@@ -21,6 +26,8 @@ pub const COLORS: [&str; 6] = [
 pub enum ItemKind {
     Note,
     Clip,
+    /// A region of a page (CSS selector) shown live inside the card.
+    Live,
 }
 
 impl ItemKind {
@@ -28,6 +35,7 @@ impl ItemKind {
         match self {
             Self::Note => "note",
             Self::Clip => "clip",
+            Self::Live => "live",
         }
     }
 
@@ -35,6 +43,7 @@ impl ItemKind {
         match id {
             "note" => Some(Self::Note),
             "clip" => Some(Self::Clip),
+            "live" => Some(Self::Live),
             _ => None,
         }
     }
@@ -51,6 +60,8 @@ pub struct Item {
     pub text: String,
     pub title: String,
     pub url: Option<String>,
+    /// CSS selector of the captured region (live cards only, empty otherwise).
+    pub selector: String,
     pub color: String,
 }
 
@@ -105,6 +116,15 @@ fn size(v: f64, (lo, hi): (f64, f64)) -> f64 {
     }
 }
 
+/// Selectors are only ever passed to `querySelector` as a string; this keeps them printable and bounded.
+fn clean_selector(raw: &str) -> String {
+    let s = raw.trim();
+    if s.chars().any(char::is_control) {
+        return String::new();
+    }
+    clean(s, MAX_SELECTOR)
+}
+
 /// Only web pages can be linked: no `javascript:`, `file:` or app schemes.
 pub fn clip_url(raw: &str) -> Option<String> {
     let url = Url::parse(raw.trim()).ok()?;
@@ -129,13 +149,20 @@ impl Easels {
                 item.text = clean(&item.text, MAX_TEXT);
                 item.title = clean(&item.title, MAX_TITLE);
                 item.url = item.url.as_deref().and_then(clip_url);
+                item.selector = if item.kind == ItemKind::Live {
+                    clean_selector(&item.selector)
+                } else {
+                    String::new()
+                };
                 if !COLORS.contains(&item.color.as_str()) {
                     item.color = COLORS[0].to_owned();
                 }
             }
-            easel
-                .items
-                .retain(|i| i.kind == ItemKind::Note || i.url.is_some());
+            easel.items.retain(|i| match i.kind {
+                ItemKind::Note => true,
+                ItemKind::Clip => i.url.is_some(),
+                ItemKind::Live => i.url.is_some() && !i.selector.is_empty(),
+            });
             out.easels.push(easel);
         }
         out
@@ -207,6 +234,7 @@ impl Easels {
             text: String::new(),
             title: String::new(),
             url: None,
+            selector: String::new(),
             color: COLORS[0].to_owned(),
         });
         Some(id)
@@ -238,7 +266,53 @@ impl Easels {
             text: clean(snippet.trim(), MAX_TEXT),
             title: if title.is_empty() { url.clone() } else { title },
             url: Some(url),
+            selector: String::new(),
             color: COLORS[1].to_owned(),
+        });
+        Ok(id)
+    }
+
+    /// Adds a live card for the region `selector` of a page, sized like that region
+    /// (`width` x `height` in page pixels) and scaled to a comfortable card width.
+    pub fn capture_live(
+        &mut self,
+        easel: u64,
+        url: &str,
+        title: &str,
+        selector: &str,
+        (width, height): (f64, f64),
+    ) -> Result<u64, &'static str> {
+        let url = clip_url(url).ok_or("Only web pages can be captured")?;
+        let selector = clean_selector(selector);
+        if selector.is_empty() {
+            return Err("Nothing was selected");
+        }
+        let e = self.get_mut(easel).ok_or("Unknown easel")?;
+        if e.items.len() >= MAX_ITEMS {
+            return Err("This easel is full");
+        }
+        let ratio = if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
+            height / width
+        } else {
+            0.6
+        };
+        let w = size(if width.is_finite() { width } else { 0.0 }, (240.0, 640.0));
+        let h = size(w * ratio + BAR_HEIGHT, MIN_SIZE_LIVE);
+        let (x, y) = e.free_slot();
+        let id = e.next_item_id();
+        let title = clean(title.trim(), MAX_TITLE);
+        e.items.push(Item {
+            id,
+            kind: ItemKind::Live,
+            x,
+            y,
+            w,
+            h,
+            text: String::new(),
+            title: if title.is_empty() { url.clone() } else { title },
+            url: Some(url),
+            selector,
+            color: COLORS[3].to_owned(),
         });
         Ok(id)
     }
@@ -371,6 +445,56 @@ mod tests {
     }
 
     #[test]
+    fn live_capture_sizes_the_card_after_the_region() {
+        let (mut easels, id) = board();
+        let live = easels
+            .capture_live(
+                id,
+                "https://a.com/p",
+                "",
+                "main > h1:nth-of-type(2)",
+                (480.0, 240.0),
+            )
+            .unwrap();
+        let item = &easels.get(id).unwrap().items[0];
+        assert_eq!((item.id, item.kind), (live, ItemKind::Live));
+        assert_eq!(item.selector, "main > h1:nth-of-type(2)");
+        assert_eq!((item.w, item.h), (480.0, 240.0 + BAR_HEIGHT));
+        assert_eq!(item.title, "https://a.com/p");
+        easels
+            .capture_live(id, "https://a.com", "t", "x", (f64::NAN, 0.0))
+            .unwrap();
+        let odd = &easels.get(id).unwrap().items[1];
+        assert!(odd.w >= 240.0 && odd.h >= MIN_SIZE.1);
+    }
+
+    #[test]
+    fn live_capture_rejects_bad_input() {
+        let (mut easels, id) = board();
+        let ok = (100.0, 100.0);
+        assert!(easels
+            .capture_live(id, "javascript:1", "t", "h1", ok)
+            .is_err());
+        assert!(easels
+            .capture_live(id, "https://a.com", "t", "  ", ok)
+            .is_err());
+        assert!(easels
+            .capture_live(id, "https://a.com", "t", "a\nb", ok)
+            .is_err());
+        assert!(easels
+            .capture_live(9, "https://a.com", "t", "h1", ok)
+            .is_err());
+        let long = "a".repeat(MAX_SELECTOR + 50);
+        easels
+            .capture_live(id, "https://a.com", "t", &long, ok)
+            .unwrap();
+        assert_eq!(
+            easels.get(id).unwrap().items[0].selector.len(),
+            MAX_SELECTOR
+        );
+    }
+
+    #[test]
     fn deleting_an_easel_removes_its_items() {
         let (mut easels, id) = board();
         easels.add_note(id, None);
@@ -390,6 +514,7 @@ mod tests {
             text: String::new(),
             title: String::new(),
             url: url.map(str::to_owned),
+            selector: "h1".into(),
             color: "javascript:x".into(),
         };
         let easels = Easels::from_stored(vec![Easel {
@@ -399,11 +524,12 @@ mod tests {
                 bad(ItemKind::Clip, Some("javascript:alert(1)")),
                 bad(ItemKind::Clip, Some("https://ok.com")),
                 bad(ItemKind::Note, None),
+                bad(ItemKind::Live, Some("https://ok.com")),
             ],
         }]);
         let e = easels.get(3).unwrap();
         assert_eq!(e.name, "A");
-        assert_eq!(e.items.len(), 2);
+        assert_eq!(e.items.len(), 3);
         assert!(e.items.iter().all(|i| i.x == 0.0 && i.color == COLORS[0]));
         let id = Easels::from_stored(vec![]).create("n");
         assert_eq!(id, Some(1));

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of Easels on macOS, driven by the devtools harness: create, capture a live
-# page, notes, edits, link back to the page, rename, delete, then persistence on disk.
+# page, notes, edits, link back to the page, rename, delete, live capture (pick an area, play it,
+# check the crop), then persistence on disk.
 # Uses the scratch profile /tmp/bh_data (wiped first); screenshots land in /tmp/bh_shots. Needs network access.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -47,6 +48,22 @@ eval easel document.querySelectorAll('.easel').length
 cmd {"cmd":"easel_remove","item":2}
 wait 500
 eval easel document.querySelectorAll('.card').length
+cmd {"cmd":"open","input":"https://example.com"}
+wait 4000
+cmd {"cmd":"live_pick"}
+wait 500
+eval content String(window.__bhPick === true)
+eval content (() => { const h = document.querySelector('p').getBoundingClientRect(); const x = h.left + h.width / 2, y = h.top + h.height / 2; for (const t of ['mousemove', 'click']) document.elementFromPoint(x, y).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })); return 'picked'; })()
+wait 1500
+eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
+cmd {"cmd":"easel_live_play","item":2}
+wait 5000
+eval easel document.querySelector('.card.live .play').textContent
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
+shote 03-easel-live
+cmd {"cmd":"easel_live_stop","item":2}
+wait 500
+eval easel document.querySelector('.card.live .play').textContent
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -64,14 +81,21 @@ check 7 'Renamed' "rename: easel list updated"
 check 7 'Second' "new easel: listed"
 check 8 '1' "delete: only one easel left"
 check 9 '1' "remove: note deleted, one card left"
-[[ -f /tmp/bh_shots/01-easel-board.png ]] || { echo "FAIL screenshot missing"; fail=1; }
+check 10 'true' "live: picker armed on the page"
+check 11 'picked' "live: area clicked"
+check 12 'Paused' "live: card added, paused until played"
+check 13 '⏸' "live: playing"
+check 14 'crop true' "live: view shows the picked area, scaled to fill the card"
+check 15 '▶' "live: paused again"
+[[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys
 d = json.load(open('/tmp/bh_data/easels.json'))
-ok = len(d) == 1 and d[0]['name'] == 'Renamed' and len(d[0]['items']) == 1
-clip = d[0]['items'][0] if d and d[0]['items'] else {}
+ok = len(d) == 1 and d[0]['name'] == 'Renamed' and len(d[0]['items']) == 2
+clip, live = d[0]['items'] if ok else ({}, {})
 ok = ok and clip.get('kind') == 'clip' and clip.get('url', '').startswith('https://example.com')
-print('ok   persistence: easels.json holds the renamed easel and its clip' if ok else 'FAIL persistence: %r' % d)
+ok = ok and live.get('kind') == 'live' and 'p:nth-of-type' in live.get('selector', '') and live.get('url', '').startswith('https://example.com')
+print('ok   persistence: easels.json holds the renamed easel, its clip and the live area' if ok else 'FAIL persistence: %r' % d)
 sys.exit(0 if ok else 1)
 P
 exit $fail

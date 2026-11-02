@@ -38,6 +38,9 @@
   .card .link:hover { text-decoration: underline; }
   .card .host { padding: 0 10px 4px; font-size: 11.5px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card textarea { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 8px 10px; }
+  .card.live .bar { height: 30px; box-sizing: border-box; }
+  .card .slot { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; opacity: .8; background: rgba(0,0,0,.18); overflow: hidden; }
+  .card .foot { height: 14px; flex: none; display: flex; align-items: center; padding: 0 22px 0 10px; font-size: 10.5px; opacity: .6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .card .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.4) 50%); }
   .colors { display: none; gap: 4px; padding: 0 4px; }
   .card.pick .colors { display: flex; }
@@ -99,6 +102,7 @@ function drag(card, item, mode) {
       }
       place(card, item);
       fit();
+      layout();
     };
     const up = () => {
       removeEventListener('pointermove', move);
@@ -140,7 +144,11 @@ function card(item) {
   const remove = el('button', 'tool remove', '✕');
   remove.title = 'Remove';
   remove.onclick = () => { pending.delete(item.id); send({ cmd: 'easel_remove', item: item.id }); };
-  bar.append(el('span', 'kind', item.kind === 'clip' ? 'Clip' : 'Note'), colors, paint, remove);
+  const label = { clip: 'Clip', live: 'Live', note: 'Note' }[item.kind] || 'Note';
+  const play = el('button', 'tool play', item.playing ? '⏸' : '▶');
+  play.title = item.playing ? 'Pause' : 'Play live';
+  play.onclick = () => send({ cmd: item.playing ? 'easel_live_stop' : 'easel_live_play', item: item.id });
+  bar.append(el('span', 'kind', label), ...(item.kind === 'live' ? [play] : []), colors, paint, remove);
   bar.onpointerdown = drag(c, item, 'move');
   c.append(bar);
   if (item.kind === 'clip') {
@@ -148,6 +156,18 @@ function card(item) {
     link.title = item.url;
     link.onclick = (e) => { e.preventDefault(); send({ cmd: 'easel_open_link', item: item.id }); };
     c.append(link, el('div', 'host', host(item.url)));
+  }
+  if (item.kind === 'live') {
+    const slot = el('div', 'slot', item.playing ? 'Loading…' : 'Paused — press ▶ to show this area live');
+    const foot = el('div', 'foot', item.title + ' · ' + host(item.url));
+    foot.title = item.url;
+    foot.style.cursor = 'pointer';
+    foot.onclick = () => send({ cmd: 'easel_open_link', item: item.id });
+    c.append(slot, foot);
+    const grip = el('div', 'grip');
+    grip.onpointerdown = drag(c, item, 'resize');
+    c.append(grip);
+    return c;
   }
   const area = el('textarea');
   area.value = item.text;
@@ -160,6 +180,27 @@ function card(item) {
   c.append(grip);
   return c;
 }
+
+// Native live views float above this page: tell the shell where each card's slot is, and hide
+// the view of a card that is not fully inside the board.
+let framed = false, last = '';
+function layout() {
+  if (framed) return;
+  framed = true;
+  requestAnimationFrame(() => {
+    framed = false;
+    const b = $('board').getBoundingClientRect();
+    const slots = [...document.querySelectorAll('.card.live .slot')].map((s) => {
+      const r = s.getBoundingClientRect();
+      const visible = r.left >= b.left - 1 && r.top >= b.top - 1 && r.right <= b.right + 1 && r.bottom <= b.bottom + 1;
+      return { item: +s.parentElement.dataset.id, x: r.left, y: r.top, w: r.width, h: r.height, visible };
+    });
+    const key = JSON.stringify(slots);
+    if (key !== last) { last = key; send({ cmd: 'easel_layout', slots }); }
+  });
+}
+$('board').addEventListener('scroll', layout);
+addEventListener('resize', layout);
 
 window.bh = {
   render(s) {
@@ -178,6 +219,8 @@ window.bh = {
     $('surface').replaceChildren(...(e ? e.items.map(card) : []));
     $('empty').style.display = e && e.items.length ? 'none' : '';
     fit();
+    last = '';
+    layout();
   },
   toast(msg) {
     $('toast').textContent = msg;

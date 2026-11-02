@@ -265,6 +265,36 @@ pub enum UiCommand {
     EaselOpenLink {
         item: u64,
     },
+    /// Starts the area picker on the page in front (live capture).
+    LivePick,
+    /// Live-captures the region `selector` (`w` x `h` page pixels) of the page in front.
+    CaptureLive {
+        selector: String,
+        #[serde(default)]
+        w: f64,
+        #[serde(default)]
+        h: f64,
+    },
+    EaselLivePlay {
+        item: u64,
+    },
+    EaselLiveStop {
+        item: u64,
+    },
+    /// Where each live card's slot is in the easel window (window coordinates).
+    EaselLayout {
+        slots: Vec<LiveSlot>,
+    },
+}
+
+#[derive(Deserialize, Clone, Copy, Debug)]
+pub struct LiveSlot {
+    pub item: u64,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub visible: bool,
 }
 
 /// Events a web page may raise. Pages are untrusted: this is deliberately a tiny vocabulary
@@ -294,6 +324,14 @@ pub enum PageEvent {
     /// The user picked the `index`-th suggestion from the last `AutofillQuery`.
     AutofillFill {
         index: usize,
+    },
+    /// The user clicked an area while the picker was armed (honoured only then; untrusted).
+    LivePick {
+        selector: String,
+        #[serde(default)]
+        w: f64,
+        #[serde(default)]
+        h: f64,
     },
 }
 
@@ -410,6 +448,29 @@ mod tests {
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()
+        );
+    }
+
+    #[test]
+    fn live_commands_parse_and_pages_cannot_drive_the_easel() {
+        let c: UiCommand = serde_json::from_str(
+            r#"{"cmd":"easel_layout","slots":[{"item":3,"x":1,"y":2,"w":3,"h":4,"visible":true}]}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(c, UiCommand::EaselLayout { slots } if slots.len() == 1 && slots[0].visible)
+        );
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"capture_live","selector":"h1"}"#).unwrap();
+        assert!(matches!(c, UiCommand::CaptureLive { w, .. } if w == 0.0));
+        let e: PageEvent =
+            serde_json::from_str(r#"{"cmd":"live_pick","selector":"h1","w":9,"h":4}"#).unwrap();
+        assert!(matches!(e, PageEvent::LivePick { .. }));
+        assert!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_live","selector":"h1"}"#).is_err()
+        );
+        assert!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_live_play","item":1}"#).is_err()
         );
     }
 

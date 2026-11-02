@@ -11,9 +11,10 @@
       if (e.key === 'Escape') return window.ipc.postMessage(JSON.stringify({ cmd: 'shortcut', key: 'escape' }));
       if ((mac ? !e.metaKey : !e.ctrlKey) || e.altKey) return;
       let key = e.key.toLowerCase();
-      // Shift: Mod+Shift+N is a private window, Mod+Shift+E opens Easel, Mod+Shift+S clips the page.
+      // Shift: Mod+Shift+N is a private window, Mod+Shift+E opens Easel, Mod+Shift+S clips the page,
+      // Mod+Shift+L picks an area to capture live.
       if (e.shiftKey) {
-        if (!['n', 'e', 's'].includes(key)) return;
+        if (!['n', 'e', 's', 'l'].includes(key)) return;
         key = 'shift+' + key;
       } else if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN)) return;
       e.preventDefault();

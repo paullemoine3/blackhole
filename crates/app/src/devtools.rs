@@ -3,7 +3,7 @@
 //! The scratch directory is `/tmp` on macOS and the system temp dir elsewhere.
 //!
 //! Script lines: `wait MS`, `shot NAME`, `cmd JSON` (a `UiCommand`),
-//! `eval chrome|bar|home|palette|peek|settings|easel|content JS`, `shots NAME` (settings window),
+//! `eval chrome|bar|home|palette|peek|settings|easel|live|content JS`, `shots NAME` (settings window),
 //! `shote NAME` (easel window), `quit`.
 
 use super::*;
@@ -94,6 +94,10 @@ impl Running {
                     },
                     "easel" => match &self.easel {
                         Some(win) => &win.view,
+                        None => return delay,
+                    },
+                    "live" => match self.live.values().next() {
+                        Some(view) => view,
                         None => return delay,
                     },
                     "chrome" => &self.chrome,

@@ -14,6 +14,8 @@ const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
+const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
+pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
 
 static HARDWARE_ACCELERATION: AtomicBool = AtomicBool::new(true);
 
@@ -106,6 +108,81 @@ pub fn settings_view(
         })
         .with_navigation_handler(|url| matches!(url.split(':').next(), Some("about" | "data")))
         .build(window)
+}
+
+/// Own page filling a window as a child view (so live views can be stacked above it); like the
+/// settings page it has no shortcut forwarding.
+pub fn panel_view(
+    window: &Window,
+    ctx: &mut WebContext,
+    html: &'static str,
+    mailbox: &Mailbox,
+) -> wry::Result<WebView> {
+    let mailbox = mailbox.clone();
+    let size = window.inner_size().to_logical::<f64>(window.scale_factor());
+    builder(ctx)
+        .with_html(html)
+        .with_bounds(rect(0.0, 0.0, size.width, size.height))
+        .with_background_color(SHELL_BG)
+        .with_devtools(cfg!(debug_assertions))
+        .with_ipc_handler(move |request| {
+            if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
+                mailbox.push(Msg::Ui(command));
+            }
+        })
+        .with_navigation_handler(|url| matches!(url.split(':').next(), Some("about" | "data")))
+        .build_as_child(window)
+}
+
+/// The live view of an Easel card: the page of a live capture, cropped to its region. It shares
+/// the profile (logins work), blocks trackers like a tab and has no channel to the shell.
+pub fn live_view(
+    window: &Window,
+    ctx: &mut WebContext,
+    url: &Url,
+    selector: &str,
+    policy: &PrivacyPolicy,
+    mailbox: &Mailbox,
+) -> wry::Result<WebView> {
+    let hosts: Vec<&str> = policy.blocked_domains().collect();
+    let guard = PAGE_GUARD_JS.replace(
+        "__BLOCKED_HOSTS__",
+        &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    let crop = LIVE_CROP_JS.replace(
+        "__SELECTOR__",
+        &serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned()),
+    );
+    let (nav, popups) = (mailbox.clone(), mailbox.clone());
+    let policy = policy.clone();
+    builder(ctx)
+        .with_url(url.as_str())
+        .with_bounds(rect(0.0, 0.0, 1.0, 1.0))
+        .with_visible(false)
+        .with_background_color(PAGE_BG)
+        .with_initialization_script(guard)
+        .with_initialization_script_for_main_only(crop, true)
+        .with_navigation_handler(move |raw| {
+            let Ok(target) = Url::parse(&raw) else {
+                return false;
+            };
+            match policy.evaluate(&target) {
+                PrivacyDecision::Allow => true,
+                PrivacyDecision::Rewrite(_) => false,
+                PrivacyDecision::Block(why) => {
+                    let host = target.host_str().unwrap_or_default().to_owned();
+                    nav.push(Msg::Blocked { why, host });
+                    false
+                }
+            }
+        })
+        .with_new_window_req_handler(move |raw, _| {
+            if let Ok(url) = Url::parse(&raw) {
+                popups.push(Msg::OpenTab(url));
+            }
+            NewWindowResponse::Deny
+        })
+        .build_as_child(window)
 }
 
 /// Shows the autofill suggestions (usernames only) under the focused login field.

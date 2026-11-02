@@ -1,5 +1,6 @@
 # Easel scenarios on Windows, driven by the devtools harness (see crates/app/src/devtools.rs):
-# create, capture a live page, notes, edits, link back to the page, rename, delete, persistence.
+# create, capture a page, notes, edits, link back to the page, rename, delete, live capture (pick an
+# area, play it, check the crop), persistence.
 # Uses the scratch profile %TEMP%\bh_data (wiped first); screenshots land in %TEMP%\bh_shots.
 # Needs network access and a visible, uncovered desktop (the window is captured from the screen).
 $ErrorActionPreference = 'Stop'
@@ -49,6 +50,22 @@ eval easel document.querySelectorAll('.easel').length
 cmd {"cmd":"easel_remove","item":2}
 wait 500
 eval easel document.querySelectorAll('.card').length
+cmd {"cmd":"open","input":"https://example.com"}
+wait 4000
+cmd {"cmd":"live_pick"}
+wait 500
+eval content String(window.__bhPick === true)
+eval content (() => { const h = document.querySelector('p').getBoundingClientRect(); const x = h.left + h.width / 2, y = h.top + h.height / 2; for (const t of ['mousemove', 'click']) document.elementFromPoint(x, y).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })); return 'picked'; })()
+wait 1500
+eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
+cmd {"cmd":"easel_live_play","item":2}
+wait 5000
+eval easel document.querySelector('.card.live .play').textContent
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
+shote 03-easel-live
+cmd {"cmd":"easel_live_stop","item":2}
+wait 500
+eval easel document.querySelector('.card.live .play').textContent
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -74,10 +91,18 @@ Check ($evals[6] -match 'example\.com') 'clip link: opens the captured page in a
 Check ($evals[7] -match 'Renamed' -and $evals[7] -match 'Second') 'rename / new easel: both listed'
 Check ($evals[8] -match '1') 'delete: only one easel left'
 Check ($evals[9] -match '1') 'remove: note deleted, one card left'
-Check (Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) 'screenshot saved'
+Check ($evals[10] -match 'true') 'live: picker armed on the page'
+Check ($evals[11] -match 'picked') 'live: area clicked'
+Check ($evals[12] -match 'Paused') 'live: card added, paused until played'
+Check ($evals[13] -match ([string][char]0x23F8)) 'live: playing'
+Check ($evals[14] -match 'crop true') 'live: view shows the picked area, scaled to fill the card'
+Check ($evals[15] -match ([string][char]0x25B6)) 'live: paused again'
+Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }
-$clip = if ($data.Count -eq 1 -and $data[0].items.Count -eq 1) { $data[0].items[0] } else { $null }
-Check ($clip -and $data[0].name -eq 'Renamed' -and $clip.kind -eq 'clip' -and $clip.url -like 'https://example.com*') 'persistence: easels.json holds the renamed easel and its clip'
+$ok = $data.Count -eq 1 -and $data[0].items.Count -eq 2
+$clip = if ($ok) { $data[0].items[0] } else { $null }
+$live = if ($ok) { $data[0].items[1] } else { $null }
+Check ($ok -and $data[0].name -eq 'Renamed' -and $clip.kind -eq 'clip' -and $clip.url -like 'https://example.com*' -and $live.kind -eq 'live' -and $live.selector -like '*p:nth-of-type*' -and $live.url -like 'https://example.com*') 'persistence: easels.json holds the renamed easel, its clip and the live area'
 if ($fail) { Write-Host 'evals:'; $evals }
 exit [int]$fail

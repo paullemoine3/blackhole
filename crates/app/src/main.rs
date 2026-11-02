@@ -254,6 +254,12 @@ struct Running {
     easels: Easels,
     easel_store: EaselStore,
     easel_current: Option<u64>,
+    /// Live views of the current easel's playing cards (children of the easel window, so they
+    /// must be dropped before it: declared first).
+    live: HashMap<u64, WebView>,
+    live_slots: HashMap<u64, ipc::LiveSlot>,
+    /// Tab whose area picker is armed.
+    live_pick: Option<TabId>,
     easel: Option<EaselWindow>,
     easel_wanted: bool,
     capture_tx: std::sync::mpsc::Sender<Capture>,
@@ -539,6 +545,9 @@ impl Running {
             easel_current: easels.all().first().map(|e| e.id),
             easels,
             easel_store,
+            live: HashMap::new(),
+            live_slots: HashMap::new(),
+            live_pick: None,
             easel: None,
             easel_wanted: false,
             capture_tx,
@@ -1097,14 +1106,128 @@ impl Running {
             return;
         };
         window.focus_window();
-        match views::settings_view(&window, &mut self.web_context, EASEL_HTML, &self.mailbox) {
+        match views::panel_view(&window, &mut self.web_context, EASEL_HTML, &self.mailbox) {
             Ok(view) => self.easel = Some(EaselWindow { view, window }),
             Err(err) => tracing::error!("cannot create easel window: {err}"),
         }
     }
 
     fn close_easel(&mut self) {
+        self.live.clear();
+        self.live_slots.clear();
         self.easel = None;
+    }
+
+    /// Keeps the easel page filling its window; live views follow `EaselLayout`.
+    fn easel_resized(&self) {
+        if let Some(win) = &self.easel {
+            let size = win
+                .window
+                .inner_size()
+                .to_logical::<f64>(win.window.scale_factor());
+            let _ = win
+                .view
+                .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
+        }
+    }
+
+    /// Drops the live views whose card is gone (removed, other easel, no longer live).
+    fn sync_live(&mut self) {
+        let current = self.easel_current.and_then(|id| self.easels.get(id));
+        let keep: Vec<u64> = current
+            .map(|e| {
+                e.items
+                    .iter()
+                    .filter(|i| i.kind == blackhole_domain::EaselItemKind::Live)
+                    .map(|i| i.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.live.retain(|id, _| keep.contains(id));
+        self.live_slots.retain(|id, _| keep.contains(id));
+    }
+
+    /// The card's page, cropped to its region, in the card's slot of the easel window.
+    fn live_play(&mut self, item: u64) {
+        if self.live.contains_key(&item) {
+            return;
+        }
+        let card = self
+            .easel_current
+            .and_then(|id| self.easels.get(id))
+            .and_then(|e| e.items.iter().find(|i| i.id == item))
+            .filter(|i| i.kind == blackhole_domain::EaselItemKind::Live)
+            .and_then(|i| Some((Url::parse(i.url.as_deref()?).ok()?, i.selector.clone())));
+        let (Some((url, selector)), Some(win)) = (card, &self.easel) else {
+            return;
+        };
+        match views::live_view(
+            &win.window,
+            &mut self.web_context,
+            &url,
+            &selector,
+            self.svc.policy(),
+            &self.mailbox,
+        ) {
+            Ok(view) => {
+                self.live.insert(item, view);
+                self.apply_slot(item);
+            }
+            Err(err) => {
+                tracing::error!("cannot create live view: {err}");
+                self.toast("Could not start the live view");
+            }
+        }
+        self.ui_easel();
+    }
+
+    fn apply_slot(&self, item: u64) {
+        let (Some(view), Some(slot)) = (self.live.get(&item), self.live_slots.get(&item)) else {
+            return;
+        };
+        let _ = view.set_bounds(views::rect(slot.x, slot.y, slot.w, slot.h));
+        let _ = view.set_visible(slot.visible && slot.w >= 2.0 && slot.h >= 2.0);
+    }
+
+    /// Arms the picker on the page in front.
+    fn live_pick_start(&mut self) {
+        let tab = self.svc.workspace().active_tab().map(|t| t.id);
+        let (Some(tab), false) = (tab, self.home_shown()) else {
+            self.toast("Open a web page to capture an area");
+            return;
+        };
+        let Some(view) = self.tabs.get(&tab) else {
+            return;
+        };
+        if view.evaluate_script(views::LIVE_PICKER_JS).is_ok() {
+            self.live_pick = Some(tab);
+        }
+    }
+
+    /// Adds a live card for `selector` of the page of `tab`; the address comes from the engine.
+    fn capture_live(&mut self, tab: TabId, selector: &str, size: (f64, f64)) {
+        let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
+        let title = self
+            .svc
+            .workspace()
+            .active_tab()
+            .filter(|t| t.id == tab)
+            .map(|t| t.title.clone())
+            .unwrap_or_default();
+        let (Some(url), Some(easel)) = (page, self.easel_or_create()) else {
+            self.toast("This page cannot be captured");
+            return;
+        };
+        match self
+            .easels
+            .capture_live(easel, &url, &title, selector, size)
+        {
+            Ok(_) => {
+                self.easel_changed(true);
+                self.toast("Live area added to Easel");
+            }
+            Err(why) => self.toast(why),
+        }
     }
 
     fn easel_window_id(&self) -> Option<WindowId> {
@@ -1140,6 +1263,7 @@ impl Running {
                 "items": e.items.iter().map(|i| json!({
                     "id": i.id, "kind": i.kind.id(), "x": i.x, "y": i.y, "w": i.w, "h": i.h,
                     "text": i.text, "title": i.title, "url": i.url, "color": i.color,
+                    "selector": i.selector, "playing": self.live.contains_key(&i.id),
                 })).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
             "colors": blackhole_domain::easel::COLORS,
@@ -1153,6 +1277,7 @@ impl Running {
     fn easel_changed(&mut self, changed: bool) {
         if changed {
             self.easel_persist();
+            self.sync_live();
             self.ui_easel();
         }
     }
@@ -1241,6 +1366,7 @@ impl Running {
             UiCommand::SelectEasel { id } => {
                 if self.easels.get(id).is_some() {
                     self.easel_current = Some(id);
+                    self.sync_live();
                     self.ui_easel();
                 }
             }
@@ -1253,6 +1379,25 @@ impl Running {
                 self.easel_changed(ok);
             }
             UiCommand::CaptureToEasel => self.capture_to_easel(),
+            UiCommand::LivePick => self.live_pick_start(),
+            UiCommand::CaptureLive { selector, w, h } => {
+                let tab = self.svc.workspace().active_tab().map(|t| t.id);
+                match tab {
+                    Some(tab) if !self.home_shown() => self.capture_live(tab, &selector, (w, h)),
+                    _ => self.toast("Open a web page to capture an area"),
+                }
+            }
+            UiCommand::EaselLivePlay { item } => self.live_play(item),
+            UiCommand::EaselLiveStop { item } => {
+                self.live.remove(&item);
+                self.ui_easel();
+            }
+            UiCommand::EaselLayout { slots } => {
+                self.live_slots = slots.into_iter().map(|s| (s.item, s)).collect();
+                for item in self.live.keys().copied().collect::<Vec<_>>() {
+                    self.apply_slot(item);
+                }
+            }
             UiCommand::EaselAddNote { x, y } => {
                 if let Some(easel) = self.easel_or_create() {
                     let at = x.zip(y);
@@ -1681,6 +1826,9 @@ impl Running {
             actions.push(
                 json!({"id": "capture_easel", "label": "Capture this page to Easel", "hint": "⌘⇧S"}),
             );
+            actions.push(
+                json!({"id": "capture_live", "label": "Live capture: select an area for Easel", "hint": "⌘⇧L"}),
+            );
         }
         if let Some(site) = &site {
             actions.push(json!({"id": "boost", "label": format!("Boost {site}"), "hint": "Boost"}));
@@ -1755,6 +1903,7 @@ impl Running {
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "capture_easel" => self.handle_ui(UiCommand::CaptureToEasel),
+            "capture_live" => self.handle_ui(UiCommand::LivePick),
             "clear_history" => {
                 self.svc.clear_history();
                 self.toast("History cleared");
@@ -2273,6 +2422,11 @@ impl Running {
             | UiCommand::RenameEasel { .. }
             | UiCommand::DeleteEasel { .. }
             | UiCommand::CaptureToEasel
+            | UiCommand::LivePick
+            | UiCommand::CaptureLive { .. }
+            | UiCommand::EaselLivePlay { .. }
+            | UiCommand::EaselLiveStop { .. }
+            | UiCommand::EaselLayout { .. }
             | UiCommand::EaselAddNote { .. }
             | UiCommand::EaselSetText { .. }
             | UiCommand::EaselMove { .. }
@@ -2453,6 +2607,7 @@ impl Running {
             "," => self.settings_wanted = true,
             "shift+e" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "shift+s" => self.handle_ui(UiCommand::CaptureToEasel),
+            "shift+l" => self.handle_ui(UiCommand::LivePick),
             "\\" => self.toggle_split(),
             _ => {}
         }
@@ -2493,6 +2648,11 @@ impl Running {
             Msg::Page(_, PageEvent::Peek { url }) => {
                 if let Ok(url) = Url::parse(&url) {
                     self.open_peek(&url);
+                }
+            }
+            Msg::Page(tab, PageEvent::LivePick { selector, w, h }) => {
+                if self.live_pick.take() == Some(tab) {
+                    self.capture_live(tab, &selector, (w, h));
                 }
             }
             Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
@@ -2707,8 +2867,12 @@ impl ApplicationHandler<Wake> for App {
             return;
         }
         if app.easel_window_id() == Some(id) {
-            if matches!(event, WindowEvent::CloseRequested) {
-                app.close_easel();
+            match event {
+                WindowEvent::CloseRequested => app.close_easel(),
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    app.easel_resized();
+                }
+                _ => {}
             }
             return;
         }

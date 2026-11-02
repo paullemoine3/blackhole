@@ -69,6 +69,8 @@ struct ItemDto {
     #[serde(default)]
     url: Option<String>,
     #[serde(default)]
+    selector: String,
+    #[serde(default)]
     color: String,
 }
 
@@ -116,6 +118,7 @@ impl EaselStore {
                                 text: i.text,
                                 title: i.title,
                                 url: i.url,
+                                selector: i.selector,
                                 color: i.color,
                             })
                         })
@@ -145,6 +148,7 @@ impl EaselStore {
                         text: i.text.clone(),
                         title: i.title.clone(),
                         url: i.url.clone(),
+                        selector: i.selector.clone(),
                         color: i.color.clone(),
                     })
                     .collect(),
@@ -316,6 +320,9 @@ mod tests {
             .capture(id, "https://a.com/", "A", "snippet")
             .unwrap();
         easels.add_note(id, Some((10.0, 20.0)));
+        easels
+            .capture_live(id, "https://a.com/", "A", "main h1", (300.0, 100.0))
+            .unwrap();
         s.save(&easels).unwrap();
         assert_eq!(s.load(), easels);
         fs::write(t.path().join("not-yet-created/easels.json"), "{oops").unwrap();

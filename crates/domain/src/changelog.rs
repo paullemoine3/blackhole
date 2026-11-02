@@ -1,6 +1,12 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.5.3",
+        &[
+            "Easel live capture: pick an area of a page (Cmd/Ctrl + Shift + L) and it stays live and interactive in an Easel card",
+        ],
+    ),
+    (
         "0.5.2",
         &[
             "Easel: free-form boards for notes and clips of web pages, in their own window (Cmd/Ctrl + Shift + E)",
