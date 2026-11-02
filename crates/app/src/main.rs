@@ -720,6 +720,7 @@ impl Running {
             "update": self.update_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
+            "easels": self.easels.all().iter().map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel.is_some() && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "bookmarks": self.bookmark_list.iter().map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
@@ -1116,6 +1117,7 @@ impl Running {
         self.live.clear();
         self.live_slots.clear();
         self.easel = None;
+        self.ui_state();
     }
 
     /// Keeps the easel page filling its window; live views follow `EaselLayout`.
@@ -1278,7 +1280,7 @@ impl Running {
         if changed {
             self.easel_persist();
             self.sync_live();
-            self.ui_easel();
+            self.ui_state();
         }
     }
 
@@ -1367,11 +1369,23 @@ impl Running {
                 if self.easels.get(id).is_some() {
                     self.easel_current = Some(id);
                     self.sync_live();
-                    self.ui_easel();
+                    self.ui_state();
                 }
             }
             UiCommand::RenameEasel { id, name } => {
                 let ok = self.easels.rename(id, &name);
+                self.easel_changed(ok);
+            }
+            UiCommand::MoveEasel { id, folder } => {
+                let known = folder.is_none()
+                    || folder.is_some_and(|f| {
+                        self.svc
+                            .workspace()
+                            .spaces()
+                            .iter()
+                            .any(|s| s.folders.iter().any(|x| x.id.0 == f))
+                    });
+                let ok = known && self.easels.set_folder(id, folder);
                 self.easel_changed(ok);
             }
             UiCommand::DeleteEasel { id } => {
@@ -1786,6 +1800,12 @@ impl Running {
             ws.active_tab()
         };
         let site = self.active_site();
+        let easel_actions: Vec<_> = self
+            .easels
+            .all()
+            .iter()
+            .map(|e| json!({"id": format!("easel:{}", e.id), "label": format!("Easel: {}", e.name), "hint": "Easel"}))
+            .collect();
         let mut actions = vec![
             json!({"id": "new_space", "label": "New Space"}),
             json!({"id": "new_folder", "label": "New Folder"}),
@@ -1797,6 +1817,7 @@ impl Running {
             json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
             json!({"id": "clear_history", "label": "Clear browsing history"}),
         ];
+        actions.extend(easel_actions);
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
@@ -1902,6 +1923,11 @@ impl Running {
                 self.easel_wanted = true;
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
+            other if other.starts_with("easel:") => {
+                if let Ok(id) = other["easel:".len()..].parse() {
+                    self.handle_ui(UiCommand::OpenEasel { id: Some(id) });
+                }
+            }
             "capture_easel" => self.handle_ui(UiCommand::CaptureToEasel),
             "capture_live" => self.handle_ui(UiCommand::LivePick),
             "clear_history" => {
@@ -2421,6 +2447,7 @@ impl Running {
             | UiCommand::SelectEasel { .. }
             | UiCommand::RenameEasel { .. }
             | UiCommand::DeleteEasel { .. }
+            | UiCommand::MoveEasel { .. }
             | UiCommand::CaptureToEasel
             | UiCommand::LivePick
             | UiCommand::CaptureLive { .. }

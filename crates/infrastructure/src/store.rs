@@ -79,6 +79,8 @@ struct EaselDto {
     id: u64,
     name: String,
     #[serde(default)]
+    folder: Option<u64>,
+    #[serde(default)]
     items: Vec<ItemDto>,
 }
 
@@ -104,6 +106,7 @@ impl EaselStore {
                 .map(|e| Easel {
                     id: e.id,
                     name: e.name,
+                    folder: e.folder,
                     items: e
                         .items
                         .into_iter()
@@ -135,6 +138,7 @@ impl EaselStore {
             .map(|e| EaselDto {
                 id: e.id,
                 name: e.name.clone(),
+                folder: e.folder,
                 items: e
                     .items
                     .iter()
@@ -319,6 +323,7 @@ mod tests {
         easels
             .capture(id, "https://a.com/", "A", "snippet")
             .unwrap();
+        easels.set_folder(id, Some(5));
         easels.add_note(id, Some((10.0, 20.0)));
         easels
             .capture_live(id, "https://a.com/", "A", "main h1", (300.0, 100.0))

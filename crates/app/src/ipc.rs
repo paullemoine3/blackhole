@@ -232,6 +232,12 @@ pub enum UiCommand {
     DeleteEasel {
         id: u64,
     },
+    /// Drag & drop in the sidebar: files an easel in a folder (`null`: loose).
+    MoveEasel {
+        id: u64,
+        #[serde(default)]
+        folder: Option<u64>,
+    },
     /// Clips the page in front (address, title, selected text) to the current easel.
     CaptureToEasel,
     EaselAddNote {

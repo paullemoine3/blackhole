@@ -69,6 +69,8 @@ pub struct Item {
 pub struct Easel {
     pub id: u64,
     pub name: String,
+    /// Sidebar folder (id of a workspace folder) the easel is filed in, like a tab.
+    pub folder: Option<u64>,
     pub items: Vec<Item>,
 }
 
@@ -195,6 +197,7 @@ impl Easels {
         self.easels.push(Easel {
             id,
             name,
+            folder: None,
             items: Vec::new(),
         });
         Some(id)
@@ -205,6 +208,17 @@ impl Easels {
         match self.get_mut(id) {
             Some(e) if !name.is_empty() => {
                 e.name = name;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Files the easel in a sidebar folder (`None`: loose).
+    pub fn set_folder(&mut self, id: u64, folder: Option<u64>) -> bool {
+        match self.get_mut(id) {
+            Some(e) if e.folder != folder => {
+                e.folder = folder;
                 true
             }
             _ => false,
@@ -469,6 +483,16 @@ mod tests {
     }
 
     #[test]
+    fn easels_can_be_filed_in_a_folder() {
+        let (mut easels, id) = board();
+        assert!(easels.set_folder(id, Some(7)));
+        assert!(!easels.set_folder(id, Some(7)));
+        assert_eq!(easels.get(id).unwrap().folder, Some(7));
+        assert!(easels.set_folder(id, None));
+        assert!(!easels.set_folder(99, Some(1)));
+    }
+
+    #[test]
     fn live_capture_rejects_bad_input() {
         let (mut easels, id) = board();
         let ok = (100.0, 100.0);
@@ -520,6 +544,7 @@ mod tests {
         let easels = Easels::from_stored(vec![Easel {
             id: 3,
             name: " A ".into(),
+            folder: None,
             items: vec![
                 bad(ItemKind::Clip, Some("javascript:alert(1)")),
                 bad(ItemKind::Clip, Some("https://ok.com")),

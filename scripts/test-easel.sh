@@ -57,13 +57,20 @@ eval content (() => { const h = document.querySelector('p').getBoundingClientRec
 wait 1500
 eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
 cmd {"cmd":"easel_live_play","item":2}
-wait 5000
+wait 8000
 eval easel document.querySelector('.card.live .play').textContent
 eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
 shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
 eval easel document.querySelector('.card.live .play').textContent
+cmd {"cmd":"new_folder"}
+wait 600
+eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
+wait 600
+eval chrome (() => { const n = document.querySelector('#easels .tab'); const f = document.querySelector('.fh'); const a = n.getBoundingClientRect(); let b; const ev = (t, el, x, y) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window })); ev('mousedown', n, a.left + 20, a.top + 10); ev('mousemove', document, a.left + 60, a.top + 10); b = f.getBoundingClientRect(); ev('mousemove', document, b.left + 20, b.top + b.height / 2); ev('mouseup', document, b.left + 20, b.top + b.height / 2); return 'dragged'; })()
+wait 1000
+eval chrome JSON.stringify({ loose: document.querySelectorAll('#easels .tab').length, inFolder: document.querySelectorAll('.fb .tab.easel').length })
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -87,6 +94,9 @@ check 12 'Paused' "live: card added, paused until played"
 check 13 '⏸' "live: playing"
 check 14 'crop true' "live: view shows the picked area, scaled to fill the card"
 check 15 '▶' "live: paused again"
+check 16 'x' "folder: created"
+check 17 'dragged' "sidebar: easel dragged onto a folder"
+check 18 'inFolder\":1' "sidebar: easel now lives in the folder"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys
