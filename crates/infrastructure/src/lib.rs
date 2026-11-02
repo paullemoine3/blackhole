@@ -33,6 +33,21 @@ pub fn data_dir() -> PathBuf {
         .join("BlackHole")
 }
 
+/// Size announced by the server for a download (anonymous HEAD request); `None` when unknown.
+pub fn remote_size(url: &str) -> Option<u64> {
+    if !url.starts_with("https://") {
+        return None;
+    }
+    ureq::head(url)
+        .timeout(std::time::Duration::from_secs(8))
+        .call()
+        .ok()?
+        .header("Content-Length")?
+        .parse()
+        .ok()
+        .filter(|n| *n > 0)
+}
+
 /// Where downloaded files land.
 pub fn downloads_dir() -> PathBuf {
     dirs::download_dir().unwrap_or_else(|| std::env::temp_dir().join("BlackHole Downloads"))

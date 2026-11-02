@@ -25,7 +25,7 @@ cmd {"cmd":"palette","mode":"new"}
 wait 1500
 shot 04-palette
 cmd {"cmd":"palette_close"}
-wait 500
+wait 1200
 cmd {"cmd":"open_settings","tab":"general"}
 wait 2000
 shots 05-settings-general
@@ -99,6 +99,31 @@ eval bar document.body.className
 cmd {"cmd":"window_maximize"}
 wait 800
 eval bar document.body.className
+cmd {"cmd":"new_tab"}
+wait 800
+cmd {"cmd":"palette_close"}
+wait 800
+eval chrome (send({cmd:'new_folder'}), 'folder')
+wait 800
+eval chrome (send({cmd:'move_tab',id:state.tabs[state.tabs.length-1].id,before:null,folder:state.folders[state.folders.length-1].id,pinned:false}), state.tabs.length + '|' + state.folders.length)
+wait 800
+eval chrome (state.tabs.length + '|' + state.tabs.filter(t => t.folder != null).length)
+eval chrome (send({cmd:'delete_folder',id:state.folders[state.folders.length-1].id}), 'deleted')
+wait 800
+eval chrome (state.tabs.length + '|' + state.tabs.filter(t => t.folder != null).length + '|' + state.folders.length)
+eval chrome (showCard({el:document.getElementById('new'),edge:'after'}, false), document.getElementById('dropcard').style.height)
+eval chrome (hideCard(), 'x')
+eval chrome (bh.downloads([{id:1,name:'big-file.iso',received:50,total:100,state:null},{id:2,name:'unknown.bin',received:2048,total:null,state:null}]), document.querySelector('#dls .dl .pc').textContent + '|' + document.querySelectorAll('#dls .dl').length + '|' + document.querySelector('#dls .dl.unk .pc').textContent)
+wait 600
+shot 18-download-cards
+eval chrome (bh.downloads([{id:1,name:'big-file.iso',received:100,total:100,state:'ok'}]), document.querySelector('#dls .dl').className)
+eval chrome (bh.downloads([]), String(document.getElementById('dls').children.length))
+cmd {"cmd":"new_tab"}
+wait 800
+eval palette (document.body.classList.contains('intro') + '|' + document.getElementById('q').value)
+shot 19-new-tab-palette
+cmd {"cmd":"palette_close"}
+wait 500
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -135,8 +160,16 @@ Check ($evals[13] -match 'false\|Update to v9\.9\.9') 'update button: shown with
 Check ($evals[15] -match 'up-bounce') 'update button: hover animation runs'
 Check ($evals[16] -match 'Updating to v9\.9\.9') 'update button: downloading state'
 Check ($evals[17] -match 'true') 'update button: hidden when up to date'
-Check ($evals[18] -match 'windows' -and $evals[18] -match 'maxed') 'window: maximize button state follows the window'
-Check ($evals[19] -match 'windows' -and $evals[19] -notmatch 'maxed') 'window: restore clears the maximized state'
-Check ($saved.Count -eq 17) "screenshots saved ($($saved.Count)/17)"
+Check ($evals[18] -match 'windows' -and $evals[18] -notmatch 'maxed') 'window: restore clears the maximized state (it starts maximized)'
+Check ($evals[19] -match 'windows' -and $evals[19] -match 'maxed') 'window: maximize button state follows the window'
+Check ($evals[22] -match '\|1"?$') 'folder: the tab sits inside the new folder'
+$before = if ($evals[22] -match '(\d+)\|1"?$') { [int]$Matches[1] } else { -1 }
+Check ($evals[24] -match "^.*\b$($before - 1)\|0\|") 'folder: deleting it closes its tabs instead of ungrouping them'
+Check ($evals[25] -match '3px') 'drag & drop: insertion marker is a thin line that overlaps no neighbour'
+Check ($evals[27] -match '50%\|2\|2 KB') 'downloads: progress card with percentage, plus an unknown-size card'
+Check ($evals[28] -match 'dl ok') 'downloads: finished card'
+Check ($evals[29] -match '0') 'downloads: cards disappear'
+Check ($evals[30] -match 'true\|"?$') 'new tab: opens the search bar (empty) over the start page'
+Check ($saved.Count -eq 19) "screenshots saved ($($saved.Count)/19)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

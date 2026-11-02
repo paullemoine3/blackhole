@@ -294,7 +294,15 @@ pub fn tab_view(
                 }
             }
         })
-        .with_new_window_req_handler(move |raw, _| {
+        .with_new_window_req_handler(move |raw, features| {
+            // Script popups (OAuth/SSO logins) need `window.opener` and `window.close()`; a plain
+            // tab would lose the link with the page and the login would never finish.
+            #[cfg(windows)]
+            if raw == "about:blank" || features.size.is_some() || features.position.is_some() {
+                return NewWindowResponse::Allow;
+            }
+            #[cfg(not(windows))]
+            let _ = features;
             if let Ok(url) = Url::parse(&raw) {
                 popups.push(Msg::OpenTab(url));
             }

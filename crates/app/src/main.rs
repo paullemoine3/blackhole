@@ -185,6 +185,33 @@ struct Capture {
     page: String,
 }
 
+/// A download shown in the sidebar while it runs, and for a few seconds after it ends.
+struct DownloadLive {
+    name: String,
+    path: PathBuf,
+    received: u64,
+    total: Option<u64>,
+    finished: Option<(bool, Instant)>,
+}
+
+/// How long a finished download stays in the sidebar.
+const DOWNLOAD_LINGER: Duration = Duration::from_secs(4);
+const DOWNLOAD_POLL: Duration = Duration::from_millis(500);
+
+/// Size of the file a download is writing: browsers use a temporary name until it completes.
+fn partial_size(path: &std::path::Path) -> u64 {
+    let size = |p: &std::path::Path| std::fs::metadata(p).map_or(0, |m| m.len());
+    let with = |ext: &str| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(ext);
+        PathBuf::from(name)
+    };
+    size(path)
+        .max(size(&with(".crdownload")))
+        .max(size(&with(".partial")))
+        .max(size(&with(".download")))
+}
+
 struct Running {
     chrome: WebView,
     /// Copy of the sidebar floating over the page while the real one is hidden.
@@ -268,6 +295,10 @@ struct Running {
     library_panel: WebView,
     library: bool,
     downloads: Vec<blackhole_infrastructure::store::DownloadRec>,
+    dl_live: HashMap<u64, DownloadLive>,
+    dl_polled: Instant,
+    dl_size_tx: std::sync::mpsc::Sender<(u64, u64)>,
+    dl_size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
     archive: Vec<blackhole_infrastructure::store::ArchivedTab>,
     thumbs: std::cell::RefCell<HashMap<u64, Option<String>>>,
     easel: Option<EaselWindow>,
@@ -495,6 +526,7 @@ impl Running {
         let (install_tx, install_rx) = std::sync::mpsc::channel();
         let (update_tx, update_rx) = std::sync::mpsc::channel();
         let (import_tx, import_rx) = std::sync::mpsc::channel();
+        let (dl_size_tx, dl_size_rx) = std::sync::mpsc::channel();
         let (capture_tx, capture_rx) = std::sync::mpsc::channel();
         let easel_store = EaselStore::new(&data);
         let easels = easel_store.load();
@@ -581,6 +613,10 @@ impl Running {
             import_rx,
             webext_sig: String::new(),
             downloads: blackhole_infrastructure::store::DownloadStore::new(&data).load(),
+            dl_live: HashMap::new(),
+            dl_polled: Instant::now(),
+            dl_size_tx,
+            dl_size_rx,
             archive: blackhole_infrastructure::store::ArchiveStore::new(&data).load(),
             data,
             ext_src: ext_src_dir,
@@ -754,6 +790,50 @@ impl Running {
         self.sidebar.toggle();
     }
 
+    fn downloads_json(&self) -> serde_json::Value {
+        let mut live: Vec<_> = self.dl_live.iter().collect();
+        live.sort_by_key(|(id, _)| **id);
+        json!(live
+            .into_iter()
+            .map(|(id, d)| json!({
+                "id": id, "name": d.name, "received": d.received, "total": d.total,
+                "state": d.finished.map(|(ok, _)| if ok { "ok" } else { "bad" }),
+            }))
+            .collect::<Vec<_>>())
+    }
+
+    /// Refreshes the sidebar's download cards from the size of the files being written.
+    fn poll_downloads(&mut self) {
+        if self.dl_live.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        while let Ok((id, total)) = self.dl_size_rx.try_recv() {
+            if let Some(d) = self.dl_live.get_mut(&id) {
+                d.total = Some(total);
+                changed = true;
+            }
+        }
+        if self.dl_polled.elapsed() >= DOWNLOAD_POLL {
+            self.dl_polled = Instant::now();
+            for d in self.dl_live.values_mut().filter(|d| d.finished.is_none()) {
+                let size = partial_size(&d.path);
+                if size != d.received {
+                    d.received = size;
+                    changed = true;
+                }
+            }
+            let before = self.dl_live.len();
+            self.dl_live
+                .retain(|_, d| d.finished.is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER));
+            changed |= before != self.dl_live.len();
+        }
+        if changed {
+            let list = self.downloads_json();
+            self.ui(format!("window.bh&&bh.downloads({list})"));
+        }
+    }
+
     fn tick_sidebar(&mut self) {
         if self.sidebar.moving() {
             self.sidebar.tick();
@@ -802,6 +882,7 @@ impl Running {
             "blocked": self.blocked.total(),
             "version": env!("CARGO_PKG_VERSION"),
             "update": self.update_json(),
+            "downloads": self.downloads_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
@@ -964,6 +1045,7 @@ impl Running {
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
         self.poll_update();
+        self.poll_downloads();
         self.poll_captures();
         while let Ok((msg, count, list)) = self.import_rx.try_recv() {
             if let Some(m) = msg {
@@ -2104,7 +2186,7 @@ impl Running {
         }
     }
 
-    /// A new tab is just the start page; the command bar stays closed (Ctrl/Cmd+L opens it).
+    /// A new tab shows the start page behind the search bar, which opens straight away.
     fn new_tab(&mut self) {
         self.close_palette();
         self.close_peek();
@@ -2112,6 +2194,7 @@ impl Running {
         self.easel_tab = false;
         self.library = false;
         self.sync();
+        self.open_palette("new");
     }
 
     // ---- command bar --------------------------------------------------------------------
@@ -2769,8 +2852,23 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::DeleteFolder { id } => {
+                // The folder takes its tabs with it (they go to the archive like any closed tab).
+                let inside: Vec<TabId> = self
+                    .svc
+                    .workspace()
+                    .active_space()
+                    .tabs
+                    .iter()
+                    .filter(|t| t.folder == Some(FolderId(id)))
+                    .map(|t| t.id)
+                    .collect();
+                for tab in inside {
+                    self.archive_tab(tab);
+                    self.svc.close_tab(tab);
+                    self.tabs.remove(&tab);
+                }
                 self.svc.delete_folder(FolderId(id));
-                self.ui_state();
+                self.sync();
             }
             UiCommand::Space { id } => {
                 self.svc.switch_space(SpaceId(id));
@@ -3143,6 +3241,7 @@ impl Running {
                 let name = path
                     .file_name()
                     .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                let remote = url.clone();
                 self.downloads
                     .push(blackhole_infrastructure::store::DownloadRec {
                         id,
@@ -3154,6 +3253,25 @@ impl Running {
                         ok: false,
                     });
                 self.save_downloads();
+                self.dl_live.insert(
+                    id,
+                    DownloadLive {
+                        name: self.downloads.last().map(|d| d.name.clone()).unwrap_or_default(),
+                        path: path.clone(),
+                        received: 0,
+                        total: None,
+                        finished: None,
+                    },
+                );
+                self.dl_polled = Instant::now();
+                let tx = self.dl_size_tx.clone();
+                std::thread::spawn(move || {
+                    if let Some(total) = blackhole_infrastructure::remote_size(&remote) {
+                        let _ = tx.send((id, total));
+                    }
+                });
+                let list = self.downloads_json();
+                self.ui(format!("window.bh&&bh.downloads({list})"));
                 self.toast("Download started");
                 self.ui_library();
             }
@@ -3169,8 +3287,19 @@ impl Running {
                     if let Some(p) = path {
                         d.path = p.to_string_lossy().into_owned();
                     }
+                    if let Some(live) = self.dl_live.get_mut(&d.id) {
+                        live.finished = Some((ok, Instant::now()));
+                        live.path = PathBuf::from(&d.path);
+                        if ok {
+                            let size = std::fs::metadata(&live.path).map_or(0, |m| m.len());
+                            live.received = size;
+                            live.total = Some(size.max(1));
+                        }
+                    }
                 }
                 self.save_downloads();
+                let list = self.downloads_json();
+                self.ui(format!("window.bh&&bh.downloads({list})"));
                 self.toast(if ok {
                     "Download complete"
                 } else {
@@ -3298,6 +3427,9 @@ impl ApplicationHandler<Wake> for App {
             }
             app.poll_webext();
             app.discard_idle_tabs();
+            if !app.dl_live.is_empty() {
+                wake = wake.min(DOWNLOAD_POLL);
+            }
             #[cfg(windows)]
             if app.ext_popup.is_some() {
                 app.probe_ext_popup();

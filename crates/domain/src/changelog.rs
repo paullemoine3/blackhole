@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.3",
+        &[
+            "Deleting a folder now also closes the tabs it contains instead of moving them to current tabs",
+            "Drag & drop: a thin insertion line replaces the overlapping markers, and dragged folders no longer pile up",
+            "Downloads show a progress card in the sidebar",
+            "New tab opens the search bar over the start page; Home and app launch still show the start page alone",
+        ],
+    ),
+    (
         "0.7.2",
         &[
             "Library (Arc-style): media, downloads, easels & notes, spaces and archived tabs; closed tabs are archived and can be reopened",
