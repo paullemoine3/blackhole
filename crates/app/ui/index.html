@@ -19,7 +19,9 @@
   .section { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .5; padding: 4px 8px 0; white-space: nowrap; }
   #pinned { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-radius: 12px; }
   #pinned:empty { display: none; }
-  body.dragging #pinned:empty { display: block; min-height: 46px; border: 1px dashed rgba(255,255,255,.25); }
+  body.dragging #pinned:empty { display: grid; place-items: center; min-height: 56px; border: 1px dashed rgba(255,255,255,.3); background: rgba(255,255,255,.04); }
+  body.dragging #pinned:empty::after { content: 'Drop here to pin'; font-size: 12px; opacity: .55; }
+  body.dragging #pinned { min-height: 56px; }
   #pinned .tab { justify-content: center; height: 48px; padding: 0; background: rgba(255,255,255,.07); }
   #pinsep { height: 1px; flex: none; margin: 0 6px; background: rgba(255,255,255,.14); }
   #pinned:empty + #pinsep { display: none; }
@@ -374,13 +376,13 @@ document.addEventListener('mouseup', (e) => {
 });
 let swipeX = 0, swipeLock = false, swipeIdle = null;
 document.addEventListener('wheel', (e) => {
-  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  if (Math.abs(e.deltaX) < 1 || Math.abs(e.deltaX) < Math.abs(e.deltaY) * 0.6) return;
   e.preventDefault();
   clearTimeout(swipeIdle);
-  swipeIdle = setTimeout(() => { swipeX = 0; swipeLock = false; }, 160);
+  swipeIdle = setTimeout(() => { swipeX = 0; swipeLock = false; }, 90);
   if (swipeLock) return;
   swipeX += e.deltaX;
-  if (Math.abs(swipeX) < 60) return;
+  if (Math.abs(swipeX) < 35) return;
   const i = state.spaces.findIndex(s => s.id === state.activeSpace);
   const next = state.spaces[i + (swipeX > 0 ? 1 : -1)];
   swipeLock = true; swipeX = 0;
@@ -403,6 +405,8 @@ function dropTarget(x, y) {
     return { el: tab, edge: after ? 'after' : 'before', before, folder: tab.dataset.folder === '' ? null : Number(tab.dataset.folder), pinned };
   }
   if (node.closest('#bms')) return null;
+  const pr = $('pinned').getBoundingClientRect();
+  if (!drag.easel && !node.closest('#folders, #tabs') && y <= pr.bottom + 8) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
   if (drag.easel && node.closest('#pinned, #tabs, #foldsep, #easels, #eahead')) return { el: $('easels'), edge: 'into', before: null, folder: null, pinned: false };
   const fh = node.closest('.fh, .fb');
   if (fh) return { el: fh.parentElement, edge: 'into', before: null, folder: Number(fh.dataset.folder), pinned: false };

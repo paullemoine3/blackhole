@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.6.0",
+        &[
+            "Dragging a tab into the Pinned area is easier: bigger drop zone, with a hint when empty",
+            "Swiping between spaces is more responsive and forgiving",
+        ],
+    ),
+    (
         "0.5.4",
         &[
             "Easels now appear in the sidebar like tabs: click to open, drag them into folders",
