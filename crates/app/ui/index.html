@@ -47,9 +47,6 @@
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
   .folder.collapsed .fb { display: none; }
   body.dropping aside { outline: 2px dashed var(--accent); outline-offset: -4px; }
-  #bms[hidden] { display: none; }
-  #bms { display: flex; flex-direction: column; gap: 2px; flex: none; }
-  #bms .folder:not(.collapsed) > .fh .chev { transform: rotate(90deg); }
   .bm .dot { background: rgba(255,255,255,.14); }
   .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
   .tab.dragging { opacity: .35; }
@@ -71,7 +68,8 @@
   #scroll::-webkit-scrollbar-track { background: transparent; }
   #scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
   #scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-  .new, #spaces, #update, footer { flex: none; }
+  #spaces, #update, footer { flex: none; }
+  .newrow { display: flex; align-items: center; margin: 4px 0; } .newrow .new { flex: 1; }
   .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 13px; border-radius: 9px; cursor: pointer; min-width: 0; }
   .tab:hover { background: rgba(255,255,255,.08); }
   .tab.active { background: rgba(255,255,255,.16); }
@@ -141,17 +139,15 @@
   <div id="pinned"></div>
   <div id="pinsep"></div>
   <div class="section secrow"><span>Pinned</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
-  <div id="bms" hidden></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
+  <div class="newrow"><button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button></div>
   <div id="tabs"></div>
-  <div class="section secrow" id="eahead"><span>Easels</span><button class="mini" id="neweasel" title="New Easel">＋ Easel</button></div>
-  <div id="easels"></div>
 </div>
-  <button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button>
   <div id="spaces"></div>
   <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
   <footer>
+    <button class="icon" id="library" title="Library">🗂</button>
     <button class="icon" id="gear" title="Settings">⚙</button>
     <button class="shield" id="shield" title="What was blocked this session">🛡<span class="full-only" id="blockedn"> 0</span></button>
     <span class="grow"></span>
@@ -305,6 +301,7 @@ function folderNode(f, tabs, easels = []) {
   h.title = f.name + ' — double-click to rename, right-click for options';
   h.append(chev, ficon, name, el('span', 'count', tabs.length + easels.length ? String(tabs.length + easels.length) : ''));
   h.onclick = () => { if (!justDragged) send({ cmd: 'toggle_folder', id: f.id }); };
+  h.onmousedown = (e) => { if (e.button === 0 && !editing) down = { folder: f.id, node: box, x: e.clientX, y: e.clientY }; };
   h.ondblclick = () => editFolder(h, name, f);
   h.oncontextmenu = (e) => { e.preventDefault(); folderMenu(f, e.clientX, e.clientY); };
   const body = el('div', 'fb');
@@ -415,6 +412,16 @@ document.addEventListener('wheel', (e) => {
 function dropTarget(x, y) {
   const node = document.elementFromPoint(x, y);
   if (!node) return null;
+  if (drag.folder) {
+    const box = node.closest('#folders > .folder');
+    if (!box) return null;
+    if (box === drag.node) return null;
+    const r = box.getBoundingClientRect();
+    const after = y > r.top + Math.min(r.height, 36) / 2;
+    const sib = after ? box.nextElementSibling : box;
+    const id = (sib && sib.querySelector('.fh')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
+    return { el: box.querySelector('.fh'), edge: after ? 'after' : 'before', before: id, folder: null, pinned: false };
+  }
   const tab = node.closest('[data-tab]');
   if (tab && (drag.url || drag.easel || tab.dataset.tab !== String(drag.id))) {
     const r = tab.getBoundingClientRect();
@@ -427,11 +434,10 @@ function dropTarget(x, y) {
     }
     return { el: tab, edge: after ? 'after' : 'before', before, folder: tab.dataset.folder === '' ? null : Number(tab.dataset.folder), pinned };
   }
-  if (node.closest('#bms')) return null;
   const pr = $('pinned').getBoundingClientRect();
   const gapEnd = $('folders').getBoundingClientRect().top;
   if (!drag.easel && !node.closest('#folders, #tabs') && y <= Math.max(pr.bottom + 8, gapEnd)) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
-  if (drag.easel && node.closest('#pinned, #tabs, #foldsep, #easels, #eahead')) return { el: $('easels'), edge: 'into', before: null, folder: null, pinned: false };
+  if (drag.easel && node.closest('#pinned, #tabs, #foldsep')) return null;
   const fh = node.closest('.fh, .fb');
   if (fh) return { el: fh.parentElement, edge: 'into', before: null, folder: Number(fh.dataset.folder), pinned: false };
   if (node.closest('#pinned')) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
@@ -452,7 +458,8 @@ function endDrag(commit, x, y) {
     drag.node.classList.remove('dragging');
     document.body.classList.remove('dragging');
     clearMarks();
-    if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
+    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, before: target.before });
+    else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
     else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
     justDragged = true;
@@ -464,10 +471,10 @@ function endDrag(commit, x, y) {
 
 document.addEventListener('mousemove', (e) => {
   if (down && !drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) {
-    const ghost = down.node.cloneNode(true);
+    const ghost = (down.folder ? down.node.querySelector('.fh') : down.node).cloneNode(true);
     ghost.classList.add('ghost');
     document.body.append(ghost);
-    drag = { id: down.id, url: down.url, easel: down.easel, node: down.node, ghost };
+    drag = { id: down.id, url: down.url, easel: down.easel, folder: down.folder, node: down.node, ghost };
     down.node.classList.add('dragging');
     document.body.classList.add('dragging');
   }
@@ -485,44 +492,6 @@ const mix = (hex, r) => {
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
 };
 
-const bmOpened = new Set();
-function bmNode(node, path) {
-  const out = [];
-  for (const [name, child] of node.folders) {
-    const key = path + '/' + name;
-    const box = el('div', 'folder' + (bmOpened.has(key) ? '' : ' collapsed'));
-    box.dataset.path = key.slice(1);
-    const h = el('div', 'fh');
-    h.append(el('span', 'chev', '▸'), el('span', 'ficon', '📁'), el('span', 'fname', name));
-    h.onclick = () => { bmOpened.has(key) ? bmOpened.delete(key) : bmOpened.add(key); box.classList.toggle('collapsed'); };
-    const body = el('div', 'fb');
-    body.append(...bmNode(child, key));
-    box.append(h, body);
-    out.push(box);
-  }
-  for (const b of node.items) {
-    const n = el('div', 'tab bm');
-    n.title = b.url;
-    n.append(withIcon(el('span', 'dot', (b.title[0] || '•').toUpperCase()), b.url, state.favicons), el('span', 'title', b.title || b.url));
-    n.onclick = () => { if (!justDragged) send({ cmd: 'open', input: b.url }); };
-    n.onmousedown = (e) => { if (e.button === 0) down = { url: b.url, node: n, x: e.clientX, y: e.clientY }; };
-    out.push(n);
-  }
-  return out;
-}
-function renderBookmarks(list) {
-  const root = { folders: new Map(), items: [] };
-  for (const b of list) {
-    let node = root;
-    for (const part of b.folder ? b.folder.split('/') : []) {
-      if (!node.folders.has(part)) node.folders.set(part, { folders: new Map(), items: [] });
-      node = node.folders.get(part);
-    }
-    node.items.push(b);
-  }
-  $('bms').hidden = !list.length;
-  if (list.length) $('bms').replaceChildren(...bmNode(root, ''));
-}
 // Links, bookmark exports (.html) and .webloc files dropped from another browser or Finder.
 const dropUrl = (u) => /^https?:\/\//i.test(u);
 function dropFolder(t) { const f = t.closest && t.closest('.folder'); return f && f.dataset.path != null ? f.dataset.path : ''; }
@@ -583,7 +552,6 @@ window.bh = {
       const last = folders[folders.length - 1];
       editFolder(last.h, last.name, last.f);
     }
-    $('easels').replaceChildren(...(s.easels || []).filter(e => !s.folders.some(f => f.id === e.folder)).map(easelNode));
     $('spaces').replaceChildren(...s.spaces.map(sp => {
       const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
       b.title = sp.name + ' — right-click for options';
@@ -599,7 +567,6 @@ window.bh = {
     $('blockedn').textContent = ' ' + s.blocked;
     document.body.classList.toggle('noanim', s.animations === false);
     renderUpdate(s.update, s.version);
-    renderBookmarks(s.bookmarks || []);
   },
   toast(m) {
     const t = $('toast'); t.textContent = m; t.classList.add('show');
@@ -623,7 +590,7 @@ function renderUpdate(u, current) {
 $('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
-$('neweasel').onclick = () => send({ cmd: 'action', id: 'new_easel' });
+$('library').onclick = () => send({ cmd: 'open_library' });
 $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };
 $('gear').onclick = () => send({ cmd: 'open_settings' });
 $('addspace').onclick = () => {

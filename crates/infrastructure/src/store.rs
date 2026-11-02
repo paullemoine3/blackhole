@@ -286,6 +286,92 @@ pub fn same_site(saved_url: &str, host: &str) -> bool {
     a == b || sub(&a, &b) || sub(&b, &a)
 }
 
+/// A file saved from a page.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DownloadRec {
+    pub id: u64,
+    pub name: String,
+    pub path: String,
+    pub url: String,
+    /// Unix seconds.
+    pub at: u64,
+    pub done: bool,
+    pub ok: bool,
+}
+
+/// A tab that was closed, kept so it can be found and reopened later.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ArchivedTab {
+    pub title: String,
+    pub url: String,
+    pub space: u64,
+    /// Unix seconds.
+    pub at: u64,
+}
+
+const LIBRARY_CAP: usize = 500;
+
+fn load_list<T: for<'a> Deserialize<'a>>(path: &std::path::Path) -> Vec<T> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_list<T: Serialize>(path: &std::path::Path, list: &[T]) -> Result<(), String> {
+    let start = list.len().saturating_sub(LIBRARY_CAP);
+    let tmp = path.with_extension("tmp");
+    create_parent(path)?;
+    fs::write(
+        &tmp,
+        serde_json::to_vec(&list[start..]).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// Download history (`downloads.json`), newest last.
+pub struct DownloadStore {
+    path: PathBuf,
+}
+
+impl DownloadStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("downloads.json"),
+        }
+    }
+
+    pub fn load(&self) -> Vec<DownloadRec> {
+        load_list(&self.path)
+    }
+
+    pub fn save(&self, list: &[DownloadRec]) -> Result<(), String> {
+        save_list(&self.path, list)
+    }
+}
+
+/// Closed tabs (`archive.json`), newest last.
+pub struct ArchiveStore {
+    path: PathBuf,
+}
+
+impl ArchiveStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("archive.json"),
+        }
+    }
+
+    pub fn load(&self) -> Vec<ArchivedTab> {
+        load_list(&self.path)
+    }
+
+    pub fn save(&self, list: &[ArchivedTab]) -> Result<(), String> {
+        save_list(&self.path, list)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +383,24 @@ mod tests {
             folder: String::new(),
             space: None,
         }
+    }
+
+    #[test]
+    fn library_lists_roundtrip_and_keep_only_the_newest() {
+        let t = tempfile::tempdir().unwrap();
+        let store = ArchiveStore::new(t.path());
+        let tab = |n: usize| ArchivedTab {
+            title: n.to_string(),
+            url: format!("https://a.test/{n}"),
+            space: 1,
+            at: n as u64,
+        };
+        let all: Vec<_> = (0..LIBRARY_CAP + 3).map(tab).collect();
+        store.save(&all).unwrap();
+        let back = store.load();
+        assert_eq!(back.len(), LIBRARY_CAP);
+        assert_eq!(back[0].title, "3");
+        assert!(DownloadStore::new(&t.path().join("none")).load().is_empty());
     }
 
     #[test]

@@ -1,10 +1,20 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.2",
+        &[
+            "Library (Arc-style): media, downloads, easels & notes, spaces and archived tabs; closed tabs are archived and can be reopened",
+            "Downloads are saved to the Downloads folder and listed in the Library",
+            "The sidebar no longer lists loose Easels (open them from the Library or the command palette); the Library button sits in the footer",
+        ],
+    ),
+    (
         "0.7.1",
         &[
             "The sidebar scrolls with a themed scrollbar when it overflows; the spaces bar stays fixed at the bottom",
             "Bookmarks and Easels now belong to a space, like pinned tabs, the grid and tabs",
+            "Imported bookmarks become real folders and tabs (drag & drop, close, delete) instead of a separate list",
+            "Folders can be reordered by drag & drop",
         ],
     ),
     (

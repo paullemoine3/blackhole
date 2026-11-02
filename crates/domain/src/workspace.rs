@@ -315,6 +315,55 @@ impl Workspace {
         id
     }
 
+    /// Files imported links as ordinary tabs in `space`, grouped in folders by name (blank:
+    /// "Imported"). Links already open in the space are skipped; nothing is activated.
+    /// Returns how many tabs were added.
+    pub fn import_tabs(&mut self, space: SpaceId, links: Vec<(String, String, Url)>) -> usize {
+        let Some(idx) = self.spaces.iter().position(|s| s.id == space) else {
+            return 0;
+        };
+        let mut added = 0;
+        for (folder, title, url) in links {
+            if self.spaces[idx].tabs.iter().any(|t| t.url == url) {
+                continue;
+            }
+            let name = match folder.trim() {
+                "" => "Imported",
+                n => n,
+            }
+            .to_owned();
+            let existing = self.spaces[idx]
+                .folders
+                .iter()
+                .find(|f| f.name == name)
+                .map(|f| f.id);
+            let folder_id = existing.unwrap_or_else(|| {
+                let id = FolderId(self.alloc());
+                self.spaces[idx].folders.push(Folder {
+                    id,
+                    name,
+                    icon: String::new(),
+                    collapsed: true,
+                });
+                id
+            });
+            let id = TabId(self.alloc());
+            let title = match title.trim() {
+                "" => url.host_str().unwrap_or("Link").to_owned(),
+                t => t.to_owned(),
+            };
+            self.spaces[idx].tabs.push(Tab {
+                id,
+                title,
+                url,
+                pinned: false,
+                folder: Some(folder_id),
+            });
+            added += 1;
+        }
+        added
+    }
+
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
         let name = name.trim();
         match self
@@ -344,6 +393,23 @@ impl Workspace {
             }
             None => false,
         }
+    }
+
+    /// Reorders a folder of the active space: before `before`, or last when `None`.
+    pub fn move_folder(&mut self, id: FolderId, before: Option<FolderId>) -> bool {
+        let space = self.active_space_mut();
+        let Some(from) = space.folders.iter().position(|f| f.id == id) else {
+            return false;
+        };
+        if before == Some(id) {
+            return false;
+        }
+        let folder = space.folders.remove(from);
+        let to = before
+            .and_then(|b| space.folders.iter().position(|f| f.id == b))
+            .unwrap_or(space.folders.len());
+        space.folders.insert(to, folder);
+        true
     }
 
     /// Removes a folder; its tabs stay open, back in the ungrouped list.
@@ -423,6 +489,42 @@ mod tests {
         let other = ws.add_space("Other", "#fff");
         ws.switch_space(other);
         assert_eq!(ws.find_tab(&u("https://a.test/page")), None);
+    }
+
+    #[test]
+    fn imported_links_become_tabs_in_named_folders_without_duplicates() {
+        let mut ws = Workspace::new();
+        let sp = ws.active_space().id;
+        let links = vec![
+            ("Work".to_owned(), "A".to_owned(), u("https://a.test")),
+            ("Work".to_owned(), String::new(), u("https://b.test")),
+            (String::new(), "A again".to_owned(), u("https://a.test")),
+        ];
+        assert_eq!(ws.import_tabs(sp, links), 2);
+        let s = ws.active_space();
+        assert_eq!(s.folders.len(), 1);
+        assert!(s.tabs.iter().all(|t| t.folder == Some(s.folders[0].id)));
+        assert_eq!(s.tabs[1].title, "b.test");
+        assert_eq!(s.active_tab, None);
+    }
+
+    #[test]
+    fn folders_can_be_reordered() {
+        let mut ws = Workspace::new();
+        let (a, b, c) = (ws.add_folder("A"), ws.add_folder("B"), ws.add_folder("C"));
+        let names = |ws: &Workspace| -> String {
+            ws.active_space()
+                .folders
+                .iter()
+                .map(|f| f.name.clone())
+                .collect()
+        };
+        assert!(ws.move_folder(c, Some(a)));
+        assert_eq!(names(&ws), "CAB");
+        assert!(ws.move_folder(c, None));
+        assert_eq!(names(&ws), "ABC");
+        assert!(!ws.move_folder(b, Some(b)));
+        assert!(!ws.move_folder(FolderId(999), None));
     }
 
     #[test]

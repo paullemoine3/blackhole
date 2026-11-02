@@ -330,6 +330,14 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    pub fn import_tabs(&mut self, space: SpaceId, links: Vec<(String, String, Url)>) -> usize {
+        let added = self.workspace.import_tabs(space, links);
+        if added > 0 {
+            self.persist();
+        }
+        added
+    }
+
     pub fn move_space(&mut self, id: SpaceId, before: Option<SpaceId>) -> bool {
         let ok = self.workspace.move_space(id, before);
         self.persist();
@@ -350,6 +358,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
 
     pub fn toggle_folder(&mut self, id: FolderId) -> bool {
         let ok = self.workspace.toggle_folder(id);
+        self.persist();
+        ok
+    }
+
+    pub fn move_folder(&mut self, id: FolderId, before: Option<FolderId>) -> bool {
+        let ok = self.workspace.move_folder(id, before);
         self.persist();
         ok
     }

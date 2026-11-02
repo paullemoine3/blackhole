@@ -97,6 +97,7 @@ impl Running {
                         None => return delay,
                     },
                     "etab" => &self.easel_panel,
+                    "library" => &self.library_panel,
                     "live" => match self.live.values().next() {
                         Some(view) => view,
                         None => return delay,

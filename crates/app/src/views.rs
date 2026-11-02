@@ -240,6 +240,7 @@ pub fn tab_view(
         mailbox.clone(),
         mailbox.clone(),
     );
+    let (dl_start, dl_done) = (mailbox.clone(), mailbox.clone());
     let policy = policy.clone();
     let builder = builder(ctx);
     // Each page view gets its own configuration carrying the extension controller.
@@ -298,6 +299,23 @@ pub fn tab_view(
                 popups.push(Msg::OpenTab(url));
             }
             NewWindowResponse::Deny
+        })
+        .with_download_started_handler(move |url, dest| {
+            let name = dest.file_name().map_or_else(
+                || "download".to_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let dir = blackhole_infrastructure::downloads_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            *dest = blackhole_infrastructure::unique_path(&dir, &name);
+            dl_start.push(Msg::DownloadStarted {
+                url,
+                path: dest.clone(),
+            });
+            true
+        })
+        .with_download_completed_handler(move |url, path, ok| {
+            dl_done.push(Msg::DownloadDone { url, path, ok });
         })
         .with_document_title_changed_handler(move |text| title.push(Msg::Title(tab, text)))
         .with_on_page_load_handler(move |event: PageLoadEvent, raw| {

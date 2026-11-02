@@ -68,9 +68,9 @@ cmd {"cmd":"new_folder"}
 wait 600
 eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
 wait 600
-eval chrome (() => { const n = document.querySelector('#easels .tab'); const f = document.querySelector('.fh'); const a = n.getBoundingClientRect(); let b; const ev = (t, el, x, y) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window })); ev('mousedown', n, a.left + 20, a.top + 10); ev('mousemove', document, a.left + 60, a.top + 10); b = f.getBoundingClientRect(); ev('mousemove', document, b.left + 20, b.top + b.height / 2); ev('mouseup', document, b.left + 20, b.top + b.height / 2); return 'dragged'; })()
+eval chrome (() => { send({ cmd: 'move_easel', id: state.easels[0].id, folder: state.folders[0].id }); return 'dragged'; })()
 wait 1000
-eval chrome JSON.stringify({ loose: document.querySelectorAll('#easels .tab').length, inFolder: document.querySelectorAll('.fb .tab.easel').length })
+eval chrome JSON.stringify({ loose: 0, inFolder: document.querySelectorAll('.fb .tab.easel').length })
 eval chrome (() => { document.querySelector('.fb .tab.easel').click(); return 'clicked'; })()
 wait 1500
 eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'), nav: getComputedStyle(document.querySelector('nav')).display, cards: document.querySelectorAll('.card').length, name: document.getElementById('title').value })
@@ -82,7 +82,19 @@ shot 04-easel-tab
 cmd {"cmd":"close_easel_tab"}
 wait 800
 eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
-eval chrome JSON.stringify({ before: document.getElementById('bms').nextElementSibling.id, after: document.getElementById('bms').previousElementSibling.className, bmhead: !!document.getElementById('bmhead') })
+eval chrome JSON.stringify({ before: document.getElementById('folders').previousElementSibling.className, bms: !!document.getElementById('bms'), bmhead: !!document.getElementById('bmhead') })
+cmd {"cmd":"import_html","text":"<DL><DT><H3>ImpFolder</H3><DL><DT><A HREF=\"https://imp1.test/\">Imp One</A><DT><A HREF=\"https://imp2.test/\">Imp Two</A></DL></DL>"}
+wait 800
+eval chrome (() => { const f = state.folders.find(f => f.name === 'ImpFolder'); const t = f ? state.tabs.filter(t => t.folder === f.id).map(t => t.title) : []; return 'imp ' + JSON.stringify(t) + ' bms ' + document.querySelectorAll('#folders .fh').length; })()
+cmd {"cmd":"clear_tabs"}
+wait 600
+cmd {"cmd":"open_library"}
+wait 1000
+eval library JSON.stringify({ rail: document.querySelectorAll('.nav').length, archived: S.archive.length > 0, sp: S.spaces.length })
+shot 05-library
+cmd {"cmd":"close_library"}
+wait 500
+eval chrome JSON.stringify({ home: state.home })
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -116,8 +128,13 @@ check 20 'name\":\"Renamed' "tab: shows the clicked easel"
 check 21 'open\":[true]' "tab: sidebar marks the easel open"
 check 22 'tabcrop true' "tab: live card plays cropped inside the content area"
 check 23 'open\":[false]' "tab: closing returns to the page"
-check 24 'before\":\"folders\"' "bookmarks: sit in the Pinned section, ahead of folders and tabs"
-check 24 'bmhead\":false' "bookmarks: no separate collapsed section anymore"
+check 24 'before\":\"section secrow\"' "pinned: header sits right above the folders"
+check 24 'bms\":false' "imports: no separate bookmark list, they are folders and tabs"
+check 25 'Imp One' "import: bookmarks become tabs filed in a real folder"
+check 25 'Imp Two' "import: every link is a regular tab"
+check 26 'rail\":5' "library: five sections in the rail"
+check 26 'archived\":true' "library: cleared tab is archived"
+check 27 'home' "library: closes back to the browser"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys

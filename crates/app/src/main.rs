@@ -55,6 +55,7 @@ const HOTZONE_HTML: &str = include_str!("../ui/hotzone.html");
 const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
+const LIBRARY_HTML: &str = include_str!("../ui/library.html");
 /// Gap between the two panes of a split view.
 const SPLIT_GAP: f64 = 8.0;
 /// Height of the strip above a split view that carries each pane's title and close button.
@@ -246,8 +247,8 @@ struct Running {
     install_errors: HashMap<String, String>,
     install_tx: std::sync::mpsc::Sender<(String, Result<std::path::PathBuf, String>)>,
     install_rx: std::sync::mpsc::Receiver<(String, Result<std::path::PathBuf, String>)>,
-    import_tx: std::sync::mpsc::Sender<(Option<String>, usize)>,
-    import_rx: std::sync::mpsc::Receiver<(Option<String>, usize)>,
+    import_tx: std::sync::mpsc::Sender<ImportDone>,
+    import_rx: std::sync::mpsc::Receiver<ImportDone>,
     webext_sig: String,
     settings: Option<SettingsWindow>,
     settings_wanted: bool,
@@ -263,6 +264,12 @@ struct Running {
     /// The Easel page shown in the content area, in place of a web page, while `easel_tab`.
     easel_panel: WebView,
     easel_tab: bool,
+    /// The Library page, over the whole window below the bar, while `library`.
+    library_panel: WebView,
+    library: bool,
+    downloads: Vec<blackhole_infrastructure::store::DownloadRec>,
+    archive: Vec<blackhole_infrastructure::store::ArchivedTab>,
+    thumbs: std::cell::RefCell<HashMap<u64, Option<String>>>,
     easel: Option<EaselWindow>,
     easel_wanted: bool,
     capture_tx: std::sync::mpsc::Sender<Capture>,
@@ -429,6 +436,21 @@ impl Running {
             &mailbox,
         )
         .expect("easel tab view");
+        let library_panel = views::ui_view(
+            &window,
+            &mut web_context,
+            LIBRARY_HTML,
+            views::rect(
+                0.0,
+                BAR_HEIGHT,
+                size.width,
+                (size.height - BAR_HEIGHT).max(1.0),
+            ),
+            false,
+            false,
+            &mailbox,
+        )
+        .expect("library view");
         let splitbar = views::ui_view(
             &window,
             &mut web_context,
@@ -493,6 +515,13 @@ impl Running {
             }
         }
 
+        // Bookmarks saved by older versions become folders and tabs once.
+        let filed = data.join("bookmarks.filed");
+        if !filed.exists() {
+            file_bookmarks(&mut svc, BookmarkStore::new(&data).load());
+            let _ = std::fs::write(&filed, b"1");
+        }
+
         let release_notes: Vec<serde_json::Value> = svc
             .take_release_notes(env!("CARGO_PKG_VERSION"))
             .into_iter()
@@ -551,6 +580,8 @@ impl Running {
             import_tx,
             import_rx,
             webext_sig: String::new(),
+            downloads: blackhole_infrastructure::store::DownloadStore::new(&data).load(),
+            archive: blackhole_infrastructure::store::ArchiveStore::new(&data).load(),
             data,
             ext_src: ext_src_dir,
             settings: None,
@@ -563,6 +594,9 @@ impl Running {
             live_pick: None,
             easel_panel,
             easel_tab: false,
+            library_panel,
+            library: false,
+            thumbs: std::cell::RefCell::default(),
             easel: None,
             easel_wanted: false,
             capture_tx,
@@ -583,10 +617,16 @@ impl Running {
 
     /// The start page is shown at launch, via the Home button, and whenever no tab is active.
     fn home_shown(&self) -> bool {
-        self.easel_tab || self.home_visible || self.svc.workspace().active_tab().is_none()
+        self.library
+            || self.easel_tab
+            || self.home_visible
+            || self.svc.workspace().active_tab().is_none()
     }
 
     fn active_view(&self) -> &WebView {
+        if self.library {
+            return &self.library_panel;
+        }
         if self.easel_tab {
             return &self.easel_panel;
         }
@@ -657,9 +697,13 @@ impl Running {
             .set_bounds(views::rect(0.0, 0.0, size.width, BAR_HEIGHT));
         let _ = self.chrome.set_bounds(chrome_rect(&self.sidebar, &size));
         let _ = self.flyout.set_bounds(flyout_rect(&self.sidebar, &size));
-        let _ = self.flyout.set_visible(self.sidebar.flyout_shown());
+        let _ = self
+            .flyout
+            .set_visible(self.sidebar.flyout_shown() && !self.library);
         let _ = self.hotzone.set_bounds(hotzone_rect(&self.sidebar, &size));
-        let _ = self.hotzone.set_visible(!self.sidebar.is_open());
+        let _ = self
+            .hotzone
+            .set_visible(!self.sidebar.is_open() && !self.library);
         let _ = self
             .palette
             .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
@@ -682,6 +726,12 @@ impl Running {
             .set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
         let (main, side) = self.content_rects();
         let _ = self.active_view().set_bounds(main);
+        let _ = self.library_panel.set_bounds(views::rect(
+            0.0,
+            BAR_HEIGHT,
+            size.width,
+            (size.height - BAR_HEIGHT).max(1.0),
+        ));
         for item in self.live.keys().copied().collect::<Vec<_>>() {
             self.apply_slot(item);
         }
@@ -735,7 +785,6 @@ impl Running {
     fn ui_state(&self) {
         let ws = self.svc.workspace();
         let space = ws.active_space();
-        let first_space = ws.spaces().first().map_or(0, |s| s.id.0);
         let state = json!({
             "os": std::env::consts::OS,
             "sidebarWidth": self.sidebar.full(),
@@ -756,7 +805,6 @@ impl Running {
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
-            "bookmarks": self.bookmark_list.iter().filter(|b| b.space.unwrap_or(first_space) == space.id.0).map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
                 "folder": t.folder.map(|f| f.0),
@@ -767,6 +815,7 @@ impl Running {
         self.ui(format!("window.bh&&bh.render({state})"));
         self.ui_settings();
         self.ui_easel();
+        self.ui_library();
         self.ui_bar();
         self.ui_splitbar();
         if self.home_shown() {
@@ -845,10 +894,16 @@ impl Running {
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
     }
 
+    /// Imported bookmarks are ordinary tabs (drag & drop, close, folders) filed in folders.
+    fn file_bookmarks(&mut self, list: Vec<import::Bookmark>) {
+        file_bookmarks(&mut self.svc, list);
+    }
+
     fn store_dropped(&mut self, list: Vec<import::Bookmark>) -> String {
         let space = self.svc.workspace().active_space().id.0;
-        let msg = store_bookmarks(&self.bookmarks, list, "Glisser-déposer", space);
+        let (msg, list) = store_bookmarks(&self.bookmarks, list, "Glisser-déposer", space);
         self.bookmark_list = self.bookmarks.load();
+        self.file_bookmarks(list);
         self.ui_state();
         self.ui(format!("window.bh&&bh.toast({})", json!(msg)));
         msg
@@ -858,13 +913,18 @@ impl Running {
     /// opened inside the event-loop callback crash AppKit.
     fn spawn_import(
         &self,
-        job: impl FnOnce(&BookmarkStore, &Vault) -> Option<String> + Send + 'static,
+        job: impl FnOnce(&BookmarkStore, &Vault) -> Option<(String, Vec<import::Bookmark>)>
+            + Send
+            + 'static,
     ) {
         let (tx, data) = (self.import_tx.clone(), self.data.clone());
         std::thread::spawn(move || {
             let (bookmarks, vault) = (BookmarkStore::new(&data), Vault::new(&data));
-            let msg = job(&bookmarks, &vault);
-            let _ = tx.send((msg, vault.count()));
+            let (msg, list) = match job(&bookmarks, &vault) {
+                Some((m, l)) => (Some(m), l),
+                None => (None, Vec::new()),
+            };
+            let _ = tx.send((msg, vault.count(), list));
         });
     }
 
@@ -905,12 +965,13 @@ impl Running {
     fn poll_webext(&mut self) {
         self.poll_update();
         self.poll_captures();
-        while let Ok((msg, count)) = self.import_rx.try_recv() {
+        while let Ok((msg, count, list)) = self.import_rx.try_recv() {
             if let Some(m) = msg {
                 self.import_msg = m;
             }
             self.vault_count = count;
             self.bookmark_list = self.bookmarks.load();
+            self.file_bookmarks(list);
             self.ui_state();
         }
         while let Ok((id, result)) = self.install_rx.try_recv() {
@@ -1171,6 +1232,7 @@ impl Running {
         }
         self.easel_current = Some(id);
         self.easel_tab = true;
+        self.library = false;
         self.sync();
     }
 
@@ -1181,6 +1243,7 @@ impl Running {
         self.live.clear();
         self.live_slots.clear();
         self.easel_tab = false;
+        self.library = false;
         self.sync();
     }
 
@@ -1340,6 +1403,120 @@ impl Running {
         self.easel_current
     }
 
+    /// Everything the Library page shows; it picks the section and filters client-side.
+    fn ui_library(&self) {
+        if !self.library {
+            return;
+        }
+        let ws = self.svc.workspace();
+        let active = ws.active_space();
+        let exists = |d: &blackhole_infrastructure::store::DownloadRec| {
+            std::path::Path::new(&d.path).exists()
+        };
+        let downloads: Vec<_> = self.downloads.iter().rev().collect();
+        let mut thumbs = self.thumbs.borrow_mut();
+        let mut budget = 60;
+        let media: Vec<_> = downloads
+            .iter()
+            .filter(|d| d.done && d.ok && blackhole_infrastructure::media_kind(&d.name).is_some())
+            .filter(|d| exists(d))
+            .map(|d| {
+                let kind = blackhole_infrastructure::media_kind(&d.name);
+                let thumb = if kind == Some("image") && budget > 0 {
+                    budget -= 1;
+                    thumbs
+                        .entry(d.id)
+                        .or_insert_with(|| {
+                            blackhole_infrastructure::image_data_url(
+                                std::path::Path::new(&d.path),
+                                1_500_000,
+                            )
+                        })
+                        .clone()
+                } else {
+                    None
+                };
+                json!({"id": d.id, "name": d.name, "kind": kind, "thumb": thumb, "at": d.at})
+            })
+            .collect();
+        let state = json!({
+            "accent": active.color,
+            "media": media,
+            "downloads": downloads.iter().map(|d| json!({
+                "id": d.id, "name": d.name, "url": d.url, "at": d.at,
+                "done": d.done, "ok": d.ok, "exists": exists(d),
+            })).collect::<Vec<_>>(),
+            "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == active.id.0).map(|e| json!({
+                "id": e.id, "name": e.name, "count": e.items.len(),
+                "preview": e.items.iter().map(|i| i.text.as_str()).find(|t| !t.is_empty()).unwrap_or(""),
+            })).collect::<Vec<_>>(),
+            "spaces": ws.spaces().iter().map(|sp| json!({
+                "id": sp.id.0, "name": sp.name, "color": sp.color, "icon": sp.icon,
+                "active": sp.id == active.id,
+                "folders": sp.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name})).collect::<Vec<_>>(),
+                "tabs": sp.tabs.iter().map(|t| json!({
+                    "id": t.id.0, "title": t.title, "url": t.url.as_str(),
+                    "folder": t.folder.map(|f| f.0), "pinned": t.pinned,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "archive": self.archive.iter().enumerate().rev().map(|(i, a)| json!({
+                "index": i, "title": a.title, "url": a.url, "at": a.at,
+            })).collect::<Vec<_>>(),
+            "now": now_secs(),
+        });
+        let _ = self
+            .library_panel
+            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    fn open_library(&mut self) {
+        self.close_palette();
+        self.close_peek();
+        self.close_easel_tab();
+        self.library = true;
+        self.sync();
+        self.ui_library();
+        let _ = self.library_panel.evaluate_script("window.bh&&bh.intro()");
+    }
+
+    fn close_library(&mut self) {
+        if self.library {
+            self.library = false;
+            self.sync();
+        }
+    }
+
+    fn save_downloads(&self) {
+        let _ =
+            blackhole_infrastructure::store::DownloadStore::new(&self.data).save(&self.downloads);
+    }
+
+    fn save_archive(&self) {
+        let _ = blackhole_infrastructure::store::ArchiveStore::new(&self.data).save(&self.archive);
+    }
+
+    /// Remembers a tab that is about to be closed so the Library can bring it back.
+    fn archive_tab(&mut self, id: TabId) {
+        let ws = self.svc.workspace();
+        let space = ws.active_space();
+        let Some(tab) = space.tabs.iter().find(|t| t.id == id) else {
+            return;
+        };
+        if !matches!(tab.url.scheme(), "http" | "https") {
+            return;
+        }
+        let rec = blackhole_infrastructure::store::ArchivedTab {
+            title: tab.title.clone(),
+            url: tab.url.to_string(),
+            space: space.id.0,
+            at: now_secs(),
+        };
+        self.archive
+            .retain(|a| !(a.url == rec.url && a.space == rec.space));
+        self.archive.push(rec);
+        self.save_archive();
+    }
+
     fn ui_easel(&self) {
         let active = self.svc.workspace().active_space().id.0;
         let state = |embedded: bool| {
@@ -1458,6 +1635,73 @@ impl Running {
             UiCommand::CloseEasel => self.close_easel(),
             UiCommand::OpenEaselTab { id } => self.open_easel_tab(id),
             UiCommand::CloseEaselTab => self.close_easel_tab(),
+            UiCommand::OpenLibrary => self.open_library(),
+            UiCommand::CloseLibrary => self.close_library(),
+            UiCommand::LibraryOpenFile { id } => {
+                if let Some(d) = self.downloads.iter().find(|d| d.id == id) {
+                    open_download(std::path::Path::new(&d.path));
+                }
+            }
+            UiCommand::LibraryDeleteDownload { id } => {
+                self.downloads.retain(|d| d.id != id);
+                self.thumbs.borrow_mut().remove(&id);
+                self.save_downloads();
+                self.ui_library();
+            }
+            UiCommand::LibraryClear { kind } => {
+                match kind.as_str() {
+                    "downloads" => {
+                        self.downloads.clear();
+                        self.thumbs.borrow_mut().clear();
+                        self.save_downloads();
+                    }
+                    "archive" => {
+                        self.archive.clear();
+                        self.save_archive();
+                    }
+                    _ => {}
+                }
+                self.ui_library();
+            }
+            UiCommand::ReopenArchived { index } => {
+                if index < self.archive.len() {
+                    let rec = self.archive.remove(index);
+                    self.save_archive();
+                    self.open(&rec.url);
+                }
+            }
+            UiCommand::DeleteArchived { index } => {
+                if index < self.archive.len() {
+                    self.archive.remove(index);
+                    self.save_archive();
+                    self.ui_library();
+                }
+            }
+            UiCommand::LibraryOpenTab { space, id } => {
+                self.svc.switch_space(SpaceId(space));
+                self.svc.activate_tab(TabId(id));
+                self.home_visible = false;
+                self.easel_tab = false;
+                self.library = false;
+                self.sync();
+            }
+            UiCommand::ClearTabs => {
+                let loose: Vec<TabId> = self
+                    .svc
+                    .workspace()
+                    .active_space()
+                    .tabs
+                    .iter()
+                    .filter(|t| !t.pinned && t.folder.is_none())
+                    .map(|t| t.id)
+                    .collect();
+                for id in loose {
+                    self.archive_tab(id);
+                    self.svc.close_tab(id);
+                    self.tabs.remove(&id);
+                }
+                self.sync();
+            }
             UiCommand::NewEasel { name } => {
                 match self.easels.create(&name) {
                     Some(id) => {
@@ -1773,11 +2017,18 @@ impl Running {
             self.last_active.insert(id, Instant::now());
         }
         let _ = self.easel_panel.set_visible(self.easel_tab);
+        if !self.library {
+            // Keep the page blank while hidden so the next opening fades in without a flash.
+            let _ = self.library_panel.evaluate_script("window.bh&&bh.prep()");
+        }
+        let _ = self.library_panel.set_visible(self.library);
         let split = self.split_tab();
         for (id, view) in &self.tabs {
             let _ = view.set_visible(Some(*id) == active || Some(*id) == split);
         }
-        let _ = self.home.set_visible(active.is_none() && !self.easel_tab);
+        let _ = self
+            .home
+            .set_visible(active.is_none() && !self.easel_tab && !self.library);
         self.layout(true);
         self.apply_focus();
         self.ui_state();
@@ -1807,6 +2058,7 @@ impl Running {
                 self.svc.open_tab(input);
                 self.home_visible = false;
                 self.easel_tab = false;
+                self.library = false;
                 self.sync();
             }
         }
@@ -1845,6 +2097,7 @@ impl Running {
             return;
         }
         if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+            self.archive_tab(id);
             self.svc.close_tab(id);
             self.tabs.remove(&id);
             self.sync();
@@ -1857,6 +2110,7 @@ impl Running {
         self.close_peek();
         self.home_visible = true;
         self.easel_tab = false;
+        self.library = false;
         self.sync();
     }
 
@@ -1924,6 +2178,7 @@ impl Running {
             json!({"id": "toggle_sidebar", "label": "Toggle sidebar mode", "hint": "⌘B"}),
             json!({"id": "new_easel", "label": "New Easel", "hint": "Easel"}),
             json!({"id": "open_easel", "label": "Open Easel", "hint": "⌘⇧E"}),
+            json!({"id": "open_library", "label": "Open Library", "hint": "Media, downloads, archive"}),
             json!({"id": "settings", "label": "Open Settings"}),
             json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
             json!({"id": "clear_history", "label": "Clear browsing history"}),
@@ -2036,6 +2291,7 @@ impl Running {
                 }
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
+            "open_library" => self.handle_ui(UiCommand::OpenLibrary),
             other if other.starts_with("easel:") => {
                 if let Ok(id) = other["easel:".len()..].parse() {
                     self.handle_ui(UiCommand::OpenEaselTab { id });
@@ -2339,6 +2595,7 @@ impl Running {
                 self.close_peek();
                 self.home_visible = true;
                 self.easel_tab = false;
+                self.library = false;
                 self.sync();
             }
             UiCommand::NewTab => self.new_tab(),
@@ -2384,9 +2641,11 @@ impl Running {
                 self.svc.activate_tab(TabId(id));
                 self.home_visible = false;
                 self.easel_tab = false;
+                self.library = false;
                 self.sync();
             }
             UiCommand::Close { id } => {
+                self.archive_tab(TabId(id));
                 self.svc.close_tab(TabId(id));
                 self.tabs.remove(&TabId(id));
                 self.sync();
@@ -2395,6 +2654,7 @@ impl Running {
                 if self.svc.set_split(TabId(id)) {
                     self.home_visible = false;
                     self.easel_tab = false;
+                    self.library = false;
                 }
                 self.sync();
             }
@@ -2419,6 +2679,7 @@ impl Running {
                     }
                     self.home_visible = false;
                     self.easel_tab = false;
+                    self.library = false;
                     self.sync();
                 }
             }
@@ -2503,6 +2764,10 @@ impl Running {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();
             }
+            UiCommand::MoveFolder { id, before } => {
+                self.svc.move_folder(FolderId(id), before.map(FolderId));
+                self.ui_state();
+            }
             UiCommand::DeleteFolder { id } => {
                 self.svc.delete_folder(FolderId(id));
                 self.ui_state();
@@ -2511,6 +2776,7 @@ impl Running {
                 self.svc.switch_space(SpaceId(id));
                 self.home_visible = false;
                 self.easel_tab = false;
+                self.library = false;
                 self.sync();
             }
             UiCommand::MoveSpace { id, before } => {
@@ -2580,7 +2846,16 @@ impl Running {
             | UiCommand::EaselResize { .. }
             | UiCommand::EaselColor { .. }
             | UiCommand::EaselRemove { .. }
-            | UiCommand::EaselOpenLink { .. }) => self.handle_easel(command),
+            | UiCommand::EaselOpenLink { .. }
+            | UiCommand::OpenLibrary
+            | UiCommand::CloseLibrary
+            | UiCommand::LibraryOpenFile { .. }
+            | UiCommand::LibraryDeleteDownload { .. }
+            | UiCommand::LibraryClear { .. }
+            | UiCommand::ReopenArchived { .. }
+            | UiCommand::DeleteArchived { .. }
+            | UiCommand::LibraryOpenTab { .. }
+            | UiCommand::ClearTabs) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
             UiCommand::CheckCatalogUpdates => {
                 self.catalog_checked = Some(self.outdated_extensions().len());
@@ -2634,9 +2909,9 @@ impl Running {
                     Some(match found {
                         Some(s) => match import::read_bookmarks(&s) {
                             Ok(list) => store_bookmarks(bookmarks, list, &s.browser, space),
-                            Err(e) => format!("{} : {e}", s.browser),
+                            Err(e) => (format!("{} : {e}", s.browser), Vec::new()),
                         },
-                        None => "Source introuvable".into(),
+                        None => ("Source introuvable".into(), Vec::new()),
                     })
                 });
             }
@@ -2862,6 +3137,46 @@ impl Running {
                 if let Some(view) = self.view_of(tab) {
                     let _ = view.load_url(url.as_str());
                 }
+            }
+            Msg::DownloadStarted { url, path } => {
+                let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+                let name = path
+                    .file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                self.downloads
+                    .push(blackhole_infrastructure::store::DownloadRec {
+                        id,
+                        name,
+                        path: path.to_string_lossy().into_owned(),
+                        url,
+                        at: now_secs(),
+                        done: false,
+                        ok: false,
+                    });
+                self.save_downloads();
+                self.toast("Download started");
+                self.ui_library();
+            }
+            Msg::DownloadDone { url, path, ok } => {
+                if let Some(d) = self
+                    .downloads
+                    .iter_mut()
+                    .rev()
+                    .find(|d| d.url == url && !d.done)
+                {
+                    d.done = true;
+                    d.ok = ok;
+                    if let Some(p) = path {
+                        d.path = p.to_string_lossy().into_owned();
+                    }
+                }
+                self.save_downloads();
+                self.toast(if ok {
+                    "Download complete"
+                } else {
+                    "Download failed"
+                });
+                self.ui_library();
             }
             Msg::Blocked { why, host } => self.on_blocked(why, &host, ""),
         }
@@ -3097,45 +3412,127 @@ fn web_view_ptr(_view: &WebView) -> Option<std::ptr::NonNull<std::ffi::c_void>> 
     None
 }
 
+/// Result of an import job: message, vault size, and the bookmarks to file as tabs.
+type ImportDone = (Option<String>, usize, Vec<import::Bookmark>);
+
+fn file_bookmarks(svc: &mut BrowserService<JsonWorkspaceRepository>, list: Vec<import::Bookmark>) {
+    let first = svc.workspace().spaces().first().map_or(0, |s| s.id.0);
+    let mut by_space: HashMap<u64, Vec<(String, String, url::Url)>> = HashMap::new();
+    for b in list {
+        let Ok(u) = url::Url::parse(&b.url) else {
+            continue;
+        };
+        if matches!(u.scheme(), "http" | "https") {
+            by_space
+                .entry(b.space.unwrap_or(first))
+                .or_default()
+                .push((b.folder, b.title, u));
+        }
+    }
+    for (space, links) in by_space {
+        svc.import_tabs(blackhole_domain::SpaceId(space), links);
+    }
+}
+
 fn store_bookmarks(
     store: &BookmarkStore,
     mut list: Vec<import::Bookmark>,
     from: &str,
     space: u64,
-) -> String {
+) -> (String, Vec<import::Bookmark>) {
     list.iter_mut().for_each(|b| b.space = Some(space));
     let total = list.len();
-    match store.merge(list) {
-        Ok(new) => format!(
-            "{from} : {new} favoris ajoutés ({} déjà présents)",
-            total - new
+    match store.merge(list.clone()) {
+        Ok(new) => (
+            format!(
+                "{from} : {new} favoris ajoutés ({} déjà présents)",
+                total - new
+            ),
+            list,
         ),
-        Err(e) => format!("{from} : {e}"),
+        Err(e) => (format!("{from} : {e}"), Vec::new()),
     }
 }
 
-fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str, space: u64) -> String {
+fn import_file(
+    bookmarks: &BookmarkStore,
+    vault: &Vault,
+    kind: &str,
+    space: u64,
+) -> (String, Vec<import::Bookmark>) {
     let (label, exts): (&str, &[&str]) = if kind == "logins" {
         ("CSV", &["csv"])
     } else {
         ("HTML", &["html", "htm"])
     };
     let Some(path) = rfd::FileDialog::new().add_filter(label, exts).pick_file() else {
-        return String::new();
+        return (String::new(), Vec::new());
     };
     let Ok(text) = std::fs::read_to_string(&path) else {
-        return "Fichier illisible".into();
+        return ("Fichier illisible".into(), Vec::new());
     };
     if kind == "logins" {
-        return match import::parse_logins_csv(&text).and_then(|l| {
+        let msg = match import::parse_logins_csv(&text).and_then(|l| {
             let total = l.len();
             vault.merge(l).map(|new| (new, total))
         }) {
             Ok((new, total)) => format!("{new} mots de passe ajoutés au coffre chiffré ({} déjà présents). Supprimez le fichier CSV : il contient vos mots de passe en clair.", total - new),
             Err(e) => e,
         };
+        return (msg, Vec::new());
     }
     store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML", space)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Opens a downloaded file with its default app; programs are only revealed, never run.
+fn open_download(path: &std::path::Path) {
+    let risky = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        matches!(
+            e.to_ascii_lowercase().as_str(),
+            "exe"
+                | "msi"
+                | "bat"
+                | "cmd"
+                | "ps1"
+                | "com"
+                | "scr"
+                | "app"
+                | "command"
+                | "sh"
+                | "jar"
+                | "vbs"
+                | "js"
+                | "lnk"
+                | "pkg"
+                | "dmg"
+        )
+    });
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        if risky {
+            cmd.arg("-R");
+        }
+        let _ = cmd.arg(path).spawn();
+    }
+    #[cfg(windows)]
+    {
+        let mut cmd = std::process::Command::new("explorer");
+        if risky {
+            cmd.arg(format!("/select,{}", path.display()));
+        } else {
+            cmd.arg(path);
+        }
+        let _ = cmd.spawn();
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = (path, risky);
 }
 
 /// Scripted devtools runs and cargo builds never look for (or install) updates.

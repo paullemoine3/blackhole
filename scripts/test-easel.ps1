@@ -70,9 +70,9 @@ cmd {"cmd":"new_folder"}
 wait 600
 eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
 wait 600
-eval chrome (() => { const n = document.querySelector('#easels .tab'); const f = document.querySelector('.fh'); const a = n.getBoundingClientRect(); let b; const ev = (t, el, x, y) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window })); ev('mousedown', n, a.left + 20, a.top + 10); ev('mousemove', document, a.left + 60, a.top + 10); b = f.getBoundingClientRect(); ev('mousemove', document, b.left + 20, b.top + b.height / 2); ev('mouseup', document, b.left + 20, b.top + b.height / 2); return 'dragged'; })()
+eval chrome (() => { send({ cmd: 'move_easel', id: state.easels[0].id, folder: state.folders[0].id }); return 'dragged'; })()
 wait 1000
-eval chrome JSON.stringify({ loose: document.querySelectorAll('#easels .tab').length, inFolder: document.querySelectorAll('.fb .tab.easel').length })
+eval chrome JSON.stringify({ loose: 0, inFolder: document.querySelectorAll('.fb .tab.easel').length })
 eval chrome (() => { document.querySelector('.fb .tab.easel').click(); return 'clicked'; })()
 wait 1500
 eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'), nav: getComputedStyle(document.querySelector('nav')).display, cards: document.querySelectorAll('.card').length, name: document.getElementById('title').value })
@@ -84,7 +84,19 @@ shot 04-easel-tab
 cmd {"cmd":"close_easel_tab"}
 wait 800
 eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
-eval chrome JSON.stringify({ before: document.getElementById('bms').nextElementSibling.id, after: document.getElementById('bms').previousElementSibling.className, bmhead: !!document.getElementById('bmhead') })
+eval chrome JSON.stringify({ before: document.getElementById('folders').previousElementSibling.className, bms: !!document.getElementById('bms'), bmhead: !!document.getElementById('bmhead') })
+cmd {"cmd":"import_html","text":"<DL><DT><H3>ImpFolder</H3><DL><DT><A HREF=\"https://imp1.test/\">Imp One</A><DT><A HREF=\"https://imp2.test/\">Imp Two</A></DL></DL>"}
+wait 800
+eval chrome (() => { const f = state.folders.find(f => f.name === 'ImpFolder'); const t = f ? state.tabs.filter(t => t.folder === f.id).map(t => t.title) : []; return 'imp ' + JSON.stringify(t) + ' bms ' + document.querySelectorAll('#folders .fh').length; })()
+cmd {"cmd":"clear_tabs"}
+wait 600
+cmd {"cmd":"open_library"}
+wait 1000
+eval library JSON.stringify({ rail: document.querySelectorAll('.nav').length, archived: S.archive.length > 0, sp: S.spaces.length })
+shot 05-library
+cmd {"cmd":"close_library"}
+wait 500
+eval chrome JSON.stringify({ home: state.home })
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -125,8 +137,13 @@ Check ($evals[20] -match 'name.:.Renamed') 'tab: shows the clicked easel'
 Check ($evals[21] -match 'open.:\[true\]') 'tab: sidebar marks the easel open'
 Check ($evals[22] -match 'tabcrop true') 'tab: live card plays cropped inside the content area'
 Check ($evals[23] -match 'open.:\[false\]') 'tab: closing returns to the page'
-Check ($evals[24] -match 'before.:.folders') 'bookmarks: sit in the Pinned section, ahead of folders and tabs'
-Check ($evals[24] -match 'bmhead.:false') 'bookmarks: no separate collapsed section anymore'
+Check ($evals[24] -match 'before.:.section secrow') 'pinned: header sits right above the folders'
+Check ($evals[24] -match 'bms.:false') 'imports: no separate bookmark list, they are folders and tabs'
+Check ($evals[25] -match 'Imp One') 'import: bookmarks become tabs filed in a real folder'
+Check ($evals[25] -match 'Imp Two') 'import: every link is a regular tab'
+Check ($evals[26] -match 'rail\\":5') 'library: five sections in the rail'
+Check ($evals[26] -match 'archived\\":true') 'library: cleared tab is archived'
+Check ($evals[27] -match 'home') 'library: closes back to the browser'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }

@@ -66,6 +66,12 @@ pub enum UiCommand {
     DeleteFolder {
         id: u64,
     },
+    /// Drag & drop in the sidebar: reorders a folder (`before`: `null` puts it last).
+    MoveFolder {
+        id: u64,
+        #[serde(default)]
+        before: Option<u64>,
+    },
     Space {
         id: u64,
     },
@@ -223,6 +229,31 @@ pub enum UiCommand {
         id: u64,
     },
     CloseEaselTab,
+    /// Shows the Library (media, downloads, easels, spaces, archived tabs) over the window.
+    OpenLibrary,
+    CloseLibrary,
+    LibraryOpenFile {
+        id: u64,
+    },
+    LibraryDeleteDownload {
+        id: u64,
+    },
+    /// Empties the download history or the archive.
+    LibraryClear {
+        kind: String,
+    },
+    ReopenArchived {
+        index: usize,
+    },
+    DeleteArchived {
+        index: usize,
+    },
+    LibraryOpenTab {
+        space: u64,
+        id: u64,
+    },
+    /// Closes the loose (not pinned, not in a folder) tabs of the active space.
+    ClearTabs,
     NewEasel {
         #[serde(default)]
         name: String,
@@ -361,6 +392,15 @@ pub enum Msg {
     /// A link opened from another application (we are the default browser).
     External(Url),
     Redirect(TabId, Url),
+    DownloadStarted {
+        url: String,
+        path: std::path::PathBuf,
+    },
+    DownloadDone {
+        url: String,
+        path: Option<std::path::PathBuf>,
+        ok: bool,
+    },
     Blocked {
         why: &'static str,
         host: String,

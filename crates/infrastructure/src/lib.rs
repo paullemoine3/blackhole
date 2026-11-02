@@ -33,6 +33,78 @@ pub fn data_dir() -> PathBuf {
         .join("BlackHole")
 }
 
+/// Where downloaded files land.
+pub fn downloads_dir() -> PathBuf {
+    dirs::download_dir().unwrap_or_else(|| std::env::temp_dir().join("BlackHole Downloads"))
+}
+
+/// `Name.ext` -> `Name (2).ext` ... until the path is free.
+pub fn unique_path(dir: &std::path::Path, name: &str) -> PathBuf {
+    let name = std::path::Path::new(name).file_name().map_or_else(
+        || "download".to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let first = dir.join(&name);
+    if !first.exists() {
+        return first;
+    }
+    let path = std::path::Path::new(&name);
+    let stem = path
+        .file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    (2..)
+        .map(|n| dir.join(format!("{stem} ({n}){ext}")))
+        .find(|p| !p.exists())
+        .unwrap_or(first)
+}
+
+/// What kind of media a file name is, by extension.
+pub fn media_kind(name: &str) -> Option<&'static str> {
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "avif" | "bmp" => Some("image"),
+        "mp4" | "mov" | "webm" | "mkv" | "m4v" => Some("video"),
+        _ => None,
+    }
+}
+
+/// An image file as a `data:` URL for thumbnails; `None` when missing or larger than `max` bytes.
+pub fn image_data_url(path: &std::path::Path, max: u64) -> Option<String> {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    if media_kind(&name) != Some("image") || fs::metadata(path).ok()?.len() > max {
+        return None;
+    }
+    let mime = match name.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        _ => "image/png",
+    };
+    let bytes = fs::read(path).ok()?;
+    let mut out = format!("data:{mime};base64,");
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |a, (i, b)| a | u32::from(*b) << (16 - 8 * i));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Folder that holds one sub-folder per installed extension.
 pub fn extensions_dir(data: &std::path::Path) -> PathBuf {
     data.join("extensions")
@@ -405,6 +477,27 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), StorageErr
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn download_helpers_pick_free_names_and_encode_images() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.png"), [1u8, 2, 3, 4]).unwrap();
+        assert_eq!(
+            super::unique_path(dir.path(), "a.png").file_name().unwrap(),
+            "a (2).png"
+        );
+        assert_eq!(
+            super::unique_path(dir.path(), "../evil.txt")
+                .parent()
+                .unwrap(),
+            dir.path()
+        );
+        assert_eq!(super::media_kind("Clip.MP4"), Some("video"));
+        assert_eq!(super::media_kind("notes.txt"), None);
+        let url = super::image_data_url(&dir.path().join("a.png"), 100).unwrap();
+        assert_eq!(url, "data:image/png;base64,AQIDBA==");
+        assert!(super::image_data_url(&dir.path().join("a.png"), 2).is_none());
+    }
+
     use super::*;
 
     #[test]
