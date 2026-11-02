@@ -218,6 +218,11 @@ pub enum UiCommand {
         id: Option<u64>,
     },
     CloseEasel,
+    /// Shows an easel in the content area, like a tab.
+    OpenEaselTab {
+        id: u64,
+    },
+    CloseEaselTab,
     NewEasel {
         #[serde(default)]
         name: String,
@@ -290,6 +295,9 @@ pub enum UiCommand {
     /// Where each live card's slot is in the easel window (window coordinates).
     EaselLayout {
         slots: Vec<LiveSlot>,
+        /// Sent by the page shown in the content area rather than the Easel window.
+        #[serde(default)]
+        embedded: bool,
     },
 }
 
@@ -451,6 +459,11 @@ mod tests {
             serde_json::from_str::<UiCommand>(r#"{"cmd":"capture_to_easel"}"#).unwrap(),
             UiCommand::CaptureToEasel
         ));
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"open_easel_tab","id":4}"#).unwrap(),
+            UiCommand::OpenEaselTab { id: 4 }
+        ));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"open_easel_tab","id":4}"#).is_err());
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()
@@ -464,7 +477,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            matches!(c, UiCommand::EaselLayout { slots } if slots.len() == 1 && slots[0].visible)
+            matches!(c, UiCommand::EaselLayout { slots, embedded: false } if slots.len() == 1 && slots[0].visible)
         );
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"capture_live","selector":"h1"}"#).unwrap();

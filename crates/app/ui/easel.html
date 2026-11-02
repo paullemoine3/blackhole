@@ -9,6 +9,8 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; background: #100f17; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
   body { display: grid; grid-template-columns: 220px 1fr; }
+  body.embedded { grid-template-columns: 1fr; }
+  body.embedded nav, body:not(.embedded) .only-tab { display: none; }
   nav { padding: 18px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); overflow-y: auto; user-select: none; -webkit-user-select: none; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 14px; font-weight: 600; font-size: 15px; }
   .logo { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
@@ -61,6 +63,8 @@
     <button class="btn" id="note">＋ Note</button>
     <button class="btn" id="capture" title="Clip the page open in the browser">📷 Capture page</button>
     <button class="btn danger" id="delete">Delete</button>
+    <button class="btn only-tab" id="all" title="All your Easels, in their own window">🗂 All Easels</button>
+    <button class="btn only-tab" id="close" title="Close this Easel tab">✕</button>
   </header>
   <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (⌘/Ctrl + Shift + S).</div></div></div>
 </section>
@@ -196,7 +200,7 @@ function layout() {
       return { item: +s.parentElement.dataset.id, x: r.left, y: r.top, w: r.width, h: r.height, visible };
     });
     const key = JSON.stringify(slots);
-    if (key !== last) { last = key; send({ cmd: 'easel_layout', slots }); }
+    if (key !== last) { last = key; send({ cmd: 'easel_layout', slots, embedded: !!state.embedded }); }
   });
 }
 $('board').addEventListener('scroll', layout);
@@ -207,6 +211,7 @@ window.bh = {
     for (const e of s.easels) for (const i of e.items) if (pending.has(i.id) && e.id === s.current) i.text = pending.get(i.id);
     flush();
     state = s;
+    document.body.classList.toggle('embedded', !!s.embedded);
     const e = current();
     $('list').replaceChildren(...s.easels.map(x => {
       const b = el('button', 'easel' + (x.id === s.current ? ' on' : ''));
@@ -232,6 +237,8 @@ window.bh = {
 
 $('new').onclick = () => send({ cmd: 'new_easel', name: '' });
 $('note').onclick = () => send({ cmd: 'easel_add_note' });
+$('all').onclick = () => send({ cmd: 'open_easel', id: state.current });
+$('close').onclick = () => { flush(); send({ cmd: 'close_easel_tab' }); };
 $('capture').onclick = () => send({ cmd: 'capture_to_easel' });
 // Native webviews do not show confirm(): a second click within 3 s confirms.
 let arm = null;
@@ -245,7 +252,7 @@ $('delete').onclick = () => {
 $('title').onchange = () => { const e = current(); if (e) send({ cmd: 'rename_easel', id: e.id, name: $('title').value }); };
 $('title').onkeydown = (ev) => { if (ev.key === 'Enter') ev.target.blur(); };
 addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); flush(); send({ cmd: 'close_easel' }); }
+  if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); flush(); send({ cmd: state.embedded ? 'close_easel_tab' : 'close_easel' }); }
 });
 send({ cmd: 'ready' });
 </script>

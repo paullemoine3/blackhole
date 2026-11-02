@@ -73,6 +73,18 @@ wait 600
 eval chrome (() => { const n = document.querySelector('#easels .tab'); const f = document.querySelector('.fh'); const a = n.getBoundingClientRect(); let b; const ev = (t, el, x, y) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window })); ev('mousedown', n, a.left + 20, a.top + 10); ev('mousemove', document, a.left + 60, a.top + 10); b = f.getBoundingClientRect(); ev('mousemove', document, b.left + 20, b.top + b.height / 2); ev('mouseup', document, b.left + 20, b.top + b.height / 2); return 'dragged'; })()
 wait 1000
 eval chrome JSON.stringify({ loose: document.querySelectorAll('#easels .tab').length, inFolder: document.querySelectorAll('.fb .tab.easel').length })
+eval chrome (() => { document.querySelector('.fb .tab.easel').click(); return 'clicked'; })()
+wait 1500
+eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'), nav: getComputedStyle(document.querySelector('nav')).display, cards: document.querySelectorAll('.card').length, name: document.getElementById('title').value })
+eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
+cmd {"cmd":"easel_live_play","item":2}
+wait 8000
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'tabcrop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50); })()
+shot 04-easel-tab
+cmd {"cmd":"close_easel_tab"}
+wait 800
+eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
+eval chrome JSON.stringify({ before: document.getElementById('bms').nextElementSibling.id, after: document.getElementById('bms').previousElementSibling.className, bmhead: !!document.getElementById('bmhead') })
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -106,6 +118,15 @@ Check ($evals[14] -match 'crop true') 'live: view shows the picked area, scaled 
 Check ($evals[15] -match ([string][char]0x25B6)) 'live: paused again'
 Check ($evals[17] -match 'dragged') 'sidebar: easel dragged onto a folder'
 Check ($evals[18] -match 'inFolder.:1') 'sidebar: easel now lives in the folder'
+Check ($evals[19] -match 'clicked') 'tab: easel opened from the sidebar'
+Check ($evals[20] -match 'embedded.:true') 'tab: easel page is embedded in the main window'
+Check ($evals[20] -match 'nav.:.none') 'tab: the list of easels is hidden'
+Check ($evals[20] -match 'name.:.Renamed') 'tab: shows the clicked easel'
+Check ($evals[21] -match 'open.:\[true\]') 'tab: sidebar marks the easel open'
+Check ($evals[22] -match 'tabcrop true') 'tab: live card plays cropped inside the content area'
+Check ($evals[23] -match 'open.:\[false\]') 'tab: closing returns to the page'
+Check ($evals[24] -match 'before.:.folders') 'bookmarks: sit in the Pinned section, ahead of folders and tabs'
+Check ($evals[24] -match 'bmhead.:false') 'bookmarks: no separate collapsed section anymore'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }

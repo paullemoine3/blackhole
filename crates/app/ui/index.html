@@ -3,7 +3,14 @@
 <head>
 <meta charset="utf-8">
 <style>
-  :root { --accent: #7c5cff; --glow: rgba(124,92,255,.5); --glow2: rgba(124,92,255,.22); }
+  @property --accent { syntax: '<color>'; inherits: true; initial-value: #7c5cff; }
+  @property --glow { syntax: '<color>'; inherits: true; initial-value: rgba(124,92,255,.5); }
+  @property --glow2 { syntax: '<color>'; inherits: true; initial-value: rgba(124,92,255,.22); }
+  @property --tint1 { syntax: '<color>'; inherits: true; initial-value: #100f17; }
+  @property --tint2 { syntax: '<color>'; inherits: true; initial-value: #100f17; }
+  :root { --accent: #7c5cff; --glow: rgba(124,92,255,.5); --glow2: rgba(124,92,255,.22); transition: --accent .45s ease, --glow .45s ease, --glow2 .45s ease, --tint1 .45s ease, --tint2 .45s ease; }
+  aside.switching > * { animation: spacefade .4s ease; }
+  @keyframes spacefade { from { opacity: .25; } to { opacity: 1; } }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   html { background: #100f17; }
@@ -40,7 +47,7 @@
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
   .folder.collapsed .fb { display: none; }
   body.dropping aside { outline: 2px dashed var(--accent); outline-offset: -4px; }
-  #bmhead { cursor: pointer; margin-top: 4px; } #bmhead[hidden], #bms[hidden] { display: none; }
+  #bms[hidden] { display: none; }
   #bms { max-height: 38%; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; flex: none; }
   #bms .folder:not(.collapsed) > .fh .chev { transform: rotate(90deg); }
   .bm .dot { background: rgba(255,255,255,.14); }
@@ -125,13 +132,12 @@
   <div id="pinned"></div>
   <div id="pinsep"></div>
   <div class="section secrow"><span>Pinned</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
+  <div id="bms" hidden></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
   <div id="tabs"></div>
   <div class="section secrow" id="eahead"><span>Easels</span><button class="mini" id="neweasel" title="New Easel">＋ Easel</button></div>
   <div id="easels"></div>
-  <div class="section secrow" id="bmhead" hidden><span id="bmtitle">★ Bookmarks</span><span class="count" id="bmcount"></span></div>
-  <div id="bms" hidden></div>
   <button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button>
   <div id="spaces"></div>
   <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
@@ -249,7 +255,7 @@ function createMenu(x, y) {
     { icon: '📁', label: 'New folder', run: { cmd: 'new_folder' } },
     { sep: true },
     { icon: '🖼', label: 'New Easel', run: { cmd: 'action', id: 'new_easel' } },
-    ...(state.easels || []).map(e => ({ icon: '🖼', label: e.name, run: { cmd: 'open_easel', id: e.id } })),
+    ...(state.easels || []).map(e => ({ icon: '🖼', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
     { icon: '◉', label: 'New space', run: { cmd: 'action', id: 'new_space' } },
   ]);
 }
@@ -262,11 +268,12 @@ function easelNode(e) {
   n.title = e.name + ' — Easel (drag it into a folder)';
   n.dataset.easel = e.id;
   n.onmousedown = (ev) => { if (ev.button === 0) down = { easel: e.id, node: n, x: ev.clientX, y: ev.clientY }; };
-  n.onclick = () => { if (!justDragged) send({ cmd: 'open_easel', id: e.id }); };
+  n.onclick = () => { if (!justDragged) send({ cmd: 'open_easel_tab', id: e.id }); };
   n.oncontextmenu = (ev) => {
     ev.preventDefault();
     openMenu(ev.clientX, ev.clientY, [
-      { icon: '🖼', label: 'Open Easel', run: { cmd: 'open_easel', id: e.id } },
+      { icon: '🖼', label: 'Open as tab', run: { cmd: 'open_easel_tab', id: e.id } },
+      { icon: '🪟', label: 'Open in Easel window', run: { cmd: 'open_easel', id: e.id } },
       ...(state.folders.some(f => f.id === e.folder) ? [{ icon: '↩', label: 'Unpin from folder', run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
       { sep: true },
       { icon: '🗑', label: 'Delete Easel', danger: true, run: { cmd: 'delete_easel', id: e.id } },
@@ -374,18 +381,24 @@ document.addEventListener('mouseup', (e) => {
   }
   sdown = null;
 });
-let swipeX = 0, swipeLock = false, swipeIdle = null;
+let swipeX = 0, swipeLock = false, swipeIdle = null, swipeLast = 0;
 document.addEventListener('wheel', (e) => {
-  if (Math.abs(e.deltaX) < 1 || Math.abs(e.deltaX) < Math.abs(e.deltaY) * 0.6) return;
+  const dx = e.deltaX;
+  if (Math.abs(dx) < 1 || Math.abs(dx) < Math.abs(e.deltaY) * 0.6) return;
   e.preventDefault();
   clearTimeout(swipeIdle);
-  swipeIdle = setTimeout(() => { swipeX = 0; swipeLock = false; }, 90);
+  swipeIdle = setTimeout(() => { swipeX = 0; swipeLock = false; swipeLast = 0; }, 120);
+  const a = Math.abs(dx);
+  // A burst after the inertia tail has decayed, or a reversal, is a new gesture.
+  if (swipeLock && (a > swipeLast * 1.8 + 6 || Math.sign(dx) !== Math.sign(swipeX || dx))) { swipeLock = false; swipeX = 0; }
+  swipeLast = a;
   if (swipeLock) return;
-  swipeX += e.deltaX;
+  if (swipeX && Math.sign(dx) !== Math.sign(swipeX)) swipeX = 0;
+  swipeX += dx;
   if (Math.abs(swipeX) < 35) return;
   const i = state.spaces.findIndex(s => s.id === state.activeSpace);
   const next = state.spaces[i + (swipeX > 0 ? 1 : -1)];
-  swipeLock = true; swipeX = 0;
+  swipeLock = true; swipeLast = a; swipeX = dx;
   if (next) send({ cmd: 'space', id: next.id });
 }, { passive: false });
 
@@ -406,7 +419,8 @@ function dropTarget(x, y) {
   }
   if (node.closest('#bms')) return null;
   const pr = $('pinned').getBoundingClientRect();
-  if (!drag.easel && !node.closest('#folders, #tabs') && y <= pr.bottom + 8) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
+  const gapEnd = $('folders').getBoundingClientRect().top;
+  if (!drag.easel && !node.closest('#folders, #tabs') && y <= Math.max(pr.bottom + 8, gapEnd)) return { el: $('pinned'), edge: 'into', before: null, folder: null, pinned: true };
   if (drag.easel && node.closest('#pinned, #tabs, #foldsep, #easels, #eahead')) return { el: $('easels'), edge: 'into', before: null, folder: null, pinned: false };
   const fh = node.closest('.fh, .fb');
   if (fh) return { el: fh.parentElement, edge: 'into', before: null, folder: Number(fh.dataset.folder), pinned: false };
@@ -462,7 +476,6 @@ const mix = (hex, r) => {
 };
 
 const bmOpened = new Set();
-let bmSectionOpen = false;
 function bmNode(node, path) {
   const out = [];
   for (const [name, child] of node.folders) {
@@ -497,11 +510,8 @@ function renderBookmarks(list) {
     }
     node.items.push(b);
   }
-  $('bmhead').hidden = !list.length;
-  $('bms').hidden = !list.length || !bmSectionOpen;
-  $('bmcount').textContent = list.length || '';
-  $('bmtitle').textContent = (bmSectionOpen ? '▾ ' : '▸ ') + 'Bookmarks';
-  if (list.length && bmSectionOpen) $('bms').replaceChildren(...bmNode(root, ''));
+  $('bms').hidden = !list.length;
+  if (list.length) $('bms').replaceChildren(...bmNode(root, ''));
 }
 // Links, bookmark exports (.html) and .webloc files dropped from another browser or Finder.
 const dropUrl = (u) => /^https?:\/\//i.test(u);
@@ -533,12 +543,17 @@ document.addEventListener('drop', async (e) => {
   }
   if (!found) bh.toast('Nothing to import from this drop');
 });
-$('bmhead').onclick = () => { bmSectionOpen = !bmSectionOpen; renderBookmarks(state.bookmarks || []); };
 
 window.bh = {
   render(s) {
     if (drag || editing || sdrag) { deferred = s; return; }
+    const switched = state && state.activeSpace != null && s.activeSpace !== state.activeSpace;
     state = s;
+    if (switched) {
+      const a = document.querySelector('aside');
+      a.classList.remove('switching'); void a.offsetWidth; a.classList.add('switching');
+      setTimeout(() => a.classList.remove('switching'), 450);
+    }
     document.body.classList.toggle('flyout', window.bh.role === 'flyout');
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);

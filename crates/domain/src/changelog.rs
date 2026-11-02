@@ -1,10 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.0",
+        &[
+            "An Easel is now a tab: click it in the sidebar to show it in the content area, like a web page, with its own controls",
+            "Bookmarks appear directly in the Pinned section, ahead of folders and tabs",
+        ],
+    ),
+    (
         "0.6.0",
         &[
             "Dragging a tab into the Pinned area is easier: bigger drop zone, with a hint when empty",
-            "Swiping between spaces is more responsive and forgiving",
+            "Swiping between spaces is more reliable, and the sidebar background fades to the new space colour",
         ],
     ),
     (

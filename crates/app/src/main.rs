@@ -260,6 +260,9 @@ struct Running {
     live_slots: HashMap<u64, ipc::LiveSlot>,
     /// Tab whose area picker is armed.
     live_pick: Option<TabId>,
+    /// The Easel page shown in the content area, in place of a web page, while `easel_tab`.
+    easel_panel: WebView,
+    easel_tab: bool,
     easel: Option<EaselWindow>,
     easel_wanted: bool,
     capture_tx: std::sync::mpsc::Sender<Capture>,
@@ -416,6 +419,16 @@ impl Running {
             &mailbox,
         )
         .expect("start page view");
+        let easel_panel = views::ui_view(
+            &window,
+            &mut web_context,
+            EASEL_HTML,
+            home_bounds,
+            false,
+            false,
+            &mailbox,
+        )
+        .expect("easel tab view");
         let splitbar = views::ui_view(
             &window,
             &mut web_context,
@@ -548,6 +561,8 @@ impl Running {
             live: HashMap::new(),
             live_slots: HashMap::new(),
             live_pick: None,
+            easel_panel,
+            easel_tab: false,
             easel: None,
             easel_wanted: false,
             capture_tx,
@@ -568,10 +583,13 @@ impl Running {
 
     /// The start page is shown at launch, via the Home button, and whenever no tab is active.
     fn home_shown(&self) -> bool {
-        self.home_visible || self.svc.workspace().active_tab().is_none()
+        self.easel_tab || self.home_visible || self.svc.workspace().active_tab().is_none()
     }
 
     fn active_view(&self) -> &WebView {
+        if self.easel_tab {
+            return &self.easel_panel;
+        }
         if self.home_shown() {
             return &self.home;
         }
@@ -653,6 +671,7 @@ impl Running {
         }
         if all {
             let _ = self.home.set_bounds(self.full_content_bounds());
+            let _ = self.easel_panel.set_bounds(self.full_content_bounds());
             for view in self.tabs.values() {
                 let _ = view.set_bounds(self.full_content_bounds());
             }
@@ -663,6 +682,9 @@ impl Running {
             .set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
         let (main, side) = self.content_rects();
         let _ = self.active_view().set_bounds(main);
+        for item in self.live.keys().copied().collect::<Vec<_>>() {
+            self.apply_slot(item);
+        }
         if let (Some(id), Some(rect)) = (self.split_tab(), side) {
             if let Some(view) = self.tabs.get(&id) {
                 let _ = view.set_bounds(rect);
@@ -720,7 +742,7 @@ impl Running {
             "update": self.update_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
-            "easels": self.easels.all().iter().map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel.is_some() && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
+            "easels": self.easels.all().iter().map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "bookmarks": self.bookmark_list.iter().map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
@@ -1114,10 +1136,38 @@ impl Running {
     }
 
     fn close_easel(&mut self) {
-        self.live.clear();
-        self.live_slots.clear();
+        if !self.easel_tab {
+            self.live.clear();
+            self.live_slots.clear();
+        }
         self.easel = None;
         self.ui_state();
+    }
+
+    /// Shows an easel in the content area like a web page, with its own controls.
+    fn open_easel_tab(&mut self, id: u64) {
+        if self.easels.get(id).is_none() {
+            return;
+        }
+        self.close_palette();
+        self.close_peek();
+        if !self.easel_tab || self.easel_current != Some(id) {
+            self.live.clear();
+            self.live_slots.clear();
+        }
+        self.easel_current = Some(id);
+        self.easel_tab = true;
+        self.sync();
+    }
+
+    fn close_easel_tab(&mut self) {
+        if !self.easel_tab {
+            return;
+        }
+        self.live.clear();
+        self.live_slots.clear();
+        self.easel_tab = false;
+        self.sync();
     }
 
     /// Keeps the easel page filling its window; live views follow `EaselLayout`.
@@ -1160,11 +1210,16 @@ impl Running {
             .and_then(|e| e.items.iter().find(|i| i.id == item))
             .filter(|i| i.kind == blackhole_domain::EaselItemKind::Live)
             .and_then(|i| Some((Url::parse(i.url.as_deref()?).ok()?, i.selector.clone())));
-        let (Some((url, selector)), Some(win)) = (card, &self.easel) else {
+        let host = if self.easel_tab {
+            Some(&*self.window)
+        } else {
+            self.easel.as_ref().map(|w| &w.window)
+        };
+        let (Some((url, selector)), Some(host)) = (card, host) else {
             return;
         };
         match views::live_view(
-            &win.window,
+            host,
             &mut self.web_context,
             &url,
             &selector,
@@ -1187,8 +1242,16 @@ impl Running {
         let (Some(view), Some(slot)) = (self.live.get(&item), self.live_slots.get(&item)) else {
             return;
         };
-        let _ = view.set_bounds(views::rect(slot.x, slot.y, slot.w, slot.h));
-        let _ = view.set_visible(slot.visible && slot.w >= 2.0 && slot.h >= 2.0);
+        // Slots are relative to the Easel page: the content area when it is a tab.
+        let (ox, oy) = if self.easel_tab {
+            let (x, y, _, _) = card_rect(&self.sidebar, &self.window_size());
+            (x, y)
+        } else {
+            (0.0, 0.0)
+        };
+        let _ = view.set_bounds(views::rect(ox + slot.x, oy + slot.y, slot.w, slot.h));
+        let covered = self.palette_open || self.peek.is_some();
+        let _ = view.set_visible(slot.visible && !covered && slot.w >= 2.0 && slot.h >= 2.0);
     }
 
     /// Arms the picker on the page in front.
@@ -1256,23 +1319,32 @@ impl Running {
     }
 
     fn ui_easel(&self) {
-        let Some(win) = &self.easel else { return };
-        let state = json!({
-            "current": self.easel_current,
-            "easels": self.easels.all().iter().map(|e| json!({
-                "id": e.id,
-                "name": e.name,
-                "items": e.items.iter().map(|i| json!({
-                    "id": i.id, "kind": i.kind.id(), "x": i.x, "y": i.y, "w": i.w, "h": i.h,
-                    "text": i.text, "title": i.title, "url": i.url, "color": i.color,
-                    "selector": i.selector, "playing": self.live.contains_key(&i.id),
+        let state = |embedded: bool| {
+            json!({
+                "embedded": embedded,
+                "current": self.easel_current,
+                "easels": self.easels.all().iter().map(|e| json!({
+                    "id": e.id,
+                    "name": e.name,
+                    "items": e.items.iter().map(|i| json!({
+                        "id": i.id, "kind": i.kind.id(), "x": i.x, "y": i.y, "w": i.w, "h": i.h,
+                        "text": i.text, "title": i.title, "url": i.url, "color": i.color,
+                        "selector": i.selector, "playing": self.live.contains_key(&i.id),
+                    })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-            "colors": blackhole_domain::easel::COLORS,
-        });
-        let _ = win
-            .view
-            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+                "colors": blackhole_domain::easel::COLORS,
+            })
+        };
+        if let Some(win) = &self.easel {
+            let _ = win
+                .view
+                .evaluate_script(&format!("window.bh&&bh.render({})", state(false)));
+        }
+        if self.easel_tab {
+            let _ = self
+                .easel_panel
+                .evaluate_script(&format!("window.bh&&bh.render({})", state(true)));
+        }
     }
 
     /// Persists after a change and refreshes the window; `false` changes nothing.
@@ -1280,6 +1352,9 @@ impl Running {
         if changed {
             self.easel_persist();
             self.sync_live();
+            if self.easel_tab && self.current_easel().is_none() {
+                self.close_easel_tab();
+            }
             self.ui_state();
         }
     }
@@ -1294,7 +1369,7 @@ impl Running {
     /// Reads the page in front. The address comes from the engine; the title and the selection
     /// come from the page and are only ever stored as text.
     fn capture_to_easel(&mut self) {
-        let Some(view) = (if self.home_shown() {
+        let Some(view) = (if self.home_visible {
             None
         } else {
             self.svc
@@ -1358,6 +1433,8 @@ impl Running {
                 self.easel_wanted = true;
             }
             UiCommand::CloseEasel => self.close_easel(),
+            UiCommand::OpenEaselTab { id } => self.open_easel_tab(id),
+            UiCommand::CloseEaselTab => self.close_easel_tab(),
             UiCommand::NewEasel { name } => {
                 match self.easels.create(&name) {
                     Some(id) => self.easel_current = Some(id),
@@ -1406,12 +1483,13 @@ impl Running {
                 self.live.remove(&item);
                 self.ui_easel();
             }
-            UiCommand::EaselLayout { slots } => {
+            UiCommand::EaselLayout { slots, embedded } if embedded == self.easel_tab => {
                 self.live_slots = slots.into_iter().map(|s| (s.item, s)).collect();
                 for item in self.live.keys().copied().collect::<Vec<_>>() {
                     self.apply_slot(item);
                 }
             }
+            UiCommand::EaselLayout { .. } => {}
             UiCommand::EaselAddNote { x, y } => {
                 if let Some(easel) = self.easel_or_create() {
                     let at = x.zip(y);
@@ -1668,11 +1746,12 @@ impl Running {
         if let Some(id) = active {
             self.last_active.insert(id, Instant::now());
         }
+        let _ = self.easel_panel.set_visible(self.easel_tab);
         let split = self.split_tab();
         for (id, view) in &self.tabs {
             let _ = view.set_visible(Some(*id) == active || Some(*id) == split);
         }
-        let _ = self.home.set_visible(active.is_none());
+        let _ = self.home.set_visible(active.is_none() && !self.easel_tab);
         self.layout(true);
         self.apply_focus();
         self.ui_state();
@@ -1701,6 +1780,7 @@ impl Running {
             NavigationOutcome::Go(_) => {
                 self.svc.open_tab(input);
                 self.home_visible = false;
+                self.easel_tab = false;
                 self.sync();
             }
         }
@@ -1731,6 +1811,10 @@ impl Running {
     }
 
     fn close_active_tab(&mut self) {
+        if self.easel_tab {
+            self.close_easel_tab();
+            return;
+        }
         if self.home_shown() {
             return;
         }
@@ -1746,6 +1830,7 @@ impl Running {
         self.close_palette();
         self.close_peek();
         self.home_visible = true;
+        self.easel_tab = false;
         self.sync();
     }
 
@@ -1920,12 +2005,14 @@ impl Running {
                 self.handle_ui(UiCommand::NewEasel {
                     name: String::new(),
                 });
-                self.easel_wanted = true;
+                if let Some(id) = self.easel_current {
+                    self.open_easel_tab(id);
+                }
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             other if other.starts_with("easel:") => {
                 if let Ok(id) = other["easel:".len()..].parse() {
-                    self.handle_ui(UiCommand::OpenEasel { id: Some(id) });
+                    self.handle_ui(UiCommand::OpenEaselTab { id });
                 }
             }
             "capture_easel" => self.handle_ui(UiCommand::CaptureToEasel),
@@ -2225,6 +2312,7 @@ impl Running {
                 self.close_palette();
                 self.close_peek();
                 self.home_visible = true;
+                self.easel_tab = false;
                 self.sync();
             }
             UiCommand::NewTab => self.new_tab(),
@@ -2269,6 +2357,7 @@ impl Running {
                 self.close_peek();
                 self.svc.activate_tab(TabId(id));
                 self.home_visible = false;
+                self.easel_tab = false;
                 self.sync();
             }
             UiCommand::Close { id } => {
@@ -2279,6 +2368,7 @@ impl Running {
             UiCommand::Split { id } => {
                 if self.svc.set_split(TabId(id)) {
                     self.home_visible = false;
+                    self.easel_tab = false;
                 }
                 self.sync();
             }
@@ -2302,6 +2392,7 @@ impl Running {
                         self.tabs.remove(&tab);
                     }
                     self.home_visible = false;
+                    self.easel_tab = false;
                     self.sync();
                 }
             }
@@ -2393,6 +2484,7 @@ impl Running {
             UiCommand::Space { id } => {
                 self.svc.switch_space(SpaceId(id));
                 self.home_visible = false;
+                self.easel_tab = false;
                 self.sync();
             }
             UiCommand::MoveSpace { id, before } => {
@@ -2443,6 +2535,8 @@ impl Running {
             UiCommand::CloseSettings => self.close_settings(),
             command @ (UiCommand::OpenEasel { .. }
             | UiCommand::CloseEasel
+            | UiCommand::OpenEaselTab { .. }
+            | UiCommand::CloseEaselTab
             | UiCommand::NewEasel { .. }
             | UiCommand::SelectEasel { .. }
             | UiCommand::RenameEasel { .. }

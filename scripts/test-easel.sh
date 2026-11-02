@@ -71,6 +71,18 @@ wait 600
 eval chrome (() => { const n = document.querySelector('#easels .tab'); const f = document.querySelector('.fh'); const a = n.getBoundingClientRect(); let b; const ev = (t, el, x, y) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, view: window })); ev('mousedown', n, a.left + 20, a.top + 10); ev('mousemove', document, a.left + 60, a.top + 10); b = f.getBoundingClientRect(); ev('mousemove', document, b.left + 20, b.top + b.height / 2); ev('mouseup', document, b.left + 20, b.top + b.height / 2); return 'dragged'; })()
 wait 1000
 eval chrome JSON.stringify({ loose: document.querySelectorAll('#easels .tab').length, inFolder: document.querySelectorAll('.fb .tab.easel').length })
+eval chrome (() => { document.querySelector('.fb .tab.easel').click(); return 'clicked'; })()
+wait 1500
+eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'), nav: getComputedStyle(document.querySelector('nav')).display, cards: document.querySelectorAll('.card').length, name: document.getElementById('title').value })
+eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
+cmd {"cmd":"easel_live_play","item":2}
+wait 8000
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'tabcrop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50); })()
+shot 04-easel-tab
+cmd {"cmd":"close_easel_tab"}
+wait 800
+eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
+eval chrome JSON.stringify({ before: document.getElementById('bms').nextElementSibling.id, after: document.getElementById('bms').previousElementSibling.className, bmhead: !!document.getElementById('bmhead') })
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -97,6 +109,15 @@ check 15 '▶' "live: paused again"
 check 16 'x' "folder: created"
 check 17 'dragged' "sidebar: easel dragged onto a folder"
 check 18 'inFolder\":1' "sidebar: easel now lives in the folder"
+check 19 'clicked' "tab: easel opened from the sidebar"
+check 20 'embedded\":true' "tab: easel page is embedded in the main window"
+check 20 'nav\":\"none' "tab: the list of easels is hidden"
+check 20 'name\":\"Renamed' "tab: shows the clicked easel"
+check 21 'open\":[true]' "tab: sidebar marks the easel open"
+check 22 'tabcrop true' "tab: live card plays cropped inside the content area"
+check 23 'open\":[false]' "tab: closing returns to the page"
+check 24 'before\":\"folders\"' "bookmarks: sit in the Pinned section, ahead of folders and tabs"
+check 24 'bmhead\":false' "bookmarks: no separate collapsed section anymore"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys
