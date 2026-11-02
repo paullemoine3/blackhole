@@ -71,6 +71,8 @@ pub struct Easel {
     pub name: String,
     /// Sidebar folder (id of a workspace folder) the easel is filed in, like a tab.
     pub folder: Option<u64>,
+    /// Space the easel belongs to when it is loose (`None`: the first space, for old data).
+    pub space: Option<u64>,
     pub items: Vec<Item>,
 }
 
@@ -198,6 +200,7 @@ impl Easels {
             id,
             name,
             folder: None,
+            space: None,
             items: Vec::new(),
         });
         Some(id)
@@ -219,6 +222,16 @@ impl Easels {
         match self.get_mut(id) {
             Some(e) if e.folder != folder => {
                 e.folder = folder;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn set_space(&mut self, id: u64, space: Option<u64>) -> bool {
+        match self.get_mut(id) {
+            Some(e) if e.space != space => {
+                e.space = space;
                 true
             }
             _ => false,
@@ -545,6 +558,7 @@ mod tests {
             id: 3,
             name: " A ".into(),
             folder: None,
+            space: None,
             items: vec![
                 bad(ItemKind::Clip, Some("javascript:alert(1)")),
                 bad(ItemKind::Clip, Some("https://ok.com")),

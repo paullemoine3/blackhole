@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.1",
+        &[
+            "The sidebar scrolls with a themed scrollbar when it overflows; the spaces bar stays fixed at the bottom",
+            "Bookmarks and Easels now belong to a space, like pinned tabs, the grid and tabs",
+        ],
+    ),
+    (
         "0.7.0",
         &[
             "An Easel is now a tab: click it in the sidebar to show it in the content area, like a web page, with its own controls",

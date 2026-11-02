@@ -41,7 +41,7 @@ impl BookmarkStore {
         let mut all = self.load();
         let before = all.len();
         for b in incoming {
-            if !all.iter().any(|o| o.url == b.url) {
+            if !all.iter().any(|o| o.url == b.url && o.space == b.space) {
                 all.push(b);
             }
         }
@@ -81,6 +81,8 @@ struct EaselDto {
     #[serde(default)]
     folder: Option<u64>,
     #[serde(default)]
+    space: Option<u64>,
+    #[serde(default)]
     items: Vec<ItemDto>,
 }
 
@@ -107,6 +109,7 @@ impl EaselStore {
                     id: e.id,
                     name: e.name,
                     folder: e.folder,
+                    space: e.space,
                     items: e
                         .items
                         .into_iter()
@@ -139,6 +142,7 @@ impl EaselStore {
                 id: e.id,
                 name: e.name.clone(),
                 folder: e.folder,
+                space: e.space,
                 items: e
                     .items
                     .iter()
@@ -291,7 +295,19 @@ mod tests {
             title: "t".into(),
             url: url.into(),
             folder: String::new(),
+            space: None,
         }
+    }
+
+    #[test]
+    fn bookmarks_are_deduped_per_space() {
+        let t = tempfile::tempdir().unwrap();
+        let store = BookmarkStore::new(t.path());
+        let mut other = bm("https://a.com/");
+        other.space = Some(2);
+        assert_eq!(store.merge(vec![bm("https://a.com/")]).unwrap(), 1);
+        assert_eq!(store.merge(vec![other, bm("https://a.com/")]).unwrap(), 1);
+        assert_eq!(store.load().len(), 2);
     }
 
     #[test]

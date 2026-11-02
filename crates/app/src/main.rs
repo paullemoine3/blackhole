@@ -720,9 +720,22 @@ impl Running {
             .evaluate_script(&format!("window.bh&&(bh.role='flyout');{js}"));
     }
 
+    /// The space an easel shows in: its folder's, else the one it was created in.
+    fn easel_space(&self, easel: &blackhole_domain::easel::Easel) -> u64 {
+        let ws = self.svc.workspace();
+        let first = ws.spaces().first().map_or(0, |s| s.id.0);
+        let in_folder = easel.folder.and_then(|f| {
+            ws.spaces()
+                .iter()
+                .find(|s| s.folders.iter().any(|x| x.id.0 == f))
+        });
+        in_folder.map_or_else(|| easel.space.unwrap_or(first), |s| s.id.0)
+    }
+
     fn ui_state(&self) {
         let ws = self.svc.workspace();
         let space = ws.active_space();
+        let first_space = ws.spaces().first().map_or(0, |s| s.id.0);
         let state = json!({
             "os": std::env::consts::OS,
             "sidebarWidth": self.sidebar.full(),
@@ -742,8 +755,8 @@ impl Running {
             "update": self.update_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
-            "easels": self.easels.all().iter().map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
-            "bookmarks": self.bookmark_list.iter().map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
+            "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
+            "bookmarks": self.bookmark_list.iter().filter(|b| b.space.unwrap_or(first_space) == space.id.0).map(|b| json!({"title": b.title, "url": b.url, "folder": b.folder})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
                 "folder": t.folder.map(|f| f.0),
@@ -833,7 +846,8 @@ impl Running {
     }
 
     fn store_dropped(&mut self, list: Vec<import::Bookmark>) -> String {
-        let msg = store_bookmarks(&self.bookmarks, list, "Glisser-déposer");
+        let space = self.svc.workspace().active_space().id.0;
+        let msg = store_bookmarks(&self.bookmarks, list, "Glisser-déposer", space);
         self.bookmark_list = self.bookmarks.load();
         self.ui_state();
         self.ui(format!("window.bh&&bh.toast({})", json!(msg)));
@@ -1310,20 +1324,29 @@ impl Running {
         self.easel_current
     }
 
+    fn tag_easel_space(&mut self) {
+        if let Some(id) = self.easel_current {
+            let space = self.svc.workspace().active_space().id.0;
+            self.easels.set_space(id, Some(space));
+        }
+    }
+
     /// The current easel, created on first use so a capture never fails for lack of a board.
     fn easel_or_create(&mut self) -> Option<u64> {
         if self.current_easel().is_none() {
             self.easel_current = self.easels.create("");
+            self.tag_easel_space();
         }
         self.easel_current
     }
 
     fn ui_easel(&self) {
+        let active = self.svc.workspace().active_space().id.0;
         let state = |embedded: bool| {
             json!({
                 "embedded": embedded,
                 "current": self.easel_current,
-                "easels": self.easels.all().iter().map(|e| json!({
+                "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == active).map(|e| json!({
                     "id": e.id,
                     "name": e.name,
                     "items": e.items.iter().map(|i| json!({
@@ -1437,7 +1460,10 @@ impl Running {
             UiCommand::CloseEaselTab => self.close_easel_tab(),
             UiCommand::NewEasel { name } => {
                 match self.easels.create(&name) {
-                    Some(id) => self.easel_current = Some(id),
+                    Some(id) => {
+                        self.easel_current = Some(id);
+                        self.tag_easel_space();
+                    }
                     None => self.toast("Too many easels"),
                 }
                 self.easel_changed(true);
@@ -2603,10 +2629,11 @@ impl Running {
             }
             UiCommand::ImportBookmarks { source } => {
                 let found = self.import_sources.iter().find(|s| s.id == source).cloned();
+                let space = self.svc.workspace().active_space().id.0;
                 self.spawn_import(move |bookmarks, _| {
                     Some(match found {
                         Some(s) => match import::read_bookmarks(&s) {
-                            Ok(list) => store_bookmarks(bookmarks, list, &s.browser),
+                            Ok(list) => store_bookmarks(bookmarks, list, &s.browser, space),
                             Err(e) => format!("{} : {e}", s.browser),
                         },
                         None => "Source introuvable".into(),
@@ -2622,7 +2649,12 @@ impl Running {
                     } else {
                         title
                     };
-                    self.store_dropped(vec![import::Bookmark { title, url, folder }])
+                    self.store_dropped(vec![import::Bookmark {
+                        title,
+                        url,
+                        folder,
+                        space: None,
+                    }])
                 } else {
                     String::new()
                 };
@@ -2632,8 +2664,9 @@ impl Running {
                 self.import_msg = self.store_dropped(list);
             }
             UiCommand::ImportFile { kind } => {
+                let space = self.svc.workspace().active_space().id.0;
                 self.spawn_import(move |bookmarks, vault| {
-                    Some(import_file(bookmarks, vault, &kind))
+                    Some(import_file(bookmarks, vault, &kind, space))
                 });
             }
             UiCommand::RemoveCatalog { id } => {
@@ -3064,7 +3097,13 @@ fn web_view_ptr(_view: &WebView) -> Option<std::ptr::NonNull<std::ffi::c_void>> 
     None
 }
 
-fn store_bookmarks(store: &BookmarkStore, list: Vec<import::Bookmark>, from: &str) -> String {
+fn store_bookmarks(
+    store: &BookmarkStore,
+    mut list: Vec<import::Bookmark>,
+    from: &str,
+    space: u64,
+) -> String {
+    list.iter_mut().for_each(|b| b.space = Some(space));
     let total = list.len();
     match store.merge(list) {
         Ok(new) => format!(
@@ -3075,7 +3114,7 @@ fn store_bookmarks(store: &BookmarkStore, list: Vec<import::Bookmark>, from: &st
     }
 }
 
-fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str) -> String {
+fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str, space: u64) -> String {
     let (label, exts): (&str, &[&str]) = if kind == "logins" {
         ("CSV", &["csv"])
     } else {
@@ -3096,7 +3135,7 @@ fn import_file(bookmarks: &BookmarkStore, vault: &Vault, kind: &str) -> String {
             Err(e) => e,
         };
     }
-    store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML")
+    store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML", space)
 }
 
 /// Scripted devtools runs and cargo builds never look for (or install) updates.

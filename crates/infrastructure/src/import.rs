@@ -16,6 +16,9 @@ pub struct Bookmark {
     pub title: String,
     pub url: String,
     pub folder: String,
+    /// Space the bookmark belongs to (`None`: the first space, for old data).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub space: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,6 +216,7 @@ pub fn parse_chromium(json: &str) -> Result<Vec<Bookmark>, String> {
                         title: name.to_owned(),
                         url: url.to_owned(),
                         folder: folder.to_owned(),
+                        space: None,
                     });
                 }
             }
@@ -272,6 +276,7 @@ fn read_firefox(dir: &Path) -> Result<Vec<Bookmark>, String> {
                 title: r.get(0)?,
                 url: r.get(1)?,
                 folder: r.get(2)?,
+                space: None,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -321,6 +326,7 @@ pub fn parse_html(html: &str) -> Vec<Bookmark> {
                     title: text,
                     url,
                     folder: folders.join("/"),
+                    space: None,
                 });
             }
         }
@@ -400,7 +406,8 @@ mod tests {
             Bookmark {
                 title: "Docs".into(),
                 url: "https://doc.rust-lang.org/".into(),
-                folder: "Dev".into()
+                folder: "Dev".into(),
+                space: None,
             }
         );
     }
@@ -414,7 +421,8 @@ mod tests {
             Bookmark {
                 title: "A & B".into(),
                 url: "https://a.com/?x=1&y=2".into(),
-                folder: "Work".into()
+                folder: "Work".into(),
+                space: None,
             }
         );
         assert_eq!(b[1].folder, "");
@@ -470,7 +478,8 @@ mod tests {
             vec![Bookmark {
                 title: "Moz".into(),
                 url: "https://mozilla.org/".into(),
-                folder: "Toolbar".into()
+                folder: "Toolbar".into(),
+                space: None,
             }]
         );
     }
