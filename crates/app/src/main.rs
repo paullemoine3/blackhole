@@ -2458,7 +2458,10 @@ impl Running {
     /// Returns true while more tabs are waiting, so the loop comes back soon.
     fn preload_next_tab(&mut self) -> bool {
         let now = Instant::now();
+        // After a restart only the active tab is loaded: neighbours are warmed up once the
+        // user has actually moved between tabs.
         if self.home_shown()
+            || self.last_active.len() < 2
             || self.palette_open
             || self.peek.is_some()
             || self.tabs.len() >= self.svc.settings().max_live_tabs as usize

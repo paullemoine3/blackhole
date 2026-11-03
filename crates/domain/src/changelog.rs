@@ -1,6 +1,12 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.10",
+        &[
+            "After a restart only the active tab is loaded: neighbouring tabs are no longer reopened until you start switching tabs",
+        ],
+    ),
+    (
         "0.7.9",
         &[
             "Much lower memory use: only a few tabs stay alive at once (4 by default, adjustable in Settings), neighbouring tabs are preloaded and the least recent ones are released",
