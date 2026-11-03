@@ -35,6 +35,10 @@
 - 🎨 **Boosts** : CSS personnalisé par site.
 - 🖼️ **Easel** : tableaux de notes et de captures de pages, y compris en direct.
 - 📚 **Bibliothèque** : médias, téléchargements et onglets archivés au même endroit.
+- 🔐 **Comptes par espace** : chaque espace a ses propres cookies (perso et pro côte à côte).
+- 📺 **Média** : mini-lecteur dans la barre latérale et Picture in Picture automatique.
+- 🪟 **Glisser un onglet** vers une autre fenêtre pour l'y déplacer.
+- ⚡ **Démarrage et navigation rapides** : chargement parallèle, écritures disque en arrière-plan.
 
 | | macOS | Windows |
 |---|---|---|

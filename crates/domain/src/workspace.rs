@@ -26,7 +26,12 @@ pub struct Folder {
     /// Optional emoji shown instead of the default folder glyph.
     pub icon: String,
     pub collapsed: bool,
+    /// Enclosing folder, `None` at the top level.
+    pub parent: Option<FolderId>,
 }
+
+/// Deepest nesting allowed (a top-level folder is depth 1).
+pub const MAX_FOLDER_DEPTH: usize = 6;
 
 /// An Arc-style "Space": an isolated group of tabs with its own identity color.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +46,50 @@ pub struct Space {
     pub active_tab: Option<TabId>,
     /// Second pane of the split view, shown next to the active tab.
     pub split: Option<TabId>,
+}
+
+/// `id` plus every folder nested below it.
+fn folder_subtree(folders: &[Folder], id: FolderId) -> Vec<FolderId> {
+    if !folders.iter().any(|f| f.id == id) {
+        return Vec::new();
+    }
+    let mut out = vec![id];
+    let mut i = 0;
+    while i < out.len() {
+        let at = out[i];
+        out.extend(
+            folders
+                .iter()
+                .filter(|f| f.parent == Some(at))
+                .map(|f| f.id),
+        );
+        i += 1;
+    }
+    out
+}
+
+/// Nesting level of a folder (1 at the top level); capped so corrupt data cannot loop.
+fn folder_depth(folders: &[Folder], id: FolderId) -> usize {
+    let mut depth = 0;
+    let mut at = Some(id);
+    while let Some(cur) = at {
+        depth += 1;
+        if depth > MAX_FOLDER_DEPTH * 2 {
+            break;
+        }
+        at = folders.iter().find(|f| f.id == cur).and_then(|f| f.parent);
+    }
+    depth
+}
+
+/// Levels of the folder itself plus its deepest descendant chain (1 for a leaf).
+fn folder_height(folders: &[Folder], id: FolderId) -> usize {
+    1 + folders
+        .iter()
+        .filter(|f| f.parent == Some(id))
+        .map(|f| folder_height(folders, f.id))
+        .max()
+        .unwrap_or(0)
 }
 
 /// Keeps a single emoji-like symbol: no control characters, at most one ZWJ/flag-sized cluster.
@@ -300,6 +349,20 @@ impl Workspace {
     }
 
     pub fn add_folder(&mut self, name: &str) -> FolderId {
+        self.add_folder_in(name, None)
+            .expect("a top-level folder is always allowed")
+    }
+
+    /// Creates a folder, inside `parent` when given (refused if it is unknown or too deep).
+    pub fn add_folder_in(&mut self, name: &str, parent: Option<FolderId>) -> Option<FolderId> {
+        if let Some(p) = parent {
+            let space = self.active_space();
+            if !space.folders.iter().any(|f| f.id == p)
+                || folder_depth(&space.folders, p) >= MAX_FOLDER_DEPTH
+            {
+                return None;
+            }
+        }
         let id = FolderId(self.alloc());
         let name = if name.trim().is_empty() {
             "Folder"
@@ -311,12 +374,13 @@ impl Workspace {
             name: name.to_owned(),
             icon: String::new(),
             collapsed: false,
+            parent,
         });
-        id
+        Some(id)
     }
 
-    /// Files imported links as ordinary tabs in `space`, grouped in folders by name (blank:
-    /// "Imported"). Links already open in the space are skipped; nothing is activated.
+    /// Files imported links as ordinary tabs in `space`, grouped in folders by path ("A/B" makes
+    /// `B` a subfolder of `A`; blank: "Imported"). Links already open in the space are skipped; nothing is activated.
     /// Returns how many tabs were added.
     pub fn import_tabs(&mut self, space: SpaceId, links: Vec<(String, String, Url)>) -> usize {
         let Some(idx) = self.spaces.iter().position(|s| s.id == space) else {
@@ -327,26 +391,35 @@ impl Workspace {
             if self.spaces[idx].tabs.iter().any(|t| t.url == url) {
                 continue;
             }
-            let name = match folder.trim() {
-                "" => "Imported",
-                n => n,
+            let mut parent: Option<FolderId> = None;
+            let mut parts: Vec<&str> = folder
+                .split('/')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .collect();
+            if parts.is_empty() {
+                parts.push("Imported");
             }
-            .to_owned();
-            let existing = self.spaces[idx]
-                .folders
-                .iter()
-                .find(|f| f.name == name)
-                .map(|f| f.id);
-            let folder_id = existing.unwrap_or_else(|| {
-                let id = FolderId(self.alloc());
-                self.spaces[idx].folders.push(Folder {
-                    id,
-                    name,
-                    icon: String::new(),
-                    collapsed: true,
-                });
-                id
-            });
+            parts.truncate(MAX_FOLDER_DEPTH);
+            for name in parts {
+                let existing = self.spaces[idx]
+                    .folders
+                    .iter()
+                    .find(|f| f.name == name && f.parent == parent)
+                    .map(|f| f.id);
+                parent = Some(existing.unwrap_or_else(|| {
+                    let id = FolderId(self.alloc());
+                    self.spaces[idx].folders.push(Folder {
+                        id,
+                        name: name.to_owned(),
+                        icon: String::new(),
+                        collapsed: true,
+                        parent,
+                    });
+                    id
+                }));
+            }
+            let folder_id = parent.expect("at least one folder level");
             let id = TabId(self.alloc());
             let title = match title.trim() {
                 "" => url.host_str().unwrap_or("Link").to_owned(),
@@ -362,6 +435,18 @@ impl Workspace {
             added += 1;
         }
         added
+    }
+
+    /// Renames any space (not only the active one); blank names are refused.
+    pub fn rename_space(&mut self, id: SpaceId, name: &str) -> bool {
+        let name = name.trim();
+        match self.spaces.iter_mut().find(|s| s.id == id) {
+            Some(s) if !name.is_empty() => {
+                s.name = name.to_owned();
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
@@ -395,16 +480,32 @@ impl Workspace {
         }
     }
 
-    /// Reorders a folder of the active space: before `before`, or last when `None`.
-    pub fn move_folder(&mut self, id: FolderId, before: Option<FolderId>) -> bool {
+    /// Moves a folder of the active space under `parent` (`None`: top level), before the sibling
+    /// `before` or last. Refused for cycles, unknown ids and nesting beyond `MAX_FOLDER_DEPTH`.
+    pub fn move_folder(
+        &mut self,
+        id: FolderId,
+        parent: Option<FolderId>,
+        before: Option<FolderId>,
+    ) -> bool {
         let space = self.active_space_mut();
         let Some(from) = space.folders.iter().position(|f| f.id == id) else {
             return false;
         };
-        if before == Some(id) {
+        if before == Some(id) || parent == Some(id) {
             return false;
         }
-        let folder = space.folders.remove(from);
+        if let Some(p) = parent {
+            if !space.folders.iter().any(|f| f.id == p)
+                || folder_subtree(&space.folders, id).contains(&p)
+                || folder_depth(&space.folders, p) + folder_height(&space.folders, id)
+                    > MAX_FOLDER_DEPTH
+            {
+                return false;
+            }
+        }
+        let mut folder = space.folders.remove(from);
+        folder.parent = parent;
         let to = before
             .and_then(|b| space.folders.iter().position(|f| f.id == b))
             .unwrap_or(space.folders.len());
@@ -412,12 +513,22 @@ impl Workspace {
         true
     }
 
-    /// Removes a folder; its tabs stay open, back in the ungrouped list.
+    /// The folder and all its subfolders, in the active space.
+    pub fn folder_tree(&self, id: FolderId) -> Vec<FolderId> {
+        folder_subtree(&self.active_space().folders, id)
+    }
+
+    /// Removes a folder and its subfolders; their tabs stay open, back in the ungrouped list.
     pub fn delete_folder(&mut self, id: FolderId) -> bool {
         let space = self.active_space_mut();
+        let doomed = folder_subtree(&space.folders, id);
         let before = space.folders.len();
-        space.folders.retain(|f| f.id != id);
-        for tab in space.tabs.iter_mut().filter(|t| t.folder == Some(id)) {
+        space.folders.retain(|f| !doomed.contains(&f.id));
+        for tab in space
+            .tabs
+            .iter_mut()
+            .filter(|t| t.folder.is_some_and(|f| doomed.contains(&f)))
+        {
             tab.folder = None;
         }
         space.folders.len() != before
@@ -519,12 +630,69 @@ mod tests {
                 .map(|f| f.name.clone())
                 .collect()
         };
-        assert!(ws.move_folder(c, Some(a)));
+        assert!(ws.move_folder(c, None, Some(a)));
         assert_eq!(names(&ws), "CAB");
-        assert!(ws.move_folder(c, None));
+        assert!(ws.move_folder(c, None, None));
         assert_eq!(names(&ws), "ABC");
-        assert!(!ws.move_folder(b, Some(b)));
-        assert!(!ws.move_folder(FolderId(999), None));
+        assert!(!ws.move_folder(b, None, Some(b)));
+        assert!(!ws.move_folder(FolderId(999), None, None));
+    }
+
+    #[test]
+    fn folders_nest_without_cycles_and_delete_recursively() {
+        let mut ws = Workspace::new();
+        let a = ws.add_folder("A");
+        let b = ws.add_folder_in("B", Some(a)).unwrap();
+        let c = ws.add_folder_in("C", Some(b)).unwrap();
+        assert_eq!(ws.folder_tree(a), vec![a, b, c]);
+        assert!(!ws.move_folder(a, Some(c), None), "cycle");
+        assert!(!ws.move_folder(a, Some(a), None));
+        assert!(ws.add_folder_in("X", Some(FolderId(999))).is_none());
+        assert!(ws.move_folder(c, None, None));
+        assert_eq!(ws.folder_tree(a), vec![a, b]);
+        assert!(ws.move_folder(c, Some(a), Some(b)));
+        let t = ws.open_tab(u("https://deep.test"));
+        ws.move_tab(t, None, Some(c), false);
+        assert!(ws.delete_folder(a));
+        assert!(ws.active_space().folders.is_empty());
+        assert_eq!(ws.active_space().tabs[0].folder, None);
+    }
+
+    #[test]
+    fn folder_depth_is_capped() {
+        let mut ws = Workspace::new();
+        let mut parent = None;
+        for i in 0..MAX_FOLDER_DEPTH {
+            parent = Some(ws.add_folder_in(&format!("L{i}"), parent).unwrap());
+        }
+        assert!(ws.add_folder_in("too deep", parent).is_none());
+    }
+
+    #[test]
+    fn imported_paths_keep_their_hierarchy() {
+        let mut ws = Workspace::new();
+        let sp = ws.active_space().id;
+        let links = vec![
+            (
+                "dossier_1/dossier_2".to_owned(),
+                "A".to_owned(),
+                u("https://a.test"),
+            ),
+            ("dossier_1".to_owned(), "B".to_owned(), u("https://b.test")),
+            (
+                "dossier_1/dossier_2".to_owned(),
+                "C".to_owned(),
+                u("https://c.test"),
+            ),
+        ];
+        assert_eq!(ws.import_tabs(sp, links), 3);
+        let s = ws.active_space();
+        assert_eq!(s.folders.len(), 2);
+        let d1 = s.folders.iter().find(|f| f.name == "dossier_1").unwrap();
+        let d2 = s.folders.iter().find(|f| f.name == "dossier_2").unwrap();
+        assert_eq!(d1.parent, None);
+        assert_eq!(d2.parent, Some(d1.id));
+        assert_eq!(s.tabs.iter().filter(|t| t.folder == Some(d2.id)).count(), 2);
     }
 
     #[test]
@@ -619,6 +787,18 @@ mod tests {
                 .folder,
             None
         );
+    }
+
+    #[test]
+    fn spaces_can_be_renamed_even_when_not_active() {
+        let mut ws = Workspace::default();
+        let other = ws.add_space("Work", "#fff");
+        let first = ws.spaces()[0].id;
+        assert!(ws.rename_space(first, "  Home  "));
+        assert_eq!(ws.spaces()[0].name, "Home");
+        assert!(!ws.rename_space(other, "   "));
+        assert!(!ws.rename_space(SpaceId(9999), "x"));
+        assert_eq!(ws.spaces()[1].name, "Work");
     }
 
     #[test]

@@ -42,6 +42,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSCameraUsageDescription</key><string>BlackHole needs the camera for video calls (Google Meet, etc.).</string>
+  <key>NSMicrophoneUsageDescription</key><string>BlackHole needs the microphone for calls and meetings.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

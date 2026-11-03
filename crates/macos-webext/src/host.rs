@@ -1,5 +1,5 @@
 use super::tabs::TabBridge;
-use super::{ActionInfo, LoadState};
+use super::{ActionInfo, DataStore, LoadState};
 use base64::Engine;
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -10,12 +10,12 @@ use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSPopover, NSPopoverBehavior, NSView,
 };
 use objc2_foundation::{NSDictionary, NSPoint, NSRect, NSRectEdge, NSSize};
-use objc2_foundation::{NSError, NSString, NSURL};
+use objc2_foundation::{NSError, NSString, NSURL, NSUUID};
 use objc2_web_kit::{
     WKUserScript, WKUserScriptInjectionTime, WKWebExtension, WKWebExtensionContext,
     WKWebExtensionContextPermissionStatus, WKWebExtensionController,
     WKWebExtensionControllerConfiguration, WKWebExtensionMatchPattern,
-    WKWebExtensionTabChangedProperties, WKWebView, WKWebViewConfiguration,
+    WKWebExtensionTabChangedProperties, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore,
 };
 use std::{cell::RefCell, collections::HashMap, path::Path, rc::Rc};
 use std::{ffi::c_void, ptr::NonNull};
@@ -75,12 +75,20 @@ impl ExtensionHost {
     }
 
     /// A fresh web view configuration wired to the controller: pass it to every page view so
-    /// extensions apply to it.
-    pub fn view_configuration(&self) -> Retained<WKWebViewConfiguration> {
-        // Safety: setting a property on an object we just created.
+    /// extensions apply to it. `store` picks where the view keeps cookies and logins.
+    pub fn view_configuration(&self, store: DataStore) -> Retained<WKWebViewConfiguration> {
+        // Safety: setting properties on an object we just created.
         unsafe {
             let config = WKWebViewConfiguration::new(self.mtm);
             config.setWebExtensionController(Some(&self.controller));
+            match store {
+                DataStore::Default => {}
+                DataStore::Identified(id) => config.setWebsiteDataStore(
+                    &WKWebsiteDataStore::dataStoreForIdentifier(&NSUUID::from_bytes(id), self.mtm),
+                ),
+                DataStore::Ephemeral => config
+                    .setWebsiteDataStore(&WKWebsiteDataStore::nonPersistentDataStore(self.mtm)),
+            }
             config
         }
     }

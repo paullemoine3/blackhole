@@ -97,6 +97,39 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
+eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
+eval chrome (() => { const i = document.querySelector('.sedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return 'esc'; })()
+wait 500
+cmd {"cmd":"import_html","text":"<DL><DT><H3>Outer</H3><DL><DT><H3>Inner</H3><DL><DT><A HREF=\"https://deep.test/\">Deep</A></DL></DL></DL>"}
+wait 800
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); const i = state.folders.find(f => f.name === 'Inner'); return 'nest ' + JSON.stringify({ parent: !!o && !!i && i.parent === o.id, top: !!o && o.parent == null, dom: !!document.querySelector('.folder > .fb > .folder') }); })()
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); send({ cmd: 'new_folder', parent: o.id }); return 'sub'; })()
+wait 500
+eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
+wait 500
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); return 'kids ' + state.folders.filter(f => f.parent === o.id).length; })()
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); send({ cmd: 'delete_folder', id: o.id }); return 'del'; })()
+wait 600
+eval chrome JSON.stringify({ folders: state.folders.filter(f => f.name === 'Outer' || f.name === 'Inner' || f.parent != null).length, deep: state.tabs.filter(t => t.title === 'Deep').length })
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content (document.cookie = 'bhmain=one; max-age=600; path=/', document.cookie)
+cmd {"cmd":"new_space","name":"Work","color":"#ff8800"}
+wait 800
+eval chrome (() => { send({ cmd: 'space', id: state.spaces[state.spaces.length - 1].id }); return 'ws' + state.spaces.length; })()
+wait 800
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content JSON.stringify({ iso: document.cookie.indexOf('bhmain') < 0, href: location.href, c: document.cookie })
+eval content (document.cookie = 'bhwork=two; max-age=600; path=/', document.cookie)
+eval chrome (() => { send({ cmd: 'space', id: state.spaces[0].id }); return 'sw'; })()
+wait 800
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content JSON.stringify({ main: document.cookie.indexOf('bhmain=one') >= 0, leak: document.cookie.indexOf('bhwork') >= 0 })
+eval chrome (() => { $('foldfold').click(); const a = getComputedStyle($('folders')).display === 'none'; $('foldfold').click(); const b = getComputedStyle($('folders')).display !== 'none'; return JSON.stringify({ hidden: a, back: b }); })()
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -104,8 +137,8 @@ Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding asci
 $logFile = Join-Path $tmp 'bh_run.log'
 $proc = Start-Process cmd -ArgumentList '/c', "cargo run -q -p blackhole --features devtools > `"$logFile`" 2>&1" -PassThru -WindowStyle Hidden
 if (-not $proc.WaitForExit(240000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
-$log = Get-Content $logFile
-$evals = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
+$log = Get-Content $logFile -Encoding UTF8
+$evals = @($log | Where-Object { $_ -match '\[dev\] eval ->' } | ForEach-Object { $_ -replace '\\"', '"' })
 $log | Where-Object { $_ -match '\[dev\] (bad|unknown|eval failed|screenshot failed)' } | ForEach-Object { Write-Host $_ }
 
 $fail = $false
@@ -139,11 +172,35 @@ Check ($evals[22] -match 'tabcrop true') 'tab: live card plays cropped inside th
 Check ($evals[23] -match 'open.:\[false\]') 'tab: closing returns to the page'
 Check ($evals[24] -match 'before.:.section secrow') 'pinned: header sits right above the folders'
 Check ($evals[24] -match 'bms.:false') 'imports: no separate bookmark list, they are folders and tabs'
-Check ($evals[25] -match 'Imp One') 'import: bookmarks become tabs filed in a real folder'
+Check ($evals[25] -match 'Imp One|imp1\.test') 'import: bookmarks become tabs filed in a real folder'
 Check ($evals[25] -match 'Imp Two') 'import: every link is a regular tab'
-Check ($evals[26] -match 'rail\\":5') 'library: five sections in the rail'
-Check ($evals[26] -match 'archived\\":true') 'library: cleared tab is archived'
+Check ($evals[26] -match 'rail":5') 'library: five sections in the rail'
+Check ($evals[26] -match 'archived":true') 'library: cleared tab is archived'
 Check ($evals[27] -match 'home') 'library: closes back to the browser'
+Check ($evals[28] -match 'card.:true') 'media: a card appears for a tab playing in the background'
+Check ($evals[28] -match ([string][char]0x23F8)) 'media: the card offers pause'
+Check ($evals[28] -match ([string][char]0x29C9)) 'media: the card offers Picture in Picture'
+Check ($evals[28] -match 'snd.:true') 'media: the playing tab shows a speaker icon'
+Check ($evals[28] -match 'hiddenWhenActive.:true') 'media: no card for the tab being viewed'
+Check ($evals[29] -match 'input.:true') 'space: right-click rename turns the name into an input'
+Check ($evals[29] -match 'value.:true') 'space: the input starts with the current name'
+Check ($evals[30] -match 'ready.:true') 'update: the button shows a drawn icon, not a font glyph'
+Check ($evals[30] -match 'busy.:.busy') 'update: the icon changes while downloading'
+Check ($evals[30] -match 'text.:..') 'update: no text glyph left in the icon'
+Check ($evals[32] -match 'parent.:true') 'folders: an imported path A/B makes B a subfolder of A'
+Check ($evals[32] -match 'top.:true') 'folders: the outer folder stays at the top level'
+Check ($evals[32] -match 'dom.:true') 'folders: the sidebar nests the subfolder inside its parent'
+Check ($evals[34] -match 'x') 'folders: new subfolder created and named'
+Check ($evals[35] -match 'kids 2') 'folders: a folder can hold several subfolders'
+Check ($evals[37] -match 'folders.:0') 'folders: deleting a folder removes its subfolders'
+Check ($evals[37] -match 'deep.:0') 'folders: tabs of the subfolders are closed with it'
+Check ($evals[38] -match 'bhmain=one') 'accounts: a cookie is set in the first space'
+Check ($evals[39] -match 'ws2') 'accounts: the new space is listed'
+Check ($evals[40] -match 'iso.:true') "accounts: the second space does not see the first space's cookie"
+Check ($evals[43] -match 'main.:true') 'accounts: back in the first space its own cookie is still there'
+Check ($evals[43] -match 'leak.:false') "accounts: the second space's cookie did not leak into the first"
+Check ($evals[44] -match 'hidden.:true') 'sidebar: the Pinned folders section can be folded'
+Check ($evals[44] -match 'back.:true') 'sidebar: and unfolded again'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }

@@ -10,6 +10,8 @@
   .bar { height: 100%; display: flex; align-items: center; gap: 4px; padding: 0 12px; }
   body.macos .bar { padding-left: 84px; }
   button { font: inherit; line-height: 1; padding: 0; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; width: 28px; height: 28px; display: grid; place-items: center; opacity: .75; flex: none; }
+  button:disabled { opacity: .25; cursor: default; }
+  button:disabled:hover { background: transparent; opacity: .25; }
   button:hover { background: rgba(255,255,255,.1); opacity: 1; }
   .side { flex: 1; display: flex; min-width: 0; }
   .right { justify-content: flex-end; gap: 2px; }
@@ -79,6 +81,8 @@ window.bh = {
     document.body.classList.toggle('macos', s.os === 'macos');
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
+    $('back').disabled = !s.canBack;
+    $('forward').disabled = !s.canForward;
     $('priv').hidden = !s.private;
     document.body.classList.toggle('secure', s.url.startsWith('https:'));
     $('url').textContent = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';

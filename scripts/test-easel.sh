@@ -95,6 +95,39 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
+eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
+eval chrome (() => { const i = document.querySelector('.sedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return 'esc'; })()
+wait 500
+cmd {"cmd":"import_html","text":"<DL><DT><H3>Outer</H3><DL><DT><H3>Inner</H3><DL><DT><A HREF=\"https://deep.test/\">Deep</A></DL></DL></DL>"}
+wait 800
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); const i = state.folders.find(f => f.name === 'Inner'); return 'nest ' + JSON.stringify({ parent: !!o && !!i && i.parent === o.id, top: !!o && o.parent == null, dom: !!document.querySelector('.folder > .fb > .folder') }); })()
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); send({ cmd: 'new_folder', parent: o.id }); return 'sub'; })()
+wait 500
+eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
+wait 500
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); return 'kids ' + state.folders.filter(f => f.parent === o.id).length; })()
+eval chrome (() => { const o = state.folders.find(f => f.name === 'Outer'); send({ cmd: 'delete_folder', id: o.id }); return 'del'; })()
+wait 600
+eval chrome JSON.stringify({ folders: state.folders.filter(f => f.name === 'Outer' || f.name === 'Inner' || f.parent != null).length, deep: state.tabs.filter(t => t.title === 'Deep').length })
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content (document.cookie = 'bhmain=one; max-age=600; path=/', document.cookie)
+cmd {"cmd":"new_space","name":"Work","color":"#ff8800"}
+wait 800
+eval chrome (() => { send({ cmd: 'space', id: state.spaces[state.spaces.length - 1].id }); return 'ws' + state.spaces.length; })()
+wait 800
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content JSON.stringify({ iso: document.cookie.indexOf('bhmain') < 0, href: location.href, c: document.cookie })
+eval content (document.cookie = 'bhwork=two; max-age=600; path=/', document.cookie)
+eval chrome (() => { send({ cmd: 'space', id: state.spaces[0].id }); return 'sw'; })()
+wait 800
+cmd {"cmd":"open","input":"https://example.com"}
+wait 2500
+eval content JSON.stringify({ main: document.cookie.indexOf('bhmain=one') >= 0, leak: document.cookie.indexOf('bhwork') >= 0 })
+eval chrome (() => { $('foldfold').click(); const a = getComputedStyle($('folders')).display === 'none'; $('foldfold').click(); const b = getComputedStyle($('folders')).display !== 'none'; return JSON.stringify({ hidden: a, back: b }); })()
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -135,6 +168,30 @@ check 25 'Imp Two' "import: every link is a regular tab"
 check 26 'rail\":5' "library: five sections in the rail"
 check 26 'archived\":true' "library: cleared tab is archived"
 check 27 'home' "library: closes back to the browser"
+check 28 'card\":true' "media: a card appears for a tab playing in the background"
+check 28 '⏸' "media: the card offers pause"
+check 28 '⧉' "media: the card offers Picture in Picture"
+check 28 'snd\":true' "media: the playing tab shows a speaker icon"
+check 28 'hiddenWhenActive\":true' "media: no card for the tab being viewed"
+check 29 'input\":true' "space: right-click rename turns the name into an input"
+check 29 'value\":true' "space: the input starts with the current name"
+check 30 'ready\":true' "update: the button shows a drawn icon, not a font glyph"
+check 30 'busy\":\"busy' "update: the icon changes while downloading"
+check 30 'text\":\"\"' "update: no text glyph left in the icon"
+check 32 'parent\":true' "folders: an imported path A/B makes B a subfolder of A"
+check 32 'top\":true' "folders: the outer folder stays at the top level"
+check 32 'dom\":true' "folders: the sidebar nests the subfolder inside its parent"
+check 34 'x' "folders: new subfolder created and named"
+check 35 'kids 2' "folders: a folder can hold several subfolders"
+check 37 'folders\":0' "folders: deleting a folder removes its subfolders"
+check 37 'deep\":0' "folders: tabs of the subfolders are closed with it"
+check 38 'bhmain=one' "accounts: a cookie is set in the first space"
+check 39 'ws2' "accounts: the new space is listed"
+check 40 'iso\":true' "accounts: the second space does not see the first space's cookie"
+check 43 'main\":true' "accounts: back in the first space its own cookie is still there"
+check 43 'leak\":false' "accounts: the second space's cookie did not leak into the first"
+check 44 'hidden\":true' "sidebar: the Pinned folders section can be folded"
+check 44 'back\":true' "sidebar: and unfolded again"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys

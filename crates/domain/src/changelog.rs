@@ -1,11 +1,53 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
-        "0.8.0",
+        "0.7.9",
         &[
             "Much lower memory use: only a few tabs stay alive at once (4 by default, adjustable in Settings), neighbouring tabs are preloaded and the least recent ones are released",
             "Hidden tabs run in a low-memory mode, and the Library, Easel and split-bar pages are only created when needed",
+            "New setting: how many blank tabs (0, 1 or 2) are kept ready to open new tabs instantly",
             "The browser engine now shares renderer processes per site",
+        ],
+    ),
+    (
+        "0.7.8",
+        &[
+            "The back and forward buttons follow the real page history and are greyed out when there is nowhere to go",
+            "New Privacy setting to switch the tracker blocker on or off (the https upgrade stays on)",
+            "The Quick access tabs and the Pinned folders can be folded from their sidebar headers; the choice is remembered",
+            "Faster start: session, history, icons and extensions load in parallel, and files are written in the background",
+            "Faster navigation: the interface and the history are no longer rebuilt and rewritten on every page event",
+        ],
+    ),
+    (
+        "0.7.7",
+        &[
+            "Google Meet and other sites that check for Safari now accept BlackHole on macOS",
+            "The macOS app asks for camera and microphone access for video calls",
+        ],
+    ),
+    (
+        "0.7.6",
+        &[
+            "Logins are scoped by space: sign in to a personal account in one space and a work account in another; login and refresh popups open in the space you are in",
+            "Folders can contain subfolders (drag a folder onto another, or right-click → New subfolder); importing bookmarks keeps their folder hierarchy",
+            "The sidebar mode (pinned open or shown on hover) is remembered between launches",
+        ],
+    ),
+    (
+        "0.7.5",
+        &[
+            "Spaces can be renamed from their right-click menu, which no longer offers to switch to the space you are already in",
+            "The update button uses the same drawn icon on every system and no longer flickers on hover",
+        ],
+    ),
+    (
+        "0.7.4",
+        &[
+            "Smoother new tabs: blank tab views are prepared ahead, and the command bar animations are shorter",
+            "Drag a tab onto another BlackHole window (private or not, same space included) to move it there, or onto nothing to open it in a new window",
+            "Tabs playing sound show a speaker icon, and a mini player at the bottom of the sidebar controls them from another page",
+            "Picture in Picture: a playing video floats when you leave its tab and returns with it; also available from the command bar",
         ],
     ),
     (

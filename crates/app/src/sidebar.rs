@@ -69,11 +69,17 @@ pub struct Sidebar {
 
 impl Sidebar {
     /// A sidebar that starts open at `full` pixels wide.
+    #[cfg(test)]
     pub fn new(full: f64) -> Self {
+        Self::starting(full, true)
+    }
+
+    /// A sidebar restored as pinned open, or hidden (shown over the page on hover).
+    pub fn starting(full: f64, open: bool) -> Self {
         Self {
             full,
-            open: true,
-            layout: Anim::new(full),
+            open,
+            layout: Anim::new(if open { full } else { 0.0 }),
             flyout: Anim::new(0.0),
         }
     }
@@ -166,6 +172,15 @@ mod tests {
         let t0 = Instant::now();
         s.tick_at(t0);
         s.tick_at(t0 + DURATION);
+    }
+
+    #[test]
+    fn a_hidden_sidebar_starts_without_reserved_width() {
+        let mut s = Sidebar::starting(FULL, false);
+        assert!(!s.is_open());
+        assert!(s.width().abs() < f64::EPSILON);
+        s.toggle();
+        assert!(s.is_open());
     }
 
     #[test]

@@ -2,6 +2,17 @@
 //! `declarativeNetRequest`, content scripts…) inside any `WKWebView` whose configuration carries
 //! a `WKWebExtensionController`. Other platforms get an inert stub.
 
+/// Where a page view keeps its cookies and site data (a login is stored here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataStore {
+    /// The browser's shared store.
+    Default,
+    /// A persistent store of its own, named by a UUID (macOS 14+).
+    Identified([u8; 16]),
+    /// Nothing is kept once the view is gone.
+    Ephemeral,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadState {
     Loading,

@@ -34,6 +34,10 @@
   #pinned:empty + #pinsep { display: none; }
   #pinned .tab.active { background: rgba(255,255,255,.2); }
   #pinned .dot { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+  .secrow[hidden] { display: none; }
+  .fold { cursor: pointer; }
+  .fold:hover { opacity: 1; }
+  body:not(.dragging) #pinned.collapsed, body:not(.dragging) #folders.collapsed { display: none; }
   .secrow { display: flex; justify-content: space-between; align-items: center; padding-right: 2px; }
   .mini { font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 6px; opacity: .8; }
   .mini:hover { background: rgba(255,255,255,.1); }
@@ -43,6 +47,7 @@
   .chev { width: 18px; text-align: center; opacity: .7; flex: none; }
   .fname { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { font-size: 11px; opacity: .5; }
+  .sedit { width: 110px; flex: none; }
   .fedit { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text; -webkit-user-select: text; }
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
   .folder.collapsed .fb { display: none; }
@@ -67,9 +72,20 @@
   #scroll::-webkit-scrollbar-track { background: transparent; }
   #scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
   #scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-  #spaces, #update, #dls, footer { flex: none; }
+  #spaces, #update, #dls, #media, footer { flex: none; }
   #dls { display: flex; flex-direction: column; gap: 6px; }
-  #dls:empty { display: none; }
+  #dls:empty, #media:empty { display: none; }
+  #media { display: flex; flex-direction: column; gap: 6px; }
+  .mc { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; animation: dl-in .2s ease-out; }
+  .mc .top { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+  .mc .top .dot { flex: none; }
+  .mc .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .mc button { border: 0; background: rgba(255,255,255,.1); color: inherit; border-radius: 8px; width: 30px; height: 26px; cursor: pointer; font-size: 13px; }
+  .mc button:hover { background: rgba(255,255,255,.2); }
+  .mc .cl { background: none; width: 22px; height: 22px; opacity: .6; }
+  .snd { flex: none; border: 0; background: none; color: inherit; font-size: 11px; padding: 0 2px; cursor: pointer; opacity: .85; }
+  body.noanim .mc, body.noanim .mc * { animation: none !important; transition: none !important; }
   .dl { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; cursor: pointer; animation: dl-in .2s ease-out; }
   .dl:hover { background: rgba(255,255,255,.14); }
   .dl .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -131,11 +147,12 @@
 
 
   /* Update button: only present when a newer release is available */
-  .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: transform .2s ease, box-shadow .2s ease; }
+  .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: box-shadow .2s ease; }
   .update[hidden] { display: none; }
-  .update .ico { flex: none; display: inline-block; width: 18px; text-align: center; font-size: 15px; line-height: 1; }
+  .update .ico { flex: none; display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; }
+  .update .ico svg { width: 16px; height: 16px; display: block; }
   .update::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%); background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); pointer-events: none; }
-  .update:hover, .update.hov { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255,255,255,.3), 0 6px 20px var(--glow); }
+  .update:hover, .update.hov { box-shadow: 0 0 0 1px rgba(255,255,255,.3), 0 6px 20px var(--glow); }
   .update:hover .ico, .update.hov .ico { animation: up-bounce .7s ease-in-out infinite; }
   .update:hover::after, .update.hov::after { animation: up-shine .9s ease-out; }
   .update.busy { cursor: progress; opacity: .85; }
@@ -150,17 +167,19 @@
 <body>
 <aside>
 <div id="scroll">
+  <div class="section secrow" id="pinhead" hidden><span class="fold" id="pinfold" title="Show or hide quick access"></span></div>
   <div id="pinned"></div>
   <div id="pinsep"></div>
-  <div class="section secrow"><span>Pinned</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
+  <div class="section secrow"><span class="fold" id="foldfold" title="Show or hide folders"></span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
   <div class="newrow"><button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button></div>
   <div id="tabs"></div>
 </div>
   <div id="spaces"></div>
+  <div id="media"></div>
   <div id="dls"></div>
-  <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
+  <button class="update" id="update" hidden><span class="ico"></span><span class="full-only" id="updtxt"></span></button>
   <footer>
     <button class="icon" id="library" title="Library">🗂</button>
     <button class="icon" id="gear" title="Settings">⚙</button>
@@ -215,6 +234,14 @@ function tabNode(t) {
     sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
     n.append(d, el('span', 'title', t.title), sp);
   } else n.append(d, el('span', 'title', t.title));
+  const md = (state.media || []).find(m => m.id === t.id);
+  if (md && (md.playing || md.muted)) {
+    const sn = el('button', 'snd', md.muted ? '🔇' : '🔊');
+    sn.title = md.muted ? 'Unmute this tab' : 'Playing — click to mute';
+    sn.onmousedown = (e) => e.stopPropagation();
+    sn.onclick = (e) => { e.stopPropagation(); send({ cmd: 'media_ctl', id: t.id, action: 'mute' }); };
+    n.insertBefore(sn, n.querySelector('.sp, .title').nextSibling);
+  }
   if (!t.pinned) {
     const mo = el('button', 'mo', '⋯');
     mo.title = 'Tab options';
@@ -254,8 +281,9 @@ function tabMenu(t, x, y) {
 function spaceMenu(sp, x, y) {
   const items = [
     { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
-    { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } },
+    { icon: '✎', label: 'Rename space', run: { cmd: 'edit_space', id: sp.id } },
   ];
+  if (sp.id !== state.activeSpace) items.splice(1, 0, { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } });
   if (state.spaces.length > 1) items.push({ sep: true }, { icon: '🗑', label: 'Delete space', danger: true, run: { cmd: 'delete_space', id: sp.id } });
   openMenu(x, y, items);
 }
@@ -263,7 +291,9 @@ function spaceMenu(sp, x, y) {
 function folderMenu(f, x, y) {
   openMenu(x, y, [
     { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
+    { icon: '📁', label: 'New subfolder', run: { cmd: 'new_folder', parent: f.id } },
     { icon: f.collapsed ? '▾' : '▸', label: f.collapsed ? 'Expand folder' : 'Collapse folder', run: { cmd: 'toggle_folder', id: f.id } },
+    ...(f.parent != null ? [{ icon: '↩', label: 'Move to top level', run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
     { sep: true },
     { icon: '🗑', label: 'Delete folder', danger: true, run: { cmd: 'delete_folder', id: f.id } },
   ]);
@@ -303,7 +333,7 @@ function easelNode(e) {
   return n;
 }
 
-function folderNode(f, tabs, easels = []) {
+function folderNode(f, tabs, easels = [], subs = []) {
   const box = el('div', 'folder' + (f.collapsed ? ' collapsed' : ''));
   const h = el('div', 'fh');
   h.dataset.folder = f.id;
@@ -321,9 +351,34 @@ function folderNode(f, tabs, easels = []) {
   h.oncontextmenu = (e) => { e.preventDefault(); folderMenu(f, e.clientX, e.clientY); };
   const body = el('div', 'fb');
   body.dataset.folder = f.id;
-  body.append(...tabs.map(tabNode), ...easels.map(easelNode));
+  body.append(...subs, ...tabs.map(tabNode), ...easels.map(easelNode));
   box.append(h, body);
   return { box, name, h, f };
+}
+const folderNodes = new Map();
+function editFolderId(id) { const n = folderNodes.get(id); if (n) editFolder(n.h, n.name, n.f); }
+
+function editSpace(id) {
+  const b = document.querySelector('.space[data-space="' + id + '"]');
+  const sp = state.spaces.find(s => s.id === id);
+  if (!b || !sp) return;
+  editing = true;
+  const input = el('input', 'fedit sedit');
+  input.value = sp.name;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true; editing = false;
+    if (commit && input.value.trim() && input.value.trim() !== sp.name) send({ cmd: 'rename_space', id, name: input.value });
+    flush();
+    if (state.spaces.length) window.bh.render(state);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+  input.onblur = () => finish(true);
+  input.onclick = (e) => e.stopPropagation();
+  input.onmousedown = (e) => e.stopPropagation();
+  b.onclick = null;
+  b.replaceChildren(input);
+  input.focus(); input.select();
 }
 
 function editFolder(h, name, f) {
@@ -432,14 +487,19 @@ function dropTarget(x, y) {
   const node = document.elementFromPoint(x, y);
   if (!node) return null;
   if (drag.folder) {
-    const box = node.closest('#folders > .folder');
+    const box = node.closest('#folders .folder');
     if (!box) return null;
-    if (box === drag.node) return null;
-    const r = box.getBoundingClientRect();
-    const after = y > r.top + Math.min(r.height, 36) / 2;
+    if (drag.node.contains(box)) return null;
+    const head = box.querySelector('.fh');
+    const r = head.getBoundingClientRect();
+    const rel = (y - r.top) / Math.max(1, r.height);
+    const holder = box.parentElement;
+    const parent = holder.classList.contains('fb') ? Number(holder.dataset.folder) : null;
+    if (rel > 0.3 && rel < 0.7) return { el: head, edge: 'into', before: null, parent: Number(head.dataset.folder), folder: null, pinned: false };
+    const after = rel >= 0.7;
     const sib = after ? box.nextElementSibling : box;
-    const id = (sib && sib.querySelector('.fh')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
-    return { el: box.querySelector('.fh'), edge: after ? 'after' : 'before', before: id, folder: null, pinned: false };
+    const id = (sib && sib.classList.contains('folder')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
+    return { el: head, edge: after ? 'after' : 'before', before: id, parent, folder: null, pinned: false };
   }
   const tab = node.closest('[data-tab]');
   if (tab && (drag.url || drag.easel || tab.dataset.tab !== String(drag.id))) {
@@ -470,17 +530,18 @@ function clearMarks() {
   hideCard();
 }
 
-function endDrag(commit, x, y) {
+function endDrag(commit, x, y, sx, sy) {
   if (drag) {
     const target = commit ? dropTarget(x, y) : null;
     drag.ghost.remove();
     drag.node.classList.remove('dragging');
     document.body.classList.remove('dragging');
     clearMarks();
-    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, before: target.before });
+    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, parent: target.parent ?? null, before: target.before });
     else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
     else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
+    else if (commit && drag.id && !drag.url && !drag.easel && !drag.folder) send({ cmd: 'tab_drop_out', id: drag.id, x: sx, y: sy });
     justDragged = true;
     setTimeout(() => { justDragged = false; }, 0);
   }
@@ -504,7 +565,7 @@ document.addEventListener('mousemove', (e) => {
   const t = dropTarget(e.clientX, e.clientY);
   if (t) { t.el.classList.add('drop-' + t.edge); showCard(t, !!t.el.closest('#pinned') && t.el.id !== 'pinned'); }
 });
-document.addEventListener('mouseup', (e) => { if (drag) endDrag(true, e.clientX, e.clientY); else down = null; });
+document.addEventListener('mouseup', (e) => { if (drag) endDrag(true, e.clientX, e.clientY, e.screenX, e.screenY); else down = null; });
 
 const mix = (hex, r) => {
   const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
@@ -544,6 +605,8 @@ document.addEventListener('drop', async (e) => {
 
 window.bh = {
   render(s) {
+    // The icon table is large: the host only sends it when it changed.
+    if (!s.favicons) s.favicons = (deferred && deferred.favicons) || (state && state.favicons) || {};
     if (drag || editing || sdrag) { deferred = s; return; }
     const switched = state && state.activeSpace != null && s.activeSpace !== state.activeSpace;
     state = s;
@@ -561,15 +624,22 @@ window.bh = {
     root.setProperty('--tint2', mix(s.color, .24));
     root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
-    $('pinned').replaceChildren(...s.tabs.filter(t => t.pinned).map(tabNode));
-    const folders = s.folders.map(f => folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id)));
+    const pins = s.tabs.filter(t => t.pinned).map(tabNode);
+    $('pinned').replaceChildren(...pins);
+    applyFolds(s.collapsed || []);
+    folderNodes.clear();
+    const build = (parent) => s.folders.filter(f => (f.parent ?? null) === parent).map(f => {
+      const node = folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id), build(f.id).map(n => n.box));
+      folderNodes.set(f.id, node);
+      return node;
+    });
+    const roots = build(null);
     const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
-    $('folders').replaceChildren(...folders.map(f => f.box));
+    $('folders').replaceChildren(...roots.map(f => f.box));
     $('tabs').replaceChildren(...loose);
-    if (newFolderPending && folders.length) {
+    if (newFolderPending && s.folders.length) {
       newFolderPending = false;
-      const last = folders[folders.length - 1];
-      editFolder(last.h, last.name, last.f);
+      editFolderId(s.folders[s.folders.length - 1].id);
     }
     $('spaces').replaceChildren(...s.spaces.map(sp => {
       const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
@@ -586,9 +656,12 @@ window.bh = {
     $('blockedn').textContent = ' ' + s.blocked;
     document.body.classList.toggle('noanim', s.animations === false);
     renderUpdate(s.update, s.version);
+    renderMedia(s);
     renderDownloads(s.downloads);
   },
   downloads(list) { renderDownloads(list); },
+  editSpace,
+  editFolderId,
   toast(m) {
     const t = $('toast'); t.textContent = m; t.classList.add('show');
     clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), 2200);
@@ -612,6 +685,35 @@ function renderDownloads(list) {
     return c;
   }));
 }
+// Arc-style mini player for a tab that plays (or was paused) while another page is shown.
+function renderMedia(s) {
+  const list = (s.media || []).filter(m => m.id !== s.activeTab);
+  const m = list.find(m => m.playing) || list[0];
+  const t = m && s.tabs.find(t => t.id === m.id);
+  if (!t) { $('media').replaceChildren(); return; }
+  const card = el('div', 'mc');
+  const top = el('div', 'top');
+  const d = el('span', 'dot', (host(t.url)[0] || '•').toUpperCase());
+  d.style.background = hue(host(t.url));
+  withIcon(d, t.url, s.favicons);
+  top.append(d, el('span', 'nm', t.title || host(t.url)));
+  top.title = 'Go to ' + host(t.url);
+  top.onclick = () => send({ cmd: 'activate', id: t.id });
+  const ctl = el('div', 'ctl');
+  const btn = (cls, text, title, action) => { const b = el('button', cls, text); b.title = title; b.onclick = () => send({ cmd: 'media_ctl', id: t.id, action }); return b; };
+  ctl.append(
+    btn('', m.playing ? '⏸' : '▶', m.playing ? 'Pause' : 'Play', 'toggle'),
+    btn('', m.muted ? '🔇' : '🔊', m.muted ? 'Unmute' : 'Mute', 'mute'),
+    btn('', '⧉', 'Picture in Picture', 'pip'),
+    btn('cl', '✕', 'Close the player', 'close'));
+  card.append(top, ctl);
+  $('media').replaceChildren(card);
+}
+const UPDATE_ICONS = {
+  ready: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg>',
+  busy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5"/></svg>',
+  error: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5l6 10.5H2zM8 6.8v3M8 11.6v.1"/></svg>',
+};
 function renderUpdate(u, current) {
   const b = $('update');
   b.hidden = !u;
@@ -619,7 +721,9 @@ function renderUpdate(u, current) {
   const busy = u.state === 'downloading';
   b.classList.toggle('busy', busy);
   b.classList.toggle('error', u.state === 'error');
-  b.querySelector('.ico').textContent = busy ? '⟳' : u.state === 'error' ? '⚠' : '⭳';
+  const ico = busy ? 'busy' : u.state === 'error' ? 'error' : 'ready';
+  const icon = b.querySelector('.ico');
+  if (icon.dataset.k !== ico) { icon.dataset.k = ico; icon.innerHTML = UPDATE_ICONS[ico]; }
   $('updtxt').textContent = busy ? 'Updating to v' + u.version + '…'
     : u.state === 'error' ? 'Update failed — retry' : 'Update to v' + u.version;
   b.title = busy ? 'Downloading BlackHole ' + u.version + '; the app restarts when ready'
@@ -629,6 +733,24 @@ $('update').onclick = () => { if (!$('update').classList.contains('busy')) send(
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
 $('library').onclick = () => send({ cmd: 'open_library' });
+function applyFolds(list) {
+  const pinned = list.includes('pinned'), folders = list.includes('folders');
+  $('pinned').classList.toggle('collapsed', pinned);
+  $('folders').classList.toggle('collapsed', folders);
+  $('pinhead').hidden = !$('pinned').children.length;
+  $('pinfold').textContent = (pinned ? '▸ ' : '▾ ') + 'Quick access';
+  $('foldfold').textContent = (folders ? '▸ ' : '▾ ') + 'Pinned';
+}
+function toggleFold(section) {
+  const list = new Set((state && state.collapsed) || []);
+  const collapsed = !list.has(section);
+  collapsed ? list.add(section) : list.delete(section);
+  if (state) state.collapsed = [...list];
+  applyFolds([...list]);
+  send({ cmd: 'set_section_collapsed', section, collapsed });
+}
+$('pinfold').onclick = () => toggleFold('pinned');
+$('foldfold').onclick = () => toggleFold('folders');
 $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };
 $('gear').onclick = () => send({ cmd: 'open_settings' });
 $('addspace').onclick = () => {

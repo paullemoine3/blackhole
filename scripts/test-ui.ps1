@@ -119,7 +119,7 @@ shot 18-download-cards
 eval chrome (bh.downloads([{id:1,name:'big-file.iso',received:100,total:100,state:'ok'}]), document.querySelector('#dls .dl').className)
 eval chrome (bh.downloads([]), String(document.getElementById('dls').children.length))
 cmd {"cmd":"new_tab"}
-wait 800
+wait 400
 eval palette (document.body.classList.contains('intro') + '|' + document.getElementById('q').value)
 shot 19-new-tab-palette
 cmd {"cmd":"palette_close"}

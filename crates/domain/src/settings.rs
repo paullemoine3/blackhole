@@ -17,6 +17,9 @@ pub struct Settings {
     /// Tabs allowed to keep a live engine view at once (one of `LIVE_TABS_CHOICES`); the
     /// spare budget is used to preload neighbouring tabs, the least recently used are released.
     pub max_live_tabs: u32,
+    /// Blank hidden views kept ready so the next tab opens instantly (one of `SPARE_CHOICES`);
+    /// each costs a renderer's worth of memory.
+    pub spare_views: u32,
     /// Per-site CSS injected into matching pages ("Boosts"), keyed by host without `www.`.
     pub boosts: BTreeMap<String, String>,
     /// "Air traffic control": links to these hosts always open in the given space.
@@ -29,6 +32,12 @@ pub struct Settings {
     pub last_seen_version: String,
     /// Installed extensions also run in private windows (off by default: they can see pages).
     pub extensions_in_private: bool,
+    /// The sidebar is pinned open (otherwise it slides in on hover). Remembered between launches.
+    pub sidebar_open: bool,
+    /// Tracker blocklist on (default) or off.
+    pub tracker_blocking: bool,
+    /// Sidebar sections folded by the user (`pinned`, `folders`). Remembered between launches.
+    pub collapsed_sections: BTreeSet<String>,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -65,9 +74,12 @@ impl Settings {
     /// How many tabs may keep a live engine view (visible ones included).
     pub const LIVE_TABS_CHOICES: [u32; 6] = [2, 3, 4, 6, 8, 12];
     pub const DEFAULT_LIVE_TABS: u32 = 4;
+    pub const SPARE_CHOICES: [u32; 3] = [0, 1, 2];
+    pub const DEFAULT_SPARES: u32 = 2;
     pub const SLEEP_CHOICES: [u32; 3] = [5, 10, 15];
     pub const DEFAULT_SLEEP_MINUTES: u32 = 10;
     pub const SIDEBAR_WIDTH_CHOICES: [u32; 3] = [200, 240, 280];
+    pub const SECTIONS: [&'static str; 2] = ["pinned", "folders"];
     pub const DEFAULT_SIDEBAR_WIDTH: u32 = 240;
 }
 
@@ -80,12 +92,16 @@ impl Default for Settings {
             hardware_acceleration: true,
             tab_sleep_minutes: Self::DEFAULT_SLEEP_MINUTES,
             max_live_tabs: Self::DEFAULT_LIVE_TABS,
+            spare_views: Self::DEFAULT_SPARES,
             boosts: BTreeMap::new(),
             routes: BTreeMap::new(),
             disabled_extensions: BTreeSet::new(),
             hidden_favorites: BTreeSet::new(),
             last_seen_version: String::new(),
             extensions_in_private: false,
+            sidebar_open: true,
+            tracker_blocking: true,
+            collapsed_sections: BTreeSet::new(),
         }
     }
 }

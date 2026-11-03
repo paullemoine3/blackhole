@@ -28,11 +28,21 @@ pub enum UiCommand {
     SetExtensionsInPrivate {
         on: bool,
     },
+    SetTrackerBlocking {
+        on: bool,
+    },
+    SetSectionCollapsed {
+        section: String,
+        collapsed: bool,
+    },
     SetTabSleep {
         minutes: u32,
     },
     SetMaxLiveTabs {
         tabs: u32,
+    },
+    SetSpareViews {
+        count: u32,
     },
     Navigate {
         input: String,
@@ -59,10 +69,22 @@ pub enum UiCommand {
         folder: Option<u64>,
         pinned: bool,
     },
-    NewFolder,
+    /// Creates a folder, nested in `parent` when given.
+    NewFolder {
+        #[serde(default)]
+        parent: Option<u64>,
+    },
     RenameFolder {
         id: u64,
         name: String,
+    },
+    RenameSpace {
+        id: u64,
+        name: String,
+    },
+    /// Asks the sidebar to turn a space's name into an input.
+    EditSpace {
+        id: u64,
     },
     ToggleFolder {
         id: u64,
@@ -70,9 +92,12 @@ pub enum UiCommand {
     DeleteFolder {
         id: u64,
     },
-    /// Drag & drop in the sidebar: reorders a folder (`before`: `null` puts it last).
+    /// Drag & drop in the sidebar: moves a folder under `parent` (`null`: top level), before
+    /// the sibling `before` (`null` puts it last).
     MoveFolder {
         id: u64,
+        #[serde(default)]
+        parent: Option<u64>,
         #[serde(default)]
         before: Option<u64>,
     },
@@ -233,6 +258,18 @@ pub enum UiCommand {
         id: u64,
     },
     CloseEaselTab,
+    /// A tab was released outside the sidebar; the point is in screen coordinates. When another
+    /// window lies under it, the tab moves there.
+    TabDropOut {
+        id: u64,
+        x: f64,
+        y: f64,
+    },
+    /// Controls the audio/video of a tab from the sidebar card: toggle, mute, pip or close.
+    MediaCtl {
+        id: u64,
+        action: String,
+    },
     /// Shows the Library (media, downloads, easels, spaces, archived tabs) over the window.
     OpenLibrary,
     CloseLibrary,
@@ -455,6 +492,25 @@ mod tests {
     }
 
     #[test]
+    fn folder_commands_parse() {
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"new_folder"}"#).unwrap();
+        assert!(matches!(c, UiCommand::NewFolder { parent: None }));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"new_folder","parent":4}"#).unwrap();
+        assert!(matches!(c, UiCommand::NewFolder { parent: Some(4) }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"move_folder","id":2,"parent":1,"before":null}"#)
+                .unwrap();
+        assert!(matches!(
+            c,
+            UiCommand::MoveFolder {
+                id: 2,
+                parent: Some(1),
+                before: None
+            }
+        ));
+    }
+
+    #[test]
     fn drop_commands_parse() {
         let c: UiCommand = serde_json::from_str(
             r#"{"cmd":"open_at","url":"https://a.com","before":null,"folder":null,"pinned":true}"#,
@@ -468,6 +524,19 @@ mod tests {
         assert!(matches!(
             serde_json::from_str::<UiCommand>(r#"{"cmd":"import_html","text":"x"}"#).unwrap(),
             UiCommand::ImportHtml { .. }
+        ));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"tab_drop_out","id":4,"x":1500.5,"y":30}"#).unwrap();
+        assert!(matches!(c, UiCommand::TabDropOut { id: 4, .. }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"media_ctl","id":4,"action":"mute"}"#).unwrap();
+        assert!(matches!(c, UiCommand::MediaCtl { id: 4, .. }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"rename_space","id":2,"name":"Work"}"#).unwrap();
+        assert!(matches!(c, UiCommand::RenameSpace { id: 2, .. }));
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"edit_space","id":2}"#).unwrap(),
+            UiCommand::EditSpace { id: 2 }
         ));
     }
 

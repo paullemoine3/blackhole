@@ -11,8 +11,12 @@ use url::Url;
 
 pub mod catalog;
 pub mod import;
+pub mod peers;
 pub mod store;
 pub mod updater;
+mod writer;
+
+pub use writer::{flush_writes, write_later};
 
 const BLOCKLIST: &str = include_str!("../blocklist.txt");
 
@@ -214,6 +218,8 @@ struct FolderDto {
     collapsed: bool,
     #[serde(default)]
     icon: String,
+    #[serde(default)]
+    parent: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -271,6 +277,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         name: f.name.clone(),
                         collapsed: f.collapsed,
                         icon: f.icon.clone(),
+                        parent: f.parent.map(|p| p.0),
                     })
                     .collect(),
             })
@@ -291,6 +298,18 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                     name: f.name,
                     collapsed: f.collapsed,
                     icon: blackhole_domain::sanitize_icon(&f.icon),
+                    parent: f.parent.map(FolderId),
+                })
+                .collect();
+            // Drop dangling or self-referencing parents so the tree stays well formed.
+            let ids: Vec<u64> = folders.iter().map(|f| f.id.0).collect();
+            let folders: Vec<Folder> = folders
+                .into_iter()
+                .map(|mut f| {
+                    if f.parent.is_some_and(|p| p == f.id || !ids.contains(&p.0)) {
+                        f.parent = None;
+                    }
+                    f
                 })
                 .collect();
             let known = |id: u64| folders.iter().any(|f| f.id.0 == id);
@@ -335,6 +354,7 @@ impl JsonWorkspaceRepository {
 
 impl WorkspaceRepository for JsonWorkspaceRepository {
     fn load(&self) -> Result<Option<Workspace>, StorageError> {
+        writer::flush_writes();
         if !self.path.exists() {
             return Ok(None);
         }
@@ -345,6 +365,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
     }
 
     fn load_settings(&self) -> Result<Option<Settings>, StorageError> {
+        writer::flush_writes();
         let path = self.path.with_file_name("settings.json");
         if !path.exists() {
             return Ok(None);
@@ -371,6 +392,11 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             } else {
                 Settings::DEFAULT_LIVE_TABS
             },
+            spare_views: if Settings::SPARE_CHOICES.contains(&dto.spare_views) {
+                dto.spare_views
+            } else {
+                Settings::DEFAULT_SPARES
+            },
             boosts: dto.boosts,
             routes: dto
                 .routes
@@ -381,6 +407,9 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: dto.hidden_favorites.into_iter().collect(),
             last_seen_version: dto.last_seen_version,
             extensions_in_private: dto.extensions_in_private,
+            sidebar_open: dto.sidebar_open,
+            tracker_blocking: dto.tracker_blocking,
+            collapsed_sections: dto.collapsed_sections.into_iter().collect(),
         }))
     }
 
@@ -392,6 +421,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hardware_acceleration: settings.hardware_acceleration,
             tab_sleep_minutes: settings.tab_sleep_minutes,
             max_live_tabs: settings.max_live_tabs,
+            spare_views: settings.spare_views,
             boosts: settings.boosts.clone(),
             routes: settings
                 .routes
@@ -402,12 +432,16 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: settings.hidden_favorites.iter().cloned().collect(),
             last_seen_version: settings.last_seen_version.clone(),
             extensions_in_private: settings.extensions_in_private,
+            sidebar_open: settings.sidebar_open,
+            tracker_blocking: settings.tracker_blocking,
+            collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
     }
 
     fn load_history(&self) -> Result<Option<History>, StorageError> {
+        writer::flush_writes();
         let path = self.path.with_file_name("history.json");
         if !path.exists() {
             return Ok(None);
@@ -469,6 +503,8 @@ struct SettingsDto {
     tab_sleep_minutes: u32,
     #[serde(default)]
     max_live_tabs: u32,
+    #[serde(default = "default_spares")]
+    spare_views: u32,
     #[serde(default)]
     boosts: std::collections::BTreeMap<String, String>,
     #[serde(default)]
@@ -481,13 +517,29 @@ struct SettingsDto {
     last_seen_version: String,
     #[serde(default)]
     extensions_in_private: bool,
+    #[serde(default = "default_true")]
+    sidebar_open: bool,
+    #[serde(default = "default_true")]
+    tracker_blocking: bool,
+    #[serde(default)]
+    collapsed_sections: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
 }
 
+fn default_spares() -> u32 {
+    Settings::DEFAULT_SPARES
+}
+
+/// Queues the write on the background thread (see `writer`).
 fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), StorageError> {
+    writer::write_later(path.to_path_buf(), contents.to_owned());
+    Ok(())
+}
+
+fn write_atomic_now(path: &std::path::Path, contents: &str) -> Result<(), StorageError> {
     let err = |e: std::io::Error| StorageError(e.to_string());
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(err)?;
@@ -586,6 +638,7 @@ mod tests {
             hardware_acceleration: false,
             tab_sleep_minutes: 15,
             max_live_tabs: 8,
+            spare_views: 0,
             boosts: [(                "example.com".to_owned(),
                 "body{filter:invert(1)}".to_owned(),
             )]
@@ -595,6 +648,9 @@ mod tests {
             hidden_favorites: ["proton.me".to_owned()].into(),
             last_seen_version: "0.3.0".to_owned(),
             extensions_in_private: true,
+            sidebar_open: false,
+            tracker_blocking: false,
+            collapsed_sections: ["pinned".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -609,9 +665,13 @@ mod tests {
         assert!(old.animations && old.hardware_acceleration);
         assert_eq!(old.tab_sleep_minutes, 10);
         assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
+        assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);
         assert!(old.boosts.is_empty() && old.routes.is_empty());
         assert_eq!(old.last_seen_version, "");
         assert!(!old.extensions_in_private);
+        assert!(old.sidebar_open, "pinned open by default");
+        assert!(old.tracker_blocking, "blocker on by default");
+        assert!(old.collapsed_sections.is_empty());
     }
 
     #[test]

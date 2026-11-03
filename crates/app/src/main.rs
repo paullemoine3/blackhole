@@ -17,6 +17,7 @@ mod views;
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::{BlockLog, Easels, FolderId, SearchEngine, Settings, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
+use blackhole_infrastructure::peers;
 use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
     default_privacy_policy, extensions_dir, load_extensions, JsonWorkspaceRepository,
@@ -32,6 +33,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     rc::Rc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use url::Url;
@@ -54,6 +56,21 @@ const HOTZONE_HTML: &str = include_str!("../ui/hotzone.html");
 #[cfg(windows)]
 const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
+/// What a page says about its audio and video (see `views::MEDIA_PROBE_JS`).
+#[derive(Clone, Copy, Default, serde::Deserialize)]
+struct MediaProbe {
+    playing: bool,
+    has: bool,
+    muted: bool,
+}
+
+/// How often the event loop wakes to refresh this window's place in the registry, look for
+/// incoming tabs, spares to build and media to probe.
+const PEERS_EVERY: Duration = Duration::from_millis(400);
+/// How often background tabs are asked whether they play audio or video.
+const MEDIA_EVERY: Duration = Duration::from_millis(1500);
+/// Spare page views kept ready, and how long the app must stay quiet before building them.
+const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
 const LIBRARY_HTML: &str = include_str!("../ui/library.html");
 /// Gap between the two panes of a split view.
@@ -118,8 +135,6 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
         (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
     )
 }
-/// Background tabs unused for the configured time release their engine view to save memory.
-const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
 /// Pause between two background tab preloads, so a burst never competes with the active page.
 const PRELOAD_EVERY: Duration = Duration::from_secs(3);
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
@@ -242,6 +257,9 @@ struct Running {
     bar: WebView,
     home: WebView,
     tabs: HashMap<TabId, WebView>,
+    /// Blank hidden page views ready to take the next tabs (see `views::spare_tab_view`).
+    spares: Vec<(views::Store, views::TabSlot, WebView)>,
+    spares_due: Option<Instant>,
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
     last_active: HashMap<TabId, Instant>,
@@ -252,6 +270,14 @@ struct Running {
     next_preload: Instant,
     /// Set when a tab view was created above the overlays; they are rebuilt once it is due.
     raise_due: Option<Instant>,
+    /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
+    shown: Option<TabId>,
+    peers_due: Instant,
+    media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
+    media_due: Instant,
+    media_seen: serde_json::Value,
+    /// Tabs whose media card was closed; they come back when the tab plays again.
+    media_dismissed: HashSet<u64>,
     svc: BrowserService<JsonWorkspaceRepository>,
     mailbox: Mailbox,
     sidebar: Sidebar,
@@ -289,6 +315,12 @@ struct Running {
     /// that allows extensions, the main profile.
     ext_src: std::path::PathBuf,
     favicons: favicons::Favicons,
+    /// The icon table is only sent to the sidebar / start page when it changed.
+    icons_for_ui: std::cell::Cell<bool>,
+    icons_for_home: std::cell::Cell<bool>,
+    /// Page events only mark the UI stale; it is refreshed once per event-loop turn.
+    ui_stale: bool,
+    last_flush: Instant,
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
@@ -421,10 +453,21 @@ impl Running {
             profile.clone()
         };
         let mut web_context = WebContext::new(Some(data.join("webview")));
-        let mut svc = BrowserService::start(
-            JsonWorkspaceRepository::new(data.clone()),
-            default_privacy_policy(),
-        );
+        // Session, icons and extensions live in separate files: load them side by side.
+        let (mut svc, favicons, preloaded_ext) = std::thread::scope(|scope| {
+            let icons = scope.spawn(|| favicons::Favicons::load(&data));
+            let exts =
+                (!private_mode()).then(|| scope.spawn(|| load_extensions(&extensions_dir(&data))));
+            let svc = BrowserService::start(
+                JsonWorkspaceRepository::new(data.clone()),
+                default_privacy_policy(),
+            );
+            (
+                svc,
+                icons.join().expect("favicons"),
+                exts.map(|h| h.join().unwrap_or_default()),
+            )
+        });
         // A private window has no extensions unless the main profile's settings allow them.
         let ext_src = if private_mode() {
             let shared = JsonWorkspaceRepository::new(profile.clone())
@@ -446,10 +489,15 @@ impl Running {
         };
         let ext_src_dir = ext_src.clone().unwrap_or_else(|| data.clone());
         if let Some(src) = &ext_src {
-            svc.set_extensions(load_extensions(&extensions_dir(src)));
+            svc.set_extensions(
+                preloaded_ext.unwrap_or_else(|| load_extensions(&extensions_dir(src))),
+            );
         }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
-        let sidebar = Sidebar::new(f64::from(svc.settings().sidebar_width));
+        let sidebar = Sidebar::starting(
+            f64::from(svc.settings().sidebar_width),
+            svc.settings().sidebar_open,
+        );
 
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
         let chrome_bounds = chrome_rect(&sidebar, &size);
@@ -562,11 +610,19 @@ impl Running {
             bar,
             home,
             tabs: HashMap::new(),
+            spares: Vec::new(),
+            spares_due: Some(Instant::now() + SPARES_DELAY),
             last_active: HashMap::new(),
             preloaded: HashMap::new(),
             preload_tried: HashSet::new(),
             next_preload: Instant::now() + PRELOAD_EVERY,
             raise_due: None,
+            shown: None,
+            peers_due: Instant::now(),
+            media: Arc::default(),
+            media_due: Instant::now(),
+            media_seen: serde_json::Value::Null,
+            media_dismissed: HashSet::new(),
             svc,
             mailbox,
             sidebar,
@@ -575,7 +631,11 @@ impl Running {
             settings_tab: None,
             bookmark_list: BookmarkStore::new(&data).load(),
             bookmarks: BookmarkStore::new(&data),
-            favicons: favicons::Favicons::load(&data),
+            favicons,
+            icons_for_ui: std::cell::Cell::new(true),
+            icons_for_home: std::cell::Cell::new(true),
+            ui_stale: false,
+            last_flush: Instant::now(),
             import_sources: import::detect(),
             import_msg: String::new(),
             app_ext,
@@ -790,6 +850,7 @@ impl Running {
     /// The sidebar is either hidden or fully open, like Arc's.
     fn toggle_sidebar(&mut self) {
         self.sidebar.toggle();
+        self.svc.set_sidebar_open(self.sidebar.is_open());
     }
 
     fn downloads_json(&self) -> serde_json::Value {
@@ -826,8 +887,10 @@ impl Running {
                 }
             }
             let before = self.dl_live.len();
-            self.dl_live
-                .retain(|_, d| d.finished.is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER));
+            self.dl_live.retain(|_, d| {
+                d.finished
+                    .is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER)
+            });
             changed |= before != self.dl_live.len();
         }
         if changed {
@@ -867,7 +930,7 @@ impl Running {
     fn ui_state(&self) {
         let ws = self.svc.workspace();
         let space = ws.active_space();
-        let state = json!({
+        let mut state = json!({
             "os": std::env::consts::OS,
             "sidebarWidth": self.sidebar.full(),
             "sidebarOpen": self.sidebar.is_open(),
@@ -878,6 +941,7 @@ impl Running {
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
             "spaces": ws.spaces().iter().map(|s| json!({"id": s.id.0, "name": s.name, "color": s.color, "icon": s.icon})).collect::<Vec<_>>(),
             "activeSpace": space.id.0,
+            "collapsed": self.svc.settings().collapsed_sections,
             "color": space.color,
             "activeTab": if self.home_shown() { None } else { space.active_tab.map(|t| t.0) },
             "home": self.home_shown(),
@@ -885,8 +949,8 @@ impl Running {
             "version": env!("CARGO_PKG_VERSION"),
             "update": self.update_json(),
             "downloads": self.downloads_json(),
-            "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
-            "favicons": self.favicons.all(),
+            "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
+            "media": self.media_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
@@ -895,6 +959,9 @@ impl Running {
                 "asleep": !self.tabs.contains_key(&t.id),
             })).collect::<Vec<_>>(),
         });
+        if self.icons_for_ui.replace(false) {
+            state["favicons"] = json!(self.favicons.all());
+        }
         self.ui(format!("window.bh&&bh.render({state})"));
         self.ui_settings();
         self.ui_easel();
@@ -936,10 +1003,13 @@ impl Running {
             "animations": settings.animations,
             "hardwareAcceleration": settings.hardware_acceleration,
             "extensionsInPrivate": settings.extensions_in_private,
+            "trackerBlocking": settings.tracker_blocking,
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
             "maxLiveTabs": settings.max_live_tabs,
             "maxLiveTabsChoices": Settings::LIVE_TABS_CHOICES,
+            "spareViews": settings.spare_views,
+            "spareChoices": Settings::SPARE_CHOICES,
             "blocked": self.blocked.total(),
             "blockedLog": self.blocked.entries().iter().take(100).map(|b| json!({"host": b.host, "count": b.count, "site": b.site})).collect::<Vec<_>>(),
             "tab": self.settings_tab.clone(),
@@ -1939,7 +2009,14 @@ impl Running {
                 .map(|t| t.url.to_string())
                 .unwrap_or_default()
         };
+        let nav = |can: fn(&WebView) -> wry::Result<bool>| {
+            ws.active_tab()
+                .and_then(|t| self.tabs.get(&t.id))
+                .is_some_and(|v| can(v).unwrap_or(false))
+        };
         let state = json!({
+            "canBack": nav(WebView::can_go_back),
+            "canForward": nav(WebView::can_go_forward),
             "os": std::env::consts::OS,
             "maximized": self.window.is_maximized(),
             "private": private_mode(),
@@ -1954,10 +2031,9 @@ impl Running {
     }
 
     fn ui_home(&self) {
-        let state = json!({
+        let mut state = json!({
             "engine": self.svc.settings().search_engine.label(),
             "animations": self.svc.settings().animations,
-            "favicons": self.favicons.all(),
             "favorites": self.svc.favorites().iter()
                 .map(|f| json!({
                     "name": f.name, "url": f.url.as_str(),
@@ -1970,6 +2046,9 @@ impl Running {
                 .collect::<Vec<_>>(),
             "releaseNotes": self.release_notes,
         });
+        if self.icons_for_home.replace(false) {
+            state["favicons"] = json!(self.favicons.all());
+        }
         let _ = self
             .home
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -2008,6 +2087,16 @@ impl Running {
             return;
         }
         let bounds = self.full_content_bounds();
+        let store = self.store_of_tab(tab.id);
+        if let Some(at) = self.spares.iter().position(|(s, ..)| *s == store) {
+            let (_, slot, view) = self.spares.swap_remove(at);
+            slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
+            let _ = view.set_bounds(bounds);
+            let _ = view.load_url(tab.url.as_str());
+            self.tabs.insert(tab.id, view);
+            self.spares_due = Some(Instant::now() + SPARES_DELAY);
+            return;
+        }
         match views::tab_view(
             &self.window,
             &mut self.web_context,
@@ -2017,13 +2106,88 @@ impl Running {
             self.svc.policy(),
             &self.mailbox,
             self.webext.as_ref(),
+            store,
         ) {
             Ok(view) => {
                 self.tabs.insert(tab.id, view);
                 self.raise_palette();
+                self.spares_due = Some(Instant::now() + SPARES_DELAY);
             }
             Err(error) => tracing::error!("cannot create web view: {error}"),
         }
+    }
+
+    /// The cookie jar of a space: the original "Personal" space (id 1, whatever its position)
+    /// keeps the browser's main one so existing logins survive, every other space has its own,
+    /// and a private window keeps nothing.
+    fn store_of_space(&self, space: SpaceId) -> views::Store {
+        if private_mode() {
+            views::Store::Private
+        } else if space == SpaceId(1) {
+            views::Store::Main
+        } else {
+            views::Store::Space(space.0)
+        }
+    }
+
+    fn store_of_tab(&self, tab: TabId) -> views::Store {
+        let owner = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .find(|s| s.tabs.iter().any(|t| t.id == tab))
+            .map_or_else(|| self.svc.workspace().active_space().id, |s| s.id);
+        self.store_of_space(owner)
+    }
+
+    /// Drops every spare view; `refill_spares` rebuilds them for the configured count.
+    fn trim_spares(&mut self) {
+        if !self.spares.is_empty() {
+            self.spares.clear();
+            self.raise_palette();
+        }
+    }
+
+    /// Builds the spare views while nothing is going on. They all sit below the command bar,
+    /// which is recreated once on top of them, so the next tabs open without any view creation.
+    fn refill_spares(&mut self) {
+        let Some(due) = self.spares_due else { return };
+        if Instant::now() < due {
+            return;
+        }
+        let wanted = self.svc.settings().spare_views as usize;
+        if wanted == 0 {
+            self.spares_due = None;
+            return;
+        }
+        // Spares belong to a space's login store: only the active space's are worth keeping.
+        let store = self.store_of_space(self.svc.workspace().active_space().id);
+        if self.palette_open || self.peek.is_some() || self.spares.iter().any(|(s, ..)| *s == store)
+        {
+            self.spares_due = Some(Instant::now() + SPARES_DELAY);
+            return;
+        }
+        self.spares_due = None;
+        self.spares.retain(|(s, ..)| *s == store);
+        for _ in 0..wanted {
+            match views::spare_tab_view(
+                &self.window,
+                &mut self.web_context,
+                self.svc.policy(),
+                &self.mailbox,
+                self.webext.as_ref(),
+                store,
+            ) {
+                Ok((slot, view)) => self.spares.push((store, slot, view)),
+                Err(error) => {
+                    tracing::error!("cannot create spare view: {error}");
+                    break;
+                }
+            }
+        }
+        self.raise_palette();
+        self.sync();
     }
 
     /// Native views stack in creation order, so the overlays are recreated above new tabs. Burst
@@ -2087,6 +2251,148 @@ impl Running {
                 self.palette_open = false;
             }
             Err(error) => tracing::error!("cannot create command bar: {error}"),
+        }
+    }
+
+    /// Audio/video state of the active space's tabs, for the speaker icon and the media card.
+    fn media_json(&self) -> serde_json::Value {
+        let Ok(probes) = self.media.lock() else {
+            return json!([]);
+        };
+        let tabs = &self.svc.workspace().active_space().tabs;
+        let list: Vec<_> = tabs
+            .iter()
+            .filter_map(|t| {
+                let p = probes.get(&t.id.0)?;
+                let shown = (p.playing || p.has) && !self.media_dismissed.contains(&t.id.0);
+                shown.then(|| json!({"id": t.id.0, "playing": p.playing, "muted": p.muted}))
+            })
+            .collect();
+        json!(list)
+    }
+
+    /// Asks every loaded tab about its media, and refreshes the sidebar when something changed.
+    fn service_media(&mut self) {
+        if Instant::now() >= self.media_due {
+            self.media_due = Instant::now() + MEDIA_EVERY;
+            if let Ok(mut probes) = self.media.lock() {
+                probes.retain(|id, _| self.tabs.contains_key(&TabId(*id)));
+            }
+            for (id, view) in &self.tabs {
+                let sink = Arc::clone(&self.media);
+                let id = id.0;
+                let _ = view.evaluate_script_with_callback(views::MEDIA_PROBE_JS, move |raw| {
+                    if let (Ok(probe), Ok(mut probes)) =
+                        (serde_json::from_str::<MediaProbe>(&raw), sink.lock())
+                    {
+                        probes.insert(id, probe);
+                    }
+                });
+            }
+        }
+        if let Ok(probes) = self.media.lock() {
+            self.media_dismissed
+                .retain(|id| !probes.get(id).is_some_and(|p| p.playing));
+        }
+        let now = self.media_json();
+        if now != self.media_seen {
+            self.media_seen = now;
+            self.ui_state();
+        }
+    }
+
+    fn media_ctl(&mut self, id: TabId, action: &str) {
+        let Some(view) = self.tabs.get(&id) else {
+            return;
+        };
+        let js = match action {
+            "toggle" => views::MEDIA_TOGGLE_JS,
+            "mute" => views::MEDIA_MUTE_JS,
+            "pip" => views::PIP_TOGGLE_JS,
+            "close" => {
+                self.media_dismissed.insert(id.0);
+                views::MEDIA_PAUSE_JS
+            }
+            _ => return,
+        };
+        let _ = view.evaluate_script(js);
+        self.media_due = Instant::now() + Duration::from_millis(250);
+        if action == "close" {
+            self.ui_state();
+        }
+    }
+
+    /// This window's rectangle on the screen, in logical pixels.
+    fn screen_rect(&self) -> Option<(f64, f64, f64, f64)> {
+        let scale = self.scale();
+        let pos = self.window.outer_position().ok()?.to_logical::<f64>(scale);
+        let size = self.window.outer_size().to_logical::<f64>(scale);
+        Some((pos.x, pos.y, size.width, size.height))
+    }
+
+    /// Keeps this window listed for the others and picks up tabs they sent here.
+    fn service_peers(&mut self) {
+        if Instant::now() < self.peers_due {
+            return;
+        }
+        self.peers_due = Instant::now() + PEERS_EVERY;
+        let dir = peers_dir();
+        if let Some((x, y, w, h)) = self.screen_rect() {
+            peers::publish(
+                &dir,
+                &peers::Peer {
+                    pid: std::process::id(),
+                    private: private_mode(),
+                    x,
+                    y,
+                    w,
+                    h,
+                    updated: 0,
+                },
+            );
+        }
+        let incoming = peers::receive(&dir, std::process::id());
+        if incoming.is_empty() {
+            return;
+        }
+        for transfer in incoming {
+            self.open(&transfer.url);
+        }
+        self.window.focus_window();
+    }
+
+    /// A tab released outside its sidebar: hands it to the window under the pointer, if any.
+    fn drop_tab_out(&mut self, id: TabId, x: f64, y: f64) {
+        if self
+            .screen_rect()
+            .is_some_and(|(wx, wy, w, h)| x >= wx && x < wx + w && y >= wy && y < wy + h)
+        {
+            return;
+        }
+        let dir = peers_dir();
+        let others = peers::peers(&dir, std::process::id());
+        let target = peers::at(&others, x, y).map(|p| p.pid);
+        let Some(tab) = self
+            .svc
+            .workspace()
+            .active_space()
+            .tabs
+            .iter()
+            .find(|t| t.id == id)
+        else {
+            return;
+        };
+        let transfer = peers::Transfer {
+            url: tab.url.to_string(),
+            title: tab.title.clone(),
+        };
+        let moved = match target {
+            Some(pid) => peers::send(&dir, pid, &transfer),
+            // Released over nothing: the tab becomes a window of its own (same privacy).
+            None => open_window(private_mode(), Some(&transfer.url)),
+        };
+        if moved {
+            self.handle_ui(UiCommand::Close { id: id.0 });
         }
     }
 
@@ -2251,6 +2557,8 @@ impl Running {
     }
 
     fn sync(&mut self) {
+        self.icons_for_ui.set(true);
+        self.icons_for_home.set(true);
         self.ensure_active_view();
         let active = if self.home_shown() {
             None
@@ -2264,6 +2572,15 @@ impl Running {
         self.ensure_panels();
         if let Some(panel) = &self.easel_panel.view {
             let _ = panel.set_visible(self.easel_tab);
+        }
+        if self.shown != active {
+            if let Some(left) = self.shown.and_then(|id| self.tabs.get(&id)) {
+                let _ = left.evaluate_script(views::PIP_ENTER_JS);
+            }
+            if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
+                let _ = back.evaluate_script(views::PIP_EXIT_JS);
+            }
+            self.shown = active;
         }
         if !self.library {
             // Keep the page blank while hidden so the next opening fades in without a flash.
@@ -2466,6 +2783,7 @@ impl Running {
             }
         }
         if active.is_some() {
+            actions.push(json!({"id": "pip", "label": "Picture in Picture", "hint": "Video"}));
             actions.push(
                 json!({"id": "capture_easel", "label": "Capture this page to Easel", "hint": "⌘⇧S"}),
             );
@@ -2535,7 +2853,10 @@ impl Running {
                     color: SPACE_COLORS[n % SPACE_COLORS.len()].to_owned(),
                 });
             }
-            "new_folder" => self.handle_ui(UiCommand::NewFolder),
+            "new_folder" => self.handle_ui(UiCommand::NewFolder { parent: None }),
+            "pip" => {
+                let _ = self.active_view().evaluate_script(views::PIP_TOGGLE_JS);
+            }
             "toggle_sidebar" => self.handle_ui(UiCommand::Lock),
             "settings" => self.settings_wanted = true,
             "new_easel" => {
@@ -2654,6 +2975,7 @@ impl Running {
             &self.mailbox,
         );
         let peek_bounds = self.peek_bounds();
+        let peek_store = self.store_of_space(self.svc.workspace().active_space().id);
         let page = views::tab_view(
             &self.window,
             &mut self.web_context,
@@ -2663,6 +2985,7 @@ impl Running {
             self.svc.policy(),
             &self.mailbox,
             self.webext.as_ref(),
+            peek_store,
         );
         match (scrim, page) {
             (Ok(scrim), Ok(page)) => {
@@ -2885,9 +3208,25 @@ impl Running {
                 self.discard_idle_tabs();
                 self.ui_state();
             }
+            UiCommand::SetSpareViews { count } => {
+                self.svc.set_spare_views(count);
+                self.trim_spares();
+                self.spares_due = Some(Instant::now());
+                self.ui_state();
+            }
             UiCommand::SetHardwareAcceleration { on } => {
                 self.svc.set_hardware_acceleration(on);
                 self.ui_state();
+            }
+            UiCommand::SetTrackerBlocking { on } => {
+                self.svc.set_tracker_blocking(on);
+                // Spare views carry the blocklist of their creation time.
+                self.spares.clear();
+                self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                self.ui_state();
+            }
+            UiCommand::SetSectionCollapsed { section, collapsed } => {
+                self.svc.set_section_collapsed(&section, collapsed);
             }
             UiCommand::SetExtensionsInPrivate { on } => {
                 self.svc.set_extensions_in_private(on);
@@ -3019,31 +3358,63 @@ impl Running {
                     .move_tab(TabId(id), before.map(TabId), folder.map(FolderId), pinned);
                 self.ui_state();
             }
-            UiCommand::NewFolder => {
-                self.svc.add_folder("New folder");
+            UiCommand::TabDropOut { id, x, y } => self.drop_tab_out(TabId(id), x, y),
+            UiCommand::MediaCtl { id, action } => self.media_ctl(TabId(id), &action),
+            UiCommand::NewFolder { parent } => {
+                match parent {
+                    Some(p) => {
+                        let made = self.svc.add_subfolder("New folder", FolderId(p));
+                        // Show the new subfolder: a collapsed parent would hide it.
+                        if self
+                            .svc
+                            .workspace()
+                            .active_space()
+                            .folders
+                            .iter()
+                            .any(|f| f.id == FolderId(p) && f.collapsed)
+                        {
+                            self.svc.toggle_folder(FolderId(p));
+                        }
+                        self.ui_state();
+                        if let Some(id) = made {
+                            self.ui(format!("window.bh&&bh.editFolderId({})", id.0));
+                        }
+                        return;
+                    }
+                    None => {
+                        self.svc.add_folder("New folder");
+                    }
+                }
                 self.ui_state();
             }
             UiCommand::RenameFolder { id, name } => {
                 self.svc.rename_folder(FolderId(id), &name);
                 self.ui_state();
             }
+            UiCommand::RenameSpace { id, name } => {
+                self.svc.rename_space(SpaceId(id), &name);
+                self.ui_state();
+            }
+            UiCommand::EditSpace { id } => self.ui(format!("window.bh&&bh.editSpace({id})")),
             UiCommand::ToggleFolder { id } => {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();
             }
-            UiCommand::MoveFolder { id, before } => {
-                self.svc.move_folder(FolderId(id), before.map(FolderId));
+            UiCommand::MoveFolder { id, parent, before } => {
+                self.svc
+                    .move_folder(FolderId(id), parent.map(FolderId), before.map(FolderId));
                 self.ui_state();
             }
             UiCommand::DeleteFolder { id } => {
                 // The folder takes its tabs with it (they go to the archive like any closed tab).
+                let doomed = self.svc.workspace().folder_tree(FolderId(id));
                 let inside: Vec<TabId> = self
                     .svc
                     .workspace()
                     .active_space()
                     .tabs
                     .iter()
-                    .filter(|t| t.folder == Some(FolderId(id)))
+                    .filter(|t| t.folder.is_some_and(|f| doomed.contains(&f)))
                     .map(|t| t.id)
                     .collect();
                 for tab in inside {
@@ -3308,8 +3679,12 @@ impl Running {
         match key {
             "l" => self.open_palette("url"),
             "t" => self.new_tab(),
-            "n" => open_window(false),
-            "shift+n" => open_window(true),
+            "n" => {
+                open_window(false, None);
+            }
+            "shift+n" => {
+                open_window(true, None);
+            }
             "w" => self.close_active_tab(),
             "r" => self.with_active_tab(views::reload),
             "b" => self.handle_ui(UiCommand::Lock),
@@ -3344,7 +3719,7 @@ impl Running {
             views::apply_boost(view, &css);
         }
         self.svc.page_changed(tab, Some(url), None);
-        self.ui_state();
+        self.ui_stale = true;
     }
 
     fn handle_msg(&mut self, msg: Msg) {
@@ -3373,6 +3748,8 @@ impl Running {
                 let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
                 if let Some(page) = page.and_then(|raw| Url::parse(&raw).ok()) {
                     if self.favicons.set(&page, &url) {
+                        self.icons_for_ui.set(true);
+                        self.icons_for_home.set(true);
                         self.ui_state();
                     }
                 }
@@ -3393,7 +3770,7 @@ impl Running {
             Msg::Title(tab, _) if tab == PEEK_TAB => {}
             Msg::Title(tab, title) => {
                 self.svc.page_changed(tab, None, Some(title));
-                self.ui_state();
+                self.ui_stale = true;
             }
             // An extension asking for a window (Bitwarden's unlock) gets a popup, not a tab.
             #[cfg(windows)]
@@ -3440,7 +3817,11 @@ impl Running {
                 self.dl_live.insert(
                     id,
                     DownloadLive {
-                        name: self.downloads.last().map(|d| d.name.clone()).unwrap_or_default(),
+                        name: self
+                            .downloads
+                            .last()
+                            .map(|d| d.name.clone())
+                            .unwrap_or_default(),
                         path: path.clone(),
                         received: 0,
                         total: None,
@@ -3596,15 +3977,25 @@ impl ApplicationHandler<Wake> for App {
         if let Self::Initial(mailbox) = self {
             let mut running = Running::new(event_loop, mailbox.clone());
             running.pump();
+            if let Some(url) = launch_url() {
+                running.open(&url);
+            }
             *self = Self::Running(Box::new(running));
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
-        let mut wake = IDLE_CHECK_EVERY;
+        let mut wake = PEERS_EVERY;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
+            if std::mem::take(&mut app.ui_stale) {
+                app.ui_state();
+            }
+            if app.last_flush.elapsed() >= Duration::from_secs(1) {
+                app.svc.flush();
+                app.last_flush = Instant::now();
+            }
             if app.quit {
                 event_loop.exit();
                 return;
@@ -3617,6 +4008,9 @@ impl ApplicationHandler<Wake> for App {
             if app.preload_next_tab() {
                 wake = wake.min(PRELOAD_EVERY);
             }
+            app.refill_spares();
+            app.service_peers();
+            app.service_media();
             if !app.dl_live.is_empty() {
                 wake = wake.min(DOWNLOAD_POLL);
             }
@@ -3869,20 +4263,44 @@ fn private_mode() -> bool {
     *PRIVATE.get_or_init(|| std::env::args().any(|a| a == "--private"))
 }
 
+/// Dev builds keep their window registry in the scratch folder, away from the real app.
+fn peers_dir() -> PathBuf {
+    #[cfg(feature = "devtools")]
+    {
+        devtools::scratch().join("windows")
+    }
+    #[cfg(not(feature = "devtools"))]
+    {
+        peers::dir()
+    }
+}
+
 fn private_data_dir() -> PathBuf {
     std::env::temp_dir().join(format!("BlackHole-private-{}", std::process::id()))
 }
 
 /// Each window is its own process: a private one gets `--private` and a temporary profile.
-fn open_window(private: bool) {
+/// A window given a page opens it right away (`--open <url>`).
+fn open_window(private: bool, url: Option<&str>) -> bool {
     let Ok(exe) = std::env::current_exe() else {
-        return;
+        return false;
     };
     let mut cmd = std::process::Command::new(exe);
     if private {
         cmd.arg("--private");
     }
-    let _ = cmd.spawn();
+    if let Some(url) = url {
+        cmd.args(["--open", url]);
+    }
+    cmd.spawn().is_ok()
+}
+
+/// The page this window was asked to open at launch.
+fn launch_url() -> Option<String> {
+    let mut args = std::env::args();
+    args.find(|a| a == "--open")?;
+    args.next()
+        .filter(|u| matches!(Url::parse(u), Ok(u) if matches!(u.scheme(), "http" | "https")))
 }
 
 fn main() {
@@ -3901,6 +4319,8 @@ fn main() {
     let mut app = App::Initial(mailbox);
     event_loop.run_app(&mut app).expect("run");
     drop(app);
+    blackhole_infrastructure::flush_writes();
+    peers::withdraw(&peers_dir(), std::process::id());
     if private_mode() {
         let _ = std::fs::remove_dir_all(private_data_dir());
     }
