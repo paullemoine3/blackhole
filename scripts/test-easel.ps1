@@ -98,6 +98,8 @@ cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
 eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
+eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -150,6 +152,11 @@ Check ($evals[28] -match ([string][char]0x23F8)) 'media: the card offers pause'
 Check ($evals[28] -match ([string][char]0x29C9)) 'media: the card offers Picture in Picture'
 Check ($evals[28] -match 'snd.:true') 'media: the playing tab shows a speaker icon'
 Check ($evals[28] -match 'hiddenWhenActive.:true') 'media: no card for the tab being viewed'
+Check ($evals[29] -match 'input.:true') 'space: right-click rename turns the name into an input'
+Check ($evals[29] -match 'value.:true') 'space: the input starts with the current name'
+Check ($evals[30] -match 'ready.:true') 'update: the button shows a drawn icon, not a font glyph'
+Check ($evals[30] -match 'busy.:.busy') 'update: the icon changes while downloading'
+Check ($evals[30] -match 'text.:..') 'update: no text glyph left in the icon'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }

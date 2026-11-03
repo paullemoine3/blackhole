@@ -3078,6 +3078,11 @@ impl Running {
                 self.svc.rename_folder(FolderId(id), &name);
                 self.ui_state();
             }
+            UiCommand::RenameSpace { id, name } => {
+                self.svc.rename_space(SpaceId(id), &name);
+                self.ui_state();
+            }
+            UiCommand::EditSpace { id } => self.ui(format!("window.bh&&bh.editSpace({id})")),
             UiCommand::ToggleFolder { id } => {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();

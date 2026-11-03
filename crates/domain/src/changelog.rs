@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.5",
+        &[
+            "Spaces can be renamed from their right-click menu, which no longer offers to switch to the space you are already in",
+            "The update button uses the same drawn icon on every system and no longer flickers on hover",
+        ],
+    ),
+    (
         "0.7.4",
         &[
             "Smoother new tabs: blank tab views are prepared ahead, and the command bar animations are shorter",

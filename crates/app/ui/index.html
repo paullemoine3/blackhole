@@ -43,6 +43,7 @@
   .chev { width: 18px; text-align: center; opacity: .7; flex: none; }
   .fname { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { font-size: 11px; opacity: .5; }
+  .sedit { width: 110px; flex: none; }
   .fedit { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text; -webkit-user-select: text; }
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
   .folder.collapsed .fb { display: none; }
@@ -142,11 +143,12 @@
 
 
   /* Update button: only present when a newer release is available */
-  .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: transform .2s ease, box-shadow .2s ease; }
+  .update { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; background: linear-gradient(135deg, var(--accent), rgba(255,255,255,.22)); box-shadow: 0 0 0 1px rgba(255,255,255,.14); transition: box-shadow .2s ease; }
   .update[hidden] { display: none; }
-  .update .ico { flex: none; display: inline-block; width: 18px; text-align: center; font-size: 15px; line-height: 1; }
+  .update .ico { flex: none; display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; }
+  .update .ico svg { width: 16px; height: 16px; display: block; }
   .update::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%); background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 50%, transparent 70%); pointer-events: none; }
-  .update:hover, .update.hov { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(255,255,255,.3), 0 6px 20px var(--glow); }
+  .update:hover, .update.hov { box-shadow: 0 0 0 1px rgba(255,255,255,.3), 0 6px 20px var(--glow); }
   .update:hover .ico, .update.hov .ico { animation: up-bounce .7s ease-in-out infinite; }
   .update:hover::after, .update.hov::after { animation: up-shine .9s ease-out; }
   .update.busy { cursor: progress; opacity: .85; }
@@ -172,7 +174,7 @@
   <div id="spaces"></div>
   <div id="media"></div>
   <div id="dls"></div>
-  <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
+  <button class="update" id="update" hidden><span class="ico"></span><span class="full-only" id="updtxt"></span></button>
   <footer>
     <button class="icon" id="library" title="Library">🗂</button>
     <button class="icon" id="gear" title="Settings">⚙</button>
@@ -274,8 +276,9 @@ function tabMenu(t, x, y) {
 function spaceMenu(sp, x, y) {
   const items = [
     { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
-    { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } },
+    { icon: '✎', label: 'Rename space', run: { cmd: 'edit_space', id: sp.id } },
   ];
+  if (sp.id !== state.activeSpace) items.splice(1, 0, { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } });
   if (state.spaces.length > 1) items.push({ sep: true }, { icon: '🗑', label: 'Delete space', danger: true, run: { cmd: 'delete_space', id: sp.id } });
   openMenu(x, y, items);
 }
@@ -344,6 +347,29 @@ function folderNode(f, tabs, easels = []) {
   body.append(...tabs.map(tabNode), ...easels.map(easelNode));
   box.append(h, body);
   return { box, name, h, f };
+}
+
+function editSpace(id) {
+  const b = document.querySelector('.space[data-space="' + id + '"]');
+  const sp = state.spaces.find(s => s.id === id);
+  if (!b || !sp) return;
+  editing = true;
+  const input = el('input', 'fedit sedit');
+  input.value = sp.name;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true; editing = false;
+    if (commit && input.value.trim() && input.value.trim() !== sp.name) send({ cmd: 'rename_space', id, name: input.value });
+    flush();
+    if (state.spaces.length) window.bh.render(state);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+  input.onblur = () => finish(true);
+  input.onclick = (e) => e.stopPropagation();
+  input.onmousedown = (e) => e.stopPropagation();
+  b.onclick = null;
+  b.replaceChildren(input);
+  input.focus(); input.select();
 }
 
 function editFolder(h, name, f) {
@@ -611,6 +637,7 @@ window.bh = {
     renderDownloads(s.downloads);
   },
   downloads(list) { renderDownloads(list); },
+  editSpace,
   toast(m) {
     const t = $('toast'); t.textContent = m; t.classList.add('show');
     clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), 2200);
@@ -658,6 +685,11 @@ function renderMedia(s) {
   card.append(top, ctl);
   $('media').replaceChildren(card);
 }
+const UPDATE_ICONS = {
+  ready: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg>',
+  busy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5"/></svg>',
+  error: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5l6 10.5H2zM8 6.8v3M8 11.6v.1"/></svg>',
+};
 function renderUpdate(u, current) {
   const b = $('update');
   b.hidden = !u;
@@ -665,7 +697,9 @@ function renderUpdate(u, current) {
   const busy = u.state === 'downloading';
   b.classList.toggle('busy', busy);
   b.classList.toggle('error', u.state === 'error');
-  b.querySelector('.ico').textContent = busy ? '⟳' : u.state === 'error' ? '⚠' : '⭳';
+  const ico = busy ? 'busy' : u.state === 'error' ? 'error' : 'ready';
+  const icon = b.querySelector('.ico');
+  if (icon.dataset.k !== ico) { icon.dataset.k = ico; icon.innerHTML = UPDATE_ICONS[ico]; }
   $('updtxt').textContent = busy ? 'Updating to v' + u.version + '…'
     : u.state === 'error' ? 'Update failed — retry' : 'Update to v' + u.version;
   b.title = busy ? 'Downloading BlackHole ' + u.version + '; the app restarts when ready'

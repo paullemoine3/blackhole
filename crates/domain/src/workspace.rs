@@ -364,6 +364,18 @@ impl Workspace {
         added
     }
 
+    /// Renames any space (not only the active one); blank names are refused.
+    pub fn rename_space(&mut self, id: SpaceId, name: &str) -> bool {
+        let name = name.trim();
+        match self.spaces.iter_mut().find(|s| s.id == id) {
+            Some(s) if !name.is_empty() => {
+                s.name = name.to_owned();
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
         let name = name.trim();
         match self
@@ -619,6 +631,18 @@ mod tests {
                 .folder,
             None
         );
+    }
+
+    #[test]
+    fn spaces_can_be_renamed_even_when_not_active() {
+        let mut ws = Workspace::default();
+        let other = ws.add_space("Work", "#fff");
+        let first = ws.spaces()[0].id;
+        assert!(ws.rename_space(first, "  Home  "));
+        assert_eq!(ws.spaces()[0].name, "Home");
+        assert!(!ws.rename_space(other, "   "));
+        assert!(!ws.rename_space(SpaceId(9999), "x"));
+        assert_eq!(ws.spaces()[1].name, "Work");
     }
 
     #[test]

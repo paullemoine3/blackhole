@@ -60,6 +60,14 @@ pub enum UiCommand {
         id: u64,
         name: String,
     },
+    RenameSpace {
+        id: u64,
+        name: String,
+    },
+    /// Asks the sidebar to turn a space's name into an input.
+    EditSpace {
+        id: u64,
+    },
     ToggleFolder {
         id: u64,
     },
@@ -483,6 +491,13 @@ mod tests {
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"media_ctl","id":4,"action":"mute"}"#).unwrap();
         assert!(matches!(c, UiCommand::MediaCtl { id: 4, .. }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"rename_space","id":2,"name":"Work"}"#).unwrap();
+        assert!(matches!(c, UiCommand::RenameSpace { id: 2, .. }));
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"edit_space","id":2}"#).unwrap(),
+            UiCommand::EditSpace { id: 2 }
+        ));
     }
 
     #[test]

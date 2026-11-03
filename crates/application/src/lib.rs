@@ -350,6 +350,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         id
     }
 
+    pub fn rename_space(&mut self, id: SpaceId, name: &str) -> bool {
+        let ok = self.workspace.rename_space(id, name);
+        self.persist();
+        ok
+    }
+
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
         let ok = self.workspace.rename_folder(id, name);
         self.persist();

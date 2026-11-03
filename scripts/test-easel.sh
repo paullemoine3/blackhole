@@ -96,6 +96,8 @@ cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
 eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
+eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -141,6 +143,11 @@ check 28 '⏸' "media: the card offers pause"
 check 28 '⧉' "media: the card offers Picture in Picture"
 check 28 'snd\":true' "media: the playing tab shows a speaker icon"
 check 28 'hiddenWhenActive\":true' "media: no card for the tab being viewed"
+check 29 'input\":true' "space: right-click rename turns the name into an input"
+check 29 'value\":true' "space: the input starts with the current name"
+check 30 'ready\":true' "update: the button shows a drawn icon, not a font glyph"
+check 30 'busy\":\"busy' "update: the icon changes while downloading"
+check 30 'text\":\"\"' "update: no text glyph left in the icon"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys
