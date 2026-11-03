@@ -23,6 +23,7 @@ pub fn host_key(url: &Url) -> Option<String> {
 
 impl Favicons {
     pub fn load(data: &Path) -> Self {
+        blackhole_infrastructure::flush_writes();
         let path = data.join("favicons.json");
         let by_host = std::fs::read_to_string(&path)
             .ok()
@@ -45,9 +46,8 @@ impl Favicons {
             return false;
         }
         self.by_host.insert(host, icon.to_owned());
-        let _ = std::fs::create_dir_all(self.path.parent().unwrap_or(Path::new(".")));
         if let Ok(raw) = serde_json::to_string(&self.by_host) {
-            let _ = std::fs::write(&self.path, raw);
+            blackhole_infrastructure::write_later(self.path.clone(), raw);
         }
         true
     }

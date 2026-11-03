@@ -125,6 +125,7 @@
 
   <section id="privacy">
     <h1>Privacy</h1><p class="lead">No telemetry, trackers blocked, history stays on this machine.</p>
+    <div class="card"><h2>Tracker blocker</h2><div id="trackers"></div><p class="note">Blocks requests to known trackers. The https upgrade and the removal of tracking parameters stay on. Pages already open keep their current behaviour until reloaded.</p></div>
     <div class="card"><h2>This session</h2><div class="opt"><span class="grow">Requests blocked</span><b id="blocked">0</b></div></div>
     <div class="card"><h2>Blocked hosts</h2><div id="blocklist"></div>
       <div class="actions"><button class="btn" id="clearblocked">Reset list</button></div></div>
@@ -206,6 +207,7 @@ window.bh = {
     $('anim').replaceChildren(option('Black hole animations (launch and new tab)', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true));
     $('hwcard').hidden = mac;
     $('hw').replaceChildren(option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true));
+    $('trackers').replaceChildren(option('Block trackers', s.trackerBlocking, () => send({ cmd: 'set_tracker_blocking', on: !s.trackerBlocking }), true));
     $('extpriv').replaceChildren(option('Run installed extensions in private windows', s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true));
     $('sbw').replaceChildren(...s.sidebarWidths.map(w => option(w + ' px', w === s.sidebarWidth, () => send({ cmd: 'set_sidebar_width', width: w }))));
     $('sleep').replaceChildren(...s.tabSleepChoices.map(m => option(m + ' minutes', m === s.tabSleep, () => send({ cmd: 'set_tab_sleep', minutes: m }))));

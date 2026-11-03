@@ -27,6 +27,13 @@ pub enum UiCommand {
     SetExtensionsInPrivate {
         on: bool,
     },
+    SetTrackerBlocking {
+        on: bool,
+    },
+    SetSectionCollapsed {
+        section: String,
+        collapsed: bool,
+    },
     SetTabSleep {
         minutes: u32,
     },

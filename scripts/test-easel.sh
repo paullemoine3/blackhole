@@ -127,6 +127,7 @@ wait 800
 cmd {"cmd":"open","input":"https://example.com"}
 wait 2500
 eval content JSON.stringify({ main: document.cookie.indexOf('bhmain=one') >= 0, leak: document.cookie.indexOf('bhwork') >= 0 })
+eval chrome (() => { $('foldfold').click(); const a = getComputedStyle($('folders')).display === 'none'; $('foldfold').click(); const b = getComputedStyle($('folders')).display !== 'none'; return JSON.stringify({ hidden: a, back: b }); })()
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -189,6 +190,8 @@ check 39 'ws2' "accounts: the new space is listed"
 check 40 'iso\":true' "accounts: the second space does not see the first space's cookie"
 check 43 'main\":true' "accounts: back in the first space its own cookie is still there"
 check 43 'leak\":false' "accounts: the second space's cookie did not leak into the first"
+check 44 'hidden\":true' "sidebar: the Pinned folders section can be folded"
+check 44 'back\":true' "sidebar: and unfolded again"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys

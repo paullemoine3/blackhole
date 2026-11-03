@@ -1,6 +1,16 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.8",
+        &[
+            "The back and forward buttons follow the real page history and are greyed out when there is nowhere to go",
+            "New Privacy setting to switch the tracker blocker on or off (the https upgrade stays on)",
+            "The Quick access tabs and the Pinned folders can be folded from their sidebar headers; the choice is remembered",
+            "Faster start: session, history, icons and extensions load in parallel, and files are written in the background",
+            "Faster navigation: the interface and the history are no longer rebuilt and rewritten on every page event",
+        ],
+    ),
+    (
         "0.7.7",
         &[
             "Google Meet and other sites that check for Safari now accept BlackHole on macOS",

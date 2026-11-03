@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,9 +12,17 @@ pub enum PrivacyDecision {
 }
 
 /// Decides whether and how a navigation may proceed.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PrivacyPolicy {
     blocked_domains: HashSet<String>,
+    /// Shared by every clone, so switching it applies to views that already exist.
+    blocking: Arc<AtomicBool>,
+}
+
+impl Default for PrivacyPolicy {
+    fn default() -> Self {
+        Self::new([])
+    }
 }
 
 const TRACKING_PARAMS: &[&str] = &[
@@ -31,15 +41,32 @@ impl PrivacyPolicy {
                 .into_iter()
                 .map(|d| d.to_lowercase())
                 .collect(),
+            blocking: Arc::new(AtomicBool::new(true)),
         }
     }
 
-    /// The raw blocklist, for engines that must enforce it inside the page.
+    /// Turns the tracker blocklist on or off (the https upgrade and parameter clean-up stay).
+    pub fn set_blocking(&self, on: bool) {
+        self.blocking.store(on, Ordering::Relaxed);
+    }
+
+    pub fn is_blocking(&self) -> bool {
+        self.blocking.load(Ordering::Relaxed)
+    }
+
+    /// The raw blocklist, for engines that must enforce it inside the page (empty when off).
     pub fn blocked_domains(&self) -> impl Iterator<Item = &str> {
-        self.blocked_domains.iter().map(String::as_str)
+        let on = self.is_blocking();
+        self.blocked_domains
+            .iter()
+            .filter(move |_| on)
+            .map(String::as_str)
     }
 
     pub fn is_blocked_host(&self, host: &str) -> bool {
+        if !self.is_blocking() {
+            return false;
+        }
         let host = host.to_lowercase();
         let mut candidate = host.as_str();
         loop {
@@ -197,6 +224,21 @@ mod tests {
 
     fn policy() -> PrivacyPolicy {
         PrivacyPolicy::new(["doubleclick.net".to_owned()])
+    }
+
+    #[test]
+    fn the_blocker_can_be_switched_off_for_every_clone() {
+        let policy = policy();
+        let clone = policy.clone();
+        let url = Url::parse("https://ads.doubleclick.net/x").unwrap();
+        assert!(matches!(clone.evaluate(&url), PrivacyDecision::Block(_)));
+        policy.set_blocking(false);
+        assert!(!clone
+            .evaluate(&url)
+            .eq(&PrivacyDecision::Block("tracker blocked")));
+        assert_eq!(clone.blocked_domains().count(), 0);
+        let http = Url::parse("http://example.com/?utm_x=1").unwrap();
+        assert!(matches!(clone.evaluate(&http), PrivacyDecision::Rewrite(_)));
     }
 
     #[test]

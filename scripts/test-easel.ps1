@@ -129,6 +129,7 @@ wait 800
 cmd {"cmd":"open","input":"https://example.com"}
 wait 2500
 eval content JSON.stringify({ main: document.cookie.indexOf('bhmain=one') >= 0, leak: document.cookie.indexOf('bhwork') >= 0 })
+eval chrome (() => { $('foldfold').click(); const a = getComputedStyle($('folders')).display === 'none'; $('foldfold').click(); const b = getComputedStyle($('folders')).display !== 'none'; return JSON.stringify({ hidden: a, back: b }); })()
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -198,6 +199,8 @@ Check ($evals[39] -match 'ws2') 'accounts: the new space is listed'
 Check ($evals[40] -match 'iso.:true') "accounts: the second space does not see the first space's cookie"
 Check ($evals[43] -match 'main.:true') 'accounts: back in the first space its own cookie is still there'
 Check ($evals[43] -match 'leak.:false') "accounts: the second space's cookie did not leak into the first"
+Check ($evals[44] -match 'hidden.:true') 'sidebar: the Pinned folders section can be folded'
+Check ($evals[44] -match 'back.:true') 'sidebar: and unfolded again'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }

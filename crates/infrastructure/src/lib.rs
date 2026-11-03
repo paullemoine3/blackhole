@@ -14,6 +14,9 @@ pub mod import;
 pub mod peers;
 pub mod store;
 pub mod updater;
+mod writer;
+
+pub use writer::{flush_writes, write_later};
 
 const BLOCKLIST: &str = include_str!("../blocklist.txt");
 
@@ -351,6 +354,7 @@ impl JsonWorkspaceRepository {
 
 impl WorkspaceRepository for JsonWorkspaceRepository {
     fn load(&self) -> Result<Option<Workspace>, StorageError> {
+        writer::flush_writes();
         if !self.path.exists() {
             return Ok(None);
         }
@@ -361,6 +365,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
     }
 
     fn load_settings(&self) -> Result<Option<Settings>, StorageError> {
+        writer::flush_writes();
         let path = self.path.with_file_name("settings.json");
         if !path.exists() {
             return Ok(None);
@@ -393,6 +398,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             last_seen_version: dto.last_seen_version,
             extensions_in_private: dto.extensions_in_private,
             sidebar_open: dto.sidebar_open,
+            tracker_blocking: dto.tracker_blocking,
+            collapsed_sections: dto.collapsed_sections.into_iter().collect(),
         }))
     }
 
@@ -414,12 +421,15 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             last_seen_version: settings.last_seen_version.clone(),
             extensions_in_private: settings.extensions_in_private,
             sidebar_open: settings.sidebar_open,
+            tracker_blocking: settings.tracker_blocking,
+            collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
     }
 
     fn load_history(&self) -> Result<Option<History>, StorageError> {
+        writer::flush_writes();
         let path = self.path.with_file_name("history.json");
         if !path.exists() {
             return Ok(None);
@@ -493,13 +503,23 @@ struct SettingsDto {
     extensions_in_private: bool,
     #[serde(default = "default_true")]
     sidebar_open: bool,
+    #[serde(default = "default_true")]
+    tracker_blocking: bool,
+    #[serde(default)]
+    collapsed_sections: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
 }
 
+/// Queues the write on the background thread (see `writer`).
 fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), StorageError> {
+    writer::write_later(path.to_path_buf(), contents.to_owned());
+    Ok(())
+}
+
+fn write_atomic_now(path: &std::path::Path, contents: &str) -> Result<(), StorageError> {
     let err = |e: std::io::Error| StorageError(e.to_string());
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(err)?;
@@ -608,6 +628,8 @@ mod tests {
             last_seen_version: "0.3.0".to_owned(),
             extensions_in_private: true,
             sidebar_open: false,
+            tracker_blocking: false,
+            collapsed_sections: ["pinned".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -625,6 +647,8 @@ mod tests {
         assert_eq!(old.last_seen_version, "");
         assert!(!old.extensions_in_private);
         assert!(old.sidebar_open, "pinned open by default");
+        assert!(old.tracker_blocking, "blocker on by default");
+        assert!(old.collapsed_sections.is_empty());
     }
 
     #[test]

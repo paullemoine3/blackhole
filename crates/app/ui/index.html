@@ -34,6 +34,10 @@
   #pinned:empty + #pinsep { display: none; }
   #pinned .tab.active { background: rgba(255,255,255,.2); }
   #pinned .dot { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+  .secrow[hidden] { display: none; }
+  .fold { cursor: pointer; }
+  .fold:hover { opacity: 1; }
+  body:not(.dragging) #pinned.collapsed, body:not(.dragging) #folders.collapsed { display: none; }
   .secrow { display: flex; justify-content: space-between; align-items: center; padding-right: 2px; }
   .mini { font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 6px; opacity: .8; }
   .mini:hover { background: rgba(255,255,255,.1); }
@@ -163,9 +167,10 @@
 <body>
 <aside>
 <div id="scroll">
+  <div class="section secrow" id="pinhead" hidden><span class="fold" id="pinfold" title="Show or hide quick access"></span></div>
   <div id="pinned"></div>
   <div id="pinsep"></div>
-  <div class="section secrow"><span>Pinned</span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
+  <div class="section secrow"><span class="fold" id="foldfold" title="Show or hide folders"></span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
   <div class="newrow"><button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button></div>
@@ -600,6 +605,8 @@ document.addEventListener('drop', async (e) => {
 
 window.bh = {
   render(s) {
+    // The icon table is large: the host only sends it when it changed.
+    if (!s.favicons) s.favicons = (deferred && deferred.favicons) || (state && state.favicons) || {};
     if (drag || editing || sdrag) { deferred = s; return; }
     const switched = state && state.activeSpace != null && s.activeSpace !== state.activeSpace;
     state = s;
@@ -617,7 +624,9 @@ window.bh = {
     root.setProperty('--tint2', mix(s.color, .24));
     root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
-    $('pinned').replaceChildren(...s.tabs.filter(t => t.pinned).map(tabNode));
+    const pins = s.tabs.filter(t => t.pinned).map(tabNode);
+    $('pinned').replaceChildren(...pins);
+    applyFolds(s.collapsed || []);
     folderNodes.clear();
     const build = (parent) => s.folders.filter(f => (f.parent ?? null) === parent).map(f => {
       const node = folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id), build(f.id).map(n => n.box));
@@ -724,6 +733,24 @@ $('update').onclick = () => { if (!$('update').classList.contains('busy')) send(
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
 $('library').onclick = () => send({ cmd: 'open_library' });
+function applyFolds(list) {
+  const pinned = list.includes('pinned'), folders = list.includes('folders');
+  $('pinned').classList.toggle('collapsed', pinned);
+  $('folders').classList.toggle('collapsed', folders);
+  $('pinhead').hidden = !$('pinned').children.length;
+  $('pinfold').textContent = (pinned ? '▸ ' : '▾ ') + 'Quick access';
+  $('foldfold').textContent = (folders ? '▸ ' : '▾ ') + 'Pinned';
+}
+function toggleFold(section) {
+  const list = new Set((state && state.collapsed) || []);
+  const collapsed = !list.has(section);
+  collapsed ? list.add(section) : list.delete(section);
+  if (state) state.collapsed = [...list];
+  applyFolds([...list]);
+  send({ cmd: 'set_section_collapsed', section, collapsed });
+}
+$('pinfold').onclick = () => toggleFold('pinned');
+$('foldfold').onclick = () => toggleFold('folders');
 $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folder' }); };
 $('gear').onclick = () => send({ cmd: 'open_settings' });
 $('addspace').onclick = () => {

@@ -474,11 +474,11 @@ pub fn apply_boost(view: &WebView, css: &str) {
 }
 
 pub fn go_back(view: &WebView) {
-    let _ = view.evaluate_script("history.back()");
+    let _ = view.go_back();
 }
 
 pub fn go_forward(view: &WebView) {
-    let _ = view.evaluate_script("history.forward()");
+    let _ = view.go_forward();
 }
 
 pub fn reload(view: &WebView) {

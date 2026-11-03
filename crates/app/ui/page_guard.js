@@ -7,19 +7,35 @@
       window.ipc && window.ipc.postMessage(JSON.stringify(m));
     } catch (_) {}
   };
-  const isBlocked = (raw) => {
-    let host;
-    try {
-      host = new URL(String(raw), location.href).hostname.toLowerCase();
-    } catch (_) {
-      return false;
-    }
+  // Pages set thousands of URLs: decisions are cached per host and URLs are only parsed when
+  // they are not a plain relative path.
+  const verdicts = new Map();
+  const hostBlocked = (start) => {
+    let host = start;
     for (;;) {
       if (BLOCKED.has(host)) return true;
       const rest = host.slice(host.indexOf('.') + 1);
       if (host.indexOf('.') < 0 || rest.indexOf('.') < 0) return false;
       host = rest;
     }
+  };
+  const isBlocked = (raw) => {
+    if (!BLOCKED.size) return false;
+    const text = String(raw);
+    if (text.charCodeAt(0) === 47 && text.charCodeAt(1) !== 47) return false; // "/path"
+    if (text.startsWith('data:') || text.startsWith('blob:') || text.startsWith('#')) return false;
+    let host;
+    try {
+      host = new URL(text, location.href).hostname.toLowerCase();
+    } catch (_) {
+      return false;
+    }
+    let verdict = verdicts.get(host);
+    if (verdict === undefined) {
+      verdict = hostBlocked(host);
+      verdicts.set(host, verdict);
+    }
+    return verdict;
   };
   const deny = (raw) => {
     let host = '';
@@ -77,16 +93,22 @@
   };
 
   // Elements written by the HTML parser never go through the setters above.
+  const SELECTOR = Object.keys(TAGS).join(',');
+  const check = (node) => {
+    const attr = TAGS[node.tagName];
+    const value = attr && node.getAttribute(attr);
+    if (value && isBlocked(value) && deny(value)) node.remove();
+  };
   const sweep = (node) => {
     if (node.nodeType !== 1) return;
-    const attr = TAGS[node.tagName];
-    if (attr && node.getAttribute(attr) && isBlocked(node.getAttribute(attr)) && deny(node.getAttribute(attr))) node.remove();
-    node.querySelectorAll && node.querySelectorAll(Object.keys(TAGS).join(',')).forEach(sweep);
+    check(node);
+    if (node.firstElementChild) node.querySelectorAll(SELECTOR).forEach(check);
   };
-  new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach(sweep))).observe(
-    document,
-    { childList: true, subtree: true },
-  );
+  if (BLOCKED.size) {
+    new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) sweep(n);
+    }).observe(document, { childList: true, subtree: true });
+  }
 
   if (window.top !== window) return;
   // Shift+click previews a link in a floating window (Arc's "Peek").

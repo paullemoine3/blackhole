@@ -30,7 +30,7 @@ pub struct Favorite {
 pub struct StorageError(pub String);
 
 /// Port: persistence of the user's workspace and settings (implemented in infrastructure).
-pub trait WorkspaceRepository: Send {
+pub trait WorkspaceRepository: Send + Sync {
     fn load(&self) -> Result<Option<Workspace>, StorageError>;
     fn save(&self, workspace: &Workspace) -> Result<(), StorageError>;
     fn load_settings(&self) -> Result<Option<Settings>, StorageError>;
@@ -55,16 +55,34 @@ pub struct BrowserService<R: WorkspaceRepository> {
     repo: R,
     /// No settings file existed at startup: a brand-new installation.
     fresh: bool,
+    /// Page events only mark the session stale; `flush` writes it (each event used to rewrite
+    /// the whole history and workspace on the UI thread).
+    unsaved_pages: bool,
+}
+
+impl<R: WorkspaceRepository> Drop for BrowserService<R> {
+    fn drop(&mut self) {
+        self.flush();
+    }
 }
 
 impl<R: WorkspaceRepository> BrowserService<R> {
     pub fn start(repo: R, policy: PrivacyPolicy) -> Self {
         // A corrupt or missing session must never prevent the browser from starting.
-        let workspace = repo.load().ok().flatten().unwrap_or_default();
-        let stored = repo.load_settings().ok().flatten();
+        // The three files are independent: they are read and parsed in parallel.
+        let (workspace, stored, history) = std::thread::scope(|scope| {
+            let workspace = scope.spawn(|| repo.load().ok().flatten());
+            let stored = scope.spawn(|| repo.load_settings().ok().flatten());
+            let history = scope.spawn(|| repo.load_history().ok().flatten());
+            (
+                workspace.join().ok().flatten().unwrap_or_default(),
+                stored.join().ok().flatten(),
+                history.join().ok().flatten().unwrap_or_default(),
+            )
+        });
         let fresh = stored.is_none();
         let settings = stored.unwrap_or_default();
-        let history = repo.load_history().ok().flatten().unwrap_or_default();
+        policy.set_blocking(settings.tracker_blocking);
         Self {
             workspace,
             settings,
@@ -73,6 +91,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             extensions: Vec::new(),
             repo,
             fresh,
+            unsaved_pages: false,
         }
     }
 
@@ -171,6 +190,28 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     pub fn set_extensions_in_private(&mut self, on: bool) {
         self.settings.extensions_in_private = on;
         let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// Switches the tracker blocklist, for existing and future views alike.
+    pub fn set_tracker_blocking(&mut self, on: bool) {
+        self.settings.tracker_blocking = on;
+        self.policy.set_blocking(on);
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// Folds or unfolds a sidebar section (`Settings::SECTIONS`), remembered between launches.
+    pub fn set_section_collapsed(&mut self, section: &str, collapsed: bool) {
+        if !Settings::SECTIONS.contains(&section) {
+            return;
+        }
+        let changed = if collapsed {
+            self.settings.collapsed_sections.insert(section.to_owned())
+        } else {
+            self.settings.collapsed_sections.remove(section)
+        };
+        if changed {
+            let _ = self.repo.save_settings(&self.settings);
+        }
     }
 
     /// Remembers whether the sidebar is pinned open, for the next launch.
@@ -475,8 +516,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
                 self.history.set_title(&tab_url, &title);
             }
         }
-        let _ = self.repo.save_history(&self.history);
-        self.persist();
+        self.unsaved_pages = true;
+    }
+
+    /// Writes what page events changed since the last call.
+    pub fn flush(&mut self) {
+        if std::mem::take(&mut self.unsaved_pages) {
+            let _ = self.repo.save_history(&self.history);
+            self.persist();
+        }
     }
 
     fn persist(&self) {
@@ -532,6 +580,20 @@ mod tests {
     }
 
     #[test]
+    fn blocker_and_folded_sections_are_remembered() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        svc.set_tracker_blocking(false);
+        svc.set_section_collapsed("pinned", true);
+        svc.set_section_collapsed("bogus", true);
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(!again.settings().tracker_blocking);
+        assert!(!again.policy().is_blocking());
+        assert_eq!(again.settings().collapsed_sections.len(), 1);
+        assert!(again.settings().collapsed_sections.contains("pinned"));
+    }
+
+    #[test]
     fn visits_feed_recent_activity_and_can_be_cleared() {
         let repo = Memory::default();
         let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
@@ -541,6 +603,7 @@ mod tests {
             Some(Url::parse("https://example.com/").unwrap()),
             Some("Example".into()),
         );
+        svc.flush();
         let svc2 = BrowserService::start(repo, PrivacyPolicy::default());
         assert_eq!(svc2.recent_activity(5)[0].title, "Example");
         let mut svc2 = svc2;

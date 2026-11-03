@@ -287,6 +287,12 @@ struct Running {
     /// that allows extensions, the main profile.
     ext_src: std::path::PathBuf,
     favicons: favicons::Favicons,
+    /// The icon table is only sent to the sidebar / start page when it changed.
+    icons_for_ui: std::cell::Cell<bool>,
+    icons_for_home: std::cell::Cell<bool>,
+    /// Page events only mark the UI stale; it is refreshed once per event-loop turn.
+    ui_stale: bool,
+    last_flush: Instant,
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
@@ -419,10 +425,21 @@ impl Running {
             profile.clone()
         };
         let mut web_context = WebContext::new(Some(data.join("webview")));
-        let mut svc = BrowserService::start(
-            JsonWorkspaceRepository::new(data.clone()),
-            default_privacy_policy(),
-        );
+        // Session, icons and extensions live in separate files: load them side by side.
+        let (mut svc, favicons, preloaded_ext) = std::thread::scope(|scope| {
+            let icons = scope.spawn(|| favicons::Favicons::load(&data));
+            let exts =
+                (!private_mode()).then(|| scope.spawn(|| load_extensions(&extensions_dir(&data))));
+            let svc = BrowserService::start(
+                JsonWorkspaceRepository::new(data.clone()),
+                default_privacy_policy(),
+            );
+            (
+                svc,
+                icons.join().expect("favicons"),
+                exts.map(|h| h.join().unwrap_or_default()),
+            )
+        });
         // A private window has no extensions unless the main profile's settings allow them.
         let ext_src = if private_mode() {
             let shared = JsonWorkspaceRepository::new(profile.clone())
@@ -444,7 +461,9 @@ impl Running {
         };
         let ext_src_dir = ext_src.clone().unwrap_or_else(|| data.clone());
         if let Some(src) = &ext_src {
-            svc.set_extensions(load_extensions(&extensions_dir(src)));
+            svc.set_extensions(
+                preloaded_ext.unwrap_or_else(|| load_extensions(&extensions_dir(src))),
+            );
         }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
         let sidebar = Sidebar::starting(
@@ -615,7 +634,11 @@ impl Running {
             settings_tab: None,
             bookmark_list: BookmarkStore::new(&data).load(),
             bookmarks: BookmarkStore::new(&data),
-            favicons: favicons::Favicons::load(&data),
+            favicons,
+            icons_for_ui: std::cell::Cell::new(true),
+            icons_for_home: std::cell::Cell::new(true),
+            ui_stale: false,
+            last_flush: Instant::now(),
             import_sources: import::detect(),
             import_msg: String::new(),
             app_ext,
@@ -906,7 +929,7 @@ impl Running {
     fn ui_state(&self) {
         let ws = self.svc.workspace();
         let space = ws.active_space();
-        let state = json!({
+        let mut state = json!({
             "os": std::env::consts::OS,
             "sidebarWidth": self.sidebar.full(),
             "sidebarOpen": self.sidebar.is_open(),
@@ -917,6 +940,7 @@ impl Running {
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
             "spaces": ws.spaces().iter().map(|s| json!({"id": s.id.0, "name": s.name, "color": s.color, "icon": s.icon})).collect::<Vec<_>>(),
             "activeSpace": space.id.0,
+            "collapsed": self.svc.settings().collapsed_sections,
             "color": space.color,
             "activeTab": if self.home_shown() { None } else { space.active_tab.map(|t| t.0) },
             "home": self.home_shown(),
@@ -925,7 +949,6 @@ impl Running {
             "update": self.update_json(),
             "downloads": self.downloads_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
-            "favicons": self.favicons.all(),
             "media": self.media_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
@@ -935,6 +958,9 @@ impl Running {
                 "asleep": !self.tabs.contains_key(&t.id),
             })).collect::<Vec<_>>(),
         });
+        if self.icons_for_ui.replace(false) {
+            state["favicons"] = json!(self.favicons.all());
+        }
         self.ui(format!("window.bh&&bh.render({state})"));
         self.ui_settings();
         self.ui_easel();
@@ -977,6 +1003,7 @@ impl Running {
             "animations": settings.animations,
             "hardwareAcceleration": settings.hardware_acceleration,
             "extensionsInPrivate": settings.extensions_in_private,
+            "trackerBlocking": settings.tracker_blocking,
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
             "blocked": self.blocked.total(),
@@ -1968,7 +1995,14 @@ impl Running {
                 .map(|t| t.url.to_string())
                 .unwrap_or_default()
         };
+        let nav = |can: fn(&WebView) -> wry::Result<bool>| {
+            ws.active_tab()
+                .and_then(|t| self.tabs.get(&t.id))
+                .is_some_and(|v| can(v).unwrap_or(false))
+        };
         let state = json!({
+            "canBack": nav(WebView::can_go_back),
+            "canForward": nav(WebView::can_go_forward),
             "os": std::env::consts::OS,
             "maximized": self.window.is_maximized(),
             "private": private_mode(),
@@ -1983,10 +2017,9 @@ impl Running {
     }
 
     fn ui_home(&self) {
-        let state = json!({
+        let mut state = json!({
             "engine": self.svc.settings().search_engine.label(),
             "animations": self.svc.settings().animations,
-            "favicons": self.favicons.all(),
             "favorites": self.svc.favorites().iter()
                 .map(|f| json!({
                     "name": f.name, "url": f.url.as_str(),
@@ -1999,6 +2032,9 @@ impl Running {
                 .collect::<Vec<_>>(),
             "releaseNotes": self.release_notes,
         });
+        if self.icons_for_home.replace(false) {
+            state["favicons"] = json!(self.favicons.all());
+        }
         let _ = self
             .home
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -2345,6 +2381,8 @@ impl Running {
     }
 
     fn sync(&mut self) {
+        self.icons_for_ui.set(true);
+        self.icons_for_home.set(true);
         self.ensure_active_view();
         let active = if self.home_shown() {
             None
@@ -2976,6 +3014,16 @@ impl Running {
                 self.svc.set_hardware_acceleration(on);
                 self.ui_state();
             }
+            UiCommand::SetTrackerBlocking { on } => {
+                self.svc.set_tracker_blocking(on);
+                // Spare views carry the blocklist of their creation time.
+                self.spares.clear();
+                self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                self.ui_state();
+            }
+            UiCommand::SetSectionCollapsed { section, collapsed } => {
+                self.svc.set_section_collapsed(&section, collapsed);
+            }
             UiCommand::SetExtensionsInPrivate { on } => {
                 self.svc.set_extensions_in_private(on);
                 self.ui_state();
@@ -3467,7 +3515,7 @@ impl Running {
             views::apply_boost(view, &css);
         }
         self.svc.page_changed(tab, Some(url), None);
-        self.ui_state();
+        self.ui_stale = true;
     }
 
     fn handle_msg(&mut self, msg: Msg) {
@@ -3496,6 +3544,8 @@ impl Running {
                 let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
                 if let Some(page) = page.and_then(|raw| Url::parse(&raw).ok()) {
                     if self.favicons.set(&page, &url) {
+                        self.icons_for_ui.set(true);
+                        self.icons_for_home.set(true);
                         self.ui_state();
                     }
                 }
@@ -3516,7 +3566,7 @@ impl Running {
             Msg::Title(tab, _) if tab == PEEK_TAB => {}
             Msg::Title(tab, title) => {
                 self.svc.page_changed(tab, None, Some(title));
-                self.ui_state();
+                self.ui_stale = true;
             }
             // An extension asking for a window (Bitwarden's unlock) gets a popup, not a tab.
             #[cfg(windows)]
@@ -3735,6 +3785,13 @@ impl ApplicationHandler<Wake> for App {
         let mut wake = PEERS_EVERY;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
+            if std::mem::take(&mut app.ui_stale) {
+                app.ui_state();
+            }
+            if app.last_flush.elapsed() >= Duration::from_secs(1) {
+                app.svc.flush();
+                app.last_flush = Instant::now();
+            }
             if app.quit {
                 event_loop.exit();
                 return;
@@ -4052,6 +4109,7 @@ fn main() {
     let mut app = App::Initial(mailbox);
     event_loop.run_app(&mut app).expect("run");
     drop(app);
+    blackhole_infrastructure::flush_writes();
     peers::withdraw(&peers_dir(), std::process::id());
     if private_mode() {
         let _ = std::fs::remove_dir_all(private_data_dir());
