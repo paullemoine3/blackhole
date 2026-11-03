@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.7",
+        &[
+            "Google Meet and other sites that check for Safari now accept BlackHole on macOS",
+            "The macOS app asks for camera and microphone access for video calls",
+        ],
+    ),
+    (
         "0.7.6",
         &[
             "Logins are scoped by space: sign in to a personal account in one space and a work account in another; login and refresh popups open in the space you are in",

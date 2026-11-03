@@ -47,6 +47,9 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     builder
 }
 
+#[cfg(target_os = "macos")]
+const MACOS_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+
 /// Shell colour, visible before a page paints.
 const SHELL_BG: (u8, u8, u8, u8) = (16, 15, 23, 255);
 const CLEAR: (u8, u8, u8, u8) = (0, 0, 0, 0);
@@ -324,6 +327,9 @@ fn build_tab(
             (None, DataStore::Default) => builder,
         }
     };
+    // The bare WKWebView user agent lacks the Safari token, so Google Meet and others reject it.
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_user_agent(MACOS_USER_AGENT);
     #[cfg(not(target_os = "macos"))]
     let _ = host;
     // WebView2: one profile per space inside the shared environment (a private window already
