@@ -11,6 +11,7 @@ use url::Url;
 
 pub mod catalog;
 pub mod import;
+pub mod peers;
 pub mod store;
 pub mod updater;
 

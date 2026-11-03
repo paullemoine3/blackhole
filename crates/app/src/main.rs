@@ -17,6 +17,7 @@ mod views;
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::{BlockLog, Easels, FolderId, SearchEngine, Settings, SpaceId, TabId};
 use blackhole_infrastructure::catalog;
+use blackhole_infrastructure::peers;
 use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
     default_privacy_policy, extensions_dir, load_extensions, JsonWorkspaceRepository,
@@ -29,9 +30,10 @@ use ipc::{Mailbox, Msg, PageEvent, UiCommand, Wake};
 use serde_json::json;
 use sidebar::Sidebar;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     rc::Rc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use url::Url;
@@ -54,6 +56,22 @@ const HOTZONE_HTML: &str = include_str!("../ui/hotzone.html");
 #[cfg(windows)]
 const EXT_POPUP_HTML: &str = include_str!("../ui/extpopup.html");
 const SETTINGS_HTML: &str = include_str!("../ui/settings.html");
+/// What a page says about its audio and video (see `views::MEDIA_PROBE_JS`).
+#[derive(Clone, Copy, Default, serde::Deserialize)]
+struct MediaProbe {
+    playing: bool,
+    has: bool,
+    muted: bool,
+}
+
+/// How often the event loop wakes to refresh this window's place in the registry, look for
+/// incoming tabs, spares to build and media to probe.
+const PEERS_EVERY: Duration = Duration::from_millis(400);
+/// How often background tabs are asked whether they play audio or video.
+const MEDIA_EVERY: Duration = Duration::from_millis(1500);
+/// Spare page views kept ready, and how long the app must stay quiet before building them.
+const SPARES: usize = 2;
+const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
 const LIBRARY_HTML: &str = include_str!("../ui/library.html");
 /// Gap between the two panes of a split view.
@@ -118,8 +136,6 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
         (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
     )
 }
-/// Background tabs unused for the configured time release their engine view to save memory.
-const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
@@ -220,9 +236,20 @@ struct Running {
     bar: WebView,
     home: WebView,
     tabs: HashMap<TabId, WebView>,
+    /// Blank hidden page views ready to take the next tabs (see `views::spare_tab_view`).
+    spares: Vec<(views::TabSlot, WebView)>,
+    spares_due: Option<Instant>,
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
     last_active: HashMap<TabId, Instant>,
+    /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
+    shown: Option<TabId>,
+    peers_due: Instant,
+    media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
+    media_due: Instant,
+    media_seen: serde_json::Value,
+    /// Tabs whose media card was closed; they come back when the tab plays again.
+    media_dismissed: HashSet<u64>,
     svc: BrowserService<JsonWorkspaceRepository>,
     mailbox: Mailbox,
     sidebar: Sidebar,
@@ -568,7 +595,15 @@ impl Running {
             bar,
             home,
             tabs: HashMap::new(),
+            spares: Vec::new(),
+            spares_due: Some(Instant::now() + SPARES_DELAY),
             last_active: HashMap::new(),
+            shown: None,
+            peers_due: Instant::now(),
+            media: Arc::default(),
+            media_due: Instant::now(),
+            media_seen: serde_json::Value::Null,
+            media_dismissed: HashSet::new(),
             svc,
             mailbox,
             sidebar,
@@ -824,8 +859,10 @@ impl Running {
                 }
             }
             let before = self.dl_live.len();
-            self.dl_live
-                .retain(|_, d| d.finished.is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER));
+            self.dl_live.retain(|_, d| {
+                d.finished
+                    .is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER)
+            });
             changed |= before != self.dl_live.len();
         }
         if changed {
@@ -885,6 +922,7 @@ impl Running {
             "downloads": self.downloads_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
+            "media": self.media_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
@@ -1995,6 +2033,14 @@ impl Running {
             return;
         }
         let bounds = self.full_content_bounds();
+        if let Some((slot, view)) = self.spares.pop() {
+            slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
+            let _ = view.set_bounds(bounds);
+            let _ = view.load_url(tab.url.as_str());
+            self.tabs.insert(tab.id, view);
+            self.spares_due = Some(Instant::now() + SPARES_DELAY);
+            return;
+        }
         match views::tab_view(
             &self.window,
             &mut self.web_context,
@@ -2008,9 +2054,41 @@ impl Running {
             Ok(view) => {
                 self.tabs.insert(tab.id, view);
                 self.raise_palette();
+                self.spares_due = Some(Instant::now() + SPARES_DELAY);
             }
             Err(error) => tracing::error!("cannot create web view: {error}"),
         }
+    }
+
+    /// Builds the spare views while nothing is going on. They all sit below the command bar,
+    /// which is recreated once on top of them, so the next tabs open without any view creation.
+    fn refill_spares(&mut self) {
+        let Some(due) = self.spares_due else { return };
+        if Instant::now() < due {
+            return;
+        }
+        if self.palette_open || self.peek.is_some() || !self.spares.is_empty() {
+            self.spares_due = Some(Instant::now() + SPARES_DELAY);
+            return;
+        }
+        self.spares_due = None;
+        for _ in 0..SPARES {
+            match views::spare_tab_view(
+                &self.window,
+                &mut self.web_context,
+                self.svc.policy(),
+                &self.mailbox,
+                self.webext.as_ref(),
+            ) {
+                Ok(spare) => self.spares.push(spare),
+                Err(error) => {
+                    tracing::error!("cannot create spare view: {error}");
+                    break;
+                }
+            }
+        }
+        self.raise_palette();
+        self.sync();
     }
 
     /// Native views stack in creation order, so the command bar is recreated above new tabs.
@@ -2059,6 +2137,148 @@ impl Running {
         }
     }
 
+    /// Audio/video state of the active space's tabs, for the speaker icon and the media card.
+    fn media_json(&self) -> serde_json::Value {
+        let Ok(probes) = self.media.lock() else {
+            return json!([]);
+        };
+        let tabs = &self.svc.workspace().active_space().tabs;
+        let list: Vec<_> = tabs
+            .iter()
+            .filter_map(|t| {
+                let p = probes.get(&t.id.0)?;
+                let shown = (p.playing || p.has) && !self.media_dismissed.contains(&t.id.0);
+                shown.then(|| json!({"id": t.id.0, "playing": p.playing, "muted": p.muted}))
+            })
+            .collect();
+        json!(list)
+    }
+
+    /// Asks every loaded tab about its media, and refreshes the sidebar when something changed.
+    fn service_media(&mut self) {
+        if Instant::now() >= self.media_due {
+            self.media_due = Instant::now() + MEDIA_EVERY;
+            if let Ok(mut probes) = self.media.lock() {
+                probes.retain(|id, _| self.tabs.contains_key(&TabId(*id)));
+            }
+            for (id, view) in &self.tabs {
+                let sink = Arc::clone(&self.media);
+                let id = id.0;
+                let _ = view.evaluate_script_with_callback(views::MEDIA_PROBE_JS, move |raw| {
+                    if let (Ok(probe), Ok(mut probes)) =
+                        (serde_json::from_str::<MediaProbe>(&raw), sink.lock())
+                    {
+                        probes.insert(id, probe);
+                    }
+                });
+            }
+        }
+        if let Ok(probes) = self.media.lock() {
+            self.media_dismissed
+                .retain(|id| !probes.get(id).is_some_and(|p| p.playing));
+        }
+        let now = self.media_json();
+        if now != self.media_seen {
+            self.media_seen = now;
+            self.ui_state();
+        }
+    }
+
+    fn media_ctl(&mut self, id: TabId, action: &str) {
+        let Some(view) = self.tabs.get(&id) else {
+            return;
+        };
+        let js = match action {
+            "toggle" => views::MEDIA_TOGGLE_JS,
+            "mute" => views::MEDIA_MUTE_JS,
+            "pip" => views::PIP_TOGGLE_JS,
+            "close" => {
+                self.media_dismissed.insert(id.0);
+                views::MEDIA_PAUSE_JS
+            }
+            _ => return,
+        };
+        let _ = view.evaluate_script(js);
+        self.media_due = Instant::now() + Duration::from_millis(250);
+        if action == "close" {
+            self.ui_state();
+        }
+    }
+
+    /// This window's rectangle on the screen, in logical pixels.
+    fn screen_rect(&self) -> Option<(f64, f64, f64, f64)> {
+        let scale = self.scale();
+        let pos = self.window.outer_position().ok()?.to_logical::<f64>(scale);
+        let size = self.window.outer_size().to_logical::<f64>(scale);
+        Some((pos.x, pos.y, size.width, size.height))
+    }
+
+    /// Keeps this window listed for the others and picks up tabs they sent here.
+    fn service_peers(&mut self) {
+        if Instant::now() < self.peers_due {
+            return;
+        }
+        self.peers_due = Instant::now() + PEERS_EVERY;
+        let dir = peers_dir();
+        if let Some((x, y, w, h)) = self.screen_rect() {
+            peers::publish(
+                &dir,
+                &peers::Peer {
+                    pid: std::process::id(),
+                    private: private_mode(),
+                    x,
+                    y,
+                    w,
+                    h,
+                    updated: 0,
+                },
+            );
+        }
+        let incoming = peers::receive(&dir, std::process::id());
+        if incoming.is_empty() {
+            return;
+        }
+        for transfer in incoming {
+            self.open(&transfer.url);
+        }
+        self.window.focus_window();
+    }
+
+    /// A tab released outside its sidebar: hands it to the window under the pointer, if any.
+    fn drop_tab_out(&mut self, id: TabId, x: f64, y: f64) {
+        if self
+            .screen_rect()
+            .is_some_and(|(wx, wy, w, h)| x >= wx && x < wx + w && y >= wy && y < wy + h)
+        {
+            return;
+        }
+        let dir = peers_dir();
+        let others = peers::peers(&dir, std::process::id());
+        let target = peers::at(&others, x, y).map(|p| p.pid);
+        let Some(tab) = self
+            .svc
+            .workspace()
+            .active_space()
+            .tabs
+            .iter()
+            .find(|t| t.id == id)
+        else {
+            return;
+        };
+        let transfer = peers::Transfer {
+            url: tab.url.to_string(),
+            title: tab.title.clone(),
+        };
+        let moved = match target {
+            Some(pid) => peers::send(&dir, pid, &transfer),
+            // Released over nothing: the tab becomes a window of its own (same privacy).
+            None => open_window(private_mode(), Some(&transfer.url)),
+        };
+        if moved {
+            self.handle_ui(UiCommand::Close { id: id.0 });
+        }
+    }
+
     /// Frees the engine view of tabs left in the background; they reload when selected again.
     fn discard_idle_tabs(&mut self) {
         let now = Instant::now();
@@ -2097,6 +2317,15 @@ impl Running {
         };
         if let Some(id) = active {
             self.last_active.insert(id, Instant::now());
+        }
+        if self.shown != active {
+            if let Some(left) = self.shown.and_then(|id| self.tabs.get(&id)) {
+                let _ = left.evaluate_script(views::PIP_ENTER_JS);
+            }
+            if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
+                let _ = back.evaluate_script(views::PIP_EXIT_JS);
+            }
+            self.shown = active;
         }
         let _ = self.easel_panel.set_visible(self.easel_tab);
         if !self.library {
@@ -2293,6 +2522,7 @@ impl Running {
             }
         }
         if active.is_some() {
+            actions.push(json!({"id": "pip", "label": "Picture in Picture", "hint": "Video"}));
             actions.push(
                 json!({"id": "capture_easel", "label": "Capture this page to Easel", "hint": "⌘⇧S"}),
             );
@@ -2363,6 +2593,9 @@ impl Running {
                 });
             }
             "new_folder" => self.handle_ui(UiCommand::NewFolder),
+            "pip" => {
+                let _ = self.active_view().evaluate_script(views::PIP_TOGGLE_JS);
+            }
             "toggle_sidebar" => self.handle_ui(UiCommand::Lock),
             "settings" => self.settings_wanted = true,
             "new_easel" => {
@@ -2835,6 +3068,8 @@ impl Running {
                     .move_tab(TabId(id), before.map(TabId), folder.map(FolderId), pinned);
                 self.ui_state();
             }
+            UiCommand::TabDropOut { id, x, y } => self.drop_tab_out(TabId(id), x, y),
+            UiCommand::MediaCtl { id, action } => self.media_ctl(TabId(id), &action),
             UiCommand::NewFolder => {
                 self.svc.add_folder("New folder");
                 self.ui_state();
@@ -3124,8 +3359,12 @@ impl Running {
         match key {
             "l" => self.open_palette("url"),
             "t" => self.new_tab(),
-            "n" => open_window(false),
-            "shift+n" => open_window(true),
+            "n" => {
+                open_window(false, None);
+            }
+            "shift+n" => {
+                open_window(true, None);
+            }
             "w" => self.close_active_tab(),
             "r" => self.with_active_tab(views::reload),
             "b" => self.handle_ui(UiCommand::Lock),
@@ -3256,7 +3495,11 @@ impl Running {
                 self.dl_live.insert(
                     id,
                     DownloadLive {
-                        name: self.downloads.last().map(|d| d.name.clone()).unwrap_or_default(),
+                        name: self
+                            .downloads
+                            .last()
+                            .map(|d| d.name.clone())
+                            .unwrap_or_default(),
                         path: path.clone(),
                         received: 0,
                         total: None,
@@ -3412,13 +3655,16 @@ impl ApplicationHandler<Wake> for App {
         if let Self::Initial(mailbox) = self {
             let mut running = Running::new(event_loop, mailbox.clone());
             running.pump();
+            if let Some(url) = launch_url() {
+                running.open(&url);
+            }
             *self = Self::Running(Box::new(running));
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
-        let mut wake = IDLE_CHECK_EVERY;
+        let mut wake = PEERS_EVERY;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
             if app.quit {
@@ -3427,6 +3673,9 @@ impl ApplicationHandler<Wake> for App {
             }
             app.poll_webext();
             app.discard_idle_tabs();
+            app.refill_spares();
+            app.service_peers();
+            app.service_media();
             if !app.dl_live.is_empty() {
                 wake = wake.min(DOWNLOAD_POLL);
             }
@@ -3679,20 +3928,44 @@ fn private_mode() -> bool {
     *PRIVATE.get_or_init(|| std::env::args().any(|a| a == "--private"))
 }
 
+/// Dev builds keep their window registry in the scratch folder, away from the real app.
+fn peers_dir() -> PathBuf {
+    #[cfg(feature = "devtools")]
+    {
+        devtools::scratch().join("windows")
+    }
+    #[cfg(not(feature = "devtools"))]
+    {
+        peers::dir()
+    }
+}
+
 fn private_data_dir() -> PathBuf {
     std::env::temp_dir().join(format!("BlackHole-private-{}", std::process::id()))
 }
 
 /// Each window is its own process: a private one gets `--private` and a temporary profile.
-fn open_window(private: bool) {
+/// A window given a page opens it right away (`--open <url>`).
+fn open_window(private: bool, url: Option<&str>) -> bool {
     let Ok(exe) = std::env::current_exe() else {
-        return;
+        return false;
     };
     let mut cmd = std::process::Command::new(exe);
     if private {
         cmd.arg("--private");
     }
-    let _ = cmd.spawn();
+    if let Some(url) = url {
+        cmd.args(["--open", url]);
+    }
+    cmd.spawn().is_ok()
+}
+
+/// The page this window was asked to open at launch.
+fn launch_url() -> Option<String> {
+    let mut args = std::env::args();
+    args.find(|a| a == "--open")?;
+    args.next()
+        .filter(|u| matches!(Url::parse(u), Ok(u) if matches!(u.scheme(), "http" | "https")))
 }
 
 fn main() {
@@ -3711,6 +3984,7 @@ fn main() {
     let mut app = App::Initial(mailbox);
     event_loop.run_app(&mut app).expect("run");
     drop(app);
+    peers::withdraw(&peers_dir(), std::process::id());
     if private_mode() {
         let _ = std::fs::remove_dir_all(private_data_dir());
     }

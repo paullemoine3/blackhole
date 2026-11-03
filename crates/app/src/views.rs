@@ -2,7 +2,8 @@
 
 use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
 use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use url::Url;
 use winit::window::Window;
 use wry::{
@@ -228,6 +229,42 @@ pub fn tab_view(
     mailbox: &Mailbox,
     host: Option<&blackhole_macos_webext::ExtensionHost>,
 ) -> wry::Result<WebView> {
+    let slot = TabSlot::new(AtomicU64::new(tab.0));
+    build_tab(window, ctx, &slot, url, bounds, policy, mailbox, host)
+}
+
+/// The tab a view reports for; a spare view is bound to its tab only when it is put to use.
+pub type TabSlot = Arc<AtomicU64>;
+
+/// A blank, hidden page view built ahead of time: creating a view is the slow part of opening
+/// a tab, so tabs adopt a spare (`TabSlot::store`, then `load_url`) instead of building one.
+pub fn spare_tab_view(
+    window: &Window,
+    ctx: &mut WebContext,
+    policy: &PrivacyPolicy,
+    mailbox: &Mailbox,
+    host: Option<&blackhole_macos_webext::ExtensionHost>,
+) -> wry::Result<(TabSlot, WebView)> {
+    let slot = TabSlot::new(AtomicU64::new(0));
+    let blank = Url::parse("about:blank").expect("blank url");
+    let bounds = rect(0.0, 0.0, 1.0, 1.0);
+    let view = build_tab(window, ctx, &slot, &blank, bounds, policy, mailbox, host)?;
+    Ok((slot, view))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_tab(
+    window: &Window,
+    ctx: &mut WebContext,
+    slot: &TabSlot,
+    url: &Url,
+    bounds: Rect,
+    policy: &PrivacyPolicy,
+    mailbox: &Mailbox,
+    host: Option<&blackhole_macos_webext::ExtensionHost>,
+) -> wry::Result<WebView> {
+    let id = |slot: &TabSlot| TabId(slot.load(Ordering::Relaxed));
+    let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
     let hosts: Vec<&str> = policy.blocked_domains().collect();
     let guard = PAGE_GUARD_JS.replace(
         "__BLOCKED_HOSTS__",
@@ -267,7 +304,7 @@ pub fn tab_view(
         .with_initialization_script_for_main_only(FAVICON_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(event) = serde_json::from_str::<PageEvent>(request.body()) {
-                events.push(Msg::Page(tab, event));
+                events.push(Msg::Page(id(&s_ipc), event));
             }
         })
         .with_navigation_handler(move |raw| {
@@ -284,7 +321,7 @@ pub fn tab_view(
             match policy.evaluate(&target) {
                 PrivacyDecision::Allow => true,
                 PrivacyDecision::Rewrite(url) => {
-                    nav.push(Msg::Redirect(tab, url));
+                    nav.push(Msg::Redirect(id(&s_nav), url));
                     false
                 }
                 PrivacyDecision::Block(why) => {
@@ -325,8 +362,18 @@ pub fn tab_view(
         .with_download_completed_handler(move |url, path, ok| {
             dl_done.push(Msg::DownloadDone { url, path, ok });
         })
-        .with_document_title_changed_handler(move |text| title.push(Msg::Title(tab, text)))
+        .with_document_title_changed_handler(move |text| {
+            let tab = id(&s_title);
+            if tab.0 != 0 {
+                title.push(Msg::Title(tab, text));
+            }
+        })
         .with_on_page_load_handler(move |event: PageLoadEvent, raw| {
+            let tab = id(&s_load);
+            // A spare's own blank page is not navigation.
+            if raw == "about:blank" || tab.0 == 0 {
+                return;
+            }
             if let Ok(url) = Url::parse(&raw) {
                 if matches!(event, PageLoadEvent::Finished) {
                     load.push(Msg::Loaded(tab, url.clone()));
@@ -384,3 +431,24 @@ pub fn go_forward(view: &WebView) {
 pub fn reload(view: &WebView) {
     let _ = view.evaluate_script("location.reload()");
 }
+
+/// Floats the playing video above other windows (WebKit presentation mode, standard API elsewhere).
+pub const PIP_ENTER_JS: &str = "(()=>{const v=[...document.querySelectorAll('video')].find(v=>!v.paused&&!v.ended&&v.videoWidth>0);if(!v||document.pictureInPictureElement||v.webkitPresentationMode==='picture-in-picture')return;try{if(v.webkitSetPresentationMode)v.webkitSetPresentationMode('picture-in-picture');else if(v.requestPictureInPicture)v.requestPictureInPicture().catch(()=>{})}catch(e){}})()";
+
+/// Brings the video back into its page.
+pub const PIP_EXIT_JS: &str = "(()=>{for(const v of document.querySelectorAll('video')){if(v.webkitPresentationMode==='picture-in-picture')v.webkitSetPresentationMode('inline')}if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{})})()";
+
+/// Toggles Picture in Picture on the page's main video, playing or not.
+pub const PIP_TOGGLE_JS: &str = "(()=>{const vs=[...document.querySelectorAll('video')];const on=vs.find(v=>v.webkitPresentationMode==='picture-in-picture');if(on||document.pictureInPictureElement){on?on.webkitSetPresentationMode('inline'):document.exitPictureInPicture();return}const v=vs.filter(v=>v.videoWidth>0).sort((a,b)=>(!b.paused-!a.paused)||(b.videoWidth*b.videoHeight-a.videoWidth*a.videoHeight))[0];if(!v)return;try{if(v.webkitSetPresentationMode)v.webkitSetPresentationMode('picture-in-picture');else v.requestPictureInPicture().catch(()=>{})}catch(e){}})()";
+
+/// Audible media only: muted ambient videos do not count, but one the user muted from the card does.
+pub const MEDIA_PROBE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm);const on=m.filter(v=>!v.paused&&!v.ended&&v.readyState>2);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.some(v=>v.dataset.bhm)}})()";
+
+/// Pauses what plays, or resumes the media that was being watched.
+pub const MEDIA_TOGGLE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){on.forEach(v=>v.pause());return}const v=m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(v)v.play().catch(()=>{})})()";
+
+/// Mutes (or restores) the sound without touching videos the page itself keeps silent.
+pub const MEDIA_MUTE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const mute=!m.some(v=>v.dataset.bhm);m.forEach(v=>{if(mute){if(!v.muted){v.dataset.bhm='1';v.muted=true}}else if(v.dataset.bhm){delete v.dataset.bhm;v.muted=false}})})()";
+
+pub const MEDIA_PAUSE_JS: &str =
+    "[...document.querySelectorAll('video,audio')].forEach(v=>v.pause())";

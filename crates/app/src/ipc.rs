@@ -229,6 +229,18 @@ pub enum UiCommand {
         id: u64,
     },
     CloseEaselTab,
+    /// A tab was released outside the sidebar; the point is in screen coordinates. When another
+    /// window lies under it, the tab moves there.
+    TabDropOut {
+        id: u64,
+        x: f64,
+        y: f64,
+    },
+    /// Controls the audio/video of a tab from the sidebar card: toggle, mute, pip or close.
+    MediaCtl {
+        id: u64,
+        action: String,
+    },
     /// Shows the Library (media, downloads, easels, spaces, archived tabs) over the window.
     OpenLibrary,
     CloseLibrary,
@@ -465,6 +477,12 @@ mod tests {
             serde_json::from_str::<UiCommand>(r#"{"cmd":"import_html","text":"x"}"#).unwrap(),
             UiCommand::ImportHtml { .. }
         ));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"tab_drop_out","id":4,"x":1500.5,"y":30}"#).unwrap();
+        assert!(matches!(c, UiCommand::TabDropOut { id: 4, .. }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"media_ctl","id":4,"action":"mute"}"#).unwrap();
+        assert!(matches!(c, UiCommand::MediaCtl { id: 4, .. }));
     }
 
     #[test]

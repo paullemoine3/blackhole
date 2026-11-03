@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.4",
+        &[
+            "Smoother new tabs: blank tab views are prepared ahead, and the command bar animations are shorter",
+            "Drag a tab onto another BlackHole window (private or not, same space included) to move it there, or onto nothing to open it in a new window",
+            "Tabs playing sound show a speaker icon, and a mini player at the bottom of the sidebar controls them from another page",
+            "Picture in Picture: a playing video floats when you leave its tab and returns with it; also available from the command bar",
+        ],
+    ),
+    (
         "0.7.3",
         &[
             "Deleting a folder now also closes the tabs it contains instead of moving them to current tabs",

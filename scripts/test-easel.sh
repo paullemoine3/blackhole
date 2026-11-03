@@ -95,6 +95,7 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
 quit
 S
 out=$(timeout 180 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev\] eval ->' || true)
@@ -135,6 +136,11 @@ check 25 'Imp Two' "import: every link is a regular tab"
 check 26 'rail\":5' "library: five sections in the rail"
 check 26 'archived\":true' "library: cleared tab is archived"
 check 27 'home' "library: closes back to the browser"
+check 28 'card\":true' "media: a card appears for a tab playing in the background"
+check 28 '⏸' "media: the card offers pause"
+check 28 '⧉' "media: the card offers Picture in Picture"
+check 28 'snd\":true' "media: the playing tab shows a speaker icon"
+check 28 'hiddenWhenActive\":true' "media: no card for the tab being viewed"
 [[ -f /tmp/bh_shots/01-easel-board.png && -f /tmp/bh_shots/03-easel-live.png ]] || { echo "FAIL screenshot missing"; fail=1; }
 python3 - <<'P' || fail=1
 import json, sys

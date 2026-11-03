@@ -67,9 +67,20 @@
   #scroll::-webkit-scrollbar-track { background: transparent; }
   #scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
   #scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-  #spaces, #update, #dls, footer { flex: none; }
+  #spaces, #update, #dls, #media, footer { flex: none; }
   #dls { display: flex; flex-direction: column; gap: 6px; }
-  #dls:empty { display: none; }
+  #dls:empty, #media:empty { display: none; }
+  #media { display: flex; flex-direction: column; gap: 6px; }
+  .mc { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; animation: dl-in .2s ease-out; }
+  .mc .top { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+  .mc .top .dot { flex: none; }
+  .mc .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .mc button { border: 0; background: rgba(255,255,255,.1); color: inherit; border-radius: 8px; width: 30px; height: 26px; cursor: pointer; font-size: 13px; }
+  .mc button:hover { background: rgba(255,255,255,.2); }
+  .mc .cl { background: none; width: 22px; height: 22px; opacity: .6; }
+  .snd { flex: none; border: 0; background: none; color: inherit; font-size: 11px; padding: 0 2px; cursor: pointer; opacity: .85; }
+  body.noanim .mc, body.noanim .mc * { animation: none !important; transition: none !important; }
   .dl { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; cursor: pointer; animation: dl-in .2s ease-out; }
   .dl:hover { background: rgba(255,255,255,.14); }
   .dl .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -159,6 +170,7 @@
   <div id="tabs"></div>
 </div>
   <div id="spaces"></div>
+  <div id="media"></div>
   <div id="dls"></div>
   <button class="update" id="update" hidden><span class="ico">⭳</span><span class="full-only" id="updtxt"></span></button>
   <footer>
@@ -215,6 +227,14 @@ function tabNode(t) {
     sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
     n.append(d, el('span', 'title', t.title), sp);
   } else n.append(d, el('span', 'title', t.title));
+  const md = (state.media || []).find(m => m.id === t.id);
+  if (md && (md.playing || md.muted)) {
+    const sn = el('button', 'snd', md.muted ? '🔇' : '🔊');
+    sn.title = md.muted ? 'Unmute this tab' : 'Playing — click to mute';
+    sn.onmousedown = (e) => e.stopPropagation();
+    sn.onclick = (e) => { e.stopPropagation(); send({ cmd: 'media_ctl', id: t.id, action: 'mute' }); };
+    n.insertBefore(sn, n.querySelector('.sp, .title').nextSibling);
+  }
   if (!t.pinned) {
     const mo = el('button', 'mo', '⋯');
     mo.title = 'Tab options';
@@ -470,7 +490,7 @@ function clearMarks() {
   hideCard();
 }
 
-function endDrag(commit, x, y) {
+function endDrag(commit, x, y, sx, sy) {
   if (drag) {
     const target = commit ? dropTarget(x, y) : null;
     drag.ghost.remove();
@@ -481,6 +501,7 @@ function endDrag(commit, x, y) {
     else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
     else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
+    else if (commit && drag.id && !drag.url && !drag.easel && !drag.folder) send({ cmd: 'tab_drop_out', id: drag.id, x: sx, y: sy });
     justDragged = true;
     setTimeout(() => { justDragged = false; }, 0);
   }
@@ -504,7 +525,7 @@ document.addEventListener('mousemove', (e) => {
   const t = dropTarget(e.clientX, e.clientY);
   if (t) { t.el.classList.add('drop-' + t.edge); showCard(t, !!t.el.closest('#pinned') && t.el.id !== 'pinned'); }
 });
-document.addEventListener('mouseup', (e) => { if (drag) endDrag(true, e.clientX, e.clientY); else down = null; });
+document.addEventListener('mouseup', (e) => { if (drag) endDrag(true, e.clientX, e.clientY, e.screenX, e.screenY); else down = null; });
 
 const mix = (hex, r) => {
   const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
@@ -586,6 +607,7 @@ window.bh = {
     $('blockedn').textContent = ' ' + s.blocked;
     document.body.classList.toggle('noanim', s.animations === false);
     renderUpdate(s.update, s.version);
+    renderMedia(s);
     renderDownloads(s.downloads);
   },
   downloads(list) { renderDownloads(list); },
@@ -611,6 +633,30 @@ function renderDownloads(list) {
     c.onclick = () => send({ cmd: 'open_library' });
     return c;
   }));
+}
+// Arc-style mini player for a tab that plays (or was paused) while another page is shown.
+function renderMedia(s) {
+  const list = (s.media || []).filter(m => m.id !== s.activeTab);
+  const m = list.find(m => m.playing) || list[0];
+  const t = m && s.tabs.find(t => t.id === m.id);
+  if (!t) { $('media').replaceChildren(); return; }
+  const card = el('div', 'mc');
+  const top = el('div', 'top');
+  const d = el('span', 'dot', (host(t.url)[0] || '•').toUpperCase());
+  d.style.background = hue(host(t.url));
+  withIcon(d, t.url, s.favicons);
+  top.append(d, el('span', 'nm', t.title || host(t.url)));
+  top.title = 'Go to ' + host(t.url);
+  top.onclick = () => send({ cmd: 'activate', id: t.id });
+  const ctl = el('div', 'ctl');
+  const btn = (cls, text, title, action) => { const b = el('button', cls, text); b.title = title; b.onclick = () => send({ cmd: 'media_ctl', id: t.id, action }); return b; };
+  ctl.append(
+    btn('', m.playing ? '⏸' : '▶', m.playing ? 'Pause' : 'Play', 'toggle'),
+    btn('', m.muted ? '🔇' : '🔊', m.muted ? 'Unmute' : 'Mute', 'mute'),
+    btn('', '⧉', 'Picture in Picture', 'pip'),
+    btn('cl', '✕', 'Close the player', 'close'));
+  card.append(top, ctl);
+  $('media').replaceChildren(card);
 }
 function renderUpdate(u, current) {
   const b = $('update');

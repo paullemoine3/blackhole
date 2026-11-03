@@ -7,7 +7,7 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; background: transparent; overflow: hidden; font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   #scrim { position: fixed; inset: 0; background: rgba(6,5,12,.46); display: none; }
-  body.open #scrim { display: block; animation: fade .22s ease-out both; }
+  body.open #scrim { display: block; animation: fade .14s ease-out both; }
   /* Opening is a soft spring: the panel grows out of a blob (squash, overshoot, settle) while
      a warm glow blooms behind it and ripples fade outwards. Rows rise in one after another. */
   #hole { position: absolute; inset: 0; display: none; place-items: center; pointer-events: none; overflow: hidden; }
@@ -18,10 +18,10 @@
   #hole::before, #hole::after { content: ""; position: absolute; left: 50%; top: 19vh; width: 360px; height: 120px; margin-left: -180px; border-radius: 50%;
     border: 1.5px solid rgba(167,139,255,.55); opacity: 0; }
   body.intro #hole { display: grid; }
-  body.intro #hole i { animation: bloom 1.15s cubic-bezier(.3,.1,.2,1) both; }
-  body.intro #hole i::before { animation: swirl 1.15s cubic-bezier(.3,.1,.3,1) both; }
-  body.intro #hole::before { animation: ripple 1s cubic-bezier(.2,.6,.3,1) .12s both; }
-  body.intro #hole::after { animation: ripple 1.1s cubic-bezier(.2,.6,.3,1) .32s both; }
+  body.intro #hole i { animation: bloom .6s cubic-bezier(.3,.1,.2,1) both; }
+  body.intro #hole i::before { animation: swirl .6s cubic-bezier(.3,.1,.3,1) both; }
+  body.intro #hole::before { animation: ripple .55s cubic-bezier(.2,.6,.3,1) .04s both; }
+  body.intro #hole::after { animation: ripple .6s cubic-bezier(.2,.6,.3,1) .14s both; }
   @keyframes bloom {
     0%   { transform: scale(.12) rotate(0); opacity: 0; filter: blur(8px); border-radius: 50%; }
     30%  { transform: scale(.9) rotate(50deg); opacity: 1; filter: blur(0); border-radius: 56% 44% 48% 52% / 46% 58% 42% 54%; }
@@ -34,10 +34,9 @@
     background: rgba(27,26,38,.96); border: 1px solid rgba(255,255,255,.1); border-radius: 18px; overflow: hidden;
     box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.4), 0 0 70px -20px var(--accent); }
   body.pre #panel { opacity: 0; }
-  body.pop #panel { animation: spring .66s linear both; animation-timing-function: cubic-bezier(.22,.9,.28,1); }
-  body.intro #panel { animation-delay: .22s; }
-  body.pop .row { animation: rowin .5s cubic-bezier(.2,.9,.3,1) both; animation-delay: calc(var(--i, 0) * 32ms + 140ms); }
-  body.pop .search svg { animation: pulse .7s cubic-bezier(.3,1.6,.5,1) .2s both; }
+  body.pop #panel { animation: spring .38s linear both; animation-timing-function: cubic-bezier(.22,.9,.28,1); }
+  body.pop .row { animation: rowin .26s cubic-bezier(.2,.9,.3,1) both; animation-delay: calc(var(--i, 0) * 14ms + 50ms); }
+  body.pop .search svg { animation: pulse .4s cubic-bezier(.3,1.6,.5,1) .06s both; }
   @keyframes fade { from { opacity: 0 } }
   @keyframes spring {
     0%   { opacity: 0; transform: translateX(-50%) translateY(-16px) scale(.84, .62); border-radius: 46px; filter: blur(10px); }
@@ -291,7 +290,7 @@ window.bh = {
         document.body.classList.remove('pre');
         document.body.classList.add('pop');
         if (s.mode === 'new') document.body.classList.add('intro');
-        setTimeout(() => document.body.classList.remove('intro', 'pop'), 1300);
+        setTimeout(() => document.body.classList.remove('intro', 'pop'), 800);
       }));
     }
     pristine = s.mode === 'url';

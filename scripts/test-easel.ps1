@@ -97,6 +97,7 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -144,6 +145,11 @@ Check ($evals[25] -match 'Imp Two') 'import: every link is a regular tab'
 Check ($evals[26] -match 'rail\\":5') 'library: five sections in the rail'
 Check ($evals[26] -match 'archived\\":true') 'library: cleared tab is archived'
 Check ($evals[27] -match 'home') 'library: closes back to the browser'
+Check ($evals[28] -match 'card.:true') 'media: a card appears for a tab playing in the background'
+Check ($evals[28] -match ([string][char]0x23F8)) 'media: the card offers pause'
+Check ($evals[28] -match ([string][char]0x29C9)) 'media: the card offers Picture in Picture'
+Check ($evals[28] -match 'snd.:true') 'media: the playing tab shows a speaker icon'
+Check ($evals[28] -match 'hiddenWhenActive.:true') 'media: no card for the tab being viewed'
 Check ((Test-Path (Join-Path $tmp 'bh_shots\01-easel-board.png')) -and (Test-Path (Join-Path $tmp 'bh_shots\03-easel-live.png'))) 'screenshots saved'
 $file = Join-Path $tmp 'bh_data\easels.json'
 $data = if (Test-Path $file) { @(Get-Content $file -Raw | ConvertFrom-Json) } else { @() }
