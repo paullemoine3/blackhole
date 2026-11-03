@@ -26,6 +26,8 @@ pub struct Settings {
     pub last_seen_version: String,
     /// Installed extensions also run in private windows (off by default: they can see pages).
     pub extensions_in_private: bool,
+    /// The sidebar is pinned open (otherwise it slides in on hover). Remembered between launches.
+    pub sidebar_open: bool,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -54,6 +56,7 @@ impl Default for Settings {
             hidden_favorites: BTreeSet::new(),
             last_seen_version: String::new(),
             extensions_in_private: false,
+            sidebar_open: true,
         }
     }
 }

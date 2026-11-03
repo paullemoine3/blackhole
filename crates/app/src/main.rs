@@ -237,7 +237,7 @@ struct Running {
     home: WebView,
     tabs: HashMap<TabId, WebView>,
     /// Blank hidden page views ready to take the next tabs (see `views::spare_tab_view`).
-    spares: Vec<(views::TabSlot, WebView)>,
+    spares: Vec<(views::Store, views::TabSlot, WebView)>,
     spares_due: Option<Instant>,
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
@@ -447,7 +447,10 @@ impl Running {
             svc.set_extensions(load_extensions(&extensions_dir(src)));
         }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
-        let sidebar = Sidebar::new(f64::from(svc.settings().sidebar_width));
+        let sidebar = Sidebar::starting(
+            f64::from(svc.settings().sidebar_width),
+            svc.settings().sidebar_open,
+        );
 
         let size = window.inner_size().to_logical::<f64>(window.scale_factor());
         let chrome_bounds = chrome_rect(&sidebar, &size);
@@ -823,6 +826,7 @@ impl Running {
     /// The sidebar is either hidden or fully open, like Arc's.
     fn toggle_sidebar(&mut self) {
         self.sidebar.toggle();
+        self.svc.set_sidebar_open(self.sidebar.is_open());
     }
 
     fn downloads_json(&self) -> serde_json::Value {
@@ -920,7 +924,7 @@ impl Running {
             "version": env!("CARGO_PKG_VERSION"),
             "update": self.update_json(),
             "downloads": self.downloads_json(),
-            "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon})).collect::<Vec<_>>(),
+            "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
             "favicons": self.favicons.all(),
             "media": self.media_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
@@ -2033,7 +2037,9 @@ impl Running {
             return;
         }
         let bounds = self.full_content_bounds();
-        if let Some((slot, view)) = self.spares.pop() {
+        let store = self.store_of_tab(tab.id);
+        if let Some(at) = self.spares.iter().position(|(s, ..)| *s == store) {
+            let (_, slot, view) = self.spares.swap_remove(at);
             slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
             let _ = view.set_bounds(bounds);
             let _ = view.load_url(tab.url.as_str());
@@ -2050,6 +2056,7 @@ impl Running {
             self.svc.policy(),
             &self.mailbox,
             self.webext.as_ref(),
+            store,
         ) {
             Ok(view) => {
                 self.tabs.insert(tab.id, view);
@@ -2060,6 +2067,30 @@ impl Running {
         }
     }
 
+    /// The cookie jar of a space: the original "Personal" space (id 1, whatever its position)
+    /// keeps the browser's main one so existing logins survive, every other space has its own,
+    /// and a private window keeps nothing.
+    fn store_of_space(&self, space: SpaceId) -> views::Store {
+        if private_mode() {
+            views::Store::Private
+        } else if space == SpaceId(1) {
+            views::Store::Main
+        } else {
+            views::Store::Space(space.0)
+        }
+    }
+
+    fn store_of_tab(&self, tab: TabId) -> views::Store {
+        let owner = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .find(|s| s.tabs.iter().any(|t| t.id == tab))
+            .map_or_else(|| self.svc.workspace().active_space().id, |s| s.id);
+        self.store_of_space(owner)
+    }
+
     /// Builds the spare views while nothing is going on. They all sit below the command bar,
     /// which is recreated once on top of them, so the next tabs open without any view creation.
     fn refill_spares(&mut self) {
@@ -2067,11 +2098,15 @@ impl Running {
         if Instant::now() < due {
             return;
         }
-        if self.palette_open || self.peek.is_some() || !self.spares.is_empty() {
+        // Spares belong to a space's login store: only the active space's are worth keeping.
+        let store = self.store_of_space(self.svc.workspace().active_space().id);
+        if self.palette_open || self.peek.is_some() || self.spares.iter().any(|(s, ..)| *s == store)
+        {
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
             return;
         }
         self.spares_due = None;
+        self.spares.retain(|(s, ..)| *s == store);
         for _ in 0..SPARES {
             match views::spare_tab_view(
                 &self.window,
@@ -2079,8 +2114,9 @@ impl Running {
                 self.svc.policy(),
                 &self.mailbox,
                 self.webext.as_ref(),
+                store,
             ) {
-                Ok(spare) => self.spares.push(spare),
+                Ok((slot, view)) => self.spares.push((store, slot, view)),
                 Err(error) => {
                     tracing::error!("cannot create spare view: {error}");
                     break;
@@ -2592,7 +2628,7 @@ impl Running {
                     color: SPACE_COLORS[n % SPACE_COLORS.len()].to_owned(),
                 });
             }
-            "new_folder" => self.handle_ui(UiCommand::NewFolder),
+            "new_folder" => self.handle_ui(UiCommand::NewFolder { parent: None }),
             "pip" => {
                 let _ = self.active_view().evaluate_script(views::PIP_TOGGLE_JS);
             }
@@ -2714,6 +2750,7 @@ impl Running {
             &self.mailbox,
         );
         let peek_bounds = self.peek_bounds();
+        let peek_store = self.store_of_space(self.svc.workspace().active_space().id);
         let page = views::tab_view(
             &self.window,
             &mut self.web_context,
@@ -2723,6 +2760,7 @@ impl Running {
             self.svc.policy(),
             &self.mailbox,
             self.webext.as_ref(),
+            peek_store,
         );
         match (scrim, page) {
             (Ok(scrim), Ok(page)) => {
@@ -3070,8 +3108,31 @@ impl Running {
             }
             UiCommand::TabDropOut { id, x, y } => self.drop_tab_out(TabId(id), x, y),
             UiCommand::MediaCtl { id, action } => self.media_ctl(TabId(id), &action),
-            UiCommand::NewFolder => {
-                self.svc.add_folder("New folder");
+            UiCommand::NewFolder { parent } => {
+                match parent {
+                    Some(p) => {
+                        let made = self.svc.add_subfolder("New folder", FolderId(p));
+                        // Show the new subfolder: a collapsed parent would hide it.
+                        if self
+                            .svc
+                            .workspace()
+                            .active_space()
+                            .folders
+                            .iter()
+                            .any(|f| f.id == FolderId(p) && f.collapsed)
+                        {
+                            self.svc.toggle_folder(FolderId(p));
+                        }
+                        self.ui_state();
+                        if let Some(id) = made {
+                            self.ui(format!("window.bh&&bh.editFolderId({})", id.0));
+                        }
+                        return;
+                    }
+                    None => {
+                        self.svc.add_folder("New folder");
+                    }
+                }
                 self.ui_state();
             }
             UiCommand::RenameFolder { id, name } => {
@@ -3087,19 +3148,21 @@ impl Running {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();
             }
-            UiCommand::MoveFolder { id, before } => {
-                self.svc.move_folder(FolderId(id), before.map(FolderId));
+            UiCommand::MoveFolder { id, parent, before } => {
+                self.svc
+                    .move_folder(FolderId(id), parent.map(FolderId), before.map(FolderId));
                 self.ui_state();
             }
             UiCommand::DeleteFolder { id } => {
                 // The folder takes its tabs with it (they go to the archive like any closed tab).
+                let doomed = self.svc.workspace().folder_tree(FolderId(id));
                 let inside: Vec<TabId> = self
                     .svc
                     .workspace()
                     .active_space()
                     .tabs
                     .iter()
-                    .filter(|t| t.folder == Some(FolderId(id)))
+                    .filter(|t| t.folder.is_some_and(|f| doomed.contains(&f)))
                     .map(|t| t.id)
                     .collect();
                 for tab in inside {

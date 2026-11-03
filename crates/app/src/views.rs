@@ -228,9 +228,32 @@ pub fn tab_view(
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
     host: Option<&blackhole_macos_webext::ExtensionHost>,
+    store: Store,
 ) -> wry::Result<WebView> {
     let slot = TabSlot::new(AtomicU64::new(tab.0));
-    build_tab(window, ctx, &slot, url, bounds, policy, mailbox, host)
+    build_tab(
+        window, ctx, &slot, url, bounds, policy, mailbox, host, store,
+    )
+}
+
+/// Which cookie jar (login session) a page view uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Store {
+    /// The browser's main store: the first space, and every non-page view.
+    Main,
+    /// A space of its own: an account used there is not seen by the other spaces.
+    Space(u64),
+    /// A private window: nothing is kept.
+    Private,
+}
+
+impl Store {
+    /// macOS data store identifier of a space: a fixed prefix followed by the space id.
+    fn identifier(space: u64) -> [u8; 16] {
+        let mut id = *b"BlackHoleSpace\0\0";
+        id[8..].copy_from_slice(&space.to_be_bytes());
+        id
+    }
 }
 
 /// The tab a view reports for; a spare view is bound to its tab only when it is put to use.
@@ -244,11 +267,14 @@ pub fn spare_tab_view(
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
     host: Option<&blackhole_macos_webext::ExtensionHost>,
+    store: Store,
 ) -> wry::Result<(TabSlot, WebView)> {
     let slot = TabSlot::new(AtomicU64::new(0));
     let blank = Url::parse("about:blank").expect("blank url");
     let bounds = rect(0.0, 0.0, 1.0, 1.0);
-    let view = build_tab(window, ctx, &slot, &blank, bounds, policy, mailbox, host)?;
+    let view = build_tab(
+        window, ctx, &slot, &blank, bounds, policy, mailbox, host, store,
+    )?;
     Ok((slot, view))
 }
 
@@ -262,6 +288,7 @@ fn build_tab(
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
     host: Option<&blackhole_macos_webext::ExtensionHost>,
+    store: Store,
 ) -> wry::Result<WebView> {
     let id = |slot: &TabSlot| TabId(slot.load(Ordering::Relaxed));
     let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
@@ -282,15 +309,35 @@ fn build_tab(
     let builder = builder(ctx);
     // Each page view gets its own configuration carrying the extension controller.
     #[cfg(target_os = "macos")]
-    let builder = match host {
-        Some(host) => {
-            use wry::WebViewBuilderExtMacos;
-            builder.with_webview_configuration(host.view_configuration())
+    let builder = {
+        use blackhole_macos_webext::DataStore;
+        use wry::{WebViewBuilderExtDarwin, WebViewBuilderExtMacos};
+        let data = match store {
+            Store::Main => DataStore::Default,
+            Store::Space(space) => DataStore::Identified(Store::identifier(space)),
+            Store::Private => DataStore::Ephemeral,
+        };
+        match (host, data) {
+            (Some(host), data) => builder.with_webview_configuration(host.view_configuration(data)),
+            (None, DataStore::Identified(id)) => builder.with_data_store_identifier(id),
+            (None, DataStore::Ephemeral) => builder.with_incognito(true),
+            (None, DataStore::Default) => builder,
         }
-        None => builder,
     };
     #[cfg(not(target_os = "macos"))]
     let _ = host;
+    // WebView2: one profile per space inside the shared environment (a private window already
+    // has a throwaway user data folder).
+    #[cfg(windows)]
+    let builder = match store {
+        Store::Space(space) => {
+            use wry::WebViewBuilderExtWindows;
+            builder.with_profile_name(format!("BlackHole-space-{space}"))
+        }
+        _ => builder,
+    };
+    #[cfg(not(windows))]
+    let _ = store;
     builder
         .with_url(url.as_str())
         .with_bounds(bounds)

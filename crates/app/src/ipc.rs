@@ -55,7 +55,11 @@ pub enum UiCommand {
         folder: Option<u64>,
         pinned: bool,
     },
-    NewFolder,
+    /// Creates a folder, nested in `parent` when given.
+    NewFolder {
+        #[serde(default)]
+        parent: Option<u64>,
+    },
     RenameFolder {
         id: u64,
         name: String,
@@ -74,9 +78,12 @@ pub enum UiCommand {
     DeleteFolder {
         id: u64,
     },
-    /// Drag & drop in the sidebar: reorders a folder (`before`: `null` puts it last).
+    /// Drag & drop in the sidebar: moves a folder under `parent` (`null`: top level), before
+    /// the sibling `before` (`null` puts it last).
     MoveFolder {
         id: u64,
+        #[serde(default)]
+        parent: Option<u64>,
         #[serde(default)]
         before: Option<u64>,
     },
@@ -468,6 +475,25 @@ mod tests {
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"set_app_extension","id":"app-a","on":true}"#).unwrap();
         assert!(matches!(c, UiCommand::SetAppExtension { on: true, .. }));
+    }
+
+    #[test]
+    fn folder_commands_parse() {
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"new_folder"}"#).unwrap();
+        assert!(matches!(c, UiCommand::NewFolder { parent: None }));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"new_folder","parent":4}"#).unwrap();
+        assert!(matches!(c, UiCommand::NewFolder { parent: Some(4) }));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"move_folder","id":2,"parent":1,"before":null}"#)
+                .unwrap();
+        assert!(matches!(
+            c,
+            UiCommand::MoveFolder {
+                id: 2,
+                parent: Some(1),
+                before: None
+            }
+        ));
     }
 
     #[test]

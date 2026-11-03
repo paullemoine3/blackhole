@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.6",
+        &[
+            "Logins are scoped by space: sign in to a personal account in one space and a work account in another; login and refresh popups open in the space you are in",
+            "Folders can contain subfolders (drag a folder onto another, or right-click → New subfolder); importing bookmarks keeps their folder hierarchy",
+            "The sidebar mode (pinned open or shown on hover) is remembered between launches",
+        ],
+    ),
+    (
         "0.7.5",
         &[
             "Spaces can be renamed from their right-click menu, which no longer offers to switch to the space you are already in",

@@ -215,6 +215,8 @@ struct FolderDto {
     collapsed: bool,
     #[serde(default)]
     icon: String,
+    #[serde(default)]
+    parent: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,6 +274,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         name: f.name.clone(),
                         collapsed: f.collapsed,
                         icon: f.icon.clone(),
+                        parent: f.parent.map(|p| p.0),
                     })
                     .collect(),
             })
@@ -292,6 +295,18 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                     name: f.name,
                     collapsed: f.collapsed,
                     icon: blackhole_domain::sanitize_icon(&f.icon),
+                    parent: f.parent.map(FolderId),
+                })
+                .collect();
+            // Drop dangling or self-referencing parents so the tree stays well formed.
+            let ids: Vec<u64> = folders.iter().map(|f| f.id.0).collect();
+            let folders: Vec<Folder> = folders
+                .into_iter()
+                .map(|mut f| {
+                    if f.parent.is_some_and(|p| p == f.id || !ids.contains(&p.0)) {
+                        f.parent = None;
+                    }
+                    f
                 })
                 .collect();
             let known = |id: u64| folders.iter().any(|f| f.id.0 == id);
@@ -377,6 +392,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: dto.hidden_favorites.into_iter().collect(),
             last_seen_version: dto.last_seen_version,
             extensions_in_private: dto.extensions_in_private,
+            sidebar_open: dto.sidebar_open,
         }))
     }
 
@@ -397,6 +413,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: settings.hidden_favorites.iter().cloned().collect(),
             last_seen_version: settings.last_seen_version.clone(),
             extensions_in_private: settings.extensions_in_private,
+            sidebar_open: settings.sidebar_open,
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -474,6 +491,8 @@ struct SettingsDto {
     last_seen_version: String,
     #[serde(default)]
     extensions_in_private: bool,
+    #[serde(default = "default_true")]
+    sidebar_open: bool,
 }
 
 fn default_true() -> bool {
@@ -588,6 +607,7 @@ mod tests {
             hidden_favorites: ["proton.me".to_owned()].into(),
             last_seen_version: "0.3.0".to_owned(),
             extensions_in_private: true,
+            sidebar_open: false,
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -604,6 +624,7 @@ mod tests {
         assert!(old.boosts.is_empty() && old.routes.is_empty());
         assert_eq!(old.last_seen_version, "");
         assert!(!old.extensions_in_private);
+        assert!(old.sidebar_open, "pinned open by default");
     }
 
     #[test]

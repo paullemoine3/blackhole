@@ -286,7 +286,9 @@ function spaceMenu(sp, x, y) {
 function folderMenu(f, x, y) {
   openMenu(x, y, [
     { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
+    { icon: '📁', label: 'New subfolder', run: { cmd: 'new_folder', parent: f.id } },
     { icon: f.collapsed ? '▾' : '▸', label: f.collapsed ? 'Expand folder' : 'Collapse folder', run: { cmd: 'toggle_folder', id: f.id } },
+    ...(f.parent != null ? [{ icon: '↩', label: 'Move to top level', run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
     { sep: true },
     { icon: '🗑', label: 'Delete folder', danger: true, run: { cmd: 'delete_folder', id: f.id } },
   ]);
@@ -326,7 +328,7 @@ function easelNode(e) {
   return n;
 }
 
-function folderNode(f, tabs, easels = []) {
+function folderNode(f, tabs, easels = [], subs = []) {
   const box = el('div', 'folder' + (f.collapsed ? ' collapsed' : ''));
   const h = el('div', 'fh');
   h.dataset.folder = f.id;
@@ -344,10 +346,12 @@ function folderNode(f, tabs, easels = []) {
   h.oncontextmenu = (e) => { e.preventDefault(); folderMenu(f, e.clientX, e.clientY); };
   const body = el('div', 'fb');
   body.dataset.folder = f.id;
-  body.append(...tabs.map(tabNode), ...easels.map(easelNode));
+  body.append(...subs, ...tabs.map(tabNode), ...easels.map(easelNode));
   box.append(h, body);
   return { box, name, h, f };
 }
+const folderNodes = new Map();
+function editFolderId(id) { const n = folderNodes.get(id); if (n) editFolder(n.h, n.name, n.f); }
 
 function editSpace(id) {
   const b = document.querySelector('.space[data-space="' + id + '"]');
@@ -478,14 +482,19 @@ function dropTarget(x, y) {
   const node = document.elementFromPoint(x, y);
   if (!node) return null;
   if (drag.folder) {
-    const box = node.closest('#folders > .folder');
+    const box = node.closest('#folders .folder');
     if (!box) return null;
-    if (box === drag.node) return null;
-    const r = box.getBoundingClientRect();
-    const after = y > r.top + Math.min(r.height, 36) / 2;
+    if (drag.node.contains(box)) return null;
+    const head = box.querySelector('.fh');
+    const r = head.getBoundingClientRect();
+    const rel = (y - r.top) / Math.max(1, r.height);
+    const holder = box.parentElement;
+    const parent = holder.classList.contains('fb') ? Number(holder.dataset.folder) : null;
+    if (rel > 0.3 && rel < 0.7) return { el: head, edge: 'into', before: null, parent: Number(head.dataset.folder), folder: null, pinned: false };
+    const after = rel >= 0.7;
     const sib = after ? box.nextElementSibling : box;
-    const id = (sib && sib.querySelector('.fh')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
-    return { el: box.querySelector('.fh'), edge: after ? 'after' : 'before', before: id, folder: null, pinned: false };
+    const id = (sib && sib.classList.contains('folder')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
+    return { el: head, edge: after ? 'after' : 'before', before: id, parent, folder: null, pinned: false };
   }
   const tab = node.closest('[data-tab]');
   if (tab && (drag.url || drag.easel || tab.dataset.tab !== String(drag.id))) {
@@ -523,7 +532,7 @@ function endDrag(commit, x, y, sx, sy) {
     drag.node.classList.remove('dragging');
     document.body.classList.remove('dragging');
     clearMarks();
-    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, before: target.before });
+    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, parent: target.parent ?? null, before: target.before });
     else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
     else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
@@ -609,14 +618,19 @@ window.bh = {
     root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
     $('pinned').replaceChildren(...s.tabs.filter(t => t.pinned).map(tabNode));
-    const folders = s.folders.map(f => folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id)));
+    folderNodes.clear();
+    const build = (parent) => s.folders.filter(f => (f.parent ?? null) === parent).map(f => {
+      const node = folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id), build(f.id).map(n => n.box));
+      folderNodes.set(f.id, node);
+      return node;
+    });
+    const roots = build(null);
     const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
-    $('folders').replaceChildren(...folders.map(f => f.box));
+    $('folders').replaceChildren(...roots.map(f => f.box));
     $('tabs').replaceChildren(...loose);
-    if (newFolderPending && folders.length) {
+    if (newFolderPending && s.folders.length) {
       newFolderPending = false;
-      const last = folders[folders.length - 1];
-      editFolder(last.h, last.name, last.f);
+      editFolderId(s.folders[s.folders.length - 1].id);
     }
     $('spaces').replaceChildren(...s.spaces.map(sp => {
       const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
@@ -638,6 +652,7 @@ window.bh = {
   },
   downloads(list) { renderDownloads(list); },
   editSpace,
+  editFolderId,
   toast(m) {
     const t = $('toast'); t.textContent = m; t.classList.add('show');
     clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), 2200);

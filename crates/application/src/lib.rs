@@ -173,6 +173,14 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    /// Remembers whether the sidebar is pinned open, for the next launch.
+    pub fn set_sidebar_open(&mut self, open: bool) {
+        if self.settings.sidebar_open != open {
+            self.settings.sidebar_open = open;
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
     pub fn set_animations(&mut self, on: bool) {
         self.settings.animations = on;
         let _ = self.repo.save_settings(&self.settings);
@@ -368,8 +376,19 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
-    pub fn move_folder(&mut self, id: FolderId, before: Option<FolderId>) -> bool {
-        let ok = self.workspace.move_folder(id, before);
+    pub fn add_subfolder(&mut self, name: &str, parent: FolderId) -> Option<FolderId> {
+        let id = self.workspace.add_folder_in(name, Some(parent));
+        self.persist();
+        id
+    }
+
+    pub fn move_folder(
+        &mut self,
+        id: FolderId,
+        parent: Option<FolderId>,
+        before: Option<FolderId>,
+    ) -> bool {
+        let ok = self.workspace.move_folder(id, parent, before);
         self.persist();
         ok
     }

@@ -11,7 +11,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPopover", "NSView", "NSResponder", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "std", "block2",
-    "WKWebViewConfiguration", "WKUserScript", "WKUserContentController", "WKWebExtension", "WKWebExtensionContext", "WKWebExtensionController",
+    "WKWebViewConfiguration", "WKWebsiteDataStore", "WKUserScript", "WKUserContentController", "WKWebExtension", "WKWebExtensionContext", "WKWebExtensionController",
     "WKWebExtensionControllerConfiguration", "WKWebExtensionPermission", "WKWebExtensionMatchPattern",
     "WKWebExtensionAction", "WKWebExtensionTab", "WKWebExtensionWindow", "WKWebExtensionControllerDelegate", "WKWebView", "objc2-app-kit", "objc2-core-foundation",
 ] }
