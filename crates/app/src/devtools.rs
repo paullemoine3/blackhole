@@ -96,8 +96,8 @@ impl Running {
                         Some(win) => &win.view,
                         None => return delay,
                     },
-                    "etab" => &self.easel_panel,
-                    "library" => &self.library_panel,
+                    "etab" => self.easel_panel.view.as_ref().unwrap_or(&self.home),
+                    "library" => self.library_panel.view.as_ref().unwrap_or(&self.home),
                     "live" => match self.live.values().next() {
                         Some(view) => view,
                         None => return delay,

@@ -29,7 +29,7 @@ use ipc::{Mailbox, Msg, PageEvent, UiCommand, Wake};
 use serde_json::json;
 use sidebar::Sidebar;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     rc::Rc,
     time::{Duration, Instant},
@@ -120,6 +120,10 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
 }
 /// Background tabs unused for the configured time release their engine view to save memory.
 const IDLE_CHECK_EVERY: Duration = Duration::from_secs(30);
+/// Pause between two background tab preloads, so a burst never competes with the active page.
+const PRELOAD_EVERY: Duration = Duration::from_secs(3);
+/// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
+const RAISE_DELAY: Duration = Duration::from_millis(400);
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
@@ -137,6 +141,24 @@ enum UpdateMsg {
     Failed(String),
 }
 const FRAME: Duration = Duration::from_millis(16);
+/// How long a rarely used page of the shell (library, easel tab, split bar) stays loaded once hidden.
+const PANEL_KEEP: Duration = Duration::from_secs(60);
+
+/// A page of the shell created on first use and released after `PANEL_KEEP` hidden: each one
+/// is a renderer process, and most sessions never open them.
+struct LazyView {
+    view: Option<WebView>,
+    shown: Instant,
+}
+
+impl LazyView {
+    fn new() -> Self {
+        Self {
+            view: None,
+            shown: Instant::now(),
+        }
+    }
+}
 
 /// Floating preview of a link (Arc's "Peek"): a dimming scrim plus the page itself.
 struct Peek {
@@ -223,6 +245,13 @@ struct Running {
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
     last_active: HashMap<TabId, Instant>,
+    /// Background tabs warmed up but never shown yet, with their creation time.
+    preloaded: HashMap<TabId, Instant>,
+    /// Tabs already preloaded once: a released tab is not warmed up again until visited.
+    preload_tried: HashSet<TabId>,
+    next_preload: Instant,
+    /// Set when a tab view was created above the overlays; they are rebuilt once it is due.
+    raise_due: Option<Instant>,
     svc: BrowserService<JsonWorkspaceRepository>,
     mailbox: Mailbox,
     sidebar: Sidebar,
@@ -243,7 +272,7 @@ struct Running {
     /// "What's new" shown on the start page until dismissed; empty when there is nothing to show.
     release_notes: Vec<serde_json::Value>,
     /// Command bar overlay; rebuilt whenever a view is added so it stays on top.
-    splitbar: WebView,
+    splitbar: LazyView,
     palette: WebView,
     /// Context menu being shown by the overlay (position and items).
     menu: Option<serde_json::Value>,
@@ -289,10 +318,10 @@ struct Running {
     /// Tab whose area picker is armed.
     live_pick: Option<TabId>,
     /// The Easel page shown in the content area, in place of a web page, while `easel_tab`.
-    easel_panel: WebView,
+    easel_panel: LazyView,
     easel_tab: bool,
     /// The Library page, over the whole window below the bar, while `library`.
-    library_panel: WebView,
+    library_panel: LazyView,
     library: bool,
     downloads: Vec<blackhole_infrastructure::store::DownloadRec>,
     dl_live: HashMap<u64, DownloadLive>,
@@ -457,41 +486,6 @@ impl Running {
             &mailbox,
         )
         .expect("start page view");
-        let easel_panel = views::ui_view(
-            &window,
-            &mut web_context,
-            EASEL_HTML,
-            home_bounds,
-            false,
-            false,
-            &mailbox,
-        )
-        .expect("easel tab view");
-        let library_panel = views::ui_view(
-            &window,
-            &mut web_context,
-            LIBRARY_HTML,
-            views::rect(
-                0.0,
-                BAR_HEIGHT,
-                size.width,
-                (size.height - BAR_HEIGHT).max(1.0),
-            ),
-            false,
-            false,
-            &mailbox,
-        )
-        .expect("library view");
-        let splitbar = views::ui_view(
-            &window,
-            &mut web_context,
-            SPLITBAR_HTML,
-            views::rect(cx, cy, cw, SPLIT_HEADER),
-            false,
-            false,
-            &mailbox,
-        )
-        .expect("split bar view");
         let hotzone = views::ui_view(
             &window,
             &mut web_context,
@@ -569,6 +563,10 @@ impl Running {
             home,
             tabs: HashMap::new(),
             last_active: HashMap::new(),
+            preloaded: HashMap::new(),
+            preload_tried: HashSet::new(),
+            next_preload: Instant::now() + PRELOAD_EVERY,
+            raise_due: None,
             svc,
             mailbox,
             sidebar,
@@ -587,7 +585,7 @@ impl Running {
             vault_count: 0,
             settings_seq: 0,
             home_visible: true,
-            splitbar,
+            splitbar: LazyView::new(),
             palette,
             menu: None,
             palette_ready: false,
@@ -628,9 +626,9 @@ impl Running {
             live: HashMap::new(),
             live_slots: HashMap::new(),
             live_pick: None,
-            easel_panel,
+            easel_panel: LazyView::new(),
             easel_tab: false,
-            library_panel,
+            library_panel: LazyView::new(),
             library: false,
             thumbs: std::cell::RefCell::default(),
             easel: None,
@@ -661,10 +659,10 @@ impl Running {
 
     fn active_view(&self) -> &WebView {
         if self.library {
-            return &self.library_panel;
+            return self.library_panel.view.as_ref().unwrap_or(&self.home);
         }
         if self.easel_tab {
-            return &self.easel_panel;
+            return self.easel_panel.view.as_ref().unwrap_or(&self.home);
         }
         if self.home_shown() {
             return &self.home;
@@ -751,23 +749,27 @@ impl Running {
         }
         if all {
             let _ = self.home.set_bounds(self.full_content_bounds());
-            let _ = self.easel_panel.set_bounds(self.full_content_bounds());
+            if let Some(panel) = &self.easel_panel.view {
+                let _ = panel.set_bounds(self.full_content_bounds());
+            }
             for view in self.tabs.values() {
                 let _ = view.set_bounds(self.full_content_bounds());
             }
         }
         let (cx, cy, cw, _) = card_rect(&self.sidebar, &size);
-        let _ = self
-            .splitbar
-            .set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
+        if let Some(bar) = &self.splitbar.view {
+            let _ = bar.set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
+        }
         let (main, side) = self.content_rects();
         let _ = self.active_view().set_bounds(main);
-        let _ = self.library_panel.set_bounds(views::rect(
-            0.0,
-            BAR_HEIGHT,
-            size.width,
-            (size.height - BAR_HEIGHT).max(1.0),
-        ));
+        if let Some(panel) = &self.library_panel.view {
+            let _ = panel.set_bounds(views::rect(
+                0.0,
+                BAR_HEIGHT,
+                size.width,
+                (size.height - BAR_HEIGHT).max(1.0),
+            ));
+        }
         for item in self.live.keys().copied().collect::<Vec<_>>() {
             self.apply_slot(item);
         }
@@ -910,15 +912,14 @@ impl Running {
         let (active, other) = (ws.active_tab(), self.split_tab());
         let pane = |t: &blackhole_domain::Tab| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()});
         let other = other.and_then(|id| ws.active_space().tabs.iter().find(|t| t.id == id));
-        let _ = self
-            .splitbar
-            .set_visible(active.is_some() && other.is_some());
+        let Some(splitbar) = &self.splitbar.view else {
+            return;
+        };
+        let _ = splitbar.set_visible(active.is_some() && other.is_some());
         if let (Some(left), Some(right)) = (active, other) {
             let state =
                 json!({"left": pane(left), "right": pane(right), "color": ws.active_space().color});
-            let _ = self
-                .splitbar
-                .evaluate_script(&format!("window.bh&&bh.render({state})"));
+            let _ = splitbar.evaluate_script(&format!("window.bh&&bh.render({state})"));
         }
     }
 
@@ -937,6 +938,8 @@ impl Running {
             "extensionsInPrivate": settings.extensions_in_private,
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
+            "maxLiveTabs": settings.max_live_tabs,
+            "maxLiveTabsChoices": Settings::LIVE_TABS_CHOICES,
             "blocked": self.blocked.total(),
             "blockedLog": self.blocked.entries().iter().take(100).map(|b| json!({"host": b.host, "count": b.count, "site": b.site})).collect::<Vec<_>>(),
             "tab": self.settings_tab.clone(),
@@ -1546,9 +1549,9 @@ impl Running {
             })).collect::<Vec<_>>(),
             "now": now_secs(),
         });
-        let _ = self
-            .library_panel
-            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+        if let Some(panel) = &self.library_panel.view {
+            let _ = panel.evaluate_script(&format!("window.bh&&bh.render({state})"));
+        }
     }
 
     fn open_library(&mut self) {
@@ -1556,9 +1559,19 @@ impl Running {
         self.close_peek();
         self.close_easel_tab();
         self.library = true;
+        let fresh = self.library_panel.view.is_none();
         self.sync();
         self.ui_library();
-        let _ = self.library_panel.evaluate_script("window.bh&&bh.intro()");
+        // A page still loading plays its intro when it reports `library_ready`.
+        if !fresh {
+            self.library_intro();
+        }
+    }
+
+    fn library_intro(&self) {
+        if let Some(panel) = &self.library_panel.view {
+            let _ = panel.evaluate_script("window.bh&&bh.intro()");
+        }
     }
 
     fn close_library(&mut self) {
@@ -1623,9 +1636,9 @@ impl Running {
                 .evaluate_script(&format!("window.bh&&bh.render({})", state(false)));
         }
         if self.easel_tab {
-            let _ = self
-                .easel_panel
-                .evaluate_script(&format!("window.bh&&bh.render({})", state(true)));
+            if let Some(panel) = &self.easel_panel.view {
+                let _ = panel.evaluate_script(&format!("window.bh&&bh.render({})", state(true)));
+            }
         }
     }
 
@@ -2013,8 +2026,26 @@ impl Running {
         }
     }
 
-    /// Native views stack in creation order, so the command bar is recreated above new tabs.
+    /// Native views stack in creation order, so the overlays are recreated above new tabs. Burst
+    /// of tab creations (preloading, session restore) share a single recreation.
     fn raise_palette(&mut self) {
+        self.raise_due = Some(Instant::now() + RAISE_DELAY);
+    }
+
+    /// Recreates the overlays now if a tab was created since; true while still waiting.
+    fn flush_raise(&mut self, force: bool) -> bool {
+        let Some(due) = self.raise_due else {
+            return false;
+        };
+        if self.palette_open || (!force && Instant::now() < due) {
+            return !self.palette_open;
+        }
+        self.raise_due = None;
+        self.raise_overlays();
+        false
+    }
+
+    fn raise_overlays(&mut self) {
         let size = self.window_size();
         match views::ui_view(
             &self.window,
@@ -2061,6 +2092,7 @@ impl Running {
 
     /// Frees the engine view of tabs left in the background; they reload when selected again.
     fn discard_idle_tabs(&mut self) {
+        self.ensure_panels();
         let now = Instant::now();
         if !self.home_shown() {
             let active = self.svc.workspace().active_tab().map(|t| t.id);
@@ -2069,23 +2101,153 @@ impl Running {
             }
         }
         let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
-        let idle: Vec<TabId> = self
+        self.preloaded.retain(|id, _| self.tabs.contains_key(id));
+        let mut idle: Vec<TabId> = self
             .tabs
             .keys()
             .filter(|id| {
-                let seen = self.last_active.get(id).copied().unwrap_or(now);
+                let seen = self
+                    .last_active
+                    .get(id)
+                    .or_else(|| self.preloaded.get(id))
+                    .copied()
+                    .unwrap_or(now);
                 now.duration_since(seen) >= limit
             })
             .copied()
             .collect();
+        // Cap on live views, independent of the delay: each one is a renderer process.
+        // Tabs never shown (preloaded) sort first, then the least recently used.
+        let live: Vec<(TabId, Option<Instant>)> = self
+            .tabs
+            .keys()
+            .filter(|id| !idle.contains(id))
+            .map(|id| (*id, self.last_active.get(id).copied()))
+            .collect();
+        let visible: Vec<TabId> = self
+            .svc
+            .workspace()
+            .active_tab()
+            .map(|t| t.id)
+            .into_iter()
+            .chain(self.split_tab())
+            .collect();
+        idle.extend(blackhole_domain::overflow_to_release(
+            &live,
+            &visible,
+            self.svc.settings().max_live_tabs as usize,
+        ));
         if idle.is_empty() {
             return;
         }
         for id in idle {
             self.tabs.remove(&id);
             self.last_active.remove(&id);
+            self.preloaded.remove(&id);
         }
         self.ui_state();
+    }
+
+    /// Warms up the tab the user is most likely to open next while the live budget has room.
+    /// Returns true while more tabs are waiting, so the loop comes back soon.
+    fn preload_next_tab(&mut self) -> bool {
+        let now = Instant::now();
+        if self.home_shown()
+            || self.palette_open
+            || self.peek.is_some()
+            || self.tabs.len() >= self.svc.settings().max_live_tabs as usize
+        {
+            return false;
+        }
+        if now < self.next_preload {
+            return true;
+        }
+        #[cfg(windows)]
+        if self.ext_popup.is_some() {
+            return false;
+        }
+        let space = self.svc.workspace().active_space();
+        let Some(active) = space.tabs.iter().position(|t| Some(t.id) == space.active_tab) else {
+            return false;
+        };
+        let wanted = blackhole_domain::nearest_first(space.tabs.len(), active)
+            .into_iter()
+            .map(|i| &space.tabs[i])
+            .find(|t| {
+                !self.tabs.contains_key(&t.id)
+                    && !self.preload_tried.contains(&t.id)
+                    && matches!(t.url.scheme(), "http" | "https")
+            })
+            .cloned();
+        let Some(tab) = wanted else {
+            return false;
+        };
+        self.preload_tried.insert(tab.id);
+        self.ensure_view(&tab);
+        if let Some(view) = self.tabs.get(&tab.id) {
+            views::set_background(view, true);
+            self.preloaded.insert(tab.id, now);
+        }
+        self.next_preload = now + PRELOAD_EVERY;
+        true
+    }
+
+    /// Creates the shell pages that are about to be needed and releases the ones left unused.
+    fn ensure_panels(&mut self) {
+        let now = Instant::now();
+        let split = self.split_tab().is_some();
+        let size = self.window_size();
+        let (cx, cy, cw, ch) = card_rect(&self.sidebar, &size);
+        let mut created = false;
+        for (needed, which) in [(self.library, 0), (self.easel_tab, 1), (split, 2)] {
+            let (panel, html, bounds) = match which {
+                0 => (
+                    &mut self.library_panel,
+                    LIBRARY_HTML,
+                    views::rect(
+                        0.0,
+                        BAR_HEIGHT,
+                        size.width,
+                        (size.height - BAR_HEIGHT).max(1.0),
+                    ),
+                ),
+                1 => (
+                    &mut self.easel_panel,
+                    EASEL_HTML,
+                    views::rect(cx, cy, cw, ch),
+                ),
+                _ => (
+                    &mut self.splitbar,
+                    SPLITBAR_HTML,
+                    views::rect(cx, cy, cw, SPLIT_HEADER),
+                ),
+            };
+            if needed {
+                panel.shown = now;
+                if panel.view.is_none() {
+                    match views::ui_view(
+                        &self.window,
+                        &mut self.web_context,
+                        html,
+                        bounds,
+                        false,
+                        false,
+                        &self.mailbox,
+                    ) {
+                        Ok(view) => {
+                            panel.view = Some(view);
+                            created = true;
+                        }
+                        Err(error) => tracing::error!("cannot create panel: {error}"),
+                    }
+                }
+            } else if panel.view.is_some() && now.duration_since(panel.shown) >= PANEL_KEEP {
+                panel.view = None;
+            }
+        }
+        if created {
+            self.raise_palette();
+        }
     }
 
     fn sync(&mut self) {
@@ -2097,16 +2259,26 @@ impl Running {
         };
         if let Some(id) = active {
             self.last_active.insert(id, Instant::now());
+            self.preloaded.remove(&id);
         }
-        let _ = self.easel_panel.set_visible(self.easel_tab);
+        self.ensure_panels();
+        if let Some(panel) = &self.easel_panel.view {
+            let _ = panel.set_visible(self.easel_tab);
+        }
         if !self.library {
             // Keep the page blank while hidden so the next opening fades in without a flash.
-            let _ = self.library_panel.evaluate_script("window.bh&&bh.prep()");
+            if let Some(panel) = &self.library_panel.view {
+                let _ = panel.evaluate_script("window.bh&&bh.prep()");
+            }
         }
-        let _ = self.library_panel.set_visible(self.library);
+        if let Some(panel) = &self.library_panel.view {
+            let _ = panel.set_visible(self.library);
+        }
         let split = self.split_tab();
         for (id, view) in &self.tabs {
-            let _ = view.set_visible(Some(*id) == active || Some(*id) == split);
+            let shown = Some(*id) == active || Some(*id) == split;
+            let _ = view.set_visible(shown);
+            views::set_background(view, !shown);
         }
         let _ = self
             .home
@@ -2201,6 +2373,7 @@ impl Running {
 
     fn open_palette(&mut self, mode: &str) {
         self.close_peek();
+        self.flush_raise(true);
         self.palette_mode = mode.to_owned();
         self.palette_open = true;
         let _ = self.palette.set_visible(true);
@@ -2672,6 +2845,12 @@ impl Running {
     fn handle_ui(&mut self, command: UiCommand) {
         match command {
             UiCommand::Ready => self.sync(),
+            UiCommand::LibraryReady => {
+                self.ui_library();
+                if self.library {
+                    self.library_intro();
+                }
+            }
             UiCommand::Open { input } => self.open(&input),
             UiCommand::Home => {
                 self.close_palette();
@@ -2699,6 +2878,11 @@ impl Running {
             UiCommand::ClosePeek => self.close_peek(),
             UiCommand::SetTabSleep { minutes } => {
                 self.svc.set_tab_sleep_minutes(minutes);
+                self.ui_state();
+            }
+            UiCommand::SetMaxLiveTabs { tabs } => {
+                self.svc.set_max_live_tabs(tabs);
+                self.discard_idle_tabs();
                 self.ui_state();
             }
             UiCommand::SetHardwareAcceleration { on } => {
@@ -3427,6 +3611,12 @@ impl ApplicationHandler<Wake> for App {
             }
             app.poll_webext();
             app.discard_idle_tabs();
+            if app.flush_raise(false) {
+                wake = wake.min(RAISE_DELAY);
+            }
+            if app.preload_next_tab() {
+                wake = wake.min(PRELOAD_EVERY);
+            }
             if !app.dl_live.is_empty() {
                 wake = wake.min(DOWNLOAD_POLL);
             }

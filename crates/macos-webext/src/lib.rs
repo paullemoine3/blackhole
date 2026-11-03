@@ -94,7 +94,7 @@ pub use host::ExtensionHost;
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
-pub use win::ExtensionHost;
+pub use win::{set_view_background, ExtensionHost};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub {

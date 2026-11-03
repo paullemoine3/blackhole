@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.0",
+        &[
+            "Much lower memory use: only a few tabs stay alive at once (4 by default, adjustable in Settings), neighbouring tabs are preloaded and the least recent ones are released",
+            "Hidden tabs run in a low-memory mode, and the Library, Easel and split-bar pages are only created when needed",
+            "The browser engine now shares renderer processes per site",
+        ],
+    ),
+    (
         "0.7.3",
         &[
             "Deleting a folder now also closes the tabs it contains instead of moving them to current tabs",

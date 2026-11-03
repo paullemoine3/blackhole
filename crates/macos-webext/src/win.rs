@@ -17,6 +17,20 @@ use webview2_com::{
 use windows_core::{Interface, HSTRING, PWSTR};
 use wry::WebViewExtWindows;
 
+/// Lowers (or restores) the memory target of a page view; a hidden tab can then be suspended.
+pub fn set_view_background(view: &wry::WebView, background: bool) {
+    let Ok(core) = view.webview().cast::<ICoreWebView2_19>() else {
+        return;
+    };
+    let level = if background {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+    } else {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+    };
+    // SAFETY: plain COM call on the thread that owns the view.
+    let _ = unsafe { core.SetMemoryUsageTargetLevel(level) };
+}
+
 /// The parts of `manifest.json` the toolbar needs.
 #[derive(Debug, Default, Clone)]
 struct Manifest {

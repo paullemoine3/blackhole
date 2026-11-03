@@ -70,6 +70,7 @@
     <div class="card" id="hwcard" hidden><h2>Performance</h2><div id="hw"></div><p class="note">Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.</p></div>
     <div class="card"><h2>Sidebar width</h2><div id="sbw"></div></div>
     <div class="card"><h2>Put unused tabs to sleep after</h2><div id="sleep"></div></div>
+    <div class="card"><h2>Tabs kept ready in memory</h2><div id="live"></div><p class="note">The tab you are on plus the next ones, preloaded in the background. Beyond this number the least recently used tabs are released and reload when opened. Lower it to save memory.</p></div>
     <div class="card"><h2>System</h2><div class="actions"><button class="btn primary" id="default">Make BlackHole the default browser</button></div><p class="note" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</p></div>
   </section>
 
@@ -209,6 +210,7 @@ window.bh = {
     $('extpriv').replaceChildren(option('Run installed extensions in private windows', s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true));
     $('sbw').replaceChildren(...s.sidebarWidths.map(w => option(w + ' px', w === s.sidebarWidth, () => send({ cmd: 'set_sidebar_width', width: w }))));
     $('sleep').replaceChildren(...s.tabSleepChoices.map(m => option(m + ' minutes', m === s.tabSleep, () => send({ cmd: 'set_tab_sleep', minutes: m }))));
+    $('live').replaceChildren(...s.maxLiveTabsChoices.map(n => option(n + ' tabs', n === s.maxLiveTabs, () => send({ cmd: 'set_max_live_tabs', tabs: n }))));
     $('blocked').textContent = s.blocked;
     $('blocklist').replaceChildren(...(s.blockedLog.length ? s.blockedLog.map(b => {
       const row = el('div', 'bl');

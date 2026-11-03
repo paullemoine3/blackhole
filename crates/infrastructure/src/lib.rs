@@ -366,6 +366,11 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             } else {
                 Settings::DEFAULT_SLEEP_MINUTES
             },
+            max_live_tabs: if Settings::LIVE_TABS_CHOICES.contains(&dto.max_live_tabs) {
+                dto.max_live_tabs
+            } else {
+                Settings::DEFAULT_LIVE_TABS
+            },
             boosts: dto.boosts,
             routes: dto
                 .routes
@@ -386,6 +391,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             animations: settings.animations,
             hardware_acceleration: settings.hardware_acceleration,
             tab_sleep_minutes: settings.tab_sleep_minutes,
+            max_live_tabs: settings.max_live_tabs,
             boosts: settings.boosts.clone(),
             routes: settings
                 .routes
@@ -461,6 +467,8 @@ struct SettingsDto {
     hardware_acceleration: bool,
     #[serde(default)]
     tab_sleep_minutes: u32,
+    #[serde(default)]
+    max_live_tabs: u32,
     #[serde(default)]
     boosts: std::collections::BTreeMap<String, String>,
     #[serde(default)]
@@ -577,8 +585,8 @@ mod tests {
             animations: false,
             hardware_acceleration: false,
             tab_sleep_minutes: 15,
-            boosts: [(
-                "example.com".to_owned(),
+            max_live_tabs: 8,
+            boosts: [(                "example.com".to_owned(),
                 "body{filter:invert(1)}".to_owned(),
             )]
             .into(),
@@ -600,6 +608,7 @@ mod tests {
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration);
         assert_eq!(old.tab_sleep_minutes, 10);
+        assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
         assert!(old.boosts.is_empty() && old.routes.is_empty());
         assert_eq!(old.last_seen_version, "");
         assert!(!old.extensions_in_private);

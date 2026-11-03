@@ -34,14 +34,18 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
         builder.with_browser_extensions_enabled(true)
     };
     #[cfg(windows)]
-    let builder = if HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
-        builder
-    } else {
+    let builder = {
         use wry::WebViewBuilderExtWindows;
-        // Replaces wry's defaults, so they are repeated here.
-        builder.with_additional_browser_args(
-            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
-        )
+        // Replaces wry's defaults, so they are repeated here. `--process-per-site` makes the
+        // shell's own pages (all `about:blank`) and same-site tabs share one renderer instead
+        // of one process per view.
+        let mut args = String::from(
+            "--disable-features=msWebOOUI,msPdfOOUI,            msSmartScreenProtection --process-per-site",
+        );
+        if !HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
+            args.push_str(" --disable-gpu");
+        }
+        builder.with_additional_browser_args(&args)
     };
     builder
 }
@@ -360,6 +364,16 @@ pub fn extension_popup(
             NewWindowResponse::Deny
         })
         .build_as_child(window)
+}
+
+/// Asks the engine to trim a hidden tab's memory. Windows: WebView2 "low" memory target (also
+/// lets it suspend the page). macOS: WebKit already throttles and suspends views that are
+/// not visible, and exposes no finer knob, so nothing to do.
+pub fn set_background(view: &WebView, background: bool) {
+    #[cfg(windows)]
+    blackhole_macos_webext::set_view_background(view, background);
+    #[cfg(not(windows))]
+    let _ = (view, background);
 }
 
 /// Applies (or removes, when `css` is empty) the user's Boost in the page.

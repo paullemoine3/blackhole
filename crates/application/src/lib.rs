@@ -185,6 +185,13 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         }
     }
 
+    pub fn set_max_live_tabs(&mut self, tabs: u32) {
+        if Settings::LIVE_TABS_CHOICES.contains(&tabs) {
+            self.settings.max_live_tabs = tabs;
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
     pub fn set_extensions(&mut self, extensions: Vec<Extension>) {
         self.extensions = extensions;
     }

@@ -12,6 +12,7 @@ use winit::event_loop::EventLoopProxy;
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum UiCommand {
     Ready,
+    LibraryReady,
     Open {
         input: String,
     },
@@ -29,6 +30,9 @@ pub enum UiCommand {
     },
     SetTabSleep {
         minutes: u32,
+    },
+    SetMaxLiveTabs {
+        tabs: u32,
     },
     Navigate {
         input: String,
