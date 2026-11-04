@@ -2475,9 +2475,29 @@ impl Running {
         }
         let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
         self.preloaded.retain(|id, _| self.tabs.contains_key(id));
+        // A tab in a call or playing media is never freed just because the user browsed elsewhere.
+        let busy: Vec<TabId> = self.media.lock().map_or_else(
+            |_| Vec::new(),
+            |probes| {
+                self.tabs
+                    .keys()
+                    .filter(|id| {
+                        probes
+                            .get(&id.0)
+                            .is_some_and(|p| p.playing || p.cam || p.mic)
+                    })
+                    .copied()
+                    .collect()
+            },
+        );
+        // The sleep delay only starts once the call or the media has stopped.
+        for id in &busy {
+            self.last_active.insert(*id, now);
+        }
         let mut idle: Vec<TabId> = self
             .tabs
             .keys()
+            .filter(|id| !busy.contains(id))
             .filter(|id| {
                 let seen = self
                     .last_active
@@ -2497,7 +2517,7 @@ impl Running {
             .filter(|id| !idle.contains(id))
             .map(|id| (*id, self.last_active.get(id).copied()))
             .collect();
-        let visible: Vec<TabId> = self
+        let mut visible: Vec<TabId> = self
             .svc
             .workspace()
             .active_tab()
@@ -2505,6 +2525,7 @@ impl Running {
             .into_iter()
             .chain(self.split_tab())
             .collect();
+        visible.extend(&busy);
         idle.extend(blackhole_domain::overflow_to_release(
             &live,
             &visible,
@@ -3346,6 +3367,25 @@ impl Running {
                 self.tabs.remove(&TabId(id));
                 self.sync();
             }
+            UiCommand::CloseInstance { id } => {
+                let id = TabId(id);
+                self.tabs.remove(&id);
+                self.last_active.remove(&id);
+                self.preloaded.remove(&id);
+                self.preload_tried.insert(id);
+                if let Ok(mut probes) = self.media.lock() {
+                    probes.remove(&id.0);
+                }
+                if self.split_tab() == Some(id) {
+                    self.svc.clear_split();
+                }
+                if self.svc.workspace().active_tab().map(|t| t.id) == Some(id) {
+                    self.home_visible = true;
+                    self.easel_tab = false;
+                    self.library = false;
+                }
+                self.sync();
+            }
             UiCommand::Split { id } => {
                 if self.svc.set_split(TabId(id)) {
                     self.home_visible = false;
@@ -3486,6 +3526,11 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::EditSpace { id } => self.ui(format!("window.bh&&bh.editSpace({id})")),
+            UiCommand::RenameTab { id, name } => {
+                self.svc.rename_tab(TabId(id), &name);
+                self.ui_state();
+            }
+            UiCommand::EditTab { id } => self.ui(format!("window.bh&&bh.editTab({id})")),
             UiCommand::ToggleFolder { id } => {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();

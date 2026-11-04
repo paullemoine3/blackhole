@@ -16,9 +16,9 @@ pub struct Tab {
     pub url: Url,
     pub pinned: bool,
     pub folder: Option<FolderId>,
+    /// The user chose the title: page title changes no longer replace it.
+    pub renamed: bool,
 }
-
-/// A named group of tabs inside a space.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folder {
     pub id: FolderId,
@@ -300,6 +300,7 @@ impl Workspace {
             url,
             pinned: false,
             folder: None,
+            renamed: false,
         });
         space.active_tab = Some(id);
         id
@@ -431,6 +432,7 @@ impl Workspace {
                 url,
                 pinned: false,
                 folder: Some(folder_id),
+                renamed: false,
             });
             added += 1;
         }
@@ -570,9 +572,30 @@ impl Workspace {
                 tab.url = url;
             }
             if let Some(title) = title.filter(|t| !t.trim().is_empty()) {
-                tab.title = title;
+                if !tab.renamed {
+                    tab.title = title;
+                }
             }
         }
+    }
+
+    /// Gives a tab a title of the user's choosing; a blank name hands the title back to the page.
+    pub fn rename_tab(&mut self, id: TabId, name: &str) -> bool {
+        let name = name.trim();
+        let tab = self
+            .spaces
+            .iter_mut()
+            .flat_map(|s| s.tabs.iter_mut())
+            .find(|t| t.id == id);
+        let Some(tab) = tab else { return false };
+        if name.is_empty() {
+            tab.renamed = false;
+            tab.title = tab.url.host_str().unwrap_or("New tab").to_owned();
+        } else {
+            tab.renamed = true;
+            name.clone_into(&mut tab.title);
+        }
+        true
     }
 
     fn alloc(&mut self) -> u64 {
@@ -588,6 +611,18 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn renamed_tab_keeps_its_title_until_blanked() {
+        let mut ws = Workspace::new();
+        let id = ws.open_tab(u("https://example.com/"));
+        assert!(ws.rename_tab(id, "  Mine "));
+        ws.update_page(id, None, Some("Page".into()));
+        assert_eq!(ws.active_space().tabs[0].title, "Mine");
+        assert!(ws.rename_tab(id, ""));
+        ws.update_page(id, None, Some("Page".into()));
+        assert_eq!(ws.active_space().tabs[0].title, "Page");
     }
 
     #[test]

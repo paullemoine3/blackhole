@@ -209,6 +209,8 @@ struct TabDto {
     pinned: bool,
     #[serde(default)]
     folder: Option<u64>,
+    #[serde(default)]
+    renamed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -267,6 +269,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         url: t.url.to_string(),
                         pinned: t.pinned,
                         folder: t.folder.map(|f| f.0),
+                        renamed: t.renamed,
                     })
                     .collect(),
                 folders: s
@@ -330,6 +333,7 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                             url: Url::parse(&t.url).ok()?,
                             pinned: t.pinned,
                             folder: t.folder.filter(|f| known(*f) && !t.pinned).map(FolderId),
+                            renamed: t.renamed,
                         })
                     })
                     .collect(),

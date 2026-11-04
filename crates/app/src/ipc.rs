@@ -53,6 +53,10 @@ pub enum UiCommand {
     Close {
         id: u64,
     },
+    /// Frees a tab's page (a pinned one stays in the sidebar) and goes back to the start page.
+    CloseInstance {
+        id: u64,
+    },
     Pin {
         id: u64,
     },
@@ -84,6 +88,14 @@ pub enum UiCommand {
     },
     /// Asks the sidebar to turn a space's name into an input.
     EditSpace {
+        id: u64,
+    },
+    RenameTab {
+        id: u64,
+        name: String,
+    },
+    /// Asks the sidebar to turn a tab's title into an input.
+    EditTab {
         id: u64,
     },
     ToggleFolder {

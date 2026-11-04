@@ -7,6 +7,8 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "The page card has rounder corners and a deeper shadow so it floats above the window",
             "Picture in Picture: the floating window's back-to-tab button now brings you back to the tab, and a playing video also floats when you leave the browser",
             "The sidebar player of a call (Google Meet…) can switch the microphone and the camera on and off",
+            "Right-click a tab > Rename tab; tab titles are cut later, and quick-access tabs show the mute speaker over the icon on hover",
+            "Tabs in a call or playing media are no longer freed when you browse elsewhere; Close tab on a quick-access or folder tab only frees the page and returns to the start page",
         ],
     ),
     (

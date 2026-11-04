@@ -148,6 +148,10 @@
   .tab:hover .sp { opacity: .7; } .sp:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
   .tab.split .sp { opacity: 1; color: var(--accent); }
   #pinned .sp { display: none; }
+  /* Idle tabs give the room of their hover buttons to the title, which truncates later. */
+  .tab:not(:hover) :is(.x, .mo) { display: none; }
+  .tab:not(:hover):not(.split) .sp { display: none; }
+  .tab { gap: 6px; }
   .shield { font-size: 11px; opacity: .7; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
@@ -273,18 +277,15 @@ function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, it
 
 function tabMenu(t, x, y) {
   const items = [{ icon: '📌', label: t.pinned ? 'Remove from quick access' : 'Add to quick access', run: { cmd: 'pin', id: t.id } }];
+  items.push({ icon: '✎', label: 'Rename tab', run: { cmd: 'edit_tab', id: t.id } });
   if (!t.pinned) {
     if (t.split) items.push({ icon: '◧', label: 'Close split view', run: { cmd: 'close_split' } });
     else if (t.id !== state.activeTab) items.push({ icon: '◧', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
-    if (state.folders.length) {
-      items.push({ sep: true }, { head: 'Pin in folder' });
-      for (const f of state.folders) {
-        if (f.id !== t.folder) items.push({ icon: f.icon || '📁', label: f.name, run: { cmd: 'move_tab', id: t.id, before: null, folder: f.id, pinned: false } });
-      }
-      if (t.folder != null) items.push({ icon: '↩', label: 'Unpin from folder', run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
-    }
   }
-  items.push({ sep: true }, { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+  const keep = t.pinned || t.folder != null;
+  items.push({ sep: true }, keep
+    ? { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close_instance', id: t.id } }
+    : { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
   openMenu(x, y, items);
 }
 
@@ -367,6 +368,28 @@ function folderNode(f, tabs, easels = [], subs = []) {
 }
 const folderNodes = new Map();
 function editFolderId(id) { const n = folderNodes.get(id); if (n) editFolder(n.h, n.name, n.f); }
+
+function editTab(id) {
+  const node = document.querySelector('.tab[data-tab="' + id + '"]');
+  const t = state.tabs.find(t => t.id === id);
+  const title = node && node.querySelector('.title');
+  if (!title || !t) return;
+  editing = true;
+  const input = el('input', 'fedit');
+  input.value = t.title;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true; editing = false;
+    if (commit && input.value.trim() !== t.title) send({ cmd: 'rename_tab', id, name: input.value });
+    flush();
+    window.bh.render(state);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+  input.onblur = () => finish(true);
+  for (const ev of ['click', 'mousedown', 'dblclick']) input.addEventListener(ev, (e) => e.stopPropagation());
+  title.replaceWith(input);
+  input.focus(); input.select();
+}
 
 function editSpace(id) {
   const b = document.querySelector('.space[data-space="' + id + '"]');
@@ -671,6 +694,7 @@ window.bh = {
   },
   downloads(list) { renderDownloads(list); },
   editSpace,
+  editTab,
   editFolderId,
   toast(m) {
     const t = $('toast'); t.textContent = m; t.classList.add('show');
