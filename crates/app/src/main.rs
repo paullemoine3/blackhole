@@ -62,6 +62,9 @@ struct MediaProbe {
     playing: bool,
     has: bool,
     muted: bool,
+    /// A long or live video/audio is playing, muted or not (not an ambient looping clip).
+    #[serde(default)]
+    watching: bool,
     /// A video of the page is floating in Picture in Picture.
     #[serde(default)]
     pip: bool,
@@ -70,6 +73,9 @@ struct MediaProbe {
     cam: bool,
     #[serde(default)]
     mic: bool,
+    /// A live WebRTC connection (a call), even when no camera or microphone is open.
+    #[serde(default)]
+    call: bool,
     #[serde(default, rename = "camOn")]
     cam_on: bool,
     #[serde(default, rename = "micOn")]
@@ -81,6 +87,8 @@ struct MediaProbe {
 const PEERS_EVERY: Duration = Duration::from_millis(400);
 /// How often background tabs are asked whether they play audio or video.
 const MEDIA_EVERY: Duration = Duration::from_millis(1500);
+/// How long a tab that was in a call or playing media is still treated as such.
+const BUSY_GRACE: Duration = Duration::from_secs(90);
 /// Spare page views kept ready, and how long the app must stay quiet before building them.
 const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
@@ -288,6 +296,8 @@ struct Running {
     pip_tab: Option<TabId>,
     /// The probe has seen the floating video of `pip_tab`: its disappearance means it came back.
     pip_seen: bool,
+    /// Last time a tab was seen in a call or playing media: it keeps its page for a while after.
+    busy_seen: HashMap<TabId, Instant>,
     /// Tab floated because the window lost focus; it returns when the window gets focus back.
     pip_on_blur: Option<TabId>,
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
@@ -640,6 +650,7 @@ impl Running {
             shown: None,
             pip_tab: None,
             pip_seen: false,
+            busy_seen: HashMap::new(),
             pip_on_blur: None,
             card_left: std::cell::Cell::new(f64::NAN),
             peers_due: Instant::now(),
@@ -890,8 +901,9 @@ impl Running {
             return;
         }
         self.card_left.set(left);
+        let origin = self.sidebar.full() - self.sidebar.width();
         let _ = self.chrome.evaluate_script(&format!(
-            "document.documentElement.style.setProperty('--cl','{left}px')"
+            "{{const s=document.documentElement.style;s.setProperty('--cl','{left}px');s.setProperty('--ox','{origin}px')}}"
         ));
     }
 
@@ -2497,8 +2509,9 @@ impl Running {
         }
         let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
         self.preloaded.retain(|id, _| self.tabs.contains_key(id));
-        // A tab in a call or playing media is never freed just because the user browsed elsewhere.
-        let busy: Vec<TabId> = self.media.lock().map_or_else(
+        // A tab in a call or playing media is never freed just because the user browsed elsewhere;
+        // a short grace period covers a probe that is late or a stream that is restarting.
+        let now_busy: Vec<TabId> = self.media.lock().map_or_else(
             |_| Vec::new(),
             |probes| {
                 self.tabs
@@ -2506,12 +2519,18 @@ impl Running {
                     .filter(|id| {
                         probes
                             .get(&id.0)
-                            .is_some_and(|p| p.playing || p.cam || p.mic)
+                            .is_some_and(|p| p.playing || p.watching || p.cam || p.mic || p.call)
                     })
                     .copied()
                     .collect()
             },
         );
+        for id in now_busy {
+            self.busy_seen.insert(id, now);
+        }
+        self.busy_seen
+            .retain(|id, seen| self.tabs.contains_key(id) && now.duration_since(*seen) < BUSY_GRACE);
+        let busy: Vec<TabId> = self.busy_seen.keys().copied().collect();
         // The sleep delay only starts once the call or the media has stopped.
         for id in &busy {
             self.last_active.insert(*id, now);
@@ -4174,6 +4193,9 @@ impl ApplicationHandler<Wake> for App {
                 return;
             }
             app.poll_webext();
+            // WebKit can reset the layer of a page view when it resizes or reappears.
+            #[cfg(target_os = "macos")]
+            app.round_cards(true);
             app.discard_idle_tabs();
             if app.flush_raise(false) {
                 wake = wake.min(RAISE_DELAY);

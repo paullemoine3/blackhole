@@ -14,10 +14,13 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   html { background: #100f17; }
-  body { background: radial-gradient(700px 500px at 0% -38px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
+  /* --ox: where the window's left edge is inside this view (it slides out with the sidebar), so the glow lines up with the top bar's. */
+  body { background: radial-gradient(700px 500px at var(--ox, 0px) -38px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
   body.flyout { box-shadow: 6px 0 24px rgba(0,0,0,.45); border-right: 1px solid rgba(255,255,255,.1); }
-  /* Elevation of the page card: it floats above the tinted frame; the shell sets --cl (its left edge). */
-  #cardshadow { position: fixed; z-index: -1; top: 0; right: 8px; bottom: 8px; left: var(--cl, 248px); border-radius: 14px; pointer-events: none; box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.07); }
+  /* Elevation of the page card: it floats above the tinted frame; the shell sets --cl (its left edge).
+     The view starts under the top bar, so the shadow fades in instead of being cut by that edge. */
+  #cardshadow { position: fixed; inset: 0; z-index: -1; pointer-events: none; -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 14px, #000 44px); mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 14px, #000 44px); }
+  #cardshadow::before { content: ''; position: absolute; top: 0; right: 8px; bottom: 8px; left: var(--cl, 248px); border-radius: 14px; box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.07); }
   body.flyout #cardshadow { display: none; }
   aside { width: var(--sw, 240px); height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; padding: 0; line-height: 1; }
