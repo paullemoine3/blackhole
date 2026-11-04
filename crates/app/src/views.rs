@@ -15,6 +15,7 @@ const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
+const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
 
@@ -360,6 +361,7 @@ fn build_tab(
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_initialization_script_for_main_only(AUTOFILL_JS, true)
         .with_initialization_script_for_main_only(FAVICON_JS, true)
+        .with_initialization_script_for_main_only(MEDIA_DEVICES_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(event) = serde_json::from_str::<PageEvent>(request.body()) {
                 events.push(Msg::Page(id(&s_ipc), event));
@@ -467,6 +469,27 @@ pub fn extension_popup(
         .build_as_child(window)
 }
 
+/// Corner radius of the page card, in logical pixels.
+pub const CARD_RADIUS: f64 = 14.0;
+
+/// Rounds the corners of a view that fills the card. macOS keeps it for the life of the view;
+/// on Windows the region has the size of the view, so this follows every resize.
+pub fn round_corners(view: &WebView, scale: f64) {
+    #[cfg(target_os = "macos")]
+    {
+        use wry::WebViewExtMacOS;
+        let _ = scale;
+        let native = view.webview();
+        if let Some(ptr) = std::ptr::NonNull::new(std::ptr::from_ref(&*native).cast_mut().cast()) {
+            blackhole_macos_webext::round_view(ptr, CARD_RADIUS);
+        }
+    }
+    #[cfg(windows)]
+    blackhole_macos_webext::round_view(view, (CARD_RADIUS * scale).round() as i32);
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = (view, scale);
+}
+
 /// Asks the engine to trim a hidden tab's memory. Windows: WebView2 "low" memory target (also
 /// lets it suspend the page). macOS: WebKit already throttles and suspends views that are
 /// not visible, and exposes no finer knob, so nothing to do.
@@ -510,13 +533,19 @@ pub const PIP_EXIT_JS: &str = "(()=>{for(const v of document.querySelectorAll('v
 pub const PIP_TOGGLE_JS: &str = "(()=>{const vs=[...document.querySelectorAll('video')];const on=vs.find(v=>v.webkitPresentationMode==='picture-in-picture');if(on||document.pictureInPictureElement){on?on.webkitSetPresentationMode('inline'):document.exitPictureInPicture();return}const v=vs.filter(v=>v.videoWidth>0).sort((a,b)=>(!b.paused-!a.paused)||(b.videoWidth*b.videoHeight-a.videoWidth*a.videoHeight))[0];if(!v)return;try{if(v.webkitSetPresentationMode)v.webkitSetPresentationMode('picture-in-picture');else v.requestPictureInPicture().catch(()=>{})}catch(e){}})()";
 
 /// Audible media only: muted ambient videos do not count, but one the user muted from the card does.
-pub const MEDIA_PROBE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm);const on=m.filter(v=>!v.paused&&!v.ended&&v.readyState>2);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.some(v=>v.dataset.bhm)}})()";
+/// Also reports the camera and microphone the page opened (see `ui/media_devices.js`).
+pub const MEDIA_PROBE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm);const on=m.filter(v=>!v.paused&&!v.ended&&v.readyState>2);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.some(v=>v.dataset.bhm),...(window.__bhRtc?window.__bhRtc.state():{})}})()";
 
 /// Pauses what plays, or resumes the media that was being watched.
 pub const MEDIA_TOGGLE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){on.forEach(v=>v.pause());return}const v=m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(v)v.play().catch(()=>{})})()";
 
 /// Mutes (or restores) the sound without touching videos the page itself keeps silent.
 pub const MEDIA_MUTE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const mute=!m.some(v=>v.dataset.bhm);m.forEach(v=>{if(mute){if(!v.muted){v.dataset.bhm='1';v.muted=true}}else if(v.dataset.bhm){delete v.dataset.bhm;v.muted=false}})})()";
+
+/// Switches the camera or the microphone (`video` / `audio`) of a call on or off.
+pub fn rtc_toggle_js(kind: &str) -> String {
+    format!("window.__bhRtc&&window.__bhRtc.toggle('{kind}')")
+}
 
 pub const MEDIA_PAUSE_JS: &str =
     "[...document.querySelectorAll('video,audio')].forEach(v=>v.pause())";

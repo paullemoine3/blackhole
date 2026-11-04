@@ -16,6 +16,9 @@
   html { background: #100f17; }
   body { background: radial-gradient(700px 500px at 0% -38px, var(--glow), transparent 70%), radial-gradient(500px 400px at 100% 100%, var(--glow2), transparent 70%), linear-gradient(180deg, var(--tint1, #100f17), var(--tint2, #100f17)); }
   body.flyout { box-shadow: 6px 0 24px rgba(0,0,0,.45); border-right: 1px solid rgba(255,255,255,.1); }
+  /* Elevation of the page card: it floats above the tinted frame; the shell sets --cl (its left edge). */
+  #cardshadow { position: fixed; z-index: -1; top: 0; right: 8px; bottom: 8px; left: var(--cl, 248px); border-radius: 14px; pointer-events: none; box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.07); }
+  body.flyout #cardshadow { display: none; }
   aside { width: var(--sw, 240px); height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; padding: 0; line-height: 1; }
   .row { display: flex; gap: 4px; align-items: center; }
@@ -80,11 +83,17 @@
   .mc .top { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
   .mc .top .dot { flex: none; }
   .mc .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .mc button { border: 0; background: rgba(255,255,255,.1); color: inherit; border-radius: 8px; width: 30px; height: 26px; cursor: pointer; font-size: 13px; }
+  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .mc button { border: 0; background: rgba(255,255,255,.1); color: inherit; border-radius: 8px; width: 28px; height: 26px; cursor: pointer; font-size: 13px; }
+  .mc button.off { background: rgba(255,92,92,.4); }
   .mc button:hover { background: rgba(255,255,255,.2); }
   .mc .cl { background: none; width: 22px; height: 22px; opacity: .6; }
   .snd { flex: none; border: 0; background: none; color: inherit; font-size: 11px; padding: 0 2px; cursor: pointer; opacity: .85; }
+  /* Quick access tabs: the speaker replaces the icon while the pointer is over the tile. */
+  #pinned .tab { position: relative; }
+  #pinned .snd { display: none; position: absolute; inset: 0; margin: auto; width: 32px; height: 32px; border-radius: 9px; font-size: 16px; opacity: 1; background: rgba(0,0,0,.35); }
+  #pinned .tab:hover .snd { display: block; }
+  #pinned .tab:hover:has(.snd) .dot { visibility: hidden; }
   body.noanim .mc, body.noanim .mc * { animation: none !important; transition: none !important; }
   .dl { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; cursor: pointer; animation: dl-in .2s ease-out; }
   .dl:hover { background: rgba(255,255,255,.14); }
@@ -165,6 +174,7 @@
 </style>
 </head>
 <body>
+<div id="cardshadow"></div>
 <aside>
 <div id="scroll">
   <div class="section secrow" id="pinhead" hidden><span class="fold" id="pinfold" title="Show or hide quick access"></span></div>
@@ -703,7 +713,10 @@ function renderMedia(s) {
   const btn = (cls, text, title, action) => { const b = el('button', cls, text); b.title = title; b.onclick = () => send({ cmd: 'media_ctl', id: t.id, action }); return b; };
   ctl.append(
     btn('', m.playing ? '⏸' : '▶', m.playing ? 'Pause' : 'Play', 'toggle'),
-    btn('', m.muted ? '🔇' : '🔊', m.muted ? 'Unmute' : 'Mute', 'mute'),
+    btn('', m.muted ? '🔇' : '🔊', m.muted ? 'Unmute' : 'Mute', 'mute'));
+  if (m.mic) ctl.append(btn(m.micOn ? '' : 'off', m.micOn ? '🎤' : '🔕', m.micOn ? 'Turn the microphone off' : 'Turn the microphone on', 'mic'));
+  if (m.cam) ctl.append(btn(m.camOn ? '' : 'off', m.camOn ? '📹' : '🚫', m.camOn ? 'Turn the camera off' : 'Turn the camera on', 'cam'));
+  ctl.append(
     btn('', '⧉', 'Picture in Picture', 'pip'),
     btn('cl', '✕', 'Close the player', 'close'));
   card.append(top, ctl);

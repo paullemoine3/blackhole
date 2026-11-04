@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.11",
+        &[
+            "Blank tabs kept ready no longer leave an empty about:blank entry in a new tab's history",
+            "The page card has rounder corners and a deeper shadow so it floats above the window",
+            "Picture in Picture: the floating window's back-to-tab button now brings you back to the tab, and a playing video also floats when you leave the browser",
+            "The sidebar player of a call (Google Meet…) can switch the microphone and the camera on and off",
+        ],
+    ),
+    (
         "0.7.10",
         &[
             "After a restart only the active tab is loaded: neighbouring tabs are no longer reopened until you start switching tabs",

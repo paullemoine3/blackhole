@@ -31,6 +31,28 @@ pub fn set_view_background(view: &wry::WebView, background: bool) {
     let _ = unsafe { core.SetMemoryUsageTargetLevel(level) };
 }
 
+/// Clips a page view to rounded corners with a window region. The region keeps the size it was
+/// made for, so call this again after every resize.
+pub fn round_view(view: &wry::WebView, radius: i32) {
+    use windows::Win32::{
+        Foundation::{HWND, RECT},
+        Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn},
+        UI::WindowsAndMessaging::GetClientRect,
+    };
+    let mut host = HWND::default();
+    let mut area = RECT::default();
+    // SAFETY: plain Win32 calls on the UI thread; the system owns the region once it is set.
+    unsafe {
+        if view.controller().ParentWindow(&mut host).is_err()
+            || GetClientRect(host, &mut area).is_err()
+        {
+            return;
+        }
+        let region = CreateRoundRectRgn(0, 0, area.right + 1, area.bottom + 1, radius * 2, radius * 2);
+        SetWindowRgn(host, Some(region), true);
+    }
+}
+
 /// The parts of `manifest.json` the toolbar needs.
 #[derive(Debug, Default, Clone)]
 struct Manifest {

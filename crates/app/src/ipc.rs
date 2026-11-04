@@ -265,7 +265,7 @@ pub enum UiCommand {
         x: f64,
         y: f64,
     },
-    /// Controls the audio/video of a tab from the sidebar card: toggle, mute, pip or close.
+    /// Controls the audio/video of a tab from the sidebar card: toggle, mute, pip, cam, mic or close.
     MediaCtl {
         id: u64,
         action: String,
@@ -410,6 +410,11 @@ pub enum PageEvent {
     /// The user picked the `index`-th suggestion from the last `AutofillQuery`.
     AutofillFill {
         index: usize,
+    },
+    /// A video left Picture in Picture (untrusted: only acted on for a tab the shell floated).
+    PipLeft {
+        #[serde(default)]
+        paused: bool,
     },
     /// The user clicked an area while the picker was armed (honoured only then; untrusted).
     LivePick {

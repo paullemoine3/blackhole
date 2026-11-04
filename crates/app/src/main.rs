@@ -62,6 +62,15 @@ struct MediaProbe {
     playing: bool,
     has: bool,
     muted: bool,
+    /// Camera / microphone opened by a call, and whether each is currently on.
+    #[serde(default)]
+    cam: bool,
+    #[serde(default)]
+    mic: bool,
+    #[serde(default, rename = "camOn")]
+    cam_on: bool,
+    #[serde(default, rename = "micOn")]
+    mic_on: bool,
 }
 
 /// How often the event loop wakes to refresh this window's place in the registry, look for
@@ -272,6 +281,12 @@ struct Running {
     raise_due: Option<Instant>,
     /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
     shown: Option<TabId>,
+    /// Tab floated because the user left it for another tab (its "back to tab" button returns).
+    pip_tab: Option<TabId>,
+    /// Tab floated because the window lost focus; it returns when the window gets focus back.
+    pip_on_blur: Option<TabId>,
+    /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
+    card_left: std::cell::Cell<f64>,
     peers_due: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
     media_due: Instant,
@@ -618,6 +633,9 @@ impl Running {
             next_preload: Instant::now() + PRELOAD_EVERY,
             raise_due: None,
             shown: None,
+            pip_tab: None,
+            pip_on_blur: None,
+            card_left: std::cell::Cell::new(f64::NAN),
             peers_due: Instant::now(),
             media: Arc::default(),
             media_due: Instant::now(),
@@ -838,6 +856,37 @@ impl Running {
                 let _ = view.set_bounds(rect);
             }
         }
+        self.round_cards(all);
+        self.place_card_shadow();
+    }
+
+    /// Rounds the page views that fill the card (the others are rounded when they are shown).
+    fn round_cards(&self, all: bool) {
+        let scale = self.scale();
+        let mut cards = vec![&self.home, self.active_view()];
+        cards.extend(self.easel_panel.view.as_ref());
+        if let Some(side) = self.split_tab().and_then(|id| self.tabs.get(&id)) {
+            cards.push(side);
+        }
+        if all {
+            cards.extend(self.tabs.values());
+        }
+        for view in cards {
+            views::round_corners(view, scale);
+        }
+    }
+
+    /// Tells the sidebar page where the card starts so the shadow under it follows the card.
+    fn place_card_shadow(&self) {
+        let size = self.window_size();
+        let left = card_rect(&self.sidebar, &size).0 - (self.sidebar.width() - self.sidebar.full());
+        if (self.card_left.get() - left).abs() < 0.5 {
+            return;
+        }
+        self.card_left.set(left);
+        let _ = self.chrome.evaluate_script(&format!(
+            "document.documentElement.style.setProperty('--cl','{left}px')"
+        ));
     }
 
     fn set_sidebar_width(&mut self, width: u32) {
@@ -2092,7 +2141,14 @@ impl Running {
             let (_, slot, view) = self.spares.swap_remove(at);
             slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
             let _ = view.set_bounds(bounds);
-            let _ = view.load_url(tab.url.as_str());
+            // `replace` takes over the spare's blank entry instead of adding to its history.
+            let target = serde_json::to_string(tab.url.as_str()).unwrap_or_default();
+            if view
+                .evaluate_script(&format!("location.replace({target})"))
+                .is_err()
+            {
+                let _ = view.load_url(tab.url.as_str());
+            }
             self.tabs.insert(tab.id, view);
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
             return;
@@ -2264,8 +2320,14 @@ impl Running {
             .iter()
             .filter_map(|t| {
                 let p = probes.get(&t.id.0)?;
-                let shown = (p.playing || p.has) && !self.media_dismissed.contains(&t.id.0);
-                shown.then(|| json!({"id": t.id.0, "playing": p.playing, "muted": p.muted}))
+                let shown =
+                    (p.playing || p.has || p.cam || p.mic) && !self.media_dismissed.contains(&t.id.0);
+                shown.then(|| {
+                    json!({
+                        "id": t.id.0, "playing": p.playing, "muted": p.muted,
+                        "cam": p.cam, "mic": p.mic, "camOn": p.cam_on, "micOn": p.mic_on,
+                    })
+                })
             })
             .collect();
         json!(list)
@@ -2305,7 +2367,12 @@ impl Running {
         let Some(view) = self.tabs.get(&id) else {
             return;
         };
+        let rtc;
         let js = match action {
+            "cam" | "mic" => {
+                rtc = views::rtc_toggle_js(if action == "cam" { "video" } else { "audio" });
+                rtc.as_str()
+            }
             "toggle" => views::MEDIA_TOGGLE_JS,
             "mute" => views::MEDIA_MUTE_JS,
             "pip" => views::PIP_TOGGLE_JS,
@@ -2579,9 +2646,13 @@ impl Running {
         if self.shown != active {
             if let Some(left) = self.shown.and_then(|id| self.tabs.get(&id)) {
                 let _ = left.evaluate_script(views::PIP_ENTER_JS);
+                self.pip_tab = self.shown;
             }
             if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
                 let _ = back.evaluate_script(views::PIP_EXIT_JS);
+                if self.pip_tab == active {
+                    self.pip_tab = None;
+                }
             }
             self.shown = active;
         }
@@ -2606,6 +2677,22 @@ impl Running {
         self.layout(true);
         self.apply_focus();
         self.ui_state();
+    }
+
+    /// The window lost focus (another app, a dialog): a playing video floats so it stays visible.
+    fn pip_on_blur(&mut self) {
+        let Some(id) = self.shown else { return };
+        if let Some(view) = self.tabs.get(&id) {
+            let _ = view.evaluate_script(views::PIP_ENTER_JS);
+            self.pip_on_blur = Some(id);
+        }
+    }
+
+    /// Focus is back: the video floated by `pip_on_blur` returns into its page.
+    fn pip_back_on_focus(&mut self) {
+        if let Some(view) = self.pip_on_blur.take().and_then(|id| self.tabs.get(&id)) {
+            let _ = view.evaluate_script(views::PIP_EXIT_JS);
+        }
     }
 
     fn apply_focus(&self) {
@@ -3744,6 +3831,18 @@ impl Running {
                     self.capture_live(tab, &selector, (w, h));
                 }
             }
+            Msg::Page(tab, PageEvent::PipLeft { paused }) => {
+                // The floating window's "back to tab" button: show the tab it came from. A
+                // paused video was closed with the window's own close button instead.
+                if self.pip_tab == Some(tab) && self.shown != Some(tab) {
+                    self.pip_tab = None;
+                    if !paused {
+                        self.window.set_minimized(false);
+                        self.window.focus_window();
+                        self.handle_ui(UiCommand::Activate { id: tab.0 });
+                    }
+                }
+            }
             Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
             Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
             Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),
@@ -4085,7 +4184,11 @@ impl ApplicationHandler<Wake> for App {
                     backdrop.paint();
                 }
             }
-            WindowEvent::Focused(true) => app.apply_focus(),
+            WindowEvent::Focused(true) => {
+                app.apply_focus();
+                app.pip_back_on_focus();
+            }
+            WindowEvent::Focused(false) => app.pip_on_blur(),
             _ => {}
         }
     }

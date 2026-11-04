@@ -102,10 +102,27 @@ mod tabs;
 #[cfg(target_os = "macos")]
 pub use host::ExtensionHost;
 
+/// Rounds the corners of a page view (a live `WKWebView`) with its Core Animation layer.
+#[cfg(target_os = "macos")]
+pub fn round_view(view: std::ptr::NonNull<std::ffi::c_void>, radius: f64) {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
+    use objc2_app_kit::NSView;
+    // Safety: `view` is a live NSView used on the main thread; the layer is only configured.
+    unsafe {
+        let view: &NSView = view.cast::<NSView>().as_ref();
+        view.setWantsLayer(true);
+        let layer: Option<Retained<AnyObject>> = msg_send![view, layer];
+        if let Some(layer) = layer {
+            let _: () = msg_send![&*layer, setCornerRadius: radius];
+            let _: () = msg_send![&*layer, setMasksToBounds: true];
+        }
+    }
+}
+
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
-pub use win::{set_view_background, ExtensionHost};
+pub use win::{round_view, set_view_background, ExtensionHost};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub {
