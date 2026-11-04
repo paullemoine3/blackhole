@@ -62,6 +62,9 @@ struct MediaProbe {
     playing: bool,
     has: bool,
     muted: bool,
+    /// A video of the page is floating in Picture in Picture.
+    #[serde(default)]
+    pip: bool,
     /// Camera / microphone opened by a call, and whether each is currently on.
     #[serde(default)]
     cam: bool,
@@ -283,6 +286,8 @@ struct Running {
     shown: Option<TabId>,
     /// Tab floated because the user left it for another tab (its "back to tab" button returns).
     pip_tab: Option<TabId>,
+    /// The probe has seen the floating video of `pip_tab`: its disappearance means it came back.
+    pip_seen: bool,
     /// Tab floated because the window lost focus; it returns when the window gets focus back.
     pip_on_blur: Option<TabId>,
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
@@ -634,6 +639,7 @@ impl Running {
             raise_due: None,
             shown: None,
             pip_tab: None,
+            pip_seen: false,
             pip_on_blur: None,
             card_left: std::cell::Cell::new(f64::NAN),
             peers_due: Instant::now(),
@@ -2336,7 +2342,12 @@ impl Running {
     /// Asks every loaded tab about its media, and refreshes the sidebar when something changed.
     fn service_media(&mut self) {
         if Instant::now() >= self.media_due {
-            self.media_due = Instant::now() + MEDIA_EVERY;
+            self.media_due = Instant::now()
+                + if self.pip_seen {
+                    Duration::from_millis(500)
+                } else {
+                    MEDIA_EVERY
+                };
             if let Ok(mut probes) = self.media.lock() {
                 probes.retain(|id, _| self.tabs.contains_key(&TabId(*id)));
             }
@@ -2355,6 +2366,17 @@ impl Running {
         if let Ok(probes) = self.media.lock() {
             self.media_dismissed
                 .retain(|id| !probes.get(id).is_some_and(|p| p.playing));
+        }
+        // Fallback for engines that do not tell the page when its floating window is left.
+        let floating = self
+            .pip_tab
+            .and_then(|tab| self.media.lock().ok()?.get(&tab.0).copied().map(|p| (tab, p)));
+        if let Some((tab, probe)) = floating {
+            if probe.pip {
+                self.pip_seen = true;
+            } else if self.pip_seen {
+                self.pip_returned(tab, !probe.playing);
+            }
         }
         let now = self.media_json();
         if now != self.media_seen {
@@ -2668,6 +2690,7 @@ impl Running {
             if let Some(left) = self.shown.and_then(|id| self.tabs.get(&id)) {
                 let _ = left.evaluate_script(views::PIP_ENTER_JS);
                 self.pip_tab = self.shown;
+                self.pip_seen = false;
             }
             if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
                 let _ = back.evaluate_script(views::PIP_EXIT_JS);
@@ -2698,6 +2721,20 @@ impl Running {
         self.layout(true);
         self.apply_focus();
         self.ui_state();
+    }
+
+    /// The floating window's "back to tab" button: show the tab it came from. A paused video was
+    /// closed with the window's own close button instead.
+    fn pip_returned(&mut self, tab: TabId, paused: bool) {
+        if self.pip_tab == Some(tab) && self.shown != Some(tab) {
+            self.pip_tab = None;
+            self.pip_seen = false;
+            if !paused {
+                self.window.set_minimized(false);
+                self.window.focus_window();
+                self.handle_ui(UiCommand::Activate { id: tab.0 });
+            }
+        }
     }
 
     /// The window lost focus (another app, a dialog): a playing video floats so it stays visible.
@@ -3876,18 +3913,7 @@ impl Running {
                     self.capture_live(tab, &selector, (w, h));
                 }
             }
-            Msg::Page(tab, PageEvent::PipLeft { paused }) => {
-                // The floating window's "back to tab" button: show the tab it came from. A
-                // paused video was closed with the window's own close button instead.
-                if self.pip_tab == Some(tab) && self.shown != Some(tab) {
-                    self.pip_tab = None;
-                    if !paused {
-                        self.window.set_minimized(false);
-                        self.window.focus_window();
-                        self.handle_ui(UiCommand::Activate { id: tab.0 });
-                    }
-                }
-            }
+            Msg::Page(tab, PageEvent::PipLeft { paused }) => self.pip_returned(tab, paused),
             Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
             Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
             Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),

@@ -1,7 +1,7 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
-        "0.7.11",
+        "0.7.12",
         &[
             "Blank tabs kept ready no longer leave an empty about:blank entry in a new tab's history",
             "The page card has rounder corners and a deeper shadow so it floats above the window",
