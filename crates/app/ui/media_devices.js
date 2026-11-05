@@ -2,6 +2,8 @@
 // it when a video leaves Picture in Picture (the "back to tab" button of the floating window).
 (() => {
   if (!/^https?:$/.test(location.protocol)) return;
+  // Document editors are left untouched: they check their environment very strictly.
+  if (/^(docs|drive|sheets|slides|script)\.google\.com$/.test(location.hostname)) return;
   const post = (message) => {
     try {
       window.ipc && window.ipc.postMessage(JSON.stringify(message));

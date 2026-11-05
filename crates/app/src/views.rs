@@ -469,6 +469,36 @@ pub fn extension_popup(
         .build_as_child(window)
 }
 
+/// Puts views in front of every other view, in the order given, without recreating them.
+/// Other platforms rebuild the views in the caller, when this returns false.
+pub fn raise_views(views: &[&WebView]) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use wry::WebViewExtMacOS;
+        for view in views {
+            let native = view.webview();
+            let Some(ptr) = std::ptr::NonNull::new(std::ptr::from_ref(&*native).cast_mut().cast())
+            else {
+                return false;
+            };
+            blackhole_macos_webext::raise_view(ptr);
+        }
+        true
+    }
+    #[cfg(windows)]
+    {
+        for view in views {
+            blackhole_macos_webext::raise_view(view);
+        }
+        true
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        let _ = views;
+        false
+    }
+}
+
 /// Corner radius of the page card, in logical pixels.
 pub const CARD_RADIUS: f64 = 14.0;
 

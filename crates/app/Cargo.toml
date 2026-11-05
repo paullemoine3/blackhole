@@ -17,6 +17,7 @@ wry = "0.57"
 winit = "0.30"
 tracing = "0.1"
 rfd = "0.17.2"
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.21"

@@ -53,6 +53,37 @@ pub fn round_view(view: &wry::WebView, radius: i32) {
     }
 }
 
+/// Whether the foreground window belongs to this process (the main window, a page view, a
+/// dialog of ours); the main window's own focus flickers when a child view takes the keyboard.
+pub fn app_is_active() -> bool {
+    use windows::Win32::{
+        System::Threading::GetCurrentProcessId,
+        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+    };
+    // SAFETY: plain Win32 queries.
+    unsafe {
+        let mut owner = 0u32;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut owner));
+        owner == GetCurrentProcessId()
+    }
+}
+
+/// Moves a view's host window to the top of its siblings without recreating the view.
+pub fn raise_view(view: &wry::WebView) {
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE},
+    };
+    let mut host = HWND::default();
+    // SAFETY: plain Win32 calls on the UI thread.
+    unsafe {
+        if view.controller().ParentWindow(&mut host).is_err() {
+            return;
+        }
+        let _ = SetWindowPos(host, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
 /// The parts of `manifest.json` the toolbar needs.
 #[derive(Debug, Default, Clone)]
 struct Manifest {

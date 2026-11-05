@@ -14,5 +14,5 @@ pub use extension::{matches_pattern, ContentScript, Extension, Injection};
 pub use history::{History, HistoryEntry};
 pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchEngine};
 pub use privacy::{BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy};
-pub use settings::{nearest_first, overflow_to_release, site_key, Settings};
+pub use settings::{overflow_to_release, site_key, Settings};
 pub use workspace::{sanitize_icon, Folder, FolderId, Space, SpaceId, Tab, TabId, Workspace};

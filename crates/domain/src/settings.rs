@@ -14,8 +14,8 @@ pub struct Settings {
     pub hardware_acceleration: bool,
     /// Minutes a background tab may sit unused before its engine view is released.
     pub tab_sleep_minutes: u32,
-    /// Tabs allowed to keep a live engine view at once (one of `LIVE_TABS_CHOICES`); the
-    /// spare budget is used to preload neighbouring tabs, the least recently used are released.
+    /// Tabs allowed to keep a live engine view at once (one of `LIVE_TABS_CHOICES`); the least
+    /// recently used are released.
     pub max_live_tabs: u32,
     /// Blank hidden views kept ready so the next tab opens instantly (one of `SPARE_CHOICES`);
     /// each costs a renderer's worth of memory.
@@ -62,14 +62,6 @@ pub fn overflow_to_release<K: Copy + PartialEq, T: Ord>(
     candidates.iter().take(excess).map(|(id, _)| *id).collect()
 }
 
-/// Indices of a list of `len` items ordered by distance from `active` (nearest first), the
-/// active one excluded: the tabs most likely to be opened next.
-pub fn nearest_first(len: usize, active: usize) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..len).filter(|&i| i != active).collect();
-    order.sort_by_key(|&i| (i.abs_diff(active), i));
-    order
-}
-
 impl Settings {
     /// How many tabs may keep a live engine view (visible ones included).
     pub const LIVE_TABS_CHOICES: [u32; 6] = [2, 3, 4, 6, 8, 12];
@@ -108,14 +100,7 @@ impl Default for Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::{nearest_first, overflow_to_release};
-
-    #[test]
-    fn preloads_nearest_tabs_first() {
-        assert_eq!(nearest_first(5, 2), vec![1, 3, 0, 4]);
-        assert_eq!(nearest_first(3, 0), vec![1, 2]);
-        assert!(nearest_first(1, 0).is_empty());
-    }
+    use super::overflow_to_release;
 
     #[test]
     fn releases_oldest_unprotected_tabs_over_budget() {

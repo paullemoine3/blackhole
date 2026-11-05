@@ -12,6 +12,7 @@ mod extensions;
 mod favicons;
 mod ipc;
 mod sidebar;
+mod stats;
 mod views;
 
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
@@ -155,10 +156,9 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
         (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
     )
 }
-/// Pause between two background tab preloads, so a burst never competes with the active page.
-const PRELOAD_EVERY: Duration = Duration::from_secs(3);
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
 const RAISE_DELAY: Duration = Duration::from_millis(400);
+const BLUR_DELAY: Duration = Duration::from_millis(350);
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
@@ -283,11 +283,6 @@ struct Running {
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
     last_active: HashMap<TabId, Instant>,
-    /// Background tabs warmed up but never shown yet, with their creation time.
-    preloaded: HashMap<TabId, Instant>,
-    /// Tabs already preloaded once: a released tab is not warmed up again until visited.
-    preload_tried: HashSet<TabId>,
-    next_preload: Instant,
     /// Set when a tab view was created above the overlays; they are rebuilt once it is due.
     raise_due: Option<Instant>,
     /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
@@ -300,8 +295,13 @@ struct Running {
     busy_seen: HashMap<TabId, Instant>,
     /// Tab floated because the window lost focus; it returns when the window gets focus back.
     pip_on_blur: Option<TabId>,
+    /// When a focus loss of the window becomes a real blur, unless focus came back before.
+    blur_due: Option<Instant>,
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
     card_left: std::cell::Cell<f64>,
+    meter: stats::Meter,
+    meter_due: Instant,
+    stats_tabs: usize,
     peers_due: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
     media_due: Instant,
@@ -643,16 +643,17 @@ impl Running {
             spares: Vec::new(),
             spares_due: Some(Instant::now() + SPARES_DELAY),
             last_active: HashMap::new(),
-            preloaded: HashMap::new(),
-            preload_tried: HashSet::new(),
-            next_preload: Instant::now() + PRELOAD_EVERY,
             raise_due: None,
             shown: None,
             pip_tab: None,
             pip_seen: false,
             busy_seen: HashMap::new(),
             pip_on_blur: None,
+            blur_due: None,
             card_left: std::cell::Cell::new(f64::NAN),
+            meter: stats::Meter::new(),
+            meter_due: Instant::now(),
+            stats_tabs: 0,
             peers_due: Instant::now(),
             media: Arc::default(),
             media_due: Instant::now(),
@@ -964,6 +965,25 @@ impl Running {
             let list = self.downloads_json();
             self.ui(format!("window.bh&&bh.downloads({list})"));
         }
+    }
+
+    /// Sends the live tab count and the browser's memory / CPU use to the sidebar.
+    fn service_stats(&mut self) {
+        let tabs = self.tabs.len();
+        // A closed tab is reflected quickly; the engine only returns its memory a moment later.
+        if tabs != self.stats_tabs {
+            self.stats_tabs = tabs;
+            self.meter_due = self.meter_due.min(Instant::now() + Duration::from_millis(800));
+        }
+        if Instant::now() < self.meter_due {
+            return;
+        }
+        self.meter_due = Instant::now() + Duration::from_secs(3);
+        let usage = self.meter.sample();
+        self.ui(format!(
+            "window.bh&&bh.stats&&bh.stats({tabs},{},{:.0})",
+            usage.memory_mb, usage.cpu
+        ));
     }
 
     fn tick_sidebar(&mut self) {
@@ -2265,7 +2285,7 @@ impl Running {
     }
 
     /// Native views stack in creation order, so the overlays are recreated above new tabs. Burst
-    /// of tab creations (preloading, session restore) share a single recreation.
+    /// of tab creations (session restore) share a single recreation.
     fn raise_palette(&mut self) {
         self.raise_due = Some(Instant::now() + RAISE_DELAY);
     }
@@ -2284,6 +2304,11 @@ impl Running {
     }
 
     fn raise_overlays(&mut self) {
+        // Restacking the existing overlays: rebuilding them made the sidebar flash.
+        if views::raise_views(&[&self.hotzone, &self.flyout, &self.palette]) {
+            self.apply_focus();
+            return;
+        }
         let size = self.window_size();
         match views::ui_view(
             &self.window,
@@ -2508,7 +2533,6 @@ impl Running {
             }
         }
         let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
-        self.preloaded.retain(|id, _| self.tabs.contains_key(id));
         // A tab in a call or playing media is never freed just because the user browsed elsewhere;
         // a short grace period covers a probe that is late or a stream that is restarting.
         let now_busy: Vec<TabId> = self.media.lock().map_or_else(
@@ -2540,18 +2564,13 @@ impl Running {
             .keys()
             .filter(|id| !busy.contains(id))
             .filter(|id| {
-                let seen = self
-                    .last_active
-                    .get(id)
-                    .or_else(|| self.preloaded.get(id))
-                    .copied()
-                    .unwrap_or(now);
+                let seen = self.last_active.get(id).copied().unwrap_or(now);
                 now.duration_since(seen) >= limit
             })
             .copied()
             .collect();
         // Cap on live views, independent of the delay: each one is a renderer process.
-        // Tabs never shown (preloaded) sort first, then the least recently used.
+        // Tabs never shown sort first, then the least recently used.
         let live: Vec<(TabId, Option<Instant>)> = self
             .tabs
             .keys()
@@ -2578,56 +2597,8 @@ impl Running {
         for id in idle {
             self.tabs.remove(&id);
             self.last_active.remove(&id);
-            self.preloaded.remove(&id);
         }
         self.ui_state();
-    }
-
-    /// Warms up the tab the user is most likely to open next while the live budget has room.
-    /// Returns true while more tabs are waiting, so the loop comes back soon.
-    fn preload_next_tab(&mut self) -> bool {
-        let now = Instant::now();
-        // After a restart only the active tab is loaded: neighbours are warmed up once the
-        // user has actually moved between tabs.
-        if self.home_shown()
-            || self.last_active.len() < 2
-            || self.palette_open
-            || self.peek.is_some()
-            || self.tabs.len() >= self.svc.settings().max_live_tabs as usize
-        {
-            return false;
-        }
-        if now < self.next_preload {
-            return true;
-        }
-        #[cfg(windows)]
-        if self.ext_popup.is_some() {
-            return false;
-        }
-        let space = self.svc.workspace().active_space();
-        let Some(active) = space.tabs.iter().position(|t| Some(t.id) == space.active_tab) else {
-            return false;
-        };
-        let wanted = blackhole_domain::nearest_first(space.tabs.len(), active)
-            .into_iter()
-            .map(|i| &space.tabs[i])
-            .find(|t| {
-                !self.tabs.contains_key(&t.id)
-                    && !self.preload_tried.contains(&t.id)
-                    && matches!(t.url.scheme(), "http" | "https")
-            })
-            .cloned();
-        let Some(tab) = wanted else {
-            return false;
-        };
-        self.preload_tried.insert(tab.id);
-        self.ensure_view(&tab);
-        if let Some(view) = self.tabs.get(&tab.id) {
-            views::set_background(view, true);
-            self.preloaded.insert(tab.id, now);
-        }
-        self.next_preload = now + PRELOAD_EVERY;
-        true
     }
 
     /// Creates the shell pages that are about to be needed and releases the ones left unused.
@@ -2699,7 +2670,6 @@ impl Running {
         };
         if let Some(id) = active {
             self.last_active.insert(id, Instant::now());
-            self.preloaded.remove(&id);
         }
         self.ensure_panels();
         if let Some(panel) = &self.easel_panel.view {
@@ -2718,6 +2688,9 @@ impl Running {
                 }
             }
             self.shown = active;
+            if let Some(id) = active {
+                self.reveal_tab(id);
+            }
         }
         if !self.library {
             // Keep the page blank while hidden so the next opening fades in without a flash.
@@ -2742,6 +2715,36 @@ impl Running {
         self.ui_state();
     }
 
+    /// Unfolds what hides a tab in the sidebar (its section and every folder above it), so the
+    /// tab that becomes active, e.g. from a search, is always visible.
+    fn reveal_tab(&mut self, id: TabId) {
+        let space = self.svc.workspace().active_space();
+        let Some(tab) = space.tabs.iter().find(|t| t.id == id) else {
+            return;
+        };
+        let (section, mut next) = if tab.pinned {
+            ("pinned", None)
+        } else if tab.folder.is_some() {
+            ("folders", tab.folder)
+        } else {
+            return;
+        };
+        let mut closed = Vec::new();
+        while let Some(folder) = next.and_then(|f| space.folders.iter().find(|x| x.id == f)) {
+            if folder.collapsed {
+                closed.push(folder.id);
+            }
+            next = folder.parent;
+        }
+        let section_closed = self.svc.settings().collapsed_sections.contains(section);
+        if section_closed {
+            self.svc.set_section_collapsed(section, false);
+        }
+        for folder in closed {
+            self.svc.toggle_folder(folder);
+        }
+    }
+
     /// The floating window's "back to tab" button: show the tab it came from. A paused video was
     /// closed with the window's own close button instead.
     fn pip_returned(&mut self, tab: TabId, paused: bool) {
@@ -2757,7 +2760,21 @@ impl Running {
     }
 
     /// The window lost focus (another app, a dialog): a playing video floats so it stays visible.
+    /// Moving the window or clicking into a page view also drops the window's own focus, so the
+    /// loss is only acted on when it lasts and the whole application is no longer frontmost.
     fn pip_on_blur(&mut self) {
+        let Some(due) = self.blur_due else { return };
+        if Instant::now() < due {
+            return;
+        }
+        // Still the frontmost app: focus only moved inside it. Keep watching, since switching
+        // to another app later raises no further event.
+        #[cfg(any(target_os = "macos", windows))]
+        if blackhole_macos_webext::app_is_active() {
+            self.blur_due = Some(Instant::now() + BLUR_DELAY);
+            return;
+        }
+        self.blur_due = None;
         let Some(id) = self.shown else { return };
         if let Some(view) = self.tabs.get(&id) {
             let _ = view.evaluate_script(views::PIP_ENTER_JS);
@@ -2767,6 +2784,7 @@ impl Running {
 
     /// Focus is back: the video floated by `pip_on_blur` returns into its page.
     fn pip_back_on_focus(&mut self) {
+        self.blur_due = None;
         if let Some(view) = self.pip_on_blur.take().and_then(|id| self.tabs.get(&id)) {
             let _ = view.evaluate_script(views::PIP_EXIT_JS);
         }
@@ -3427,8 +3445,6 @@ impl Running {
                 let id = TabId(id);
                 self.tabs.remove(&id);
                 self.last_active.remove(&id);
-                self.preloaded.remove(&id);
-                self.preload_tried.insert(id);
                 if let Ok(mut probes) = self.media.lock() {
                     probes.remove(&id.0);
                 }
@@ -4200,12 +4216,14 @@ impl ApplicationHandler<Wake> for App {
             if app.flush_raise(false) {
                 wake = wake.min(RAISE_DELAY);
             }
-            if app.preload_next_tab() {
-                wake = wake.min(PRELOAD_EVERY);
-            }
             app.refill_spares();
             app.service_peers();
             app.service_media();
+            app.service_stats();
+            if app.blur_due.is_some() {
+                app.pip_on_blur();
+                wake = wake.min(BLUR_DELAY);
+            }
             if !app.dl_live.is_empty() {
                 wake = wake.min(DOWNLOAD_POLL);
             }
@@ -4281,7 +4299,7 @@ impl ApplicationHandler<Wake> for App {
                 app.apply_focus();
                 app.pip_back_on_focus();
             }
-            WindowEvent::Focused(false) => app.pip_on_blur(),
+            WindowEvent::Focused(false) => app.blur_due = Some(Instant::now() + BLUR_DELAY),
             _ => {}
         }
     }

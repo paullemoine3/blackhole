@@ -78,6 +78,8 @@
   #scroll::-webkit-scrollbar-track { background: transparent; }
   #scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
   #scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+  #stats { flex: none; display: flex; justify-content: center; gap: 6px; font-size: 11px; color: rgba(255,255,255,.55); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+  #stats:empty { display: none; }
   #spaces, #update, #dls, #media, footer { flex: none; }
   #dls { display: flex; flex-direction: column; gap: 6px; }
   #dls:empty, #media:empty { display: none; }
@@ -197,6 +199,7 @@
   <div id="media"></div>
   <div id="dls"></div>
   <button class="update" id="update" hidden><span class="ico"></span><span class="full-only" id="updtxt"></span></button>
+  <div id="stats" title="Active tabs · memory and CPU used by BlackHole and its web engine"></div>
   <footer>
     <button class="icon" id="library" title="Library">🗂</button>
     <button class="icon" id="gear" title="Settings">⚙</button>
@@ -211,6 +214,7 @@ const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const $ = (id) => document.getElementById(id);
 const PALETTE = ['#7c5cff', '#ff5c8a', '#2fd4a0', '#ffb020', '#3aa0ff'];
 let state = { tabs: [], spaces: [], engines: [], activeTab: null };
+let shownTab = null;
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; }
@@ -640,6 +644,13 @@ document.addEventListener('drop', async (e) => {
 });
 
 window.bh = {
+  stats(tabs, mb, cpu) {
+    const box = $('stats');
+    box.replaceChildren(
+      el('span', null, `${tabs} tab${tabs === 1 ? '' : 's'}`),
+      el('span', 'full-only', `· ${mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB'} · ${cpu}% CPU`),
+    );
+  },
   render(s) {
     // The icon table is large: the host only sends it when it changed.
     if (!s.favicons) s.favicons = (deferred && deferred.favicons) || (state && state.favicons) || {};
@@ -673,6 +684,11 @@ window.bh = {
     const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
     $('folders').replaceChildren(...roots.map(f => f.box));
     $('tabs').replaceChildren(...loose);
+    if (s.activeTab !== shownTab) {
+      shownTab = s.activeTab;
+      const current = document.querySelector('.tab.active');
+      if (current) current.scrollIntoView({ block: 'nearest' });
+    }
     if (newFolderPending && s.folders.length) {
       newFolderPending = false;
       editFolderId(s.folders[s.folders.length - 1].id);

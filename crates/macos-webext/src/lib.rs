@@ -110,19 +110,66 @@ pub fn round_view(view: std::ptr::NonNull<std::ffi::c_void>, radius: f64) {
     // Safety: `view` is a live NSView used on the main thread; the layer is only configured.
     unsafe {
         let view: &NSView = view.cast::<NSView>().as_ref();
-        view.setWantsLayer(true);
+        if !view.wantsLayer() {
+            view.setWantsLayer(true);
+        }
         let layer: Option<Retained<AnyObject>> = msg_send![view, layer];
         if let Some(layer) = layer {
-            let _: () = msg_send![&*layer, setCornerRadius: radius];
+            let radius_now: f64 = msg_send![&*layer, cornerRadius];
+            if (radius_now - radius).abs() > f64::EPSILON {
+                let _: () = msg_send![&*layer, setCornerRadius: radius];
+            }
             let _: () = msg_send![&*layer, setMasksToBounds: true];
         }
+    }
+}
+
+/// Moves a view above its siblings without recreating it (native stacking order).
+#[cfg(target_os = "macos")]
+pub fn raise_view(view: std::ptr::NonNull<std::ffi::c_void>) {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
+    use objc2_app_kit::NSView;
+    // Safety: `view` is a live NSView used on the main thread; `NSWindowAbove` is 1 and a nil
+    // sibling places the view in front of all the others.
+    unsafe {
+        let view: &NSView = view.cast::<NSView>().as_ref();
+        let parent: Option<Retained<AnyObject>> = msg_send![view, superview];
+        if let Some(parent) = parent {
+            let nothing: *const AnyObject = std::ptr::null();
+            let _: () = msg_send![&*parent, addSubview: view, positioned: 1isize, relativeTo: nothing];
+        }
+    }
+}
+
+/// The process macOS bills `pid` to: WebKit's content and network processes are launched by
+/// launchd, so this is the only way to tie them back to the browser. Falls back to `pid`.
+#[cfg(target_os = "macos")]
+pub fn responsible_pid(pid: u32) -> u32 {
+    extern "C" {
+        fn responsibility_get_pid_responsible_for_pid(pid: i32) -> i32;
+    }
+    let Ok(raw) = i32::try_from(pid) else { return pid };
+    // Safety: plain libsystem query that only reads the process table.
+    let owner = unsafe { responsibility_get_pid_responsible_for_pid(raw) };
+    u32::try_from(owner).ok().filter(|p| *p > 0).unwrap_or(pid)
+}
+
+/// Whether the browser is still the frontmost application. Window focus alone is not enough:
+/// it also leaves the main window when a page view or an overlay takes the keyboard.
+#[cfg(target_os = "macos")]
+pub fn app_is_active() -> bool {
+    use objc2::{class, msg_send, rc::Retained, runtime::AnyObject};
+    // Safety: `isActive` is a plain getter on the shared application object.
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![class!(NSApplication), sharedApplication];
+        app.is_none_or(|app| msg_send![&*app, isActive])
     }
 }
 
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
-pub use win::{round_view, set_view_background, ExtensionHost};
+pub use win::{app_is_active, raise_view, round_view, set_view_background, ExtensionHost};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub {

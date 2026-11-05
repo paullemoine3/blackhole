@@ -1,6 +1,19 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.13",
+        &[
+            "Neighbouring tabs are no longer opened in the background: a tab only loads when you open it",
+            "The sidebar unfolds the folders and sections hiding the active tab, e.g. when a search opens a pinned tab",
+            "Picture-in-picture on focus loss no longer triggers when you only move the window or click inside the browser",
+            "The sidebar shows the number of active tabs and the memory and CPU used by BlackHole",
+            "The hidden sidebar no longer flickers when pages load or tabs are created (macOS)",
+            "Calls and live streams keep their tab alive more reliably when you browse elsewhere",
+            "Screen sharing keeps its sharpness (resolution first) and the shadow under the page card fades in cleanly under the top bar",
+            "Google Docs, Sheets and Slides load without the \"Loading issue\" page",
+        ],
+    ),
+    (
         "0.7.12",
         &[
             "Blank tabs kept ready no longer leave an empty about:blank entry in a new tab's history",
