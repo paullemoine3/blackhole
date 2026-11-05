@@ -283,6 +283,10 @@ struct Running {
     /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
     autofill: HashMap<TabId, Vec<import::Login>>,
     last_active: HashMap<TabId, Instant>,
+    /// Page zoom per site (host), for the session.
+    zoom: HashMap<String, f64>,
+    /// Tabs whose view currently has a zoom other than 100%.
+    zoomed: HashSet<TabId>,
     /// Set when a tab view was created above the overlays; they are rebuilt once it is due.
     raise_due: Option<Instant>,
     /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
@@ -643,6 +647,8 @@ impl Running {
             spares: Vec::new(),
             spares_due: Some(Instant::now() + SPARES_DELAY),
             last_active: HashMap::new(),
+            zoom: HashMap::new(),
+            zoomed: HashSet::new(),
             raise_due: None,
             shown: None,
             pip_tab: None,
@@ -2101,7 +2107,14 @@ impl Running {
                 .and_then(|t| self.tabs.get(&t.id))
                 .is_some_and(|v| can(v).unwrap_or(false))
         };
+        let zoom = ws
+            .active_tab()
+            .filter(|_| !self.home_shown())
+            .and_then(|t| t.url.host_str())
+            .and_then(|h| self.zoom.get(h))
+            .map_or(100, |z| (z * 100.0).round() as u32);
         let state = json!({
+            "zoom": zoom,
             "canBack": nav(WebView::can_go_back),
             "canForward": nav(WebView::can_go_forward),
             "os": std::env::consts::OS,
@@ -3902,7 +3915,68 @@ impl Running {
             "shift+s" => self.handle_ui(UiCommand::CaptureToEasel),
             "shift+l" => self.handle_ui(UiCommand::LivePick),
             "\\" => self.toggle_split(),
+            "zoom_in" | "zoom_out" | "zoom_reset" => self.zoom_active(key),
+            "f" => self.with_active_tab(|v| {
+                let _ = v.evaluate_script("window.__bhFind&&__bhFind()");
+            }),
+            "g" | "shift+g" => self.with_active_tab(|v| {
+                let call = if key == "g" { "next" } else { "prev" };
+                let _ = v.evaluate_script(&format!("window.__bhFind&&__bhFind('{call}')"));
+            }),
+            "p" => self.with_active_tab(|v| {
+                let _ = v.print();
+            }),
             _ => {}
+        }
+    }
+
+    /// Zooms the active page like other browsers do: the level belongs to the site and is kept
+    /// for the whole session.
+    fn zoom_active(&mut self, action: &str) {
+        let Some(tab) = self.svc.workspace().active_tab().map(|t| t.id) else {
+            return;
+        };
+        let host = self
+            .tabs
+            .get(&tab)
+            .and_then(|v| v.url().ok())
+            .and_then(|raw| Url::parse(&raw).ok())
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let Some(host) = host else { return };
+        let current = self.zoom.get(&host).copied().unwrap_or(1.0);
+        let next = match action {
+            "zoom_in" => views::next_zoom(current, true),
+            "zoom_out" => views::next_zoom(current, false),
+            _ => 1.0,
+        };
+        if (next - 1.0).abs() < 0.01 {
+            self.zoom.remove(&host);
+        } else {
+            self.zoom.insert(host, next);
+        }
+        self.apply_zoom(tab);
+        self.ui_bar();
+        self.toast(&format!("Zoom {}%", (next * 100.0).round()));
+    }
+
+    /// Gives a tab the zoom of the site it shows (100% when the site has none).
+    fn apply_zoom(&mut self, tab: TabId) {
+        let Some(view) = self.tabs.get(&tab) else { return };
+        let host = view
+            .url()
+            .ok()
+            .and_then(|raw| Url::parse(&raw).ok())
+            .and_then(|u| u.host_str().map(str::to_owned));
+        let wanted = host.and_then(|h| self.zoom.get(&h).copied()).unwrap_or(1.0);
+        let zoomed = self.zoomed.contains(&tab);
+        if (wanted - 1.0).abs() < 0.01 && !zoomed {
+            return;
+        }
+        let _ = view.zoom(wanted);
+        if (wanted - 1.0).abs() < 0.01 {
+            self.zoomed.remove(&tab);
+        } else {
+            self.zoomed.insert(tab);
         }
     }
 
@@ -3922,6 +3996,7 @@ impl Running {
             .host_str()
             .and_then(|h| self.svc.boost_for(h))
             .map(str::to_owned);
+        self.apply_zoom(tab);
         if let (Some(css), Some(view)) = (boost, self.tabs.get(&tab)) {
             views::apply_boost(view, &css);
         }

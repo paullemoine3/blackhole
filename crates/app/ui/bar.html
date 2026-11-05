@@ -24,6 +24,10 @@
   #omni:hover { background: rgba(255,255,255,.14); }
   #url { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #url.ph { color: rgba(236,234,245,.5); }
+  #zoom { position: absolute; right: 8px; top: 3px; width: auto; height: 24px; padding: 0 9px; border-radius: 7px; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255,255,255,.14); opacity: 1; display: flex; align-items: center; }
+  #zoom[hidden] { display: none; }
+  #zoom:hover { background: rgba(255,255,255,.24); }
+  #zoom .x { opacity: .6; font-size: 11px; }
   body.secure #omni { padding-left: 30px; padding-right: 30px; }
   body.secure .lock { display: block; }
   .lock { display: none; }
@@ -51,6 +55,7 @@
   <div class="center">
     <svg class="lock" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="5.2" width="8" height="6" rx="1.5"/><path d="M3.8 5.2V3.8a2.2 2.2 0 0 1 4.4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
     <button id="omni" type="button"><span id="url"></span></button>
+    <button id="zoom" type="button" hidden title="Reset zoom (⌘0)"><span id="zoomn"></span><span class="x">✕</span></button>
   </div>
   <div class="side right" id="exts"></div>
   <span class="priv" id="priv" hidden>Private</span>
@@ -84,6 +89,10 @@ window.bh = {
     $('back').disabled = !s.canBack;
     $('forward').disabled = !s.canForward;
     $('priv').hidden = !s.private;
+    const zoom = s.zoom || 100;
+    $('zoom').hidden = zoom === 100;
+    $('zoomn').textContent = '🔍 ' + zoom + '%';
+    $('zoom').title = 'Reset zoom (' + (s.os === 'macos' ? '⌘0' : 'Ctrl+0') + ')';
     document.body.classList.toggle('secure', s.url.startsWith('https:'));
     $('url').textContent = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
     $('url').classList.toggle('ph', !s.url);
@@ -102,6 +111,7 @@ const mix = (hex, r) => {
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
 };
 $('omni').onclick = () => send({ cmd: 'palette', mode: 'url' });
+$('zoom').onclick = () => send({ cmd: 'shortcut', key: 'zoom_reset' });
 $('sidebar').onclick = () => send({ cmd: 'lock' });
 $('back').onclick = () => send({ cmd: 'back' });
 $('forward').onclick = () => send({ cmd: 'forward' });

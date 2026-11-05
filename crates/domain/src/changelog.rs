@@ -1,9 +1,16 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.14",
+        &[
+            "New shortcuts, Cmd on macOS and Ctrl on Windows: zoom in / out / reset (+ − 0, remembered per site), find in page (F, then G / Shift+G for the next / previous match) and print (P)",
+            "The address bar shows the zoom level of a zoomed page, with a button to reset it",
+            "Neighbouring tabs are no longer opened in the background: a tab only loads when you open it",
+        ],
+    ),
+    (
         "0.7.13",
         &[
-            "Neighbouring tabs are no longer opened in the background: a tab only loads when you open it",
             "The sidebar unfolds the folders and sections hiding the active tab, e.g. when a search opens a pinned tab",
             "Picture-in-picture on focus loss no longer triggers when you only move the window or click inside the browser",
             "The sidebar shows the number of active tabs and the memory and CPU used by BlackHole",

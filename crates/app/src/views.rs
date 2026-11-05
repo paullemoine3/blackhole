@@ -16,6 +16,7 @@ const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
+const FIND_JS: &str = include_str!("../ui/find.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
 
@@ -362,6 +363,7 @@ fn build_tab(
         .with_initialization_script_for_main_only(AUTOFILL_JS, true)
         .with_initialization_script_for_main_only(FAVICON_JS, true)
         .with_initialization_script_for_main_only(MEDIA_DEVICES_JS, true)
+        .with_initialization_script_for_main_only(FIND_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(event) = serde_json::from_str::<PageEvent>(request.body()) {
                 events.push(Msg::Page(id(&s_ipc), event));
@@ -551,6 +553,18 @@ pub fn go_forward(view: &WebView) {
 
 pub fn reload(view: &WebView) {
     let _ = view.evaluate_script("location.reload()");
+}
+
+/// Page zoom steps, like the other browsers (100% is the fifth).
+pub const ZOOM_STEPS: [f64; 12] = [0.5, 0.67, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+/// The zoom step after (`up`) or before `current`.
+pub fn next_zoom(current: f64, up: bool) -> f64 {
+    let at = ZOOM_STEPS
+        .iter()
+        .position(|z| (z - current).abs() < 0.01)
+        .unwrap_or(4);
+    ZOOM_STEPS[if up { (at + 1).min(ZOOM_STEPS.len() - 1) } else { at.saturating_sub(1) }]
 }
 
 /// Floats the playing video above other windows (WebKit presentation mode, standard API elsewhere).
