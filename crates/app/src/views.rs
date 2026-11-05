@@ -17,6 +17,7 @@ const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
+const DEBUG_LOG_JS: &str = include_str!("../ui/debug_log.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
 
@@ -364,6 +365,10 @@ fn build_tab(
         .with_initialization_script_for_main_only(FAVICON_JS, true)
         .with_initialization_script_for_main_only(MEDIA_DEVICES_JS, true)
         .with_initialization_script_for_main_only(FIND_JS, true)
+        .with_initialization_script_for_main_only(
+            if cfg!(debug_assertions) { DEBUG_LOG_JS } else { "" },
+            false,
+        )
         .with_ipc_handler(move |request| {
             if let Ok(event) = serde_json::from_str::<PageEvent>(request.body()) {
                 events.push(Msg::Page(id(&s_ipc), event));
@@ -437,8 +442,9 @@ fn build_tab(
                 return;
             }
             if let Ok(url) = Url::parse(&raw) {
-                if matches!(event, PageLoadEvent::Finished) {
-                    load.push(Msg::Loaded(tab, url.clone()));
+                match event {
+                    PageLoadEvent::Started => load.push(Msg::LoadStart(tab)),
+                    PageLoadEvent::Finished => load.push(Msg::Loaded(tab, url.clone())),
                 }
                 load.push(Msg::Url(tab, url));
             }
@@ -553,6 +559,17 @@ pub fn go_forward(view: &WebView) {
 
 pub fn reload(view: &WebView) {
     let _ = view.evaluate_script("location.reload()");
+}
+
+/// Hard refresh: drops service workers and Cache Storage, refetches the page bypassing the
+/// HTTP cache, then reloads. Cookies and storage are kept so the user stays signed in.
+pub fn hard_reload(view: &WebView) {
+    let _ = view.evaluate_script(
+        "(async()=>{try{for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister()}catch(e){}\
+         try{for(const k of await caches.keys())await caches.delete(k)}catch(e){}\
+         try{await fetch(location.href,{cache:'reload',credentials:'same-origin'})}catch(e){}\
+         location.reload()})()",
+    );
 }
 
 /// Page zoom steps, like the other browsers (100% is the fifth).

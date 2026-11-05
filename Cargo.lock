@@ -350,7 +350,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "blackhole"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "blackhole-application",
  "blackhole-domain",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-application"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "blackhole-domain",
  "thiserror 2.0.21",
@@ -384,14 +384,14 @@ dependencies = [
 
 [[package]]
 name = "blackhole-domain"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "url",
 ]
 
 [[package]]
 name = "blackhole-infrastructure"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "blackhole-application",
  "blackhole-domain",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-macos-url"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-macos-webext"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
@@ -5290,8 +5290,6 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 [[package]]
 name = "wry"
 version = "0.57.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "759c50ddad0ef9913bb5496cb9d509a50433a3b78cb0238d61105526589cf0e9"
 dependencies = [
  "base64 0.23.1",
  "block2 0.6.2",

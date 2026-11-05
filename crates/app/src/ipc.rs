@@ -98,6 +98,11 @@ pub enum UiCommand {
     EditTab {
         id: u64,
     },
+    /// Locks a quick-access or folder tab on its current page, or releases it.
+    LockTab {
+        id: u64,
+        locked: bool,
+    },
     ToggleFolder {
         id: u64,
     },
@@ -404,6 +409,11 @@ pub enum PageEvent {
         key: String,
     },
     Location,
+    /// Console errors and failed requests, printed by debug builds only.
+    DebugLog {
+        #[serde(default)]
+        msg: String,
+    },
     /// The icon the page declares for itself (untrusted: validated by `Favicons`).
     Favicon {
         url: String,
@@ -442,6 +452,8 @@ pub enum Msg {
     Ui(UiCommand),
     Page(TabId, PageEvent),
     Url(TabId, Url),
+    /// A page started loading: the progress bar runs until `Loaded`.
+    LoadStart(TabId),
     /// The page finished loading: extensions are injected now that the DOM exists.
     Loaded(TabId, Url),
     Title(TabId, String),

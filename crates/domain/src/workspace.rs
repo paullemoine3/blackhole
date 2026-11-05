@@ -18,6 +18,8 @@ pub struct Tab {
     pub folder: Option<FolderId>,
     /// The user chose the title: page title changes no longer replace it.
     pub renamed: bool,
+    /// Address the tab always comes back to when it is clicked (quick-access and folder tabs).
+    pub locked: Option<Url>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folder {
@@ -301,6 +303,7 @@ impl Workspace {
             pinned: false,
             folder: None,
             renamed: false,
+            locked: None,
         });
         space.active_tab = Some(id);
         id
@@ -345,6 +348,9 @@ impl Workspace {
         };
         tab.pinned = !tab.pinned;
         tab.folder = None;
+        if !tab.pinned {
+            tab.locked = None;
+        }
         space.tabs.sort_by_key(|t| !t.pinned); // stable: pinned first, order kept
         true
     }
@@ -433,6 +439,7 @@ impl Workspace {
                 pinned: false,
                 folder: Some(folder_id),
                 renamed: false,
+                locked: None,
             });
             added += 1;
         }
@@ -552,8 +559,10 @@ impl Workspace {
         let mut tab = space.tabs.remove(pos);
         tab.pinned = pinned;
         tab.folder = folder;
+        if !pinned && folder.is_none() {
+            tab.locked = None;
+        }
         let at = before
-            .filter(|b| *b != id)
             .and_then(|b| space.tabs.iter().position(|t| t.id == b))
             .unwrap_or(space.tabs.len());
         space.tabs.insert(at, tab);
@@ -577,6 +586,18 @@ impl Workspace {
                 }
             }
         }
+    }
+
+    /// Locks a quick-access or folder tab on the page it shows now, or releases it.
+    pub fn set_locked(&mut self, id: TabId, locked: bool) -> bool {
+        let tab = self
+            .spaces
+            .iter_mut()
+            .flat_map(|s| s.tabs.iter_mut())
+            .find(|t| t.id == id && (t.pinned || t.folder.is_some()));
+        let Some(tab) = tab else { return false };
+        tab.locked = locked.then(|| tab.url.clone());
+        true
     }
 
     /// Gives a tab a title of the user's choosing; a blank name hands the title back to the page.
@@ -611,6 +632,21 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn only_pinned_tabs_can_be_locked_and_unpinning_releases_the_lock() {
+        let mut ws = Workspace::new();
+        let id = ws.open_tab(u("https://example.com/home"));
+        assert!(!ws.set_locked(id, true));
+        ws.toggle_pin(id);
+        assert!(ws.set_locked(id, true));
+        ws.update_page(id, Some(u("https://example.com/other")), None);
+        let tab = &ws.active_space().tabs[0];
+        assert_eq!(tab.locked, Some(u("https://example.com/home")));
+        assert_eq!(tab.url, u("https://example.com/other"));
+        ws.toggle_pin(id);
+        assert_eq!(ws.active_space().tabs[0].locked, None);
     }
 
     #[test]

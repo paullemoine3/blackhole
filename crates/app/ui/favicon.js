@@ -12,7 +12,7 @@
     if (href === last) return;
     last = href;
     try {
-      window.ipc && window.ipc.postMessage(JSON.stringify({ cmd: 'favicon', url: href }));
+      window.__bhipc && window.__bhipc.postMessage(JSON.stringify({ cmd: 'favicon', url: href }));
     } catch (_) {}
   };
   const schedule = () => {

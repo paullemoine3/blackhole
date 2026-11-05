@@ -1,7 +1,7 @@
 // Injected in every BlackHole view: native web views swallow key events, so app shortcuts
 // are forwarded to the shell from inside the page.
 (() => {
-  if (!window.ipc || window.top !== window) return;
+  if (!window.__bhipc || window.top !== window) return;
   const mac = navigator.platform.toLowerCase().includes('mac');
   const KEYS = ['l', 't', 'w', 'r', 'b', '[', ']', ',', '\\', 'enter', 'n', 'f', 'g', 'p'];
   // Zoom: "+" is Mod+= on most keyboards, with or without Shift.
@@ -10,7 +10,7 @@
     'keydown',
     (e) => {
       // Escape is only forwarded (never swallowed): it closes the palette or a peek.
-      if (e.key === 'Escape') return window.ipc.postMessage(JSON.stringify({ cmd: 'shortcut', key: 'escape' }));
+      if (e.key === 'Escape') return window.__bhipc.postMessage(JSON.stringify({ cmd: 'shortcut', key: 'escape' }));
       if ((mac ? !e.metaKey : !e.ctrlKey) || e.altKey) return;
       // AZERTY layouts type digits with Shift: the physical key tells it is a zero.
       let key = e.code === 'Digit0' || e.code === 'Numpad0' ? '0' : e.key.toLowerCase();
@@ -23,7 +23,7 @@
       } else if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN)) return;
       e.preventDefault();
       e.stopPropagation();
-      window.ipc.postMessage(JSON.stringify({ cmd: 'shortcut', key }));
+      window.__bhipc.postMessage(JSON.stringify({ cmd: 'shortcut', key }));
     },
     true,
   );

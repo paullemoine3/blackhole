@@ -86,6 +86,12 @@ struct MediaProbe {
 /// How often the event loop wakes to refresh this window's place in the registry, look for
 /// incoming tabs, spares to build and media to probe.
 const PEERS_EVERY: Duration = Duration::from_millis(400);
+/// A window's listing file is only rewritten this often (peers consider it stale after 5 s).
+const PEERS_PUBLISH_EVERY: Duration = Duration::from_secs(2);
+/// A new tab is covered by the loading screen until its page loads, at most this long.
+const SPLASH_MAX: Duration = Duration::from_secs(5);
+/// A page that never reports its end (error, cancelled) stops showing progress after this.
+const LOADING_MAX: Duration = Duration::from_secs(30);
 /// How often background tabs are asked whether they play audio or video.
 const MEDIA_EVERY: Duration = Duration::from_millis(1500);
 /// How long a tab that was in a call or playing media is still treated as such.
@@ -155,6 +161,15 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
         (window.width - x - CARD_GAP).max(1.0),
         (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
     )
+}
+/// Where the command bar lives: the whole window while open, a parked 1x1 view otherwise. A hidden
+/// full-window view still wins the drag destination lookup and would swallow in-page drags.
+fn palette_rect(open: bool, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    if open {
+        views::rect(0.0, 0.0, window.width, window.height)
+    } else {
+        views::rect(0.0, 0.0, 1.0, 1.0)
+    }
 }
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
 const RAISE_DELAY: Duration = Duration::from_millis(400);
@@ -303,10 +318,18 @@ struct Running {
     blur_due: Option<Instant>,
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
     card_left: std::cell::Cell<f64>,
+    bar_left: std::cell::Cell<f64>,
     meter: stats::Meter,
     meter_due: Instant,
     stats_tabs: usize,
     peers_due: Instant,
+    peers_published: Instant,
+    /// Tabs whose page is loading (drives the progress bar), with the time they started.
+    loading: HashMap<TabId, Instant>,
+    /// New tabs still waiting for their first page: the loading screen covers them.
+    splash: HashMap<TabId, Instant>,
+    #[cfg(target_os = "macos")]
+    cards_rounded: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
     media_due: Instant,
     media_seen: serde_json::Value,
@@ -592,7 +615,7 @@ impl Running {
             &window,
             &mut web_context,
             PALETTE_HTML,
-            views::rect(0.0, 0.0, size.width, size.height),
+            palette_rect(false, &size),
             false,
             true,
             &mailbox,
@@ -657,10 +680,16 @@ impl Running {
             pip_on_blur: None,
             blur_due: None,
             card_left: std::cell::Cell::new(f64::NAN),
+            bar_left: std::cell::Cell::new(f64::NAN),
             meter: stats::Meter::new(),
             meter_due: Instant::now(),
             stats_tabs: 0,
             peers_due: Instant::now(),
+            peers_published: Instant::now() - PEERS_PUBLISH_EVERY,
+            loading: HashMap::new(),
+            splash: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            cards_rounded: Instant::now(),
             media: Arc::default(),
             media_due: Instant::now(),
             media_seen: serde_json::Value::Null,
@@ -842,7 +871,7 @@ impl Running {
             .set_visible(!self.sidebar.is_open() && !self.library);
         let _ = self
             .palette
-            .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
+            .set_bounds(palette_rect(self.palette_open, &size));
         if let Some(peek) = &self.peek {
             let _ = peek
                 .scrim
@@ -903,7 +932,15 @@ impl Running {
     /// Tells the sidebar page where the card starts so the shadow under it follows the card.
     fn place_card_shadow(&self) {
         let size = self.window_size();
-        let left = card_rect(&self.sidebar, &size).0 - (self.sidebar.width() - self.sidebar.full());
+        let card_x = card_rect(&self.sidebar, &size).0;
+        let moved = self.bar_left.get().is_nan() || (self.bar_left.get() - card_x).abs() >= 0.5;
+        if moved {
+            self.bar_left.set(card_x);
+            let _ = self.bar.evaluate_script(&format!(
+                "document.documentElement.style.setProperty('--cl','{card_x}px')"
+            ));
+        }
+        let left = card_x - (self.sidebar.width() - self.sidebar.full());
         if (self.card_left.get() - left).abs() < 0.5 {
             return;
         }
@@ -1047,6 +1084,7 @@ impl Running {
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
+                "locked": t.locked.is_some(),
                 "folder": t.folder.map(|f| f.0),
                 "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
                 "asleep": !self.tabs.contains_key(&t.id),
@@ -2113,7 +2151,12 @@ impl Running {
             .and_then(|t| t.url.host_str())
             .and_then(|h| self.zoom.get(h))
             .map_or(100, |z| (z * 100.0).round() as u32);
+        let loading = !self.home_shown()
+            && ws
+                .active_tab()
+                .is_some_and(|t| self.loading.contains_key(&t.id) || self.splash.contains_key(&t.id));
         let state = json!({
+            "loading": loading,
             "zoom": zoom,
             "canBack": nav(WebView::can_go_back),
             "canForward": nav(WebView::can_go_forward),
@@ -2128,6 +2171,36 @@ impl Running {
         let _ = self
             .bar
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    /// The start page doubles as the loading screen of a new tab until its page is there.
+    fn ui_wait(&self) {
+        let site = self
+            .svc
+            .workspace()
+            .active_tab()
+            .filter(|t| !self.home_shown() && self.splash.contains_key(&t.id))
+            .map(|t| {
+                let host = t.url.host_str().unwrap_or_default().trim_start_matches("www.");
+                json!({ "host": host, "url": t.url.as_str() })
+            });
+        let _ = self
+            .home
+            .evaluate_script(&format!("window.bh&&bh.wait({})", json!(site)));
+    }
+
+    /// Ends the loading screen of a tab, and the progress of a page that went quiet.
+    fn service_loading(&mut self) -> bool {
+        let now = Instant::now();
+        let before = (self.splash.len(), self.loading.len());
+        self.splash
+            .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < SPLASH_MAX);
+        self.loading
+            .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < LOADING_MAX);
+        if before != (self.splash.len(), self.loading.len()) {
+            self.sync();
+        }
+        !self.splash.is_empty() || !self.loading.is_empty()
     }
 
     fn ui_home(&self) {
@@ -2182,10 +2255,43 @@ impl Running {
         }
     }
 
+    /// A locked tab always opens on its locked page: clicking it brings it back there, unless the
+    /// page is playing something.
+    fn return_to_lock(&mut self, id: TabId) {
+        let Some(locked) = self
+            .svc
+            .workspace()
+            .active_space()
+            .tabs
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| t.locked.clone())
+        else {
+            return;
+        };
+        let Some(view) = self.tabs.get(&id) else {
+            return;
+        };
+        let playing = self
+            .media
+            .lock()
+            .is_ok_and(|probes| probes.get(&id.0).is_some_and(|p| p.playing));
+        let mut here = view.url().ok().and_then(|raw| Url::parse(&raw).ok());
+        if let Some(url) = here.as_mut() {
+            url.set_fragment(None);
+        }
+        let mut there = locked.clone();
+        there.set_fragment(None);
+        if !playing && here.as_ref() != Some(&there) {
+            let _ = view.load_url(locked.as_str());
+        }
+    }
+
     fn ensure_view(&mut self, tab: &blackhole_domain::Tab) {
         if self.tabs.contains_key(&tab.id) {
             return;
         }
+        let url = tab.locked.as_ref().unwrap_or(&tab.url);
         let bounds = self.full_content_bounds();
         let store = self.store_of_tab(tab.id);
         if let Some(at) = self.spares.iter().position(|(s, ..)| *s == store) {
@@ -2193,14 +2299,15 @@ impl Running {
             slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
             let _ = view.set_bounds(bounds);
             // `replace` takes over the spare's blank entry instead of adding to its history.
-            let target = serde_json::to_string(tab.url.as_str()).unwrap_or_default();
+            let target = serde_json::to_string(url.as_str()).unwrap_or_default();
             if view
                 .evaluate_script(&format!("location.replace({target})"))
                 .is_err()
             {
-                let _ = view.load_url(tab.url.as_str());
+                let _ = view.load_url(url.as_str());
             }
             self.tabs.insert(tab.id, view);
+            self.splash.insert(tab.id, Instant::now());
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
             return;
         }
@@ -2208,7 +2315,7 @@ impl Running {
             &self.window,
             &mut self.web_context,
             tab.id,
-            &tab.url,
+            url,
             bounds,
             self.svc.policy(),
             &self.mailbox,
@@ -2217,6 +2324,7 @@ impl Running {
         ) {
             Ok(view) => {
                 self.tabs.insert(tab.id, view);
+                self.splash.insert(tab.id, Instant::now());
                 self.raise_palette();
                 self.spares_due = Some(Instant::now() + SPARES_DELAY);
             }
@@ -2347,7 +2455,7 @@ impl Running {
             Ok(view) => self.flyout = view,
             Err(error) => tracing::error!("cannot create sidebar flyout: {error}"),
         }
-        let bounds = views::rect(0.0, 0.0, size.width, size.height);
+        let bounds = palette_rect(false, &size);
         match views::ui_view(
             &self.window,
             &mut self.web_context,
@@ -2476,7 +2584,9 @@ impl Running {
         }
         self.peers_due = Instant::now() + PEERS_EVERY;
         let dir = peers_dir();
-        if let Some((x, y, w, h)) = self.screen_rect() {
+        let publish = self.peers_published.elapsed() >= PEERS_PUBLISH_EVERY;
+        if let Some((x, y, w, h)) = self.screen_rect().filter(|_| publish) {
+            self.peers_published = Instant::now();
             peers::publish(
                 &dir,
                 &peers::Peer {
@@ -2715,14 +2825,16 @@ impl Running {
             let _ = panel.set_visible(self.library);
         }
         let split = self.split_tab();
+        let waiting = active.filter(|id| self.splash.contains_key(id));
         for (id, view) in &self.tabs {
-            let shown = Some(*id) == active || Some(*id) == split;
+            let shown = (Some(*id) == active && waiting.is_none()) || Some(*id) == split;
             let _ = view.set_visible(shown);
             views::set_background(view, !shown);
         }
         let _ = self
             .home
-            .set_visible(active.is_none() && !self.easel_tab && !self.library);
+            .set_visible((active.is_none() || waiting.is_some()) && !self.easel_tab && !self.library);
+        self.ui_wait();
         self.layout(true);
         self.apply_focus();
         self.ui_state();
@@ -2891,6 +3003,9 @@ impl Running {
         self.flush_raise(true);
         self.palette_mode = mode.to_owned();
         self.palette_open = true;
+        let _ = self
+            .palette
+            .set_bounds(palette_rect(true, &self.window_size()));
         let _ = self.palette.set_visible(true);
         let _ = self.palette.focus();
         if self.palette_ready {
@@ -2912,6 +3027,9 @@ impl Running {
         self.palette_open = false;
         let _ = self.palette.evaluate_script("window.bh&&bh.hide()");
         let _ = self.palette.set_visible(false);
+        let _ = self
+            .palette
+            .set_bounds(palette_rect(false, &self.window_size()));
         self.apply_focus();
     }
 
@@ -3443,10 +3561,15 @@ impl Running {
                 self.close_palette();
                 self.close_peek();
                 self.svc.activate_tab(TabId(id));
+                self.return_to_lock(TabId(id));
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
                 self.sync();
+            }
+            UiCommand::LockTab { id, locked } => {
+                self.svc.set_tab_locked(TabId(id), locked);
+                self.ui_state();
             }
             UiCommand::Close { id } => {
                 self.archive_tab(TabId(id));
@@ -3906,7 +4029,7 @@ impl Running {
                 open_window(true, None);
             }
             "w" => self.close_active_tab(),
-            "r" => self.with_active_tab(views::reload),
+            "r" => self.with_active_tab(views::hard_reload),
             "b" => self.handle_ui(UiCommand::Lock),
             "[" => self.handle_ui(UiCommand::Back),
             "]" => self.handle_ui(UiCommand::Forward),
@@ -4023,6 +4146,11 @@ impl Running {
                     self.capture_live(tab, &selector, (w, h));
                 }
             }
+            Msg::Page(tab, PageEvent::DebugLog { msg }) => {
+                if cfg!(debug_assertions) {
+                    eprintln!("[page {}] {}", tab.0, msg.chars().take(600).collect::<String>());
+                }
+            }
             Msg::Page(tab, PageEvent::PipLeft { paused }) => self.pip_returned(tab, paused),
             Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
             Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
@@ -4042,7 +4170,17 @@ impl Running {
                 self.on_blocked("", &host, &site);
             }
             Msg::Url(tab, url) => self.page_url(tab, url),
+            Msg::LoadStart(tab) => {
+                self.loading.insert(tab, Instant::now());
+                self.ui_bar();
+            }
             Msg::Loaded(tab, url) => {
+                self.loading.remove(&tab);
+                if self.splash.remove(&tab).is_some() {
+                    self.sync();
+                } else {
+                    self.ui_bar();
+                }
                 if tab != PEEK_TAB && url.scheme() != "about" {
                     let injection = self.svc.injection_for(&url);
                     if let (false, Some(view)) = (injection.is_empty(), self.tabs.get(&tab)) {
@@ -4286,12 +4424,18 @@ impl ApplicationHandler<Wake> for App {
             app.poll_webext();
             // WebKit can reset the layer of a page view when it resizes or reappears.
             #[cfg(target_os = "macos")]
-            app.round_cards(true);
+            if app.cards_rounded.elapsed() >= Duration::from_millis(300) {
+                app.cards_rounded = Instant::now();
+                app.round_cards(true);
+            }
             app.discard_idle_tabs();
             if app.flush_raise(false) {
                 wake = wake.min(RAISE_DELAY);
             }
             app.refill_spares();
+            if app.service_loading() {
+                wake = wake.min(Duration::from_millis(250));
+            }
             app.service_peers();
             app.service_media();
             app.service_stats();

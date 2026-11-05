@@ -70,10 +70,22 @@
   }
   @keyframes word { 0% { opacity: 0; transform: translateY(8px); letter-spacing: 1em; } 100% { opacity: .85; transform: none; letter-spacing: .6em; } }
   @keyframes splash-out { to { opacity: 0; transform: scale(1.35); } }
+  /* Loading screen of a new tab */
+  #wait { position: fixed; inset: 0; z-index: 9; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: radial-gradient(800px 500px at 50% 40%, rgba(124,92,255,.2), transparent 70%), #0c0b12; animation: wait-in .18s ease-out both; }
+  body.waiting #wait { display: flex; }
+  #wait .tile { width: 64px; height: 64px; border-radius: 18px; font-size: 28px; animation: wait-pulse 1.6s ease-in-out infinite; }
+  #wait .site { font-size: 15px; font-weight: 600; letter-spacing: .01em; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #wait .track { width: 150px; height: 3px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+  #wait .track i { display: block; width: 40%; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #7c5cff, #ffb020); animation: wait-run 1.1s ease-in-out infinite; }
+  @keyframes wait-in { from { opacity: 0; } }
+  @keyframes wait-pulse { 50% { transform: scale(.94); opacity: .8; } }
+  @keyframes wait-run { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
 </style>
 </head>
 <body>
 <div id="splash"><div class="core"><div class="disc"></div><div class="ring"></div></div><div class="word">BlackHole</div></div>
+<div id="wait"><div id="waittile"></div><div class="site" id="waitsite"></div><div class="track"><i></i></div></div>
 <main>
   <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
@@ -142,6 +154,12 @@ function splash() {
   sp.onclick = end;
 }
 window.bh = {
+  wait(site) {
+    document.body.classList.toggle('waiting', !!site);
+    if (!site) return;
+    $('waitsite').textContent = site.host;
+    $('waittile').replaceChildren(tile(site.url));
+  },
   render(s) {
     if (s.favicons) favicons = s.favicons;
     const notes = s.releaseNotes || [];

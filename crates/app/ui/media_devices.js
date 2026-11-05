@@ -6,7 +6,7 @@
   if (/^(docs|drive|sheets|slides|script)\.google\.com$/.test(location.hostname)) return;
   const post = (message) => {
     try {
-      window.ipc && window.ipc.postMessage(JSON.stringify(message));
+      window.__bhipc && window.__bhipc.postMessage(JSON.stringify(message));
     } catch (_) {}
   };
 

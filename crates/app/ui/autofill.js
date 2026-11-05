@@ -1,10 +1,10 @@
 // Native login autofill (main frame only). The page never sees a password until the user
 // clicks a suggestion: it only receives the usernames, drawn in a closed shadow root.
 (() => {
-  if (!window.ipc || window.top !== window || window.__bhAutofill) return;
+  if (!window.__bhipc || window.top !== window || window.__bhAutofill) return;
   const post = (m) => {
     try {
-      window.ipc.postMessage(JSON.stringify(m));
+      window.__bhipc.postMessage(JSON.stringify(m));
     } catch (_) {}
   };
   const setValue = (el, value) => {

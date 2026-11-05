@@ -27,6 +27,11 @@
   #zoom { position: absolute; right: 8px; top: 3px; width: auto; height: 24px; padding: 0 9px; border-radius: 7px; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255,255,255,.14); opacity: 1; display: flex; align-items: center; }
   #zoom[hidden] { display: none; }
   #zoom:hover { background: rgba(255,255,255,.24); }
+  #progress { position: fixed; left: var(--cl, 8px); right: 8px; bottom: 0; height: 3px; pointer-events: none; overflow: hidden; border-radius: 3px 3px 0 0; opacity: 0; transition: opacity .25s ease .15s; }
+  #progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ffb020); box-shadow: 0 0 8px var(--accent); }
+  #progress.on { opacity: 1; transition: none; }
+  #progress.on i { width: 85%; transition: width 12s cubic-bezier(.1,.7,.2,1); }
+  #progress.done i { width: 100%; transition: width .2s ease-out; }
   #zoom .x { opacity: .6; font-size: 11px; }
   body.secure #omni { padding-left: 30px; padding-right: 30px; }
   body.secure .lock { display: block; }
@@ -59,6 +64,7 @@
   </div>
   <div class="side right" id="exts"></div>
   <span class="priv" id="priv" hidden>Private</span>
+  <div id="progress"><i></i></div>
   <div class="win">
     <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
     <button id="wmax" title="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
@@ -77,8 +83,25 @@ const pretty = (url) => {
   try { const u = new URL(url); return u.host.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : ''); } catch (_) { return url; }
 };
 
+let loadingNow = false;
+function progress(on) {
+  if (on === loadingNow) return;
+  loadingNow = on;
+  const p = $('progress');
+  if (on) {
+    p.classList.remove('done', 'on');
+    void p.offsetWidth;
+    p.classList.add('on');
+  } else {
+    p.classList.add('done');
+    p.classList.remove('on');
+    setTimeout(() => { if (!loadingNow) p.classList.remove('done'); }, 450);
+  }
+}
+
 window.bh = {
   render(s) {
+    progress(!!s.loading);
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);
     root.setProperty('--glow', rgba(s.color, .5));

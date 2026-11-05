@@ -120,6 +120,8 @@
   .dot { flex: none; width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
   .dot img, .tile img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
   .dot.ico { background: rgba(255,255,255,.16) !important; padding: 2px; box-sizing: border-box; font-size: 0; }
+  .tab.locked .dot { position: relative; }
+  .tab.locked .dot::after { content: '🔒'; position: absolute; right: -5px; bottom: -5px; font-size: 8px; line-height: 1; }
   .title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .x { opacity: 0; width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
   .tab:hover .x { opacity: .7; } .x:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
@@ -239,8 +241,8 @@ function withIcon(node, url, favicons) {
 function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
 
 function tabNode(t) {
-  const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : ''));
-  n.title = t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title;
+  const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : '') + (t.locked ? ' locked' : ''));
+  n.title = (t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title) + (t.locked ? ' — URL locked' : '');
   n.dataset.tab = t.id;
   n.dataset.pinned = t.pinned ? '1' : '';
   n.dataset.folder = t.folder == null ? '' : t.folder;
@@ -290,6 +292,7 @@ function tabMenu(t, x, y) {
     else if (t.id !== state.activeTab) items.push({ icon: '◧', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
   }
   const keep = t.pinned || t.folder != null;
+  if (keep) items.push({ icon: t.locked ? '🔓' : '🔒', label: t.locked ? 'Unlock URL' : 'Lock URL on this page', run: { cmd: 'lock_tab', id: t.id, locked: !t.locked } });
   items.push({ sep: true }, keep
     ? { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close_instance', id: t.id } }
     : { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });

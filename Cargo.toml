@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/domain", "crates/application", "crates/infrastructure", "crates/app", "crates/macos-url", "crates/macos-webext"]
 
 [workspace.package]
-version = "0.7.14"
+version = "0.7.15"
 edition = "2021"
 license = "MIT"
 rust-version = "1.80"
@@ -32,3 +32,7 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Pages may declare a global `ipc` (Google Docs does): wry keeps its bridge as `__bhipc` and leaves `ipc` overridable.
+[patch.crates-io]
+wry = { path = "vendor/wry" }

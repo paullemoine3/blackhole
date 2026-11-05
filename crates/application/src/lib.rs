@@ -425,6 +425,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    pub fn set_tab_locked(&mut self, id: TabId, locked: bool) -> bool {
+        let ok = self.workspace.set_locked(id, locked);
+        self.persist();
+        ok
+    }
+
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
         let ok = self.workspace.rename_folder(id, name);
         self.persist();

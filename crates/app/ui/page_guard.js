@@ -4,7 +4,7 @@
   const BLOCKED = new Set(__BLOCKED_HOSTS__);
   const post = (m) => {
     try {
-      window.ipc && window.ipc.postMessage(JSON.stringify(m));
+      window.__bhipc && window.__bhipc.postMessage(JSON.stringify(m));
     } catch (_) {}
   };
   // Pages set thousands of URLs: decisions are cached per host and URLs are only parsed when
