@@ -68,6 +68,27 @@ pub fn app_is_active() -> bool {
     }
 }
 
+/// Screen rectangle `(x, y, width, height)` in pixels of the foreground window when it belongs to
+/// another application. `None` when it is the desktop or a minimised window.
+pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {
+    use windows::Win32::{
+        Foundation::RECT,
+        UI::WindowsAndMessaging::{
+            GetDesktopWindow, GetForegroundWindow, GetShellWindow, GetWindowRect, IsIconic,
+        },
+    };
+    // SAFETY: plain Win32 queries.
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.0.is_null() || front == GetShellWindow() || front == GetDesktopWindow() || IsIconic(front).as_bool() {
+            return None;
+        }
+        let mut r = RECT::default();
+        GetWindowRect(front, &mut r).ok()?;
+        Some((f64::from(r.left), f64::from(r.top), f64::from(r.right - r.left), f64::from(r.bottom - r.top)))
+    }
+}
+
 /// Moves a view's host window to the top of its siblings without recreating the view.
 pub fn raise_view(view: &wry::WebView) {
     use windows::Win32::{

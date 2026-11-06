@@ -57,6 +57,13 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
 #[cfg(target_os = "macos")]
 const MACOS_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 
+/// Per-navigation user agent: `None` keeps WebKit's default (see `page_view`).
+#[cfg(target_os = "macos")]
+fn user_agent_for(url: &str) -> Option<String> {
+    let host = Url::parse(url).ok()?.host_str()?.to_owned();
+    (host != "docs.google.com").then(|| MACOS_USER_AGENT.to_owned())
+}
+
 /// Shell colour, visible before a page paints.
 const SHELL_BG: (u8, u8, u8, u8) = (16, 15, 23, 255);
 const CLEAR: (u8, u8, u8, u8) = (0, 0, 0, 0);
@@ -64,9 +71,10 @@ const CLEAR: (u8, u8, u8, u8) = (0, 0, 0, 0);
 const PAGE_BG: (u8, u8, u8, u8) = (255, 255, 255, 255);
 
 pub fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
+    // Fractional view frames make WKWebView rasterise its layer off-grid (blurry canvas pages).
     Rect {
-        position: LogicalPosition::new(x, y).into(),
-        size: LogicalSize::new(w.max(1.0), h.max(1.0)).into(),
+        position: LogicalPosition::new(x.round(), y.round()).into(),
+        size: LogicalSize::new(w.round().max(1.0), h.round().max(1.0)).into(),
     }
 }
 
@@ -336,8 +344,12 @@ fn build_tab(
         }
     };
     // The bare WKWebView user agent lacks the Safari token, so Google Meet and others reject it.
+    // Google Docs renders its canvas blurry when it sees that token, so it keeps WebKit's own.
     #[cfg(target_os = "macos")]
-    let builder = builder.with_user_agent(MACOS_USER_AGENT);
+    let builder = {
+        let _ = wry::USER_AGENT_RESOLVER.set(user_agent_for);
+        builder.with_user_agent(MACOS_USER_AGENT)
+    };
     #[cfg(not(target_os = "macos"))]
     let _ = host;
     // WebView2: one profile per space inside the shared environment (a private window already
@@ -445,6 +457,10 @@ fn build_tab(
                 match event {
                     PageLoadEvent::Started => load.push(Msg::LoadStart(tab)),
                     PageLoadEvent::Finished => load.push(Msg::Loaded(tab, url.clone())),
+                    PageLoadEvent::Failed => {
+                        load.push(Msg::Failed(tab, url.clone()));
+                        return;
+                    }
                 }
                 load.push(Msg::Url(tab, url));
             }
@@ -557,15 +573,25 @@ pub fn go_forward(view: &WebView) {
     let _ = view.go_forward();
 }
 
+/// Shell-themed page shown in a tab whose load failed. The error page exposes `__bhRetry`,
+/// since reloading its own (blank-origin) document would not retry the failed URL.
+pub fn unreachable_page(url: &str) -> String {
+    // `<` is escaped so the URL can never close the script block.
+    let literal = serde_json::to_string(url)
+        .unwrap_or_else(|_| "\"\"".to_owned())
+        .replace('<', "\\u003c");
+    include_str!("../ui/unreachable.html").replace("__BH_URL__", &literal)
+}
+
 pub fn reload(view: &WebView) {
-    let _ = view.evaluate_script("location.reload()");
+    let _ = view.evaluate_script("window.__bhRetry?window.__bhRetry():location.reload()");
 }
 
 /// Hard refresh: drops service workers and Cache Storage, refetches the page bypassing the
 /// HTTP cache, then reloads. Cookies and storage are kept so the user stays signed in.
 pub fn hard_reload(view: &WebView) {
     let _ = view.evaluate_script(
-        "(async()=>{try{for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister()}catch(e){}\
+        "if(window.__bhRetry){window.__bhRetry()}else(async()=>{try{for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister()}catch(e){}\
          try{for(const k of await caches.keys())await caches.delete(k)}catch(e){}\
          try{await fetch(location.href,{cache:'reload',credentials:'same-origin'})}catch(e){}\
          location.reload()})()",
@@ -610,3 +636,16 @@ pub fn rtc_toggle_js(kind: &str) -> String {
 
 pub const MEDIA_PAUSE_JS: &str =
     "[...document.querySelectorAll('video,audio')].forEach(v=>v.pause())";
+
+#[cfg(test)]
+mod unreachable_tests {
+    use super::unreachable_page;
+
+    #[test]
+    fn url_cannot_break_out_of_the_script() {
+        let page = unreachable_page("https://x.test/</script><script>alert(1)</script>");
+        assert!(!page.contains("</script><script>alert"));
+        assert!(page.contains("\\u003c/script>"));
+        assert!(!page.contains("__BH_URL__"));
+    }
+}

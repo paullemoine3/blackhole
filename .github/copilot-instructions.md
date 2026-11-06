@@ -34,7 +34,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 Commandes de base (PowerShell : ajouter `$env:Path += ";$env:USERPROFILE\.cargo\bin"`) :
 ```
 cargo clippy --workspace --all-targets
-cargo test --workspace
+cargo test --workspace --locked
 ```
 - Tests unitaires dans le crate concerné (domaine/application/infra en priorité). Tout nouveau comportement logique reçoit un test ciblé.
 - **Scénarios UI Windows** (feature `devtools`, harnais `crates/app/src/devtools.rs`) :
@@ -56,6 +56,10 @@ cargo test --workspace
 - Bitwarden : build Firefox sur macOS, build Chromium (`chromium`/`windows` dans `CatalogEntry`) sur Windows.
 - Ajouter une extension au catalogue : URL de la release officielle, télécharger puis calculer le SHA-256, ajouter une entrée avec test (`catalog.rs` vérifie longueurs de hash et https).
 - Limites WebView2 : pas de badge, pas d'onglet actif exposé aux extensions ; le popup est une vue `chrome-extension://<id>/<popup>` sur le même profil.
+
+## Pages d'erreur et User-Agent
+- Page « Site injoignable » (`ui/unreachable.html`) : via `PageLoadEvent::Failed` (vendor/wry ; WebView2 non testé) ou après `CONNECT_MAX` (20 s) ; test macOS `scripts/test-unreachable.sh`.
+- User-Agent macOS : `views::user_agent_for` (via `wry::USER_AGENT_RESOLVER`, à chaque navigation principale) force l'UA Safari (requis par Meet) sauf sur `docs.google.com`, où le token Safari rend Docs flou. Windows non concerné.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).

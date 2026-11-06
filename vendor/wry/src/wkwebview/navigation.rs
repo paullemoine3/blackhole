@@ -1,5 +1,5 @@
 use objc2::DeclaredClass;
-use objc2_foundation::{NSObjectProtocol, NSString};
+use objc2_foundation::{NSError, NSObjectProtocol, NSString};
 use objc2_web_kit::{
   WKNavigation, WKNavigationAction, WKNavigationActionPolicy, WKNavigationResponse,
   WKNavigationResponsePolicy,
@@ -12,6 +12,10 @@ use objc2_web_kit::WKWebView;
 
 use crate::PageLoadEvent;
 
+#[cfg(target_os = "macos")]
+pub static USER_AGENT_RESOLVER: std::sync::OnceLock<fn(&str) -> Option<String>> =
+  std::sync::OnceLock::new();
+
 use super::class::wry_navigation_delegate::WryNavigationDelegate;
 
 pub(crate) fn did_commit_navigation(
@@ -22,7 +26,7 @@ pub(crate) fn did_commit_navigation(
   unsafe {
     // Call on_load_handler
     if let Some(on_page_load) = &this.ivars().on_page_load_handler {
-      on_page_load(PageLoadEvent::Started);
+      on_page_load(PageLoadEvent::Started, None);
     }
 
     // Inject scripts
@@ -56,18 +60,28 @@ pub(crate) fn did_finish_navigation(
   _navigation: &WKNavigation,
 ) {
   if let Some(on_page_load) = &this.ivars().on_page_load_handler {
-    on_page_load(PageLoadEvent::Finished);
+    on_page_load(PageLoadEvent::Finished, None);
   }
 }
 
 // Navigation handler
 pub(crate) fn navigation_policy(
   this: &WryNavigationDelegate,
-  _webview: &WKWebView,
+  webview: &WKWebView,
   action: &WKNavigationAction,
   handler: &block2::Block<dyn Fn(WKNavigationActionPolicy)>,
 ) {
   unsafe {
+    #[cfg(target_os = "macos")]
+    if let Some(resolve) = USER_AGENT_RESOLVER.get() {
+      let main_frame = action.targetFrame().is_none_or(|f| f.isMainFrame());
+      if main_frame {
+        if let Some(url) = action.request().URL().and_then(|u| u.absoluteString()) {
+          let ua = resolve(&url.to_string());
+          webview.setCustomUserAgent(ua.as_deref().map(NSString::from_str).as_deref());
+        }
+      }
+    }
     // <https://developer.apple.com/documentation/webkit/wknavigationaction/shouldperformdownload>
     // Available: macOS 11.3+, iOS 14.5+
     let can_download = action.respondsToSelector(objc2::sel!(shouldPerformDownload));
@@ -126,5 +140,25 @@ pub(crate) fn web_content_process_did_terminate(
     &this.ivars().on_web_content_process_terminate_handler
   {
     on_web_content_process_terminate();
+  }
+}
+
+pub(crate) fn did_fail_navigation(
+  this: &WryNavigationDelegate,
+  _webview: &WKWebView,
+  _navigation: &WKNavigation,
+  error: &NSError,
+) {
+  // NSURLErrorCancelled: superseded navigation or one converted into a download.
+  if error.code() == -999 {
+    return;
+  }
+  let url = error
+    .userInfo()
+    .objectForKey(&NSString::from_str("NSErrorFailingURLStringKey"))
+    .and_then(|v| v.downcast::<NSString>().ok())
+    .map(|s| s.to_string());
+  if let Some(on_page_load) = &this.ivars().on_page_load_handler {
+    on_page_load(PageLoadEvent::Failed, url);
   }
 }

@@ -387,6 +387,9 @@ pub(crate) mod wkwebview;
 use wkwebview::*;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use wkwebview::{PrintMargin, PrintOptions, WryWebView};
+/// macOS: picks the user agent of each main-frame navigation (`None` = WebKit's default).
+#[cfg(target_os = "macos")]
+pub use wkwebview::navigation::USER_AGENT_RESOLVER;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod webview2;
@@ -2591,6 +2594,9 @@ pub enum PageLoadEvent {
   Started,
   /// Indicates that the page content has finished loading
   Finished,
+  /// The navigation failed (host unreachable, DNS, TLS, timeout...); the URL passed
+  /// alongside is the one that failed.
+  Failed,
 }
 
 /// Background throttling policy

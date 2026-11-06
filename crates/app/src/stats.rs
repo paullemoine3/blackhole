@@ -1,7 +1,7 @@
 //! Memory and CPU used by the browser: its own process plus the web engine processes it owns.
 
 use std::collections::HashMap;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{CpuRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct Usage {
@@ -17,7 +17,10 @@ pub struct Meter {
 
 impl Meter {
     pub fn new() -> Self {
-        Self { system: System::new(), me: Pid::from_u32(std::process::id()) }
+        let mut system = System::new();
+        // Without it `cpus()` stays empty and the CPU share is never divided by the core count.
+        system.refresh_cpu_list(CpuRefreshKind::nothing());
+        Self { system, me: Pid::from_u32(std::process::id()) }
     }
 
     pub fn sample(&mut self) -> Usage {
@@ -69,5 +72,10 @@ mod tests {
     fn counts_its_own_process() {
         let mut meter = super::Meter::new();
         assert!(meter.sample().memory_mb > 0);
+    }
+
+    #[test]
+    fn knows_the_core_count() {
+        assert!(!super::Meter::new().system.cpus().is_empty());
     }
 }

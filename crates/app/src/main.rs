@@ -92,6 +92,8 @@ const PEERS_PUBLISH_EVERY: Duration = Duration::from_secs(2);
 const SPLASH_MAX: Duration = Duration::from_secs(5);
 /// A page that never reports its end (error, cancelled) stops showing progress after this.
 const LOADING_MAX: Duration = Duration::from_secs(30);
+/// A new tab whose server never starts answering is reported unreachable after this long.
+const CONNECT_MAX: Duration = Duration::from_secs(20);
 /// How often background tabs are asked whether they play audio or video.
 const MEDIA_EVERY: Duration = Duration::from_millis(1500);
 /// How long a tab that was in a call or playing media is still treated as such.
@@ -174,6 +176,20 @@ fn palette_rect(open: bool, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect 
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
 const RAISE_DELAY: Duration = Duration::from_millis(400);
 const BLUR_DELAY: Duration = Duration::from_millis(350);
+/// How often an unfocused but still visible window is checked for being covered.
+const PIP_RECHECK: Duration = Duration::from_millis(1000);
+/// Share of the browser window another window must hide before a video floats.
+const COVERED_SHARE: f64 = 0.5;
+
+/// Share of the rectangle `own` (`x, y, w, h`) that `other` covers.
+fn overlap_share(own: (f64, f64, f64, f64), other: (f64, f64, f64, f64)) -> f64 {
+    let w = (own.0 + own.2).min(other.0 + other.2) - own.0.max(other.0);
+    let h = (own.1 + own.3).min(other.1 + other.3) - own.1.max(other.1);
+    if own.2 <= 0.0 || own.3 <= 0.0 || w <= 0.0 || h <= 0.0 {
+        return 0.0;
+    }
+    w * h / (own.2 * own.3)
+}
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 
@@ -328,6 +344,8 @@ struct Running {
     loading: HashMap<TabId, Instant>,
     /// New tabs still waiting for their first page: the loading screen covers them.
     splash: HashMap<TabId, Instant>,
+    /// Tabs opened but not yet answering at all (no commit), with the URL asked for.
+    awaiting: HashMap<TabId, (Instant, Url)>,
     #[cfg(target_os = "macos")]
     cards_rounded: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
@@ -688,6 +706,7 @@ impl Running {
             peers_published: Instant::now() - PEERS_PUBLISH_EVERY,
             loading: HashMap::new(),
             splash: HashMap::new(),
+            awaiting: HashMap::new(),
             #[cfg(target_os = "macos")]
             cards_rounded: Instant::now(),
             media: Arc::default(),
@@ -2189,6 +2208,17 @@ impl Running {
             .evaluate_script(&format!("window.bh&&bh.wait({})", json!(site)));
     }
 
+    fn show_unreachable(&mut self, tab: TabId, url: Url) {
+        self.awaiting.remove(&tab);
+        self.loading.remove(&tab);
+        self.splash.remove(&tab);
+        if let Some(view) = self.tabs.get(&tab) {
+            let _ = view.load_html(&views::unreachable_page(url.as_str()));
+        }
+        self.page_url(tab, url);
+        self.sync();
+    }
+
     /// Ends the loading screen of a tab, and the progress of a page that went quiet.
     fn service_loading(&mut self) -> bool {
         let now = Instant::now();
@@ -2197,10 +2227,22 @@ impl Running {
             .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < SPLASH_MAX);
         self.loading
             .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < LOADING_MAX);
+        self.awaiting.retain(|id, _| self.tabs.contains_key(id));
+        let stalled: Vec<_> = self
+            .awaiting
+            .iter()
+            .filter(|(_, (since, _))| now.duration_since(*since) >= CONNECT_MAX)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in stalled {
+            if let Some((_, url)) = self.awaiting.remove(&id) {
+                self.show_unreachable(id, url);
+            }
+        }
         if before != (self.splash.len(), self.loading.len()) {
             self.sync();
         }
-        !self.splash.is_empty() || !self.loading.is_empty()
+        !self.splash.is_empty() || !self.loading.is_empty() || !self.awaiting.is_empty()
     }
 
     fn ui_home(&self) {
@@ -2298,16 +2340,11 @@ impl Running {
             let (_, slot, view) = self.spares.swap_remove(at);
             slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
             let _ = view.set_bounds(bounds);
-            // `replace` takes over the spare's blank entry instead of adding to its history.
-            let target = serde_json::to_string(url.as_str()).unwrap_or_default();
-            if view
-                .evaluate_script(&format!("location.replace({target})"))
-                .is_err()
-            {
-                let _ = view.load_url(url.as_str());
-            }
+            // A native load (not `location.replace`) so that a failure reaches the load handler.
+            let _ = view.load_url(url.as_str());
             self.tabs.insert(tab.id, view);
             self.splash.insert(tab.id, Instant::now());
+            self.awaiting.insert(tab.id, (Instant::now(), url.clone()));
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
             return;
         }
@@ -2325,6 +2362,7 @@ impl Running {
             Ok(view) => {
                 self.tabs.insert(tab.id, view);
                 self.splash.insert(tab.id, Instant::now());
+                self.awaiting.insert(tab.id, (Instant::now(), url.clone()));
                 self.raise_palette();
                 self.spares_due = Some(Instant::now() + SPARES_DELAY);
             }
@@ -2899,12 +2937,47 @@ impl Running {
             self.blur_due = Some(Instant::now() + BLUR_DELAY);
             return;
         }
+        // The browser is still on screen (e.g. the user works in another window on a second
+        // monitor): nothing to rescue. Look again later in case that window is moved over it.
+        if !self.window_is_covered() {
+            self.blur_due = Some(Instant::now() + PIP_RECHECK);
+            return;
+        }
         self.blur_due = None;
         let Some(id) = self.shown else { return };
         if let Some(view) = self.tabs.get(&id) {
             let _ = view.evaluate_script(views::PIP_ENTER_JS);
             self.pip_on_blur = Some(id);
         }
+    }
+
+    /// Whether most of the browser window is hidden: minimised, or under the window of another
+    /// application that now has focus.
+    fn window_is_covered(&self) -> bool {
+        if self.window.is_minimized().unwrap_or(false) || !self.window.is_visible().unwrap_or(true)
+        {
+            return true;
+        }
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            let (Ok(pos), size) = (self.window.outer_position(), self.window.outer_size()) else {
+                return true;
+            };
+            let Some(front) = blackhole_macos_webext::frontmost_foreign_window() else {
+                return false;
+            };
+            // winit reports pixels; macOS window lists use points.
+            let scale = if cfg!(target_os = "macos") { self.window.scale_factor() } else { 1.0 };
+            let own = (
+                f64::from(pos.x) / scale,
+                f64::from(pos.y) / scale,
+                f64::from(size.width) / scale,
+                f64::from(size.height) / scale,
+            );
+            return overlap_share(own, front) >= COVERED_SHARE;
+        }
+        #[allow(unreachable_code)]
+        true
     }
 
     /// Focus is back: the video floated by `pip_on_blur` returns into its page.
@@ -4171,6 +4244,7 @@ impl Running {
             }
             Msg::Url(tab, url) => self.page_url(tab, url),
             Msg::LoadStart(tab) => {
+                self.awaiting.remove(&tab);
                 self.loading.insert(tab, Instant::now());
                 self.ui_bar();
             }
@@ -4188,6 +4262,7 @@ impl Running {
                     }
                 }
             }
+            Msg::Failed(tab, url) => self.show_unreachable(tab, url),
             Msg::Title(tab, _) if tab == PEEK_TAB => {}
             Msg::Title(tab, title) => {
                 self.svc.page_changed(tab, None, Some(title));
@@ -4759,5 +4834,18 @@ fn main() {
     peers::withdraw(&peers_dir(), std::process::id());
     if private_mode() {
         let _ = std::fs::remove_dir_all(private_data_dir());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overlap_share;
+
+    #[test]
+    fn overlap_share_is_the_hidden_part_of_the_window() {
+        let own = (0.0, 0.0, 1000.0, 800.0);
+        assert_eq!(overlap_share(own, (1200.0, 0.0, 800.0, 600.0)), 0.0);
+        assert_eq!(overlap_share(own, (-10.0, -10.0, 2000.0, 1000.0)), 1.0);
+        assert!((overlap_share(own, (500.0, 0.0, 1000.0, 800.0)) - 0.5).abs() < 1e-9);
     }
 }

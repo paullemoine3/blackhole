@@ -456,6 +456,8 @@ pub enum Msg {
     LoadStart(TabId),
     /// The page finished loading: extensions are injected now that the DOM exists.
     Loaded(TabId, Url),
+    /// The page could not be reached: the tab shows the error page.
+    Failed(TabId, Url),
     Title(TabId, String),
     /// A page asked for a new window (`target=_blank`, `window.open`).
     OpenTab(Url),

@@ -166,10 +166,58 @@ pub fn app_is_active() -> bool {
     }
 }
 
+/// Screen rectangle `(x, y, width, height)` of the frontmost window that belongs to another
+/// application, in the units of winit's window geometry. `None` when none is in front of this
+/// browser's own window (or when it cannot be told).
+#[cfg(target_os = "macos")]
+pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
+    use objc2_foundation::NSString;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *mut AnyObject;
+    }
+    // On-screen windows only, without the desktop; the list is ordered front to back.
+    const ON_SCREEN_NO_DESKTOP: u32 = 1 | 16;
+    let number = |dict: &AnyObject, key: &str| -> Option<f64> {
+        let key = NSString::from_str(key);
+        // Safety: `dict` is a CFDictionary (toll-free bridged to NSDictionary) from CoreGraphics.
+        let value: Option<Retained<AnyObject>> = unsafe { msg_send![dict, objectForKey: &*key] };
+        value.map(|v| unsafe { msg_send![&*v, doubleValue] })
+    };
+    let me = f64::from(std::process::id());
+    // Safety: the call follows the create rule, so the array is owned here and released on drop.
+    unsafe {
+        let list = Retained::from_raw(CGWindowListCopyWindowInfo(ON_SCREEN_NO_DESKTOP, 0))?;
+        let count: usize = msg_send![&*list, count];
+        for i in 0..count {
+            let Some(info): Option<Retained<AnyObject>> = msg_send![&*list, objectAtIndex: i] else {
+                continue;
+            };
+            if number(&info, "kCGWindowLayer") != Some(0.0) {
+                continue;
+            }
+            if number(&info, "kCGWindowOwnerPID") == Some(me) {
+                return None;
+            }
+            let key = NSString::from_str("kCGWindowBounds");
+            let bounds: Option<Retained<AnyObject>> = msg_send![&*info, objectForKey: &*key];
+            let Some(bounds) = bounds else { continue };
+            let (x, y) = (number(&bounds, "X")?, number(&bounds, "Y")?);
+            let (w, h) = (number(&bounds, "Width")?, number(&bounds, "Height")?);
+            if w >= 100.0 && h >= 100.0 && number(&info, "kCGWindowAlpha").unwrap_or(1.0) > 0.0 {
+                return Some((x, y, w, h));
+            }
+        }
+    }
+    None
+}
+
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
-pub use win::{app_is_active, raise_view, round_view, set_view_background, ExtensionHost};
+pub use win::{app_is_active, frontmost_foreign_window, raise_view, round_view, set_view_background, ExtensionHost};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub {
@@ -230,5 +278,16 @@ mod tests {
             (found[0].id.as_str(), found[0].name.as_str()),
             ("app-bitwarden", "Bitwarden")
         );
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod window_tests {
+    #[test]
+    fn frontmost_window_query_runs() {
+        // A test binary has no window of its own, so the first foreign window (if any) is returned.
+        if let Some((_, _, w, h)) = super::frontmost_foreign_window() {
+            assert!(w >= 100.0 && h >= 100.0);
+        }
     }
 }

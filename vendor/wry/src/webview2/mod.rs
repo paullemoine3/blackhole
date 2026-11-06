@@ -737,12 +737,23 @@ impl InnerWebView {
           token,
         )?;
         webview.add_NavigationCompleted(
-          &NavigationCompletedEventHandler::create(Box::new(move |webview, _| {
+          &NavigationCompletedEventHandler::create(Box::new(move |webview, args| {
             let Some(webview) = webview else {
               return Ok(());
             };
 
-            on_page_load_handler(PageLoadEvent::Finished, Self::url_from_webview(&webview)?);
+            let mut success = BOOL::default();
+            let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+            if let Some(args) = args {
+              let _ = args.IsSuccess(&mut success);
+              let _ = args.WebErrorStatus(&mut status);
+            } else {
+              success = true.into();
+            }
+            // A cancelled navigation (superseded, or turned into a download) is not a failure.
+            let failed = !success.as_bool() && status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED;
+            let event = if failed { PageLoadEvent::Failed } else { PageLoadEvent::Finished };
+            on_page_load_handler(event, Self::url_from_webview(&webview)?);
 
             Ok(())
           })),

@@ -9,6 +9,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Quick-access and folder tabs can be locked (right-click > Lock URL on this page): clicking them always brings you back to the locked page",
             "Cmd/Ctrl+R is now a hard refresh: the page is reloaded without its cache and service workers (you stay signed in)",
             "Google Docs loads again: pages that declare their own global `ipc` no longer break the browser's page bridge",
+            "Picture-in-picture no longer starts when you work in another window on a second monitor while BlackHole stays visible",
             "Dragging and dropping inside a page works again (e.g. moving a Jira ticket between columns)",
         ],
     ),

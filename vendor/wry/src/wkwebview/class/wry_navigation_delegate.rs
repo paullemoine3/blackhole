@@ -5,7 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use objc2::{MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
-use objc2_foundation::{MainThreadMarker, NSObjectProtocol};
+use objc2_foundation::{MainThreadMarker, NSError, NSObjectProtocol};
 use objc2_web_kit::{
   WKDownload, WKNavigation, WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate,
   WKNavigationResponse, WKNavigationResponsePolicy,
@@ -21,7 +21,7 @@ use crate::{
   wkwebview::{
     download::{navigation_download_action, navigation_download_response},
     navigation::{
-      did_commit_navigation, did_finish_navigation, navigation_policy, navigation_policy_response,
+      did_commit_navigation, did_fail_navigation, did_finish_navigation, navigation_policy, navigation_policy_response,
       web_content_process_did_terminate,
     },
   },
@@ -34,7 +34,7 @@ pub struct WryNavigationDelegateIvars {
   pub has_download_handler: bool,
   pub navigation_policy_function: Box<dyn Fn(String) -> bool>,
   pub download_delegate: Option<Retained<WryDownloadDelegate>>,
-  pub on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent)>>,
+  pub on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, Option<String>)>>,
   pub on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
 }
 
@@ -70,6 +70,26 @@ define_class!(
     #[unsafe(method(webView:didFinishNavigation:))]
     fn did_finish_navigation(&self, webview: &WKWebView, navigation: &WKNavigation) {
       did_finish_navigation(self, webview, navigation);
+    }
+
+    #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
+    fn did_fail_provisional_navigation(
+      &self,
+      webview: &WKWebView,
+      navigation: &WKNavigation,
+      error: &NSError,
+    ) {
+      did_fail_navigation(self, webview, navigation, error);
+    }
+
+    #[unsafe(method(webView:didFailNavigation:withError:))]
+    fn did_fail_navigation(
+      &self,
+      webview: &WKWebView,
+      navigation: &WKNavigation,
+      error: &NSError,
+    ) {
+      did_fail_navigation(self, webview, navigation, error);
     }
 
     #[unsafe(method(webView:didCommitNavigation:))]
@@ -123,9 +143,10 @@ impl WryNavigationDelegate {
     });
 
     let on_page_load_handler = if let Some(handler) = on_page_load_handler {
-      let custom_handler = Box::new(move |event| {
-        handler(event, url_from_webview(&webview).unwrap_or_default());
-      }) as Box<dyn Fn(PageLoadEvent)>;
+      let custom_handler = Box::new(move |event, url: Option<String>| {
+        let url = url.unwrap_or_else(|| url_from_webview(&webview).unwrap_or_default());
+        handler(event, url);
+      }) as Box<dyn Fn(PageLoadEvent, Option<String>)>;
       Some(custom_handler)
     } else {
       None
