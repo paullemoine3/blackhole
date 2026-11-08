@@ -658,11 +658,16 @@ impl Worker {
                 let Some(device) = self.book.devices.iter().find(|d| d.id == id).cloned() else {
                     return;
                 };
-                if let Some(key) = device.key() {
-                    let packet = seal(&key, PAIRED, &self.envelope(Message::Unpair));
-                    self.send_to_device(&packet, &id);
-                }
+                // Forget (and save) here first, then tell the other device: once it has heard, this
+                // device is already gone from disk, and a failed send still leaves it forgotten.
+                let unpair = device.key().map(|key| {
+                    let ip = self.heard.get(&id).map_or(self.broadcast, |(ip, _)| *ip);
+                    (seal(&key, PAIRED, &self.envelope(Message::Unpair)), ip)
+                });
                 self.forget(&id);
+                if let Some((packet, ip)) = unpair {
+                    self.send(&packet, SocketAddr::new(ip, self.peer_port));
+                }
             }
         }
     }
