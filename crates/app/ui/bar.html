@@ -46,21 +46,39 @@
   .win svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
   #wmax .restore, body.maxed #wmax .square { display: none; }
   body.maxed #wmax .restore { display: block; }
+  /* Motion: buttons give under the pointer, the address slides in when it changes, the
+     loading bar shimmers and the reload arrow turns. All of it stops with animations off. */
+  button { transition: background-color .15s ease, opacity .15s ease, transform .16s cubic-bezier(.3,1.5,.5,1); }
+  button:active:not(:disabled) { transform: scale(.88); }
+  #omni:active { transform: scale(.985); }
+  .win button:active:not(:disabled) { transform: none; }
+  #omni { transition: background-color .15s ease, border-color .25s ease, box-shadow .25s ease, transform .16s ease; }
+  #omni:hover { border-color: rgba(255,255,255,.18); box-shadow: 0 0 0 3px rgba(255,255,255,.04), 0 6px 18px -10px var(--glow); }
+  #progress i { position: relative; overflow: hidden; }
+  #progress.on i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); transform: translateX(-100%); animation: shimmer 1.2s ease-in-out infinite; }
+  @keyframes shimmer { to { transform: translateX(100%); } }
+  #reload.spin { animation: spin .5s cubic-bezier(.3,.9,.4,1); }
+  @keyframes spin { from { transform: rotate(-200deg); } }
+  #zoom:not([hidden]) { animation: pop .25s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { transform: scale(.7); opacity: 0; } }
+  .ext { animation: pop .25s cubic-bezier(.2,1.4,.4,1) backwards; }
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="bar" id="bar">
   <div class="side">
-    <button id="sidebar" title="Toggle sidebar (⌘B)"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="2.2"/><path d="M6 2.9v10.2"/></svg></button>
-    <button id="back" title="Back (⌘[)">←</button>
-    <button id="forward" title="Forward (⌘])">→</button>
-    <button id="reload" title="Reload (⌘R)">⟳</button>
+    <button id="sidebar" title="Show / hide the sidebar"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="2.2"/><path d="M6 2.9v10.2"/></svg></button>
+    <button id="back" title="Back">←</button>
+    <button id="forward" title="Forward">→</button>
+    <button id="reload" title="Reload">⟳</button>
     <button id="home" title="Start page">⌂</button>
   </div>
   <div class="center">
     <svg class="lock" width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="5.2" width="8" height="6" rx="1.5"/><path d="M3.8 5.2V3.8a2.2 2.2 0 0 1 4.4 0v1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
     <button id="omni" type="button"><span id="url"></span></button>
-    <button id="zoom" type="button" hidden title="Reset zoom (⌘0)"><span id="zoomn"></span><span class="x">✕</span></button>
+    <button id="zoom" type="button" hidden title="Reset zoom"><span id="zoomn"></span><span class="x">✕</span></button>
   </div>
   <div class="side right" id="exts"></div>
   <span class="priv" id="priv" hidden>Private</span>
@@ -82,6 +100,12 @@ const rgba = (hex, a) => {
 const pretty = (url) => {
   try { const u = new URL(url); return u.host.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : ''); } catch (_) { return url; }
 };
+
+// Tooltips spell their shortcuts the way the system does (see ui/keys.js).
+$('sidebar').title = 'Show / hide the sidebar (' + bhKeys('mod+b') + ')';
+$('back').title = 'Back (' + bhKeys('mod+[') + (bhMac ? '' : ' or ' + bhKeys('alt+left')) + ')';
+$('forward').title = 'Forward (' + bhKeys('mod+]') + (bhMac ? '' : ' or ' + bhKeys('alt+right')) + ')';
+$('reload').title = bhMac ? 'Reload' : 'Reload (F5)';
 
 let loadingNow = false;
 function progress(on) {
@@ -115,13 +139,23 @@ window.bh = {
     const zoom = s.zoom || 100;
     $('zoom').hidden = zoom === 100;
     $('zoomn').textContent = '🔍 ' + zoom + '%';
-    $('zoom').title = 'Reset zoom (' + (s.os === 'macos' ? '⌘0' : 'Ctrl+0') + ')';
+    $('zoom').title = 'Reset zoom (' + bhKeys('mod+0') + ')';
     document.body.classList.toggle('secure', s.url.startsWith('https:'));
-    $('url').textContent = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
+    document.body.classList.toggle('noanim', s.animations === false);
+    const text = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
+    if ($('url').textContent !== text) {
+      $('url').textContent = text;
+      if (s.animations !== false && $('url').animate) {
+        $('url').animate([{ opacity: 0, transform: 'translateY(4px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      }
+    }
     $('url').classList.toggle('ph', !s.url);
+    // Extension buttons only pop in the first time they appear.
+    const known = new Set([...$('exts').children].map(b => b.title));
     $('exts').replaceChildren(...(s.extensions || []).map(e => {
       const b = document.createElement('button');
       b.className = 'ext'; b.title = e.label;
+      if (known.has(e.label)) b.style.animation = 'none';
       if (e.icon) { const i = document.createElement('img'); i.src = e.icon; b.append(i); } else b.textContent = (e.label[0] || '•').toUpperCase();
       if (e.badge) { const g = document.createElement('span'); g.className = 'badge'; g.textContent = e.badge; b.append(g); }
       b.onclick = () => { const r = b.getBoundingClientRect(); send({ cmd: 'ext_action', id: e.id, x: r.left, y: r.top, w: r.width, h: r.height }); };
@@ -138,7 +172,11 @@ $('zoom').onclick = () => send({ cmd: 'shortcut', key: 'zoom_reset' });
 $('sidebar').onclick = () => send({ cmd: 'lock' });
 $('back').onclick = () => send({ cmd: 'back' });
 $('forward').onclick = () => send({ cmd: 'forward' });
-$('reload').onclick = () => send({ cmd: 'reload' });
+$('reload').onclick = () => {
+  const r = $('reload');
+  r.classList.remove('spin'); void r.offsetWidth; r.classList.add('spin');
+  send({ cmd: 'reload' });
+};
 $('home').onclick = () => send({ cmd: 'home' });
 $('wmin').onclick = () => send({ cmd: 'window_minimize' });
 $('wmax').onclick = () => send({ cmd: 'window_maximize' });

@@ -5,3 +5,6 @@ tmp/
 **/.DS_Store
 *.png.bak
 probleme_materiel.png
+# Local outputs and helpers of AI agent sessions
+Claude outputs/
+scripts/claude-check.cmd

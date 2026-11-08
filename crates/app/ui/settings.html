@@ -35,6 +35,7 @@
   .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.1); }
   .btn:hover { background: rgba(255,255,255,.18); }
   .btn.primary { background: var(--accent); color: #fff; }
+  .btn.armed, .btn.armed:hover { background: rgba(255,90,90,.85); color: #fff; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; }
   .ext { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 9px; }
   .ext .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
@@ -158,34 +159,43 @@ $('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
 $('imp-csv').onclick = () => send({ cmd: 'import_file', kind: 'logins' });
 
 let mac = true;
+// Keyboard rows give a key spec ('mod+shift+t', spelled by ui/keys.js); several specs are
+// separated by spaces. Mouse rows give the words to show.
 function keyRows(target, rows) {
-  const mod = mac ? '⌘' : 'Ctrl';
   target.replaceChildren(...rows.flatMap(([label, keys]) => {
     const k = el('div', 'k');
-    k.append(...keys.map(x => el('kbd', null, x.replace('MOD', mod))));
+    const parts = Array.isArray(keys) ? keys : keys.split(' ').flatMap(bhKeyParts);
+    k.append(...parts.map(x => el('kbd', null, x)));
     return [el('div', null, label), k];
   }));
 }
 function renderShortcuts() {
   $('modname').textContent = mac ? '⌘ is the Command key.' : '';
   keyRows($('k-nav'), [
-    ['Search or enter an address (command bar)', ['MOD', 'L']],
-    ['New tab and command bar', ['MOD', 'T']],
-    ['New window', ['MOD', 'N']],
-    ['New private window (nothing is kept)', ['MOD', '⇧', 'N']],
-    ['Close the current tab', ['MOD', 'W']],
-    ['Reload the page', ['MOD', 'R']],
-    ['Back / forward', ['MOD', '[', ']']],
-    ['Close the command bar or a preview', ['Esc']],
+    ['Search or enter an address (command bar)', 'mod+l'],
+    ['New tab and command bar', 'mod+t'],
+    ['New window', 'mod+n'],
+    ['New private window (nothing is kept)', 'mod+shift+n'],
+    ['Close the current tab (a quick access or folder tab only goes to sleep)', 'mod+w'],
+    ['Reopen the tab closed last', 'mod+shift+t'],
+    ['Back to the previous tab', 'ctrl+tab'],
+    ['Next / previous tab in the sidebar', 'mod+alt+down up'],
+    ['Reload the page (without its cache)', 'mod+r'],
+    ['Back / forward', 'mod+[ ]'],
+    ...(mac ? [] : [['Reload the page', 'F5'], ['Back / forward', 'alt+left right']]),
+    ['Find in page (then next / previous match)', 'mod+f mod+g mod+shift+g'],
+    ['Zoom in / out / reset', 'mod+plus mod+minus mod+0'],
+    ['Print', 'mod+p'],
+    ['Close the command bar or a preview', 'esc'],
   ]);
   keyRows($('k-layout'), [
-    ['Split view with another tab (press again to close)', ['MOD', '\\']],
-    ['Show / hide the sidebar', ['MOD', 'B']],
-    ['Open Settings', ['MOD', ',']],
-    ['Open Easel', ['MOD', '⇧', 'E']],
-    ['Capture the current page to the Easel', ['MOD', '⇧', 'S']],
-    ['Live capture: pick an area for the Easel', ['MOD', '⇧', 'L']],
-    ['Open the previewed link as a tab (Peek)', ['↵']],
+    ['Split view with another tab (press again to close)', 'mod+\\'],
+    ['Show / hide the sidebar', 'mod+b'],
+    ['Open Settings', 'mod+,'],
+    ['Open Easel', 'mod+shift+e'],
+    ['Capture this page to the Easel', 'mod+shift+s'],
+    ['Live capture: pick an area for the Easel', 'mod+shift+l'],
+    ['Open the previewed link as a tab (Peek)', 'mod+enter'],
   ]);
   keyRows($('k-mouse'), [
     ['Back / forward', ['two-finger swipe']],
@@ -195,7 +205,7 @@ function renderShortcuts() {
     ['Split view from a tab', ['◧ on the tab']],
     ['Set an emoji for a space', ['right-click it']],
     ['Set an emoji for a folder', ['click its icon']],
-    ['Pin / unpin a tab', ['right-click it']],
+    ['Add a tab to / remove it from quick access', ['right-click it']],
     ['Boost, always open a site in a space…', ['command bar actions']],
   ]);
 }
@@ -306,7 +316,19 @@ window.bh = {
 
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
-$('clear').onclick = () => send({ cmd: 'clear_history' });
+// Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
+function confirmClick(btn, question, run) {
+  const label = btn.textContent;
+  let timer = null;
+  const reset = () => { timer = null; btn.textContent = label; btn.classList.remove('armed'); };
+  btn.onclick = () => {
+    if (timer) { clearTimeout(timer); reset(); run(); return; }
+    btn.textContent = question;
+    btn.classList.add('armed');
+    timer = setTimeout(reset, 3000);
+  };
+}
+confirmClick($('clear'), 'Click again to erase all history', () => send({ cmd: 'clear_history' }));
 $('folder').onclick = () => send({ cmd: 'open_extensions_folder' });
 $('reload').onclick = () => send({ cmd: 'reload_extensions' });
 $('sample').onclick = () => send({ cmd: 'install_sample_extension' });

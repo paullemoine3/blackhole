@@ -18,6 +18,7 @@
   .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
   .card h2 button { font: inherit; text-transform: none; letter-spacing: 0; color: inherit; opacity: .8; background: transparent; border: 0; cursor: pointer; border-radius: 6px; padding: 2px 6px; }
   .card h2 button:hover { background: rgba(255,255,255,.1); }
+  .card h2 button.armed, .card h2 button.armed:hover { background: rgba(255,90,90,.9); color: #fff; opacity: 1; }
   #favs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
   .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
   .fav, .item { position: relative; }
@@ -81,6 +82,17 @@
   @keyframes wait-in { from { opacity: 0; } }
   @keyframes wait-pulse { 50% { transform: scale(.94); opacity: .8; } }
   @keyframes wait-run { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+  /* Motion: tiles lift under the pointer and give when clicked. */
+  .fav, .item { transition: background-color .18s ease, transform .22s cubic-bezier(.3,1.4,.5,1), border-color .2s ease, box-shadow .22s ease; }
+  .fav:hover { transform: translateY(-2px); }
+  .fav .tile { transition: transform .26s cubic-bezier(.3,1.6,.5,1), box-shadow .26s ease; }
+  .fav:hover .tile { transform: scale(1.08); box-shadow: 0 10px 22px -10px rgba(0,0,0,.7); }
+  .item:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.14); box-shadow: 0 10px 24px -16px rgba(124,92,255,.7); }
+  .fav:active, .item:active { transform: scale(.97); }
+  .more { transition: opacity .15s ease, background-color .15s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
@@ -90,7 +102,7 @@
   <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
   <section class="card"><h2>Favorites</h2><div id="favs"></div></section>
-  <section class="card"><h2>Recent activity <button id="clear" title="Erase local history">Clear</button></h2><div id="recent"></div></section>
+  <section class="card"><h2>Recent activity <button id="clear" title="Clear browsing history">Clear</button></h2><div id="recent"></div></section>
 </main>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
@@ -120,15 +132,16 @@ function more(open) {
   b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); open(r.left, r.bottom + 4); };
   return b;
 }
+// Same words and icons as the sidebar menus: a pinned site is in "quick access".
 function favMenu(f, x, y) {
-  const items = [{ icon: '↗', label: 'Open', run: { cmd: 'open', input: f.url } }];
-  if (f.tab != null) items.push({ icon: '📌', label: 'Unpin from sidebar', run: { cmd: 'pin', id: f.tab } });
-  else items.push({ icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: f.url } });
-  items.push({ sep: true }, { icon: '✕', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
+  const items = [{ icon: 'open', label: 'Open', run: { cmd: 'open', input: f.url } }];
+  if (f.tab != null) items.push({ icon: 'pin', label: 'Remove from quick access', run: { cmd: 'pin', id: f.tab } });
+  else items.push({ icon: 'pin', label: 'Add to quick access', run: { cmd: 'pin_site', url: f.url } });
+  items.push({ sep: true }, { icon: 'close', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
   menu(x, y, items);
 }
 function recentMenu(r, x, y) {
-  menu(x, y, [{ icon: '↗', label: 'Open', run: { cmd: 'open', input: r.url } }, { icon: '📌', label: 'Pin to sidebar', run: { cmd: 'pin_site', url: r.url } }]);
+  menu(x, y, [{ icon: 'open', label: 'Open', run: { cmd: 'open', input: r.url } }, { icon: 'pin', label: 'Add to quick access', run: { cmd: 'pin_site', url: r.url } }]);
 }
 function ago(at) {
   const s = Math.max(0, Date.now() / 1000 - at);
@@ -138,6 +151,7 @@ function ago(at) {
   return Math.floor(s / 86400) + ' d ago';
 }
 let focused = false;
+let riseAt = 0;
 function splash() {
   const sp = $('splash');
   for (let i = 0; i < 36; i++) {
@@ -162,6 +176,7 @@ window.bh = {
   },
   render(s) {
     if (s.favicons) favicons = s.favicons;
+    document.body.classList.toggle('noanim', !s.animations);
     const notes = s.releaseNotes || [];
     $('news').hidden = !notes.length;
     $('news').replaceChildren(...notes.map(r => {
@@ -190,10 +205,30 @@ window.bh = {
       return n;
     });
     $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', 'Nothing yet — pages you visit will show up here.')]));
+    // Tiles rise one after another as the start page emerges from the launch splash. A render
+    // that comes in meanwhile (icons arriving) keeps the same schedule.
+    if (!focused && s.animations) riseAt = performance.now() + 2050;
+    const wait = riseAt - performance.now();
+    if (wait > 0) {
+      [...$('favs').children, ...$('recent').children].forEach((n, i) => {
+        n.style.animation = `rise .42s cubic-bezier(.2,.85,.25,1.1) ${Math.round(wait + i * 26)}ms backwards`;
+      });
+    }
     if (!focused) { focused = true; if (s.animations) splash(); }
   },
 };
-$('clear').onclick = () => send({ cmd: 'clear_history' });
+// Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
+{
+  const b = $('clear');
+  let timer = null;
+  const reset = () => { timer = null; b.textContent = 'Clear'; b.classList.remove('armed'); };
+  b.onclick = () => {
+    if (timer) { clearTimeout(timer); reset(); send({ cmd: 'clear_history' }); return; }
+    b.textContent = 'Click again to erase all history';
+    b.classList.add('armed');
+    timer = setTimeout(reset, 3000);
+  };
+}
 send({ cmd: 'ready' });
 </script>
 </body>

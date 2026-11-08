@@ -66,7 +66,7 @@
     <button class="btn only-tab" id="all" title="All your Easels, in their own window">🗂 All Easels</button>
     <button class="btn only-tab" id="close" title="Close this Easel tab">✕</button>
   </header>
-  <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (⌘/Ctrl + Shift + S).</div></div></div>
+  <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (<span id="capkeys"></span>).</div></div></div>
 </section>
 <div id="toast"></div>
 <script>
@@ -143,7 +143,7 @@ function card(item) {
     colors.append(d);
   }
   const paint = el('button', 'tool', '🎨');
-  paint.title = 'Colour';
+  paint.title = 'Color';
   paint.onclick = () => c.classList.toggle('pick');
   const remove = el('button', 'tool remove', '✕');
   remove.title = 'Remove';
@@ -240,6 +240,7 @@ $('note').onclick = () => send({ cmd: 'easel_add_note' });
 $('all').onclick = () => send({ cmd: 'open_easel', id: state.current });
 $('close').onclick = () => { flush(); send({ cmd: 'close_easel_tab' }); };
 $('capture').onclick = () => send({ cmd: 'capture_to_easel' });
+$('capkeys').textContent = bhKeys('mod+shift+s');
 // Native webviews do not show confirm(): a second click within 3 s confirms.
 let arm = null;
 $('delete').onclick = () => {

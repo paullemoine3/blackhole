@@ -157,6 +157,13 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         self.history.recent(n)
     }
 
+    /// Forgets one page of the history (Library → History).
+    pub fn forget_history(&mut self, url: &Url) {
+        if self.history.remove(url) {
+            let _ = self.repo.save_history(&self.history);
+        }
+    }
+
     pub fn clear_history(&mut self) {
         self.history.clear();
         let _ = self.repo.save_history(&self.history);
@@ -375,6 +382,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    /// ⌘W on a pinned or folder tab: it keeps its place in the sidebar, another tab is shown.
+    pub fn release_tab(&mut self, id: TabId) -> bool {
+        let ok = self.workspace.release_tab(id);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
     pub fn toggle_pin(&mut self, id: TabId) -> bool {
         let ok = self.workspace.toggle_pin(id);
         self.persist();
@@ -462,6 +478,25 @@ impl<R: WorkspaceRepository> BrowserService<R> {
 
     pub fn delete_folder(&mut self, id: FolderId) -> bool {
         let ok = self.workspace.delete_folder(id);
+        self.persist();
+        ok
+    }
+
+    pub fn set_space_color(&mut self, id: SpaceId, color: &str) -> bool {
+        let ok = self.workspace.set_space_color(id, color);
+        self.persist();
+        ok
+    }
+
+    pub fn move_tab_to_space(&mut self, id: TabId, to: SpaceId) -> bool {
+        let ok = self.workspace.move_tab_to_space(id, to);
+        self.persist();
+        ok
+    }
+
+    /// Puts back a space or folder deleted a moment ago (see `Workspace::snapshot_space`).
+    pub fn undo_removal(&mut self, removed: blackhole_domain::Removed) -> bool {
+        let ok = self.workspace.undo_removal(removed);
         self.persist();
         ok
     }
@@ -603,6 +638,26 @@ mod tests {
         assert_eq!(svc.open_tab("https://a.example/"), Some(a));
         assert_eq!(svc.workspace().active_tab().unwrap().id, a);
         assert_eq!(svc.workspace().active_space().tabs.len(), 2);
+    }
+
+    #[test]
+    fn a_released_pinned_tab_stays_and_a_page_can_be_forgotten() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        let a = svc.open_tab("https://a.example/").unwrap();
+        let p = svc.open_tab("https://p.example/").unwrap();
+        svc.toggle_pin(p);
+        assert!(svc.release_tab(p));
+        assert_eq!(svc.workspace().active_tab().unwrap().id, a);
+        let again = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert_eq!(again.workspace().active_space().tabs.len(), 2);
+
+        let url = Url::parse("https://a.example/").unwrap();
+        svc.page_changed(a, Some(url.clone()), None);
+        svc.flush();
+        svc.forget_history(&url);
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(again.recent_activity(5).is_empty());
     }
 
     #[test]

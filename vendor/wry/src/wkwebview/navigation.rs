@@ -74,7 +74,9 @@ pub(crate) fn navigation_policy(
   unsafe {
     #[cfg(target_os = "macos")]
     if let Some(resolve) = USER_AGENT_RESOLVER.get() {
-      let main_frame = action.targetFrame().is_none_or(|f| f.isMainFrame());
+      // No target frame = a new window: it opens in another view, which picks its own agent;
+      // the opener keeps its one.
+      let main_frame = action.targetFrame().is_some_and(|f| f.isMainFrame());
       if main_frame {
         if let Some(url) = action.request().URL().and_then(|u| u.absoluteString()) {
           let ua = resolve(&url.to_string());

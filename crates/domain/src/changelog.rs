@@ -1,6 +1,30 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.17",
+        &[
+            "Tabs work like Arc: a new tab opens at the top of the list, and closing a tab brings back the one you saw just before",
+            "New shortcuts: Ctrl+Tab goes back to the previous tab, Cmd/Ctrl+Alt+↓/↑ walks the sidebar and Cmd/Ctrl+Shift+T reopens the tab closed last",
+            "Cmd/Ctrl+W on a pinned or folder tab puts it to sleep instead of removing it",
+            "Library > History lists the pages you visited, with a search and a way to forget a page",
+            "Locked tabs only reload when you have left the locked page, and the menu offers \"Back to the locked page\"",
+            "Back on the first page of a new tab no longer lands on a blank page",
+            "Windows: Ctrl+F (find in page) works again, as do F5 and Alt+←/→",
+            "Find in page highlights every match with a counter, and you can keep typing while it searches; Google Docs keeps its own search",
+            "Smoother sidebar and tab animations, and the memory / CPU meter no longer slows the browser",
+            "The player card (YouTube, Twitch, Meet…) and the download cards in the sidebar no longer flicker or jump between players",
+            "Deleting a space, a folder or an Easel, or clearing the history, asks for a second click; the tabs of a deleted space now go to the archive instead of being lost",
+            "The button on a quick access or folder tab puts it to sleep instead of removing it; closing it for good is in its menu",
+            "Menus use the same words and drawn icons everywhere, shortcuts are written the Windows way on Windows, and a folder can be renamed from its menu",
+            "The tab menu can reload, duplicate, copy the link, mute, move the tab to another space and close the other tabs",
+            "A space's color can be changed from its menu",
+            "A deleted space or folder can be brought back with Undo for a few seconds",
+            "The command bar lists find in page, print, zoom, new (private) window, reopen the last tab and History, with their shortcuts",
+            "A stream that starts muted (Twitch) gets its player card, and its button turns the sound on",
+            "Dragging and dropping inside a page also works right after closing the Library or an Easel",
+        ],
+    ),
+    (
         "0.7.15",
         &[
             "A thin progress bar runs along the top of the page while it loads",

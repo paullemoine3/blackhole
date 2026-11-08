@@ -17,6 +17,8 @@ const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
+/// Shortcut notation shared by BlackHole's own pages (`bhKeys`).
+const KEYS_JS: &str = include_str!("../ui/keys.js");
 const DEBUG_LOG_JS: &str = include_str!("../ui/debug_log.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
@@ -97,6 +99,7 @@ pub fn ui_view(
         .with_transparent(overlay)
         .with_background_color(if overlay { CLEAR } else { SHELL_BG })
         .with_devtools(cfg!(debug_assertions))
+        .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
@@ -120,6 +123,7 @@ pub fn settings_view(
         .with_html(html)
         .with_background_color(SHELL_BG)
         .with_devtools(cfg!(debug_assertions))
+        .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                 mailbox.push(Msg::Ui(command));
@@ -144,6 +148,7 @@ pub fn panel_view(
         .with_bounds(rect(0.0, 0.0, size.width, size.height))
         .with_background_color(SHELL_BG)
         .with_devtools(cfg!(debug_assertions))
+        .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                 mailbox.push(Msg::Ui(command));
@@ -250,7 +255,15 @@ pub fn tab_view(
 ) -> wry::Result<WebView> {
     let slot = TabSlot::new(AtomicU64::new(tab.0));
     build_tab(
-        window, ctx, &slot, url, bounds, policy, mailbox, host, store,
+        window,
+        ctx,
+        &slot,
+        Some(url),
+        bounds,
+        policy,
+        mailbox,
+        host,
+        store,
     )
 }
 
@@ -280,6 +293,8 @@ pub type TabSlot = Arc<AtomicU64>;
 
 /// A blank, hidden page view built ahead of time: creating a view is the slow part of opening
 /// a tab, so tabs adopt a spare (`TabSlot::store`, then `load_url`) instead of building one.
+/// It loads nothing at all: a blank page would stay first in the tab's history, and Back on the
+/// tab's first page would land on it.
 pub fn spare_tab_view(
     window: &Window,
     ctx: &mut WebContext,
@@ -289,10 +304,9 @@ pub fn spare_tab_view(
     store: Store,
 ) -> wry::Result<(TabSlot, WebView)> {
     let slot = TabSlot::new(AtomicU64::new(0));
-    let blank = Url::parse("about:blank").expect("blank url");
     let bounds = rect(0.0, 0.0, 1.0, 1.0);
     let view = build_tab(
-        window, ctx, &slot, &blank, bounds, policy, mailbox, host, store,
+        window, ctx, &slot, None, bounds, policy, mailbox, host, store,
     )?;
     Ok((slot, view))
 }
@@ -302,7 +316,7 @@ fn build_tab(
     window: &Window,
     ctx: &mut WebContext,
     slot: &TabSlot,
-    url: &Url,
+    url: Option<&Url>,
     bounds: Rect,
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
@@ -364,8 +378,18 @@ fn build_tab(
     };
     #[cfg(not(windows))]
     let _ = store;
+    // WebView2 keeps Ctrl+F, Ctrl+G, Ctrl+P, F5, Alt+←/→… for its own browser features and the
+    // page never sees them, so `shortcuts.js` could not forward them: find in page did nothing.
+    #[cfg(windows)]
+    let builder = {
+        use wry::WebViewBuilderExtWindows;
+        builder.with_browser_accelerator_keys(false)
+    };
+    let builder = match url {
+        Some(url) => builder.with_url(url.as_str()),
+        None => builder,
+    };
     builder
-        .with_url(url.as_str())
         .with_bounds(bounds)
         .with_visible(false)
         .with_background_color(PAGE_BG)
@@ -621,13 +645,17 @@ pub const PIP_TOGGLE_JS: &str = "(()=>{const vs=[...document.querySelectorAll('v
 
 /// Audible media only: muted ambient videos do not count, but one the user muted from the card does.
 /// Also reports the camera and microphone the page opened (see `ui/media_devices.js`).
-pub const MEDIA_PROBE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm);const on=m.filter(v=>!v.paused&&!v.ended&&v.readyState>2);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.some(v=>v.dataset.bhm),watching:[...document.querySelectorAll('video,audio')].some(v=>!v.paused&&!v.ended&&!v.loop&&v.readyState>2&&(!isFinite(v.duration)||v.duration>30)),pip:!!document.pictureInPictureElement||[...document.querySelectorAll('video')].some(v=>v.webkitPresentationMode==='picture-in-picture'),...(window.__bhRtc?window.__bhRtc.state():{})}})()";
+/// A video that buffers still plays (no `readyState` test): the card's ▶/⏸ no longer blinks.
+/// A video the site muted itself counts when it plays, does not loop and fills a quarter of the
+/// window or more (a Twitch stream starts muted); hover previews and small autoplays do not.
+pub const MEDIA_PROBE_JS: &str = "(()=>{const a=innerWidth*innerHeight;const big=v=>!v.paused&&!v.ended&&!v.loop&&(r=>r.width*r.height>=a*.25)(v.getBoundingClientRect());const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm||big(v));const on=m.filter(v=>!v.paused&&!v.ended);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.every(v=>v.muted),watching:[...document.querySelectorAll('video,audio')].some(v=>!v.paused&&!v.ended&&!v.loop&&v.readyState>2&&(!isFinite(v.duration)||v.duration>30)),pip:!!document.pictureInPictureElement||[...document.querySelectorAll('video')].some(v=>v.webkitPresentationMode==='picture-in-picture'),...(window.__bhRtc?window.__bhRtc.state():{})}})()";
 
 /// Pauses what plays, or resumes the media that was being watched.
 pub const MEDIA_TOGGLE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){on.forEach(v=>v.pause());return}const v=m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(v)v.play().catch(()=>{})})()";
 
-/// Mutes (or restores) the sound without touching videos the page itself keeps silent.
-pub const MEDIA_MUTE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const mute=!m.some(v=>v.dataset.bhm);m.forEach(v=>{if(mute){if(!v.muted){v.dataset.bhm='1';v.muted=true}}else if(v.dataset.bhm){delete v.dataset.bhm;v.muted=false}})})()";
+/// Restores the sound BlackHole muted; else mutes what is audible; else (nothing audible, nothing
+/// muted by us) unmutes what plays: the stream the site started muted.
+pub const MEDIA_MUTE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const ours=m.filter(v=>v.dataset.bhm);if(ours.length){ours.forEach(v=>{delete v.dataset.bhm;v.muted=false});return}const loud=m.filter(v=>!v.muted);if(loud.length){loud.forEach(v=>{v.dataset.bhm='1';v.muted=true});return}m.filter(v=>!v.paused&&!v.ended&&!v.loop).forEach(v=>{v.muted=false})})()";
 
 /// Switches the camera or the microphone (`video` / `audio`) of a call on or off.
 pub fn rtc_toggle_js(kind: &str) -> String {
@@ -636,6 +664,22 @@ pub fn rtc_toggle_js(kind: &str) -> String {
 
 pub const MEDIA_PAUSE_JS: &str =
     "[...document.querySelectorAll('video,audio')].forEach(v=>v.pause())";
+
+#[cfg(all(test, target_os = "macos"))]
+mod user_agent_tests {
+    use super::{user_agent_for, MACOS_USER_AGENT};
+
+    #[test]
+    fn google_docs_keeps_the_webkit_agent_and_the_rest_gets_safari() {
+        assert_eq!(user_agent_for("https://docs.google.com/document/d/x/edit"), None);
+        assert_eq!(user_agent_for("https://docs.google.com/spreadsheets/d/x"), None);
+        let safari = Some(MACOS_USER_AGENT.to_owned());
+        assert_eq!(user_agent_for("https://meet.google.com/abc-defg-hij"), safari);
+        assert_eq!(user_agent_for("https://x.atlassian.net/jira/software/projects/A/boards/1"), safari);
+        // Unparsable or host-less URLs keep the default rather than guessing.
+        assert_eq!(user_agent_for("about:blank"), None);
+    }
+}
 
 #[cfg(test)]
 mod unreachable_tests {

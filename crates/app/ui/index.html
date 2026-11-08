@@ -9,8 +9,11 @@
   @property --tint1 { syntax: '<color>'; inherits: true; initial-value: #100f17; }
   @property --tint2 { syntax: '<color>'; inherits: true; initial-value: #100f17; }
   :root { --accent: #7c5cff; --glow: rgba(124,92,255,.5); --glow2: rgba(124,92,255,.22); transition: --accent .45s ease, --glow .45s ease, --glow2 .45s ease, --tint1 .45s ease, --tint2 .45s ease; }
-  aside.switching > * { animation: spacefade .4s ease; }
+  /* Switching space: the list glides in from the side of the space chosen (--dir), the rest fades. */
+  aside.switching #scroll { animation: space-slide .42s cubic-bezier(.2,.85,.25,1); }
+  aside.switching > :not(#scroll):not(#spaces) { animation: spacefade .4s ease; }
   @keyframes spacefade { from { opacity: .25; } to { opacity: 1; } }
+  @keyframes space-slide { from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 26px)); filter: blur(3px); } }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; font: 13px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   html { background: #100f17; }
@@ -163,6 +166,10 @@
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
+  #toast.act { display: flex; align-items: center; gap: 8px; }
+  #toast.act.show { pointer-events: auto; }
+  #toast .txt { flex: 1; min-width: 0; }
+  #toast button { flex: none; border: 0; border-radius: 7px; padding: 3px 9px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 
 
 
@@ -182,6 +189,27 @@
   @keyframes up-shine { to { transform: translateX(120%); } }
   @keyframes up-spin { to { transform: rotate(360deg); } }
   body.noanim .update, body.noanim .update * { animation: none !important; transition: none !important; }
+
+  /* ---- Motion ----------------------------------------------------------------------------
+     Rows reflow smoothly (FLIP in `motion` below), closed rows fade out where they were,
+     new rows slide in, the tab that becomes active lights up, buttons give under the pointer. */
+  .tab, .fh, .new, .icon, .mini, .shield, .ficon, .x, .mo, .sp, .snd, .space {
+    transition: background-color .18s ease, opacity .18s ease, box-shadow .22s ease, transform .16s cubic-bezier(.3,1.4,.5,1), flex-grow .3s cubic-bezier(.3,1.2,.4,1); }
+  .tab:active:not(.dragging), .fh:active, .new:active, .icon:active, .mini:active, .shield:active { transform: scale(.975); }
+  .space:active { transform: scale(.94); }
+  .tab.active { box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.04); }
+  #pinned .tab:hover { transform: translateY(-1px); background: rgba(255,255,255,.11); }
+  #pinned .tab.active { box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 8px 18px -8px var(--glow); }
+  #pinned .tab .dot { transition: transform .22s cubic-bezier(.3,1.6,.5,1); }
+  #pinned .tab:hover .dot { transform: scale(1.08); }
+  .tab.lit { animation: tab-lit .55s cubic-bezier(.2,.8,.2,1); }
+  @keyframes tab-lit { from { background-color: color-mix(in srgb, var(--accent) 42%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 18px -4px var(--glow); } }
+  .ghost-out { position: fixed; z-index: 30; margin: 0; pointer-events: none; }
+  #toast { transform: translateY(10px) scale(.97); transition: opacity .25s ease, transform .34s cubic-bezier(.2,1.3,.4,1); }
+  #toast.show { transform: none; }
+  #scroll::-webkit-scrollbar-thumb { transition: background-color .2s ease; }
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
@@ -194,7 +222,7 @@
   <div class="section secrow"><span class="fold" id="foldfold" title="Show or hide folders"></span><button class="mini" id="newfolder" title="New folder">＋ Folder</button></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
-  <div class="newrow"><button class="new" id="new" title="New tab (Ctrl/⌘+T)">＋<span class="full-only"> New tab</span></button></div>
+  <div class="newrow"><button class="new" id="new" title="New tab">＋<span class="full-only"> New tab</span></button></div>
   <div id="tabs"></div>
 </div>
   <div id="spaces"></div>
@@ -242,7 +270,7 @@ function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (
 
 function tabNode(t) {
   const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : '') + (t.locked ? ' locked' : ''));
-  n.title = (t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title) + (t.locked ? ' — URL locked' : '');
+  n.title = (t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title) + (t.locked ? ' — URL locked (click it again to come back to the locked page)' : '');
   n.dataset.tab = t.id;
   n.dataset.pinned = t.pinned ? '1' : '';
   n.dataset.folder = t.folder == null ? '' : t.folder;
@@ -272,10 +300,16 @@ function tabNode(t) {
     mo.onclick = (e) => { e.stopPropagation(); const r = mo.getBoundingClientRect(); tabMenu(t, r.left, r.bottom + 4); };
     n.append(mo);
   }
-  const x = el('button', 'x', '✕');
-  x.onmousedown = (e) => e.stopPropagation();
-  x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close', id: t.id }); };
-  n.append(x);
+  // A quick access or folder tab keeps its place: its button puts it to sleep, like Cmd/Ctrl+W
+  // (closing it for good is in its menu). Other tabs close.
+  const keep = t.pinned || t.folder != null;
+  if (!keep || !t.asleep) {
+    const x = el('button', 'x', keep ? '−' : '✕');
+    x.title = keep ? 'Put to sleep (stays in the sidebar)' : 'Close tab';
+    x.onmousedown = (e) => e.stopPropagation();
+    x.onclick = (e) => { e.stopPropagation(); send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id }); };
+    n.append(x);
+  }
   n.onmousedown = (e) => { if (e.button === 0) down = { id: t.id, node: n, x: e.clientX, y: e.clientY }; };
   n.onclick = () => { if (!justDragged) send({ cmd: 'activate', id: t.id }); };
   n.oncontextmenu = (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); };
@@ -284,51 +318,90 @@ function tabNode(t) {
 
 function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, items }); }
 
+// Menus share one vocabulary: "quick access" (pinned tiles), "put to sleep" (the tab keeps its
+// place), "close" (it goes to the archive), "delete" (a container and what is inside). Icons are
+// names drawn by the command bar (palette.html); `confirm` asks for a second click.
+const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
 function tabMenu(t, x, y) {
-  const items = [{ icon: '📌', label: t.pinned ? 'Remove from quick access' : 'Add to quick access', run: { cmd: 'pin', id: t.id } }];
-  items.push({ icon: '✎', label: 'Rename tab', run: { cmd: 'edit_tab', id: t.id } });
-  if (!t.pinned) {
-    if (t.split) items.push({ icon: '◧', label: 'Close split view', run: { cmd: 'close_split' } });
-    else if (t.id !== state.activeTab) items.push({ icon: '◧', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
-  }
   const keep = t.pinned || t.folder != null;
-  if (keep) items.push({ icon: t.locked ? '🔓' : '🔒', label: t.locked ? 'Unlock URL' : 'Lock URL on this page', run: { cmd: 'lock_tab', id: t.id, locked: !t.locked } });
-  items.push({ sep: true }, keep
-    ? { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close_instance', id: t.id } }
-    : { icon: '✕', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+  const items = [{ icon: 'pin', label: t.pinned ? 'Remove from quick access' : 'Add to quick access', run: { cmd: 'pin', id: t.id } }];
+  items.push({ icon: 'edit', label: 'Rename tab', run: { cmd: 'edit_tab', id: t.id } });
+  if (!t.pinned) {
+    if (t.split) items.push({ icon: 'split', label: 'Close split view', run: { cmd: 'close_split' } });
+    else if (t.id !== state.activeTab) items.push({ icon: 'split', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
+  }
+  if (t.folder != null) items.push({ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
+  if (keep) items.push({ icon: t.locked ? 'unlock' : 'lock', label: t.locked ? 'Unlock URL' : 'Lock URL on this page', run: { cmd: 'lock_tab', id: t.id, locked: !t.locked } });
+  if (keep && t.locked) items.push({ icon: 'reset', label: 'Back to the locked page', run: { cmd: 'reset_tab', id: t.id } });
+  items.push({ sep: true });
+  if (!t.asleep) items.push({ icon: 'reload', label: 'Reload', run: { cmd: 'reload_tab', id: t.id } });
+  items.push({ icon: 'copy', label: 'Duplicate', run: { cmd: 'duplicate_tab', id: t.id } });
+  items.push({ icon: 'link', label: 'Copy link', copy: t.url });
+  const md = (state.media || []).find(m => m.id === t.id);
+  if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: md.muted ? 'Unmute tab' : 'Mute tab', run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
+  const others = state.spaces.filter(sp => sp.id !== state.activeSpace);
+  if (others.length) {
+    items.push({ sep: true }, { head: 'Move to space' });
+    items.push(...others.map(sp => ({ icon: sp.icon || 'space', color: sp.icon ? null : sp.color, label: sp.name, run: { cmd: 'move_tab_to_space', id: t.id, space: sp.id } })));
+  }
+  items.push({ sep: true });
+  if (keep && !t.asleep) items.push({ icon: 'sleep', label: 'Put to sleep', run: { cmd: 'close_instance', id: t.id } });
+  const loose = state.tabs.filter(o => o.id !== t.id && !o.pinned && o.folder == null).length;
+  if (loose) items.push({ icon: 'close', label: 'Close other tabs', confirm: 'Click again to close ' + plural(loose, 'tab'), run: { cmd: 'close_other_tabs', id: t.id } });
+  items.push({ icon: 'close', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
   openMenu(x, y, items);
 }
 
+// Space colors offered in its menu (any #rrggbb is accepted by the host).
+const COLORS = [['Violet', '#7c5cff'], ['Pink', '#ff5c8a'], ['Green', '#2fd4a0'], ['Amber', '#ffb020'], ['Blue', '#3aa0ff'], ['Red', '#e5534b'], ['Teal', '#14b8c4'], ['Grey', '#8b8a99']];
+
 function spaceMenu(sp, x, y) {
-  const items = [
-    { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
-    { icon: '✎', label: 'Rename space', run: { cmd: 'edit_space', id: sp.id } },
-  ];
-  if (sp.id !== state.activeSpace) items.splice(1, 0, { icon: '→', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } });
-  if (state.spaces.length > 1) items.push({ sep: true }, { icon: '🗑', label: 'Delete space', danger: true, run: { cmd: 'delete_space', id: sp.id } });
+  const items = [];
+  if (sp.id !== state.activeSpace) items.push({ icon: 'switch', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } });
+  items.push(
+    { icon: 'emoji', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
+    { icon: 'edit', label: 'Rename space', run: { cmd: 'edit_space', id: sp.id } },
+    { sep: true }, { head: 'Color' },
+    ...COLORS.map(([name, hex]) => ({ icon: hex.toLowerCase() === (sp.color || '').toLowerCase() ? 'check' : '', color: hex, label: name, run: { cmd: 'set_space_color', id: sp.id, color: hex } })),
+  );
+  if (state.spaces.length > 1) {
+    // Only the active space's tabs are known here; the others say nothing about their count.
+    const n = sp.id === state.activeSpace ? state.tabs.length : null;
+    const confirm = n === 0 ? 'Click again to delete' : 'Click again to archive ' + (n == null ? 'its tabs' : plural(n, 'tab'));
+    items.push({ sep: true }, { icon: 'trash', label: 'Delete space', danger: true, confirm, run: { cmd: 'delete_space', id: sp.id } });
+  }
   openMenu(x, y, items);
 }
 
 function folderMenu(f, x, y) {
+  // Its subfolders go with it, and their tabs too.
+  const tree = new Set([f.id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const s of state.folders) if (!tree.has(s.id) && tree.has(s.parent)) { tree.add(s.id); grew = true; }
+  }
+  const inside = state.tabs.filter(t => tree.has(t.folder)).length;
   openMenu(x, y, [
-    { icon: '🙂', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
-    { icon: '📁', label: 'New subfolder', run: { cmd: 'new_folder', parent: f.id } },
-    { icon: f.collapsed ? '▾' : '▸', label: f.collapsed ? 'Expand folder' : 'Collapse folder', run: { cmd: 'toggle_folder', id: f.id } },
-    ...(f.parent != null ? [{ icon: '↩', label: 'Move to top level', run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
+    { icon: 'edit', label: 'Rename folder', run: { cmd: 'edit_folder', id: f.id } },
+    { icon: 'emoji', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
+    { icon: 'folder', label: 'New subfolder', run: { cmd: 'new_folder', parent: f.id } },
+    { icon: f.collapsed ? 'expand' : 'collapse', label: f.collapsed ? 'Expand folder' : 'Collapse folder', run: { cmd: 'toggle_folder', id: f.id } },
+    ...(f.parent != null ? [{ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
     { sep: true },
-    { icon: '🗑', label: 'Delete folder', danger: true, run: { cmd: 'delete_folder', id: f.id } },
+    { icon: 'trash', label: 'Delete folder', danger: true, confirm: inside ? 'Click again to archive ' + plural(inside, 'tab') : 'Click again to delete', run: { cmd: 'delete_folder', id: f.id } },
   ]);
 }
 
-// Right-click on empty sidebar space: create things.
+// Right-click on empty sidebar space: create things, then the Easels to open.
 function createMenu(x, y) {
+  const easels = state.easels || [];
   openMenu(x, y, [
-    { icon: '＋', label: 'New tab', run: { cmd: 'new_tab' } },
-    { icon: '📁', label: 'New folder', run: { cmd: 'new_folder' } },
-    { sep: true },
-    { icon: '🖼', label: 'New Easel', run: { cmd: 'action', id: 'new_easel' } },
-    ...(state.easels || []).map(e => ({ icon: '🖼', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
-    { icon: '◉', label: 'New space', run: { cmd: 'action', id: 'new_space' } },
+    { icon: 'plus', label: 'New tab', run: { cmd: 'new_tab' } },
+    { icon: 'folder', label: 'New folder', run: { cmd: 'new_folder' } },
+    { icon: 'space', label: 'New space', run: { cmd: 'action', id: 'new_space' } },
+    { icon: 'easel', label: 'New Easel', run: { cmd: 'action', id: 'new_easel' } },
+    ...(easels.length ? [{ sep: true }, { head: 'Easels' }] : []),
+    ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
 }
 document.querySelector('aside').oncontextmenu = (e) => { if (!e.defaultPrevented) { e.preventDefault(); createMenu(e.clientX, e.clientY); } };
@@ -344,11 +417,11 @@ function easelNode(e) {
   n.oncontextmenu = (ev) => {
     ev.preventDefault();
     openMenu(ev.clientX, ev.clientY, [
-      { icon: '🖼', label: 'Open as tab', run: { cmd: 'open_easel_tab', id: e.id } },
-      { icon: '🪟', label: 'Open in Easel window', run: { cmd: 'open_easel', id: e.id } },
-      ...(state.folders.some(f => f.id === e.folder) ? [{ icon: '↩', label: 'Unpin from folder', run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
+      { icon: 'easel', label: 'Open as tab', run: { cmd: 'open_easel_tab', id: e.id } },
+      { icon: 'window', label: 'Open in Easel window', run: { cmd: 'open_easel', id: e.id } },
+      ...(state.folders.some(f => f.id === e.folder) ? [{ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
       { sep: true },
-      { icon: '🗑', label: 'Delete Easel', danger: true, run: { cmd: 'delete_easel', id: e.id } },
+      { icon: 'trash', label: 'Delete Easel', danger: true, confirm: 'Click again to delete its notes and clips', run: { cmd: 'delete_easel', id: e.id } },
     ]);
   };
   return n;
@@ -646,6 +719,81 @@ document.addEventListener('drop', async (e) => {
   if (!found) bh.toast('Nothing to import from this drop');
 });
 
+// ---- motion ------------------------------------------------------------------------------
+// The sidebar is rebuilt on every state change, so CSS transitions alone cannot move rows:
+// `snapshot` records where each row was, `play` slides the rebuilt rows from there (FLIP),
+// fades out the rows that left where they were and slides in the ones that appeared.
+const motion = {
+  SEL: '#scroll .tab[data-tab], #scroll .tab[data-easel], #scroll .fh',
+  calm() {
+    return document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches || !Element.prototype.animate;
+  },
+  key(n) { return n.dataset.tab ? 't' + n.dataset.tab : n.dataset.easel ? 'e' + n.dataset.easel : 'f' + n.dataset.folder; },
+  snapshot() {
+    const m = new Map();
+    if (this.calm()) return m;
+    for (const n of document.querySelectorAll(this.SEL)) {
+      const r = n.getBoundingClientRect();
+      if (r.width && r.height) m.set(this.key(n), { node: n, r });
+    }
+    return m;
+  },
+  play(before, prev, s) {
+    if (this.calm() || !before.size) return;
+    const view = $('scroll').getBoundingClientRect();
+    const seen = new Set();
+    let fresh = 0;
+    for (const n of document.querySelectorAll(this.SEL)) {
+      const k = this.key(n), r = n.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      seen.add(k);
+      const old = before.get(k);
+      if (!old) {
+        if (r.bottom < view.top || r.top > view.bottom) continue;
+        n.animate([{ opacity: 0, transform: 'translateX(-12px) scale(.96)' }, { opacity: 1, transform: 'none' }],
+          { duration: 300, delay: Math.min(fresh++, 8) * 22, easing: 'cubic-bezier(.2,.9,.3,1.15)', fill: 'backwards' });
+        continue;
+      }
+      const dx = old.r.left - r.left, dy = old.r.top - r.top;
+      if ((Math.abs(dx) < 1 && Math.abs(dy) < 1) || Math.abs(dy) > 600) continue;
+      n.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.25,.9,.3,1)' });
+    }
+    // Rows that left: their old node fades out where it stood.
+    for (const [k, { node, r }] of before) {
+      if (seen.has(k) || r.bottom < view.top || r.top > view.bottom) continue;
+      const g = node.cloneNode(true);
+      g.classList.add('ghost-out');
+      g.classList.remove('lit');
+      Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+      document.body.append(g);
+      g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-14px) scale(.94)' }],
+        { duration: 220, easing: 'cubic-bezier(.4,0,.8,.4)', fill: 'forwards' }).onfinish = () => g.remove();
+    }
+    // A folder that opened or closed turns its chevron.
+    const was = new Map((prev.folders || []).map(f => [f.id, f.collapsed]));
+    for (const f of s.folders || []) {
+      if (!was.has(f.id) || was.get(f.id) === f.collapsed) continue;
+      const chev = document.querySelector(`.fh[data-folder="${f.id}"] .chev`);
+      if (chev) chev.animate([{ transform: `rotate(${f.collapsed ? 90 : -90}deg)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.3,.5,1)' });
+    }
+    // The tab that became active lights up briefly.
+    if (s.activeTab != null && s.activeTab !== prev.activeTab) {
+      const a = document.querySelector(`#scroll .tab[data-tab="${s.activeTab}"]`);
+      if (a) a.classList.add('lit');
+    }
+  },
+  // The active space card widens while the previous one shrinks back.
+  spaces(from, to) {
+    if (this.calm()) return;
+    const grow = (id, a, b) => {
+      const n = document.querySelector(`.space[data-space="${id}"]`);
+      if (n) n.animate([{ flexGrow: a }, { flexGrow: b }], { duration: 340, easing: 'cubic-bezier(.3,1.25,.4,1)' });
+    };
+    grow(from, 2.4, 1);
+    grow(to, 1, 2.4);
+  },
+};
+
 window.bh = {
   stats(tabs, mb, cpu) {
     const box = $('stats');
@@ -659,9 +807,14 @@ window.bh = {
     if (!s.favicons) s.favicons = (deferred && deferred.favicons) || (state && state.favicons) || {};
     if (drag || editing || sdrag) { deferred = s; return; }
     const switched = state && state.activeSpace != null && s.activeSpace !== state.activeSpace;
+    const prev = state;
+    // The rows as they are on screen now, to animate them to their new places.
+    const before = !switched && prev && prev.tabs && prev.tabs.length && s.animations !== false ? motion.snapshot() : null;
     state = s;
     if (switched) {
       const a = document.querySelector('aside');
+      const at = (id) => s.spaces.findIndex(sp => sp.id === id);
+      a.style.setProperty('--dir', at(s.activeSpace) < at(prev.activeSpace) ? -1 : 1);
       a.classList.remove('switching'); void a.offsetWidth; a.classList.add('switching');
       setTimeout(() => a.classList.remove('switching'), 450);
     }
@@ -710,6 +863,8 @@ window.bh = {
     }));
     $('blockedn').textContent = ' ' + s.blocked;
     document.body.classList.toggle('noanim', s.animations === false);
+    if (before) motion.play(before, prev, s);
+    if (switched) motion.spaces(prev.activeSpace, s.activeSpace);
     renderUpdate(s.update, s.version);
     renderMedia(s);
     renderDownloads(s.downloads);
@@ -718,36 +873,72 @@ window.bh = {
   editSpace,
   editTab,
   editFolderId,
-  toast(m) {
-    const t = $('toast'); t.textContent = m; t.classList.add('show');
-    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), 2200);
+  // `action` ({ label, run }) adds a button, e.g. Undo after a deletion; it stays longer.
+  toast(m, action) {
+    const t = $('toast');
+    const txt = el('span', 'txt', m);
+    if (action) {
+      const b = el('button', null, action.label);
+      b.onclick = () => { t.classList.remove('show'); send(action.run); };
+      t.replaceChildren(txt, b);
+    } else t.replaceChildren(txt);
+    t.classList.toggle('act', !!action);
+    t.classList.add('show');
+    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), action ? 8000 : 2200);
   },
 };
 
 const fmtBytes = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
-// Downloads in progress (and just finished) are cards above the update button.
+// Downloads in progress (and just finished) are cards above the update button. The cards are
+// updated in place: rebuilding them on every progress tick replayed their entrance animation
+// and restarted the bar, which made the sidebar flicker.
+const dlNodes = new Map();
 function renderDownloads(list) {
-  $('dls').replaceChildren(...(list || []).map(d => {
+  const box = $('dls');
+  const seen = new Set();
+  (list || []).forEach((d, i) => {
+    seen.add(d.id);
     const known = d.total > 0, pct = known ? Math.min(100, Math.round(d.received * 100 / d.total)) : 0;
-    const c = el('div', 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk'));
     const label = d.state === 'ok' ? 'Done' : d.state === 'bad' ? 'Failed' : known ? pct + '%' : fmtBytes(d.received);
-    c.append(el('div', 'top', null), el('div', 'bar'));
-    c.firstChild.append(el('span', 'nm', d.name), el('span', 'pc', label));
-    const fill = el('div', 'fill');
-    if (known && !d.state) fill.style.width = pct + '%';
-    c.lastChild.append(fill);
+    let c = dlNodes.get(d.id);
+    if (!c) {
+      c = el('div', 'dl');
+      c.append(el('div', 'top'), el('div', 'bar'));
+      c.firstChild.append(el('span', 'nm'), el('span', 'pc'));
+      c.lastChild.append(el('div', 'fill'));
+      c.onclick = () => send({ cmd: 'open_library' });
+      dlNodes.set(d.id, c);
+    }
+    const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk');
+    if (c.className !== cls) c.className = cls;
+    const [nm, pc] = c.firstChild.children;
+    if (nm.textContent !== d.name) nm.textContent = d.name;
+    if (pc.textContent !== label) pc.textContent = label;
+    const width = known && !d.state ? pct + '%' : '';
+    if (c.lastChild.firstChild.style.width !== width) c.lastChild.firstChild.style.width = width;
     c.title = d.name + (known ? ' — ' + fmtBytes(d.received) + ' / ' + fmtBytes(d.total) : '');
-    c.onclick = () => send({ cmd: 'open_library' });
-    return c;
-  }));
+    if (box.children[i] !== c) box.insertBefore(c, box.children[i] || null);
+  });
+  for (const [id, c] of dlNodes) if (!seen.has(id)) { c.remove(); dlNodes.delete(id); }
 }
 // Arc-style mini player for a tab that plays (or was paused) while another page is shown.
+// It stays on the player it shows while that tab is listed, and is only rebuilt when what it
+// shows changes: a state refresh no longer replays its animation or reloads its icon.
+let mediaId = null, mediaSig = '';
 function renderMedia(s) {
+  const box = $('media');
   const list = (s.media || []).filter(m => m.id !== s.activeTab);
-  const m = list.find(m => m.playing) || list[0];
+  const m = list.find(m => m.id === mediaId) || list.find(m => m.playing) || list[0];
   const t = m && s.tabs.find(t => t.id === m.id);
-  if (!t) { $('media').replaceChildren(); return; }
-  const card = el('div', 'mc');
+  if (!t) { mediaId = null; mediaSig = ''; box.replaceChildren(); return; }
+  const icon = (s.favicons || {})[host(t.url)] || '';
+  const sig = JSON.stringify([t.id, t.title, t.url, icon, m.playing, m.muted, m.mic, m.micOn, m.cam, m.camOn]);
+  if (sig === mediaSig && box.firstChild) return;
+  let card = box.firstChild;
+  // A new card slides in; the same player only has its content refreshed.
+  if (!card || mediaId !== t.id) { card = el('div', 'mc'); box.replaceChildren(card); }
+  mediaId = t.id;
+  mediaSig = sig;
   const top = el('div', 'top');
   const d = el('span', 'dot', (host(t.url)[0] || '•').toUpperCase());
   d.style.background = hue(host(t.url));
@@ -765,8 +956,7 @@ function renderMedia(s) {
   ctl.append(
     btn('', '⧉', 'Picture in Picture', 'pip'),
     btn('cl', '✕', 'Close the player', 'close'));
-  card.append(top, ctl);
-  $('media').replaceChildren(card);
+  card.replaceChildren(top, ctl);
 }
 const UPDATE_ICONS = {
   ready: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg>',
@@ -791,6 +981,8 @@ function renderUpdate(u, current) {
 $('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
 $('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
 $('new').onclick = () => send({ cmd: 'new_tab' });
+$('new').title = 'New tab (' + bhKeys('mod+t') + ')';
+$('gear').title = 'Settings (' + bhKeys('mod+,') + ')';
 $('library').onclick = () => send({ cmd: 'open_library' });
 function applyFolds(list) {
   const pinned = list.includes('pinned'), folders = list.includes('folders');
@@ -805,7 +997,9 @@ function toggleFold(section) {
   const collapsed = !list.has(section);
   collapsed ? list.add(section) : list.delete(section);
   if (state) state.collapsed = [...list];
+  const before = motion.snapshot();
   applyFolds([...list]);
+  if (state) motion.play(before, state, state);
   send({ cmd: 'set_section_collapsed', section, collapsed });
 }
 $('pinfold').onclick = () => toggleFold('pinned');

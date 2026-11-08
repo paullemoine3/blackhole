@@ -124,6 +124,49 @@ eval palette (document.body.classList.contains('intro') + '|' + document.getElem
 shot 19-new-tab-palette
 cmd {"cmd":"palette_close"}
 wait 500
+cmd {"cmd":"open","input":"https://example.com"}
+wait 3000
+cmd {"cmd":"open","input":"https://example.org"}
+wait 3000
+eval chrome state.tabs.filter(t => !t.pinned && t.folder == null).map(t => new URL(t.url).host).join(',')
+cmd {"cmd":"shortcut","key":"recent_tab"}
+wait 800
+eval chrome new URL(state.tabs.find(t => t.id === state.activeTab).url).host
+cmd {"cmd":"shortcut","key":"w"}
+wait 800
+eval chrome new URL(state.tabs.find(t => t.id === state.activeTab).url).host + '|' + state.tabs.length
+cmd {"cmd":"shortcut","key":"shift+t"}
+wait 2500
+eval chrome state.tabs.length + '|' + new URL(state.tabs.find(t => t.id === state.activeTab).url).host
+shot 20-reopened-tab
+eval chrome typeof motion.play + '|' + getComputedStyle(document.querySelector('.tab')).transitionDuration
+eval content (document.addEventListener('keydown', e => e.preventDefault(), {once:true}), document.dispatchEvent(new KeyboardEvent('keydown', {key:'f', code:'KeyF', ctrlKey:true, bubbles:true, cancelable:true})), 'own')
+wait 600
+eval content String([...document.documentElement.children].filter(e => e.tagName === 'DIV').length)
+eval content (() => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {acceptNode: n => /\S{4}/.test(n.data) && !/^(SCRIPT|STYLE|NOSCRIPT)$/.test(n.parentElement.tagName) ? 1 : 3}); const n = w.nextNode(); const i = n.data.search(/\S{4}/); const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 4); getSelection().removeAllRanges(); getSelection().addRange(r); document.dispatchEvent(new KeyboardEvent('keydown', {key:'f', code:'KeyF', ctrlKey:true, bubbles:true, cancelable:true})); return 'sent'; })()
+wait 800
+eval content [...document.documentElement.children].filter(e => e.tagName === 'DIV').length + '|' + (CSS.highlights.get('bh-find') ? CSS.highlights.get('bh-find').size : 0) + '|' + document.activeElement.tagName
+eval chrome (() => { const other = state.tabs.find(t => t.id !== state.activeTab); const m = [{id: other.id, playing: true, muted: false}]; bh.render({...state, media: m}); const a = document.querySelector('#media .mc'); bh.render({...state, media: m}); bh.render({...state, media: [{...m[0], playing: false}]}); const b = document.querySelector('#media .mc'); const r = (a === b) + '|' + b.querySelector('.ctl button').textContent; bh.render({...state, media: []}); return r; })()
+eval bar document.getElementById('sidebar').title + '|' + document.getElementById('back').title
+eval palette (() => { bh.open({mode: 'menu', color: '#7c5cff', menu: {x: 10, y: 10, items: [{icon: 'trash', label: 'Delete space', danger: true, confirm: 'Click again', run: {cmd: 'noop'}}]}}); const b = document.querySelector('#menu button'); b.click(); const r = b.classList.contains('armed') + '|' + b.textContent + '|' + !!b.querySelector('svg'); bh.hide(); return r; })()
+eval chrome (() => { bh.downloads([{id: 7, name: 'a.iso', received: 10, total: 100, state: null}]); const a = document.querySelector('#dls .dl'); bh.downloads([{id: 7, name: 'a.iso', received: 60, total: 100, state: null}]); const b = document.querySelector('#dls .dl'); const r = (a === b) + '|' + b.querySelector('.pc').textContent + '|' + b.querySelector('.fill').style.width; bh.downloads([]); return r; })()
+eval chrome (send({cmd: 'set_space_color', id: state.activeSpace, color: '#2FD4A0'}), 'color')
+wait 600
+eval chrome state.spaces.find(s => s.id === state.activeSpace).color
+cmd {"cmd":"action","id":"key:zoom_in"}
+wait 800
+eval bar document.getElementById('zoomn').textContent
+cmd {"cmd":"action","id":"key:zoom_reset"}
+cmd {"cmd":"new_folder"}
+wait 700
+eval chrome (send({cmd: 'move_tab', id: state.tabs.find(t => t.id !== state.activeTab).id, before: null, folder: state.folders[state.folders.length - 1].id, pinned: false}), 'moved')
+wait 700
+eval chrome (send({cmd: 'delete_folder', id: state.folders[state.folders.length - 1].id}), 'deleted')
+wait 800
+eval chrome state.tabs.length + '|' + state.folders.length + '|' + document.getElementById('toast').textContent
+eval chrome (document.querySelector('#toast button').click(), 'undo')
+wait 800
+eval chrome state.tabs.length + '|' + state.folders.length + '|' + state.tabs.filter(t => t.folder != null).length
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -170,6 +213,21 @@ Check ($evals[27] -match '50%\|2\|2 KB') 'downloads: progress card with percenta
 Check ($evals[28] -match 'dl ok') 'downloads: finished card'
 Check ($evals[29] -match '0') 'downloads: cards disappear'
 Check ($evals[30] -match 'true\|"?$') 'new tab: opens the search bar (empty) over the start page'
-Check ($saved.Count -eq 19) "screenshots saved ($($saved.Count)/19)"
+Check ($evals[31] -match 'example\.org,example\.com') 'tabs: a new tab goes to the top of the list, like Arc'
+Check ($evals[32] -match 'example\.com') 'Ctrl+Tab: goes back to the tab seen before'
+Check ($evals[33] -match 'example\.org\|1') 'Ctrl/Cmd+W: the tab seen before takes over'
+Check ($evals[34] -match '2\|example\.com') 'Ctrl/Cmd+Shift+T: reopens the tab closed last'
+Check ($evals[35] -match 'function\|0\.18s') 'sidebar motion: FLIP helper loaded, rows have transitions'
+Check ($evals[37] -match '"0"') 'find: a page with its own Ctrl+F (Google Docs) keeps it'
+Check ($evals[39] -match '"1\|[1-9]\d*\|DIV"') 'find: Ctrl+F opens the bar on the selection, highlights it and keeps the focus'
+Check ($evals[40] -match '"true\|▶"') 'media card: a state refresh updates the same card (no flicker)'
+Check ($evals[41] -match 'Ctrl\+B\)\|Back \(Ctrl\+\[ or Alt\+') 'tooltips: shortcuts spelled for Windows (no Cmd sign)'
+Check ($evals[42] -match '"true\|Click again\|true"') 'menus: a destructive item asks for a second click and has a drawn icon'
+Check ($evals[43] -match '"true\|60%\|60%"') 'download card: progress updates the same card (no flicker)'
+Check ($evals[45] -match '#2fd4a0') 'space color: changed from its menu (stored lower-case)'
+Check ($evals[46] -match '110%') 'command bar: a shortcut command (zoom in) runs like its keys'
+Check ($evals[49] -match '"1\|0\|Folder .*deleted.*Undo"') 'delete folder: its tab goes, a toast offers Undo'
+Check ($evals[51] -match '"2\|1\|1"') 'undo: the folder comes back with its tab inside'
+Check ($saved.Count -eq 20) "screenshots saved ($($saved.Count)/20)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

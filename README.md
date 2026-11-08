@@ -30,15 +30,17 @@
 
 - 🗂️ **Barre latérale à la Arc** et 🌌 **espaces** colorés pour cloisonner vos contextes.
 - 🧠 **Léger en mémoire** : peu d'onglets vivants (4 par défaut, réglable), voisins préchargés, anciens libérés.
-- ⌨️ **Barre de commandes** (`Ctrl/Cmd + L`) : tout se fait au clavier.
+- ⌨️ **Barre de commandes** (`Ctrl/Cmd + L`) : tout se fait au clavier, avec recherche dans tout l'historique.
+- 🔁 **Onglets à la Arc** : nouveaux onglets en haut de la liste, `Ctrl + Tab` revient à l'onglet précédent, `Ctrl/Cmd + Alt + ↑/↓` parcourt la barre latérale, `Ctrl/Cmd + Maj + T` rouvre le dernier onglet fermé ; `Ctrl/Cmd + W` sur un onglet épinglé ou de dossier le met en veille sans le retirer.
 - ◧ **Vue scindée** et 👀 **aperçu** flottant d'un lien (`Maj + clic`).
 - 🎨 **Boosts** : CSS personnalisé par site.
 - 🖼️ **Easel** : tableaux de notes et de captures de pages, y compris en direct.
-- 📚 **Bibliothèque** : médias, téléchargements et onglets archivés au même endroit.
+- 📚 **Bibliothèque** : médias, téléchargements, historique et onglets archivés au même endroit.
 - 🔐 **Comptes par espace** : chaque espace a ses propres cookies (perso et pro côte à côte).
 - 📺 **Média** : mini-lecteur dans la barre latérale (lecture, son, micro et caméra d'un appel), Picture in Picture automatique (changement d'onglet ou perte de focus) avec retour à l'onglet.
 - 🪟 **Glisser un onglet** vers une autre fenêtre pour l'y déplacer.
 - ⚡ **Démarrage et navigation rapides** : chargement parallèle, écritures disque en arrière-plan.
+- ✨ **Animations soignées** : la liste d'onglets se réorganise en douceur, changement d'espace glissé, barre d'adresse et accueil animés (désactivables dans les réglages ; `prefers-reduced-motion` respecté).
 
 | | macOS | Windows |
 |---|---|---|

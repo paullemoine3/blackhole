@@ -98,10 +98,41 @@ pub enum UiCommand {
     EditTab {
         id: u64,
     },
+    /// Asks the sidebar to turn a folder's name into an input.
+    EditFolder {
+        id: u64,
+    },
+    /// Tab menu: reloads that tab (not only the one shown).
+    ReloadTab {
+        id: u64,
+    },
+    /// Tab menu: opens the same page in a new tab.
+    DuplicateTab {
+        id: u64,
+    },
+    /// Tab menu: moves the tab to another space (its view is rebuilt on that space's profile).
+    MoveTabToSpace {
+        id: u64,
+        space: u64,
+    },
+    /// Tab menu: closes the other loose tabs of the space (quick access and folders are kept).
+    CloseOtherTabs {
+        id: u64,
+    },
+    SetSpaceColor {
+        id: u64,
+        color: String,
+    },
+    /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
+    UndoRemoval,
     /// Locks a quick-access or folder tab on its current page, or releases it.
     LockTab {
         id: u64,
         locked: bool,
+    },
+    /// Brings a locked tab back to its locked page (shown first if needed).
+    ResetTab {
+        id: u64,
     },
     ToggleFolder {
         id: u64,
@@ -296,7 +327,7 @@ pub enum UiCommand {
     LibraryDeleteDownload {
         id: u64,
     },
-    /// Empties the download history or the archive.
+    /// Empties the download history, the archive or the browsing history.
     LibraryClear {
         kind: String,
     },
@@ -305,6 +336,10 @@ pub enum UiCommand {
     },
     DeleteArchived {
         index: usize,
+    },
+    /// Removes one page from the browsing history (Library → History).
+    ForgetHistory {
+        url: String,
     },
     LibraryOpenTab {
         space: u64,
@@ -635,6 +670,52 @@ mod tests {
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_live_play","item":1}"#).is_err()
         );
+    }
+
+    #[test]
+    fn tab_menu_commands_parse_and_pages_cannot_send_them() {
+        let cases = [
+            r#"{"cmd":"reload_tab","id":1}"#,
+            r#"{"cmd":"duplicate_tab","id":1}"#,
+            r#"{"cmd":"move_tab_to_space","id":1,"space":2}"#,
+            r#"{"cmd":"close_other_tabs","id":1}"#,
+            r##"{"cmd":"set_space_color","id":1,"color":"#ff5c8a"}"##,
+            r#"{"cmd":"undo_removal"}"#,
+        ];
+        for raw in cases {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn edit_folder_parses_and_pages_cannot_send_it() {
+        let edit = r#"{"cmd":"edit_folder","id":4}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(edit),
+            Ok(UiCommand::EditFolder { id: 4 })
+        ));
+        assert!(serde_json::from_str::<PageEvent>(edit).is_err());
+    }
+
+    #[test]
+    fn reset_tab_parses_and_pages_cannot_send_it() {
+        let reset = r#"{"cmd":"reset_tab","id":3}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(reset),
+            Ok(UiCommand::ResetTab { id: 3 })
+        ));
+        assert!(serde_json::from_str::<PageEvent>(reset).is_err());
+    }
+
+    #[test]
+    fn history_commands_parse_and_pages_cannot_send_them() {
+        let forget = r#"{"cmd":"forget_history","url":"https://a.test/"}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(forget),
+            Ok(UiCommand::ForgetHistory { url }) if url == "https://a.test/"
+        ));
+        assert!(serde_json::from_str::<PageEvent>(forget).is_err());
     }
 
     #[test]

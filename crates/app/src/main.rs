@@ -11,12 +11,15 @@ mod devtools;
 mod extensions;
 mod favicons;
 mod ipc;
+mod media;
 mod sidebar;
 mod stats;
 mod views;
 
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
-use blackhole_domain::{BlockLog, Easels, FolderId, SearchEngine, Settings, SpaceId, TabId};
+use blackhole_domain::{
+    BlockLog, Easels, FolderId, Removed, SearchEngine, Settings, SpaceId, TabId,
+};
 use blackhole_infrastructure::catalog;
 use blackhole_infrastructure::peers;
 use blackhole_infrastructure::updater::{self, Release};
@@ -170,12 +173,29 @@ fn palette_rect(open: bool, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect 
     if open {
         views::rect(0.0, 0.0, window.width, window.height)
     } else {
-        views::rect(0.0, 0.0, 1.0, 1.0)
+        parked()
     }
+}
+
+/// Bounds of a hidden view that must not catch drags (see `palette_rect`).
+fn parked() -> wry::Rect {
+    views::rect(0.0, 0.0, 1.0, 1.0)
+}
+
+/// The Library covers the whole window under the command bar.
+fn library_rect(window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    views::rect(
+        0.0,
+        BAR_HEIGHT,
+        window.width,
+        (window.height - BAR_HEIGHT).max(1.0),
+    )
 }
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
 const RAISE_DELAY: Duration = Duration::from_millis(400);
 const BLUR_DELAY: Duration = Duration::from_millis(350);
+/// How long the Undo of a deleted space or folder stays possible (the toast shows for 8 s).
+const UNDO_FOR: Duration = Duration::from_secs(15);
 /// How often an unfocused but still visible window is checked for being covered.
 const PIP_RECHECK: Duration = Duration::from_millis(1000);
 /// Share of the browser window another window must hide before a video floats.
@@ -335,8 +355,8 @@ struct Running {
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
     card_left: std::cell::Cell<f64>,
     bar_left: std::cell::Cell<f64>,
-    meter: stats::Meter,
-    meter_due: Instant,
+    sampler: stats::Sampler,
+    usage: Option<stats::Usage>,
     stats_tabs: usize,
     peers_due: Instant,
     peers_published: Instant,
@@ -351,6 +371,12 @@ struct Running {
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
     media_due: Instant,
     media_seen: serde_json::Value,
+    /// Last report with media per tab: a short gap in the probes keeps the card on screen.
+    media_hold: media::Linger<MediaProbe>,
+    /// The space or folder deleted last, for the toast's Undo.
+    undo: Option<(Instant, Removed)>,
+    /// Library section asked for by the command bar ("Open History"), with a request number.
+    library_jump: (u32, &'static str),
     /// Tabs whose media card was closed; they come back when the tab plays again.
     media_dismissed: HashSet<u64>,
     svc: BrowserService<JsonWorkspaceRepository>,
@@ -699,8 +725,8 @@ impl Running {
             blur_due: None,
             card_left: std::cell::Cell::new(f64::NAN),
             bar_left: std::cell::Cell::new(f64::NAN),
-            meter: stats::Meter::new(),
-            meter_due: Instant::now(),
+            sampler: stats::Sampler::start(),
+            usage: None,
             stats_tabs: 0,
             peers_due: Instant::now(),
             peers_published: Instant::now() - PEERS_PUBLISH_EVERY,
@@ -712,6 +738,9 @@ impl Running {
             media: Arc::default(),
             media_due: Instant::now(),
             media_seen: serde_json::Value::Null,
+            media_hold: media::Linger::new(media::LINGER),
+            undo: None,
+            library_jump: (0, ""),
             media_dismissed: HashSet::new(),
             svc,
             mailbox,
@@ -899,9 +928,6 @@ impl Running {
         }
         if all {
             let _ = self.home.set_bounds(self.full_content_bounds());
-            if let Some(panel) = &self.easel_panel.view {
-                let _ = panel.set_bounds(self.full_content_bounds());
-            }
             for view in self.tabs.values() {
                 let _ = view.set_bounds(self.full_content_bounds());
             }
@@ -912,14 +938,7 @@ impl Running {
         }
         let (main, side) = self.content_rects();
         let _ = self.active_view().set_bounds(main);
-        if let Some(panel) = &self.library_panel.view {
-            let _ = panel.set_bounds(views::rect(
-                0.0,
-                BAR_HEIGHT,
-                size.width,
-                (size.height - BAR_HEIGHT).max(1.0),
-            ));
-        }
+        self.place_panels();
         for item in self.live.keys().copied().collect::<Vec<_>>() {
             self.apply_slot(item);
         }
@@ -930,6 +949,20 @@ impl Running {
         }
         self.round_cards(all);
         self.place_card_shadow();
+    }
+
+    /// Sizes the Library and Easel panels, or parks them while hidden: they stay alive a minute
+    /// after closing, and a hidden full-size view would still swallow the drags of the page
+    /// under it (e.g. moving a Jira ticket), like the command bar did.
+    fn place_panels(&self) {
+        if let Some(panel) = &self.easel_panel.view {
+            let rect = if self.easel_tab { self.content_rects().0 } else { parked() };
+            let _ = panel.set_bounds(rect);
+        }
+        if let Some(panel) = &self.library_panel.view {
+            let rect = if self.library { library_rect(&self.window_size()) } else { parked() };
+            let _ = panel.set_bounds(rect);
+        }
     }
 
     /// Rounds the page views that fill the card (the others are rounded when they are shown).
@@ -1032,16 +1065,20 @@ impl Running {
     /// Sends the live tab count and the browser's memory / CPU use to the sidebar.
     fn service_stats(&mut self) {
         let tabs = self.tabs.len();
-        // A closed tab is reflected quickly; the engine only returns its memory a moment later.
+        let mut changed = false;
+        // The count is shown at once; the sampler waits for the engine to return its memory.
         if tabs != self.stats_tabs {
             self.stats_tabs = tabs;
-            self.meter_due = self.meter_due.min(Instant::now() + Duration::from_millis(800));
+            self.sampler.poke();
+            changed = true;
         }
-        if Instant::now() < self.meter_due {
+        if let Some(usage) = self.sampler.latest() {
+            changed |= self.usage != Some(usage);
+            self.usage = Some(usage);
+        }
+        let (true, Some(usage)) = (changed, self.usage) else {
             return;
-        }
-        self.meter_due = Instant::now() + Duration::from_secs(3);
-        let usage = self.meter.sample();
+        };
         self.ui(format!(
             "window.bh&&bh.stats&&bh.stats({tabs},{},{:.0})",
             usage.memory_mb, usage.cpu
@@ -1767,7 +1804,12 @@ impl Running {
             "archive": self.archive.iter().enumerate().rev().map(|(i, a)| json!({
                 "index": i, "title": a.title, "url": a.url, "at": a.at,
             })).collect::<Vec<_>>(),
+            "history": self.svc.recent_activity(usize::MAX).iter().map(|e| json!({
+                "title": e.title, "url": e.url.as_str(), "at": e.visited_at,
+            })).collect::<Vec<_>>(),
             "now": now_secs(),
+            // A section to show, applied once per request (the page keeps its own choice after).
+            "jump": json!([self.library_jump.0, self.library_jump.1]),
         });
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -1811,10 +1853,14 @@ impl Running {
     }
 
     /// Remembers a tab that is about to be closed so the Library can bring it back.
+    /// Works for any space: deleting a space that is not shown archives its tabs too.
     fn archive_tab(&mut self, id: TabId) {
         let ws = self.svc.workspace();
-        let space = ws.active_space();
-        let Some(tab) = space.tabs.iter().find(|t| t.id == id) else {
+        let Some((space, tab)) = ws
+            .spaces()
+            .iter()
+            .find_map(|s| s.tabs.iter().find(|t| t.id == id).map(|t| (s, t)))
+        else {
             return;
         };
         if !matches!(tab.url.scheme(), "http" | "https") {
@@ -1974,6 +2020,7 @@ impl Running {
                         self.archive.clear();
                         self.save_archive();
                     }
+                    "history" => self.svc.clear_history(),
                     _ => {}
                 }
                 self.ui_library();
@@ -1982,7 +2029,18 @@ impl Running {
                 if index < self.archive.len() {
                     let rec = self.archive.remove(index);
                     self.save_archive();
+                    // Back in the space it was closed from, when that space still exists.
+                    let space = SpaceId(rec.space);
+                    if self.svc.workspace().spaces().iter().any(|s| s.id == space) {
+                        self.svc.switch_space(space);
+                    }
                     self.open(&rec.url);
+                }
+            }
+            UiCommand::ForgetHistory { url } => {
+                if let Ok(url) = Url::parse(&url) {
+                    self.svc.forget_history(&url);
+                    self.ui_library();
                 }
             }
             UiCommand::DeleteArchived { index } => {
@@ -2013,7 +2071,7 @@ impl Running {
                 for id in loose {
                     self.archive_tab(id);
                     self.svc.close_tab(id);
-                    self.tabs.remove(&id);
+                    self.drop_view(id);
                 }
                 self.sync();
             }
@@ -2160,9 +2218,12 @@ impl Running {
                 .unwrap_or_default()
         };
         let nav = |can: fn(&WebView) -> wry::Result<bool>| {
-            ws.active_tab()
-                .and_then(|t| self.tabs.get(&t.id))
-                .is_some_and(|v| can(v).unwrap_or(false))
+            // The start page has no history: its arrows would act on the hidden tab.
+            !self.home_shown()
+                && ws
+                    .active_tab()
+                    .and_then(|t| self.tabs.get(&t.id))
+                    .is_some_and(|v| can(v).unwrap_or(false))
         };
         let zoom = ws
             .active_tab()
@@ -2186,6 +2247,7 @@ impl Running {
             "color": ws.active_space().color,
             "engine": self.svc.settings().search_engine.label(),
             "extensions": self.bar_exts,
+            "animations": self.svc.settings().animations,
         });
         let _ = self
             .bar
@@ -2273,6 +2335,36 @@ impl Running {
         self.ui(format!("window.bh&&bh.toast({})", json!(message)));
     }
 
+    /// A toast with an Undo button, for the space or folder just deleted (`removed`).
+    fn toast_undo(&mut self, message: &str, removed: Removed) {
+        self.undo = Some((Instant::now(), removed));
+        let action = json!({"label": "Undo", "run": {"cmd": "undo_removal"}});
+        self.ui(format!("window.bh&&bh.toast({},{action})", json!(message)));
+    }
+
+    /// The toast's Undo: the deleted space or folder comes back with its tabs (asleep), and they
+    /// leave the archive they had been put in.
+    fn undo_removal(&mut self) {
+        let Some((at, removed)) = self.undo.take() else {
+            return;
+        };
+        if at.elapsed() > UNDO_FOR {
+            return;
+        }
+        let space = match &removed {
+            Removed::Space { space, .. } => space.id.0,
+            Removed::Folder { space, .. } => space.0,
+        };
+        let urls: HashSet<String> = removed.tabs().iter().map(|t| t.url.to_string()).collect();
+        if self.svc.undo_removal(removed) {
+            self.archive
+                .retain(|a| !(a.space == space && urls.contains(&a.url)));
+            self.save_archive();
+            self.sync();
+            self.toast("Restored");
+        }
+    }
+
     // ---- tabs -------------------------------------------------------------------------
 
     fn ensure_active_view(&mut self) {
@@ -2297,9 +2389,12 @@ impl Running {
         }
     }
 
-    /// A locked tab always opens on its locked page: clicking it brings it back there, unless the
-    /// page is playing something.
-    fn return_to_lock(&mut self, id: TabId) {
+    /// A locked tab comes back to its locked page when it is shown again. Switching to it only
+    /// goes back when the page left the locked address (another site or path: the query and the
+    /// `#fragment` that web apps rewrite on their own do not count, so the tab is not reloaded
+    /// on every visit) and plays nothing. `force` (a click on the tab already shown, or "Back to
+    /// locked page") always goes back, like Arc's reset of a pinned tab.
+    fn return_to_lock(&mut self, id: TabId, force: bool) {
         let Some(locked) = self
             .svc
             .workspace()
@@ -2314,17 +2409,19 @@ impl Running {
         let Some(view) = self.tabs.get(&id) else {
             return;
         };
-        let playing = self
-            .media
-            .lock()
-            .is_ok_and(|probes| probes.get(&id.0).is_some_and(|p| p.playing));
-        let mut here = view.url().ok().and_then(|raw| Url::parse(&raw).ok());
-        if let Some(url) = here.as_mut() {
-            url.set_fragment(None);
-        }
-        let mut there = locked.clone();
-        there.set_fragment(None);
-        if !playing && here.as_ref() != Some(&there) {
+        let here = view.url().ok().and_then(|raw| Url::parse(&raw).ok());
+        let away = here.as_ref().is_none_or(|here| {
+            if force {
+                let (mut a, mut b) = (here.clone(), locked.clone());
+                a.set_fragment(None);
+                b.set_fragment(None);
+                a != b
+            } else {
+                here.host_str() != locked.host_str()
+                    || here.path().trim_end_matches('/') != locked.path().trim_end_matches('/')
+            }
+        });
+        if away && (force || !self.is_playing(id)) {
             let _ = view.load_url(locked.as_str());
         }
     }
@@ -2514,22 +2611,17 @@ impl Running {
 
     /// Audio/video state of the active space's tabs, for the speaker icon and the media card.
     fn media_json(&self) -> serde_json::Value {
-        let Ok(probes) = self.media.lock() else {
-            return json!([]);
-        };
+        let now = Instant::now();
         let tabs = &self.svc.workspace().active_space().tabs;
         let list: Vec<_> = tabs
             .iter()
+            .filter(|t| !self.media_dismissed.contains(&t.id.0))
             .filter_map(|t| {
-                let p = probes.get(&t.id.0)?;
-                let shown =
-                    (p.playing || p.has || p.cam || p.mic) && !self.media_dismissed.contains(&t.id.0);
-                shown.then(|| {
-                    json!({
-                        "id": t.id.0, "playing": p.playing, "muted": p.muted,
-                        "cam": p.cam, "mic": p.mic, "camOn": p.cam_on, "micOn": p.mic_on,
-                    })
-                })
+                let p = self.media_hold.shown(t.id.0, now)?;
+                Some(json!({
+                    "id": t.id.0, "playing": p.playing, "muted": p.muted,
+                    "cam": p.cam, "mic": p.mic, "camOn": p.cam_on, "micOn": p.mic_on,
+                }))
             })
             .collect();
         json!(list)
@@ -2559,10 +2651,17 @@ impl Running {
                 });
             }
         }
+        let now = Instant::now();
         if let Ok(probes) = self.media.lock() {
             self.media_dismissed
                 .retain(|id| !probes.get(id).is_some_and(|p| p.playing));
+            for (id, p) in probes.iter() {
+                let shown = p.playing || p.has || p.cam || p.mic;
+                self.media_hold.note(*id, now, shown.then_some(*p));
+            }
         }
+        self.media_hold
+            .prune(now, |id| self.tabs.contains_key(&TabId(id)));
         // Fallback for engines that do not tell the page when its floating window is left.
         let floating = self
             .pip_tab
@@ -2837,15 +2936,28 @@ impl Running {
             let _ = panel.set_visible(self.easel_tab);
         }
         if self.shown != active {
-            if let Some(left) = self.shown.and_then(|id| self.tabs.get(&id)) {
-                let _ = left.evaluate_script(views::PIP_ENTER_JS);
-                self.pip_tab = self.shown;
-                self.pip_seen = false;
+            // The other pane of a split stays on screen: its video keeps playing in place.
+            let left = self.shown.filter(|id| Some(*id) != self.split_tab());
+            if let Some(id) = left.filter(|id| self.tabs.contains_key(id)) {
+                if let Some(view) = self.tabs.get(&id) {
+                    let _ = view.evaluate_script(views::PIP_ENTER_JS);
+                }
+                // A video already floating keeps its "back to tab" button working unless the
+                // tab just left is known to play something that replaces it.
+                let floating = self.pip_seen
+                    && self
+                        .pip_tab
+                        .is_some_and(|t| t != id && self.tabs.contains_key(&t));
+                if !floating || self.is_playing(id) {
+                    self.pip_tab = Some(id);
+                    self.pip_seen = false;
+                }
             }
             if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
                 let _ = back.evaluate_script(views::PIP_EXIT_JS);
                 if self.pip_tab == active {
                     self.pip_tab = None;
+                    self.pip_seen = false;
                 }
             }
             self.shown = active;
@@ -2862,6 +2974,7 @@ impl Running {
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.set_visible(self.library);
         }
+        self.place_panels();
         let split = self.split_tab();
         let waiting = active.filter(|id| self.splash.contains_key(id));
         for (id, view) in &self.tabs {
@@ -3050,12 +3163,73 @@ impl Running {
         if self.home_shown() {
             return;
         }
-        if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+        let Some((id, kept)) = self
+            .svc
+            .workspace()
+            .active_tab()
+            .map(|t| (t.id, t.pinned || t.folder.is_some()))
+        else {
+            return;
+        };
+        // Like Arc: a pinned or folder tab is only put to sleep, it keeps its place.
+        if kept {
+            self.svc.release_tab(id);
+        } else {
             self.archive_tab(id);
             self.svc.close_tab(id);
-            self.tabs.remove(&id);
-            self.sync();
         }
+        self.drop_view(id);
+        self.sync();
+    }
+
+    /// Releases the page view of a tab and everything that followed it (media probe, floating
+    /// video bookkeeping), so no state outlives the view.
+    fn drop_view(&mut self, id: TabId) {
+        self.tabs.remove(&id);
+        self.last_active.remove(&id);
+        if let Ok(mut probes) = self.media.lock() {
+            probes.remove(&id.0);
+        }
+        self.media_hold.forget(id.0);
+        if self.pip_tab == Some(id) {
+            self.pip_tab = None;
+            self.pip_seen = false;
+        }
+        if self.pip_on_blur == Some(id) {
+            self.pip_on_blur = None;
+        }
+    }
+
+    /// ⌘⇧T: brings back the tab closed last, in the space it was closed from.
+    fn reopen_closed(&mut self) {
+        match self.archive.len().checked_sub(1) {
+            Some(index) => self.handle_easel(UiCommand::ReopenArchived { index }),
+            None => self.toast("No closed tab to reopen"),
+        }
+    }
+
+    /// Ctrl+Tab and ⌘⌥↑/↓ (Ctrl+Alt on Windows): show another tab of the space.
+    fn switch_tab(&mut self, key: &str) {
+        let ws = self.svc.workspace();
+        let target = match key {
+            // From the start page, the tab just left is the one to go back to.
+            "recent_tab" if self.home_shown() && ws.active_tab().is_some() => {
+                ws.active_tab().map(|t| t.id)
+            }
+            "recent_tab" => ws.previous_tab(),
+            "next_tab" => ws.sibling_tab(1),
+            _ => ws.sibling_tab(-1),
+        };
+        if let Some(id) = target {
+            self.handle_ui(UiCommand::Activate { id: id.0 });
+        }
+    }
+
+    /// Whether the last probe of a tab heard it play something.
+    fn is_playing(&self, tab: TabId) -> bool {
+        self.media
+            .lock()
+            .is_ok_and(|probes| probes.get(&tab.0).is_some_and(|p| p.playing))
     }
 
     /// A new tab shows the start page behind the search bar, which opens straight away.
@@ -3131,31 +3305,37 @@ impl Running {
             .easels
             .all()
             .iter()
-            .map(|e| json!({"id": format!("easel:{}", e.id), "label": format!("Easel: {}", e.name), "hint": "Easel"}))
+            .map(|e| json!({"id": format!("easel:{}", e.id), "label": format!("Open Easel {}", e.name), "hint": "Easel"}))
             .collect();
+        // Labels: sentence case, the words of the menus. `keys` is a shortcut the palette spells
+        // the way the system does (see ui/keys.js); `confirm` asks for a second Enter.
         let mut actions = vec![
-            json!({"id": "new_space", "label": "New Space"}),
-            json!({"id": "new_folder", "label": "New Folder"}),
-            json!({"id": "icon_space", "label": format!("Set emoji for space {}", space.name), "hint": "Emoji"}),
-            json!({"id": "toggle_sidebar", "label": "Toggle sidebar mode", "hint": "⌘B"}),
+            json!({"id": "new_space", "label": "New space"}),
+            json!({"id": "new_folder", "label": "New folder"}),
+            json!({"id": "icon_space", "label": format!("Change emoji of space {}", space.name), "hint": "Emoji"}),
+            json!({"id": "toggle_sidebar", "label": "Show / hide the sidebar", "keys": "mod+b"}),
             json!({"id": "new_easel", "label": "New Easel", "hint": "Easel"}),
-            json!({"id": "open_easel", "label": "Open Easel", "hint": "⌘⇧E"}),
-            json!({"id": "open_library", "label": "Open Library", "hint": "Media, downloads, archive"}),
-            json!({"id": "settings", "label": "Open Settings"}),
+            json!({"id": "open_easel", "label": "Open Easel", "keys": "mod+shift+e"}),
+            json!({"id": "open_library", "label": "Open Library", "hint": "History, downloads, media, archive"}),
+            json!({"id": "settings", "label": "Open Settings", "keys": "mod+,"}),
             json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
-            json!({"id": "clear_history", "label": "Clear browsing history"}),
+            json!({"id": "clear_history", "label": "Clear browsing history", "confirm": "Press again to erase all history"}),
+            json!({"id": "open_history", "label": "Open History", "hint": "Library"}),
+            json!({"id": "key:shift+t", "label": "Reopen the tab closed last", "keys": "mod+shift+t"}),
+            json!({"id": "key:n", "label": "New window", "keys": "mod+n"}),
+            json!({"id": "key:shift+n", "label": "New private window", "keys": "mod+shift+n"}),
         ];
         actions.extend(easel_actions);
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
-                "label": format!("Set emoji for folder {}", folder.name),
+                "label": format!("Change emoji of folder {}", folder.name),
                 "hint": "Emoji",
             }));
         }
         if self.split_tab().is_some() {
             actions
-                .push(json!({"id": "close_split", "label": "Close Split View", "hint": "Split"}));
+                .push(json!({"id": "close_split", "label": "Close split view", "keys": "mod+\\"}));
         }
         if let Some(current) = active {
             for tab in space.tabs.iter().filter(|t| t.id != current.id) {
@@ -3166,18 +3346,26 @@ impl Running {
                 };
                 actions.push(json!({
                     "id": format!("split:{}", tab.id.0),
-                    "label": format!("Split View with {name}"),
+                    "label": format!("Split view with {name}"),
                     "hint": "Split",
                 }));
             }
         }
         if active.is_some() {
+            actions.extend([
+                json!({"id": "key:f", "label": "Find in page", "keys": "mod+f"}),
+                json!({"id": "key:p", "label": "Print", "keys": "mod+p"}),
+                json!({"id": "key:zoom_in", "label": "Zoom in", "keys": "mod+plus"}),
+                json!({"id": "key:zoom_out", "label": "Zoom out", "keys": "mod+minus"}),
+                json!({"id": "key:zoom_reset", "label": "Reset zoom", "keys": "mod+0"}),
+                json!({"id": "key:r", "label": "Reload without the cache", "keys": "mod+r"}),
+            ]);
             actions.push(json!({"id": "pip", "label": "Picture in Picture", "hint": "Video"}));
             actions.push(
-                json!({"id": "capture_easel", "label": "Capture this page to Easel", "hint": "⌘⇧S"}),
+                json!({"id": "capture_easel", "label": "Capture this page to the Easel", "keys": "mod+shift+s"}),
             );
             actions.push(
-                json!({"id": "capture_live", "label": "Live capture: select an area for Easel", "hint": "⌘⇧L"}),
+                json!({"id": "capture_live", "label": "Live capture: pick an area for the Easel", "keys": "mod+shift+l"}),
             );
         }
         if let Some(site) = &site {
@@ -3221,7 +3409,7 @@ impl Running {
             "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
             "favorites": self.svc.favorites().iter().map(|f| json!({"name": f.name, "url": f.url.as_str()})).collect::<Vec<_>>(),
             "bookmarks": self.bookmarks.load().iter().map(|b| json!({"title": b.title, "url": b.url})).collect::<Vec<_>>(),
-            "recent": self.svc.recent_activity(30).iter().map(|e| json!({"title": e.title, "url": e.url.as_str()})).collect::<Vec<_>>(),
+            "recent": self.svc.recent_activity(usize::MAX).iter().map(|e| json!({"title": e.title, "url": e.url.as_str()})).collect::<Vec<_>>(),
             "actions": actions,
         })
     }
@@ -3258,6 +3446,12 @@ impl Running {
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "open_library" => self.handle_ui(UiCommand::OpenLibrary),
+            "open_history" => {
+                self.library_jump = (self.library_jump.0 + 1, "history");
+                self.handle_ui(UiCommand::OpenLibrary);
+            }
+            // The commands that have a shortcut run exactly as the shortcut does.
+            other if other.starts_with("key:") => self.shortcut(&other["key:".len()..]),
             other if other.starts_with("easel:") => {
                 if let Ok(id) = other["easel:".len()..].parse() {
                     self.handle_ui(UiCommand::OpenEaselTab { id });
@@ -3633,34 +3827,54 @@ impl Running {
             UiCommand::Activate { id } => {
                 self.close_palette();
                 self.close_peek();
+                // Clicking the tab already on screen resets a locked tab to its page.
+                let again = self.shown == Some(TabId(id)) && !self.home_shown();
                 self.svc.activate_tab(TabId(id));
-                self.return_to_lock(TabId(id));
+                self.return_to_lock(TabId(id), again);
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
                 self.sync();
             }
             UiCommand::LockTab { id, locked } => {
-                self.svc.set_tab_locked(TabId(id), locked);
+                // Lock on the page shown right now: a web app may have changed its address
+                // without a navigation the shell has heard of yet.
+                if locked {
+                    self.refresh_url(TabId(id));
+                }
+                if !self.svc.set_tab_locked(TabId(id), locked) {
+                    self.toast("Only quick access and folder tabs can be locked");
+                }
                 self.ui_state();
+            }
+            UiCommand::ResetTab { id } => {
+                let id = TabId(id);
+                self.close_palette();
+                self.close_peek();
+                self.svc.activate_tab(id);
+                self.home_visible = false;
+                self.easel_tab = false;
+                self.library = false;
+                // A sleeping tab has no view yet: `sync` creates it on the locked page.
+                self.return_to_lock(id, true);
+                self.sync();
             }
             UiCommand::Close { id } => {
                 self.archive_tab(TabId(id));
                 self.svc.close_tab(TabId(id));
-                self.tabs.remove(&TabId(id));
+                self.drop_view(TabId(id));
                 self.sync();
             }
             UiCommand::CloseInstance { id } => {
                 let id = TabId(id);
-                self.tabs.remove(&id);
-                self.last_active.remove(&id);
-                if let Ok(mut probes) = self.media.lock() {
-                    probes.remove(&id.0);
-                }
+                self.drop_view(id);
                 if self.split_tab() == Some(id) {
                     self.svc.clear_split();
                 }
-                if self.svc.workspace().active_tab().map(|t| t.id) == Some(id) {
+                // The tab seen before takes over, as when it is closed; the start page otherwise.
+                if self.svc.workspace().active_tab().map(|t| t.id) == Some(id)
+                    && !self.svc.release_tab(id)
+                {
                     self.home_visible = true;
                     self.easel_tab = false;
                     self.library = false;
@@ -3690,15 +3904,101 @@ impl Running {
                 self.open_palette("menu");
             }
             UiCommand::DeleteSpace { id } => {
+                // Its tabs go to the archive, like those of a deleted folder: nothing is lost.
+                let doomed: Vec<TabId> = self
+                    .svc
+                    .workspace()
+                    .spaces()
+                    .iter()
+                    .find(|s| s.id.0 == id)
+                    .map(|s| s.tabs.iter().map(|t| t.id).collect())
+                    .unwrap_or_default();
+                if self.svc.workspace().spaces().len() > 1 {
+                    for &tab in &doomed {
+                        self.archive_tab(tab);
+                    }
+                }
+                let snapshot = self.svc.workspace().snapshot_space(SpaceId(id));
                 if let Some(tabs) = self.svc.delete_space(SpaceId(id)) {
                     for tab in tabs {
-                        self.tabs.remove(&tab);
+                        self.drop_view(tab);
                     }
                     self.home_visible = false;
                     self.easel_tab = false;
                     self.library = false;
                     self.sync();
+                    if let Some(snapshot @ Removed::Space { .. }) = snapshot {
+                        let name = match &snapshot {
+                            Removed::Space { space, .. } => space.name.clone(),
+                            Removed::Folder { .. } => String::new(),
+                        };
+                        self.toast_undo(&format!("Space “{name}” deleted"), snapshot);
+                    }
                 }
+            }
+            UiCommand::UndoRemoval => self.undo_removal(),
+            UiCommand::SetSpaceColor { id, color } => {
+                if self.svc.set_space_color(SpaceId(id), &color) {
+                    self.sync();
+                }
+            }
+            UiCommand::ReloadTab { id } => {
+                if let Some(view) = self.tabs.get(&TabId(id)) {
+                    views::reload(view);
+                }
+            }
+            UiCommand::DuplicateTab { id } => {
+                let url = self
+                    .svc
+                    .workspace()
+                    .active_space()
+                    .tabs
+                    .iter()
+                    .find(|t| t.id.0 == id)
+                    .map(|t| t.url.to_string());
+                if let Some(url) = url {
+                    self.open(&url);
+                }
+            }
+            UiCommand::MoveTabToSpace { id, space } => {
+                let name = self
+                    .svc
+                    .workspace()
+                    .spaces()
+                    .iter()
+                    .find(|s| s.id.0 == space)
+                    .map(|s| s.name.clone());
+                // Spaces have their own cookies: the view is rebuilt on the new space's profile
+                // the next time the tab is shown.
+                if self.svc.move_tab_to_space(TabId(id), SpaceId(space)) {
+                    self.drop_view(TabId(id));
+                    self.sync();
+                    self.toast(&format!("Moved to {}", name.unwrap_or_default()));
+                }
+            }
+            UiCommand::CloseOtherTabs { id } => {
+                let others: Vec<TabId> = self
+                    .svc
+                    .workspace()
+                    .active_space()
+                    .tabs
+                    .iter()
+                    .filter(|t| t.id.0 != id && !t.pinned && t.folder.is_none())
+                    .map(|t| t.id)
+                    .collect();
+                for &tab in &others {
+                    self.archive_tab(tab);
+                    self.svc.close_tab(tab);
+                    self.drop_view(tab);
+                }
+                self.svc.activate_tab(TabId(id));
+                self.home_visible = false;
+                self.sync();
+                let n = others.len();
+                self.toast(&format!(
+                    "{n} tab{} closed (in Library > Archived Tabs)",
+                    if n == 1 { "" } else { "s" }
+                ));
             }
             UiCommand::ClosePane { side } => {
                 if side == "left" {
@@ -3711,7 +4011,9 @@ impl Running {
             }
             UiCommand::PinSite { url } => {
                 self.open(&url);
-                if let Some(id) = self.svc.workspace().active_tab().map(|t| t.id) {
+                // The site may already be open as a quick access tab: keep it pinned.
+                let tab = self.svc.workspace().active_tab().filter(|t| !t.pinned).map(|t| t.id);
+                if let Some(id) = tab {
                     self.svc.toggle_pin(id);
                 }
                 self.sync();
@@ -3812,6 +4114,9 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::EditTab { id } => self.ui(format!("window.bh&&bh.editTab({id})")),
+            UiCommand::EditFolder { id } => {
+                self.ui(format!("window.bh&&bh.editFolderId({id})"))
+            }
             UiCommand::ToggleFolder { id } => {
                 self.svc.toggle_folder(FolderId(id));
                 self.ui_state();
@@ -3833,12 +4138,23 @@ impl Running {
                     .filter(|t| t.folder.is_some_and(|f| doomed.contains(&f)))
                     .map(|t| t.id)
                     .collect();
+                let snapshot = self.svc.workspace().snapshot_folder(FolderId(id));
                 for tab in inside {
                     self.archive_tab(tab);
                     self.svc.close_tab(tab);
-                    self.tabs.remove(&tab);
+                    self.drop_view(tab);
                 }
-                self.svc.delete_folder(FolderId(id));
+                if self.svc.delete_folder(FolderId(id)) {
+                    if let Some(snapshot) = snapshot {
+                        let name = match &snapshot {
+                            Removed::Folder { folders, .. } => {
+                                folders.first().map(|(_, f)| f.name.clone()).unwrap_or_default()
+                            }
+                            Removed::Space { .. } => String::new(),
+                        };
+                        self.toast_undo(&format!("Folder “{name}” deleted"), snapshot);
+                    }
+                }
                 self.sync();
             }
             UiCommand::Space { id } => {
@@ -3923,6 +4239,7 @@ impl Running {
             | UiCommand::LibraryClear { .. }
             | UiCommand::ReopenArchived { .. }
             | UiCommand::DeleteArchived { .. }
+            | UiCommand::ForgetHistory { .. }
             | UiCommand::LibraryOpenTab { .. }
             | UiCommand::ClearTabs) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
@@ -4102,7 +4419,10 @@ impl Running {
                 open_window(true, None);
             }
             "w" => self.close_active_tab(),
+            "shift+t" => self.reopen_closed(),
+            "recent_tab" | "next_tab" | "prev_tab" => self.switch_tab(key),
             "r" => self.with_active_tab(views::hard_reload),
+            "reload" => self.handle_ui(UiCommand::Reload),
             "b" => self.handle_ui(UiCommand::Lock),
             "[" => self.handle_ui(UiCommand::Back),
             "]" => self.handle_ui(UiCommand::Forward),

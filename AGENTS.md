@@ -46,6 +46,17 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
 - Ne pas appeler `focus_window()` sur la fenêtre principale depuis un handler
   (panique winit sur macOS). La vue live de l'Easel doit être déclarée/droppée
   avant la fenêtre qui l'héberge.
+- Onglets façon Arc (logique dans `domain/workspace.rs`, testée) : nouvel onglet en haut
+  de la liste non épinglée ; à la fermeture, le partenaire de split puis l'onglet vu juste
+  avant (`recent`, non persisté) puis le voisin prend le relais ; ⌘W sur un onglet épinglé
+  ou de dossier appelle `release_tab` (il reste dans la barre). Libérer une vue d'onglet
+  via `drop_view` (sonde média et suivi du PiP compris). Un PiP n'est lancé que pour
+  l'onglet quitté qui n'est plus à l'écran (pas l'autre volet d'un split).
+- Vues de réserve : créées sans URL (`spare_tab_view`), jamais sur `about:blank`, sinon
+  cette page reste la première de l'historique de l'onglet (Précédent y mène).
+- Onglet verrouillé : y revenir ne recharge que si l'hôte ou le chemin a changé (la query
+  et le `#` réécrits par les applis web ne comptent pas) ; recliquer l'onglet affiché ou
+  « Back to the locked page » (`reset_tab`) force le retour.
 - Pour les données utilisateur, utiliser `blackhole_infrastructure::write_later`
   et `flush_writes` avant relecture ou fermeture ; conserver les écritures atomiques.
 - Enregistrer les préférences persistantes dans `Settings`, avec
@@ -93,10 +104,48 @@ intermédiaire et le mode animations désactivées.
 Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édition
 (pas `-replace`/`Set-Content`), arrêter un process par `Stop-Process -Id`, jamais par nom.
 
+## Raccourcis, recherche et glisser-déposer
+
+- Windows : les vues d'onglet désactivent les raccourcis navigateur de WebView2
+  (`with_browser_accelerator_keys(false)`), sinon Ctrl+F/G/P, F5, Alt+←/→ n'atteignent pas la
+  page ; `ui/shortcuts.js` les reprend. Ctrl/⌘+F/G passent d'abord par la page (Google Docs
+  garde sa recherche) ; `ui/find.js` surligne via CSS Custom Highlight sans voler le focus.
+- Une vue masquée pleine taille capte les glisser-déposer de la page (macOS) : palette,
+  Bibliothèque et panneau Easel sont parqués en 1×1 quand ils sont masqués.
+- Cartes de la barre latérale (lecteur, téléchargements) : mises à jour en place, jamais
+  reconstruites à chaque rendu (sinon l'animation d'entrée rejoue = scintillement). La carte
+  lecteur garde 5 s le dernier état connu (`media::Linger`) quand une sonde ne voit plus rien.
+
+## Menus et vocabulaire
+
+- Raccourcis affichés : toujours via `bhKeys('mod+shift+e')` / `bhKeyParts` (`ui/keys.js`, injecté
+  dans les pages d'interface), jamais `⌘` ou `Ctrl` en dur ; la palette lit le champ `keys` des actions.
+- Icônes de menu : noms (`icon: 'trash'`) dessinés en SVG par `palette.html` (`ICONS`), pas d'emoji.
+- Mots : « quick access » (tuiles épinglées), « put to sleep » (l'onglet garde sa place), « close »
+  (archive), « delete » (un conteneur et son contenu). Casse de phrase, sauf noms propres (Easel, Library).
+- Action irréversible : `confirm: '…'` sur l'élément de menu ou l'action de palette, ou deux clics en
+  3 s dans les pages ; les onglets d'un espace ou d'un dossier supprimé vont à l'archive.
+- Annuler : `Workspace::snapshot_space` / `snapshot_folder` avant suppression, puis `undo_removal`
+  (toast « Undo », 15 s) ; les entrées d'archive correspondantes sont retirées.
+- Palette : une action `key:<raccourci>` rejoue le raccourci (`shortcut`), avec `keys` pour l'affichage.
+- Déplacer un onglet d'espace (`move_tab_to_space`) libère sa vue : elle est recréée sur le profil
+  (cookies) du nouvel espace. « Copy link » passe par `execCommand('copy')` dans la palette.
+
+## Pages d'erreur et User-Agent
+
+- Page « Site injoignable » (`ui/unreachable.html`) : affichée via `PageLoadEvent::Failed`
+  (vendor/wry, WebView2 non testé) ou après `CONNECT_MAX` (20 s) sans démarrage de
+  chargement ; test macOS `scripts/test-unreachable.sh`.
+- User-Agent macOS : `views::user_agent_for` choisit l'UA à chaque navigation principale
+  via `wry::USER_AGENT_RESOLVER` (UA Safari forcé pour Meet, UA WebKit par défaut pour
+  `docs.google.com` : le token Safari rend Docs flou). Windows non concerné.
+
 ## Livraison et entretien
 
 - Préserver les changements utilisateur déjà présents ; limiter les modifications
-  au périmètre demandé. Ne pas committer ni publier sans demande.
+  au périmètre demandé. Ne pas committer ni publier sans demande. Messages de commit
+  au format `type(scope): résumé` (scopes : `tabs`, `pip`, `space`, `easel`, `ext`,
+  `ui`, `ci`…), relus pour les fautes.
 - Mettre à jour la documentation et les consignes si l'architecture ou les
   commandes changent. Éviter les modifications sans rapport dans `vendor/wry`.
 - Ne pas modifier les sorties générées dans `target/`, `dist/` ou `tmp/`.
@@ -107,6 +156,3 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   L'installeur Windows utilise `scripts/windows-installer.iss` avec Inno Setup.
 - Terminer par un résumé des changements, des vérifications effectuées et des
   limites, notamment pour l'autre système d'exploitation.
-
-- Page « Site injoignable » (`ui/unreachable.html`) : affichée via `PageLoadEvent::Failed` (vendor/wry, WebView2 non testé) ou après `CONNECT_MAX` (20 s) sans démarrage de chargement ; test macOS `scripts/test-unreachable.sh`.
-- User-Agent macOS : `views::user_agent_for` choisit l'UA à chaque navigation principale via `wry::USER_AGENT_RESOLVER` (UA Safari forcé pour Meet, UA WebKit par défaut pour `docs.google.com` : le token Safari rend Docs flou). Windows non concerné.

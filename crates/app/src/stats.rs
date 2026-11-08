@@ -1,7 +1,14 @@
 //! Memory and CPU used by the browser: its own process plus the web engine processes it owns.
 
 use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::time::Duration;
 use sysinfo::{CpuRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+
+/// How often the meter is read when nothing asks for it sooner.
+const EVERY: Duration = Duration::from_secs(3);
+/// After a tab closes, the engine returns its memory a moment later.
+const SETTLE: Duration = Duration::from_millis(800);
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct Usage {
@@ -66,12 +73,65 @@ impl Meter {
     }
 }
 
+/// Reads the meter on a thread of its own: scanning every process of the machine takes tens of
+/// milliseconds on Windows, a visible hitch if the UI thread did it every few seconds.
+pub struct Sampler {
+    poke: Sender<()>,
+    results: Receiver<Usage>,
+}
+
+impl Sampler {
+    pub fn start() -> Self {
+        let (poke, wake) = mpsc::channel::<()>();
+        let (out, results) = mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("bh-stats".into())
+            .spawn(move || {
+                let mut meter = Meter::new();
+                loop {
+                    if out.send(meter.sample()).is_err() {
+                        break;
+                    }
+                    match wake.recv_timeout(EVERY) {
+                        Ok(()) => {
+                            std::thread::sleep(SETTLE);
+                            while wake.try_recv().is_ok() {}
+                        }
+                        Err(RecvTimeoutError::Timeout) => {}
+                        // The window is gone.
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+            });
+        Self { poke, results }
+    }
+
+    /// Asks for a new reading soon (the number of tabs changed).
+    pub fn poke(&self) {
+        let _ = self.poke.send(());
+    }
+
+    /// The newest reading that arrived since the last call, if any.
+    pub fn latest(&self) -> Option<Usage> {
+        self.results.try_iter().last()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn counts_its_own_process() {
         let mut meter = super::Meter::new();
         assert!(meter.sample().memory_mb > 0);
+    }
+
+    #[test]
+    fn the_sampler_reads_on_its_own_thread_and_answers_a_poke() {
+        let sampler = super::Sampler::start();
+        let first = sampler.results.recv_timeout(super::EVERY * 2).unwrap();
+        assert!(first.memory_mb > 0);
+        sampler.poke();
+        assert!(sampler.results.recv_timeout(super::EVERY).is_ok(), "a poke comes back before the period");
     }
 
     #[test]

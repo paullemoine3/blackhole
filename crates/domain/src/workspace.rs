@@ -109,11 +109,26 @@ pub fn sanitize_icon(input: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// How many recently shown tabs are remembered (session only) for Ctrl+Tab and for picking the
+/// tab that takes over when the active one closes.
+const RECENT_MAX: usize = 64;
+
+#[derive(Debug, Clone)]
 pub struct Workspace {
     spaces: Vec<Space>,
     active_space: SpaceId,
     next_id: u64,
+    /// Tabs in the order they were last shown, most recent first, all spaces mixed. Not persisted.
+    recent: Vec<TabId>,
+}
+
+/// The recency list is session state: two workspaces holding the same tabs are equal.
+impl PartialEq for Workspace {
+    fn eq(&self, other: &Self) -> bool {
+        self.spaces == other.spaces
+            && self.active_space == other.active_space
+            && self.next_id == other.next_id
+    }
 }
 
 impl Default for Workspace {
@@ -128,6 +143,7 @@ impl Workspace {
             spaces: Vec::new(),
             active_space: SpaceId(0),
             next_id: 1,
+            recent: Vec::new(),
         };
         ws.active_space = ws.add_space("Personal", "#7c5cff");
         ws
@@ -153,10 +169,24 @@ impl Workspace {
         } else {
             spaces[0].id
         };
+        // The tab each space was showing counts as its most recent one, active space first.
+        let mut recent: Vec<TabId> = spaces
+            .iter()
+            .filter(|s| s.id != active_space)
+            .filter_map(|s| s.active_tab)
+            .collect();
+        if let Some(tab) = spaces
+            .iter()
+            .find(|s| s.id == active_space)
+            .and_then(|s| s.active_tab)
+        {
+            recent.insert(0, tab);
+        }
         Self {
             spaces,
             active_space,
             next_id,
+            recent,
         }
     }
 
@@ -292,20 +322,30 @@ impl Workspace {
         })
     }
 
+    /// Opens a tab and shows it. Like Arc, a new tab goes to the top of the unpinned list.
     pub fn open_tab(&mut self, url: Url) -> TabId {
         let id = TabId(self.alloc());
         let title = url.host_str().unwrap_or("New tab").to_owned();
         let space = self.active_space_mut();
-        space.tabs.push(Tab {
-            id,
-            title,
-            url,
-            pinned: false,
-            folder: None,
-            renamed: false,
-            locked: None,
-        });
+        let at = space
+            .tabs
+            .iter()
+            .position(|t| !t.pinned)
+            .unwrap_or(space.tabs.len());
+        space.tabs.insert(
+            at,
+            Tab {
+                id,
+                title,
+                url,
+                pinned: false,
+                folder: None,
+                renamed: false,
+                locked: None,
+            },
+        );
         space.active_tab = Some(id);
+        self.touch(id);
         id
     }
 
@@ -318,27 +358,150 @@ impl Workspace {
                 space.split = space.active_tab;
             }
             space.active_tab = Some(id);
+            self.touch(id);
         }
         found
     }
 
-    /// Closes a tab in the active space; focus moves to the previous neighbour.
+    /// Closes a tab in the active space. When it was shown, its split partner takes over, else
+    /// the tab seen just before it, else its neighbour in the unpinned list (none: start page).
     pub fn close_tab(&mut self, id: TabId) -> bool {
-        let space = self.active_space_mut();
-        let Some(pos) = space.tabs.iter().position(|t| t.id == id) else {
+        let Some(pos) = self.active_space().tabs.iter().position(|t| t.id == id) else {
             return false;
         };
+        let next = self.successor(id, pos);
+        self.recent.retain(|t| *t != id);
+        let space = self.active_space_mut();
         space.tabs.remove(pos);
-        if space.split == Some(id) {
+        Self::hand_over(space, id, next);
+        true
+    }
+
+    /// Arc's ⌘W on a pinned or folder tab: the tab keeps its place in the sidebar but stops being
+    /// shown; the next tab is chosen as for `close_tab`. Refused for ordinary tabs.
+    pub fn release_tab(&mut self, id: TabId) -> bool {
+        let Some(pos) = self
+            .active_space()
+            .tabs
+            .iter()
+            .position(|t| t.id == id && (t.pinned || t.folder.is_some()))
+        else {
+            return false;
+        };
+        let next = self.successor(id, pos);
+        self.recent.retain(|t| *t != id);
+        Self::hand_over(self.active_space_mut(), id, next);
+        true
+    }
+
+    /// The tab shown just before the active one in this space (Ctrl+Tab).
+    pub fn previous_tab(&self) -> Option<TabId> {
+        let space = self.active_space();
+        self.recent
+            .iter()
+            .copied()
+            .find(|t| Some(*t) != space.active_tab && space.tabs.iter().any(|x| x.id == *t))
+    }
+
+    /// The tab `step` places below (positive) or above (negative) the active one, in sidebar
+    /// order: quick-access tabs, tabs of unfolded folders, then the other tabs. Wraps around.
+    pub fn sibling_tab(&self, step: isize) -> Option<TabId> {
+        let space = self.active_space();
+        let unfolded = |f: Option<FolderId>| {
+            let mut at = f;
+            let mut hops = 0;
+            while let Some(id) = at {
+                let Some(folder) = space.folders.iter().find(|x| x.id == id) else {
+                    return false;
+                };
+                if folder.collapsed || hops > MAX_FOLDER_DEPTH * 2 {
+                    return false;
+                }
+                at = folder.parent;
+                hops += 1;
+            }
+            true
+        };
+        let order: Vec<TabId> = space
+            .tabs
+            .iter()
+            .filter(|t| t.pinned)
+            .chain(
+                space
+                    .tabs
+                    .iter()
+                    .filter(|t| !t.pinned && t.folder.is_some() && unfolded(t.folder)),
+            )
+            .chain(
+                space
+                    .tabs
+                    .iter()
+                    .filter(|t| !t.pinned && t.folder.is_none()),
+            )
+            .map(|t| t.id)
+            .collect();
+        if order.is_empty() {
+            return None;
+        }
+        let len = order.len() as isize;
+        let here = space
+            .active_tab
+            .and_then(|a| order.iter().position(|t| *t == a));
+        let at = match here {
+            Some(i) => (i as isize + step).rem_euclid(len),
+            None if step < 0 => len - 1,
+            None => 0,
+        };
+        order.get(at as usize).copied()
+    }
+
+    /// Remembers that `id` was just shown.
+    fn touch(&mut self, id: TabId) {
+        self.recent.retain(|t| *t != id);
+        self.recent.insert(0, id);
+        self.recent.truncate(RECENT_MAX);
+    }
+
+    /// The tab to show once `gone` (at `pos` in the active space) is no longer shown.
+    fn successor(&self, gone: TabId, pos: usize) -> Option<TabId> {
+        let space = self.active_space();
+        if space.active_tab != Some(gone) {
+            return space.active_tab;
+        }
+        let alive = |id: TabId| id != gone && space.tabs.iter().any(|t| t.id == id);
+        if let Some(partner) = space.split.filter(|s| alive(*s)) {
+            return Some(partner);
+        }
+        if let Some(seen) = self.recent.iter().copied().find(|t| alive(*t)) {
+            return Some(seen);
+        }
+        // The loose tab that slides into its place, else the one above it.
+        let loose = |t: &&Tab| t.id != gone && !t.pinned && t.folder.is_none();
+        space
+            .tabs
+            .iter()
+            .skip(pos)
+            .find(loose)
+            .or_else(|| {
+                space.tabs[..pos.min(space.tabs.len())]
+                    .iter()
+                    .rev()
+                    .find(loose)
+            })
+            .map(|t| t.id)
+    }
+
+    fn hand_over(space: &mut Space, gone: TabId, next: Option<TabId>) {
+        if space.active_tab == Some(gone) {
+            space.active_tab = next;
+            // The partner now fills the window: the split is over.
+            if space.split == next {
+                space.split = None;
+            }
+        }
+        if space.split == Some(gone) {
             space.split = None;
         }
-        if space.active_tab == Some(id) {
-            let next = pos
-                .saturating_sub(1)
-                .min(space.tabs.len().saturating_sub(1));
-            space.active_tab = space.tabs.get(next).map(|t| t.id);
-        }
-        true
     }
 
     pub fn toggle_pin(&mut self, id: TabId) -> bool {
@@ -624,6 +787,151 @@ impl Workspace {
         self.next_id += 1;
         id
     }
+
+    /// Changes the identity color of a space; only `#rrggbb` is accepted.
+    pub fn set_space_color(&mut self, id: SpaceId, color: &str) -> bool {
+        let valid = color.len() == 7
+            && color.starts_with('#')
+            && color[1..].chars().all(|c| c.is_ascii_hexdigit());
+        match self.spaces.iter_mut().find(|s| s.id == id) {
+            Some(space) if valid => {
+                space.color = color.to_ascii_lowercase();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Moves a tab of the active space to another space: at the top of its unpinned list, or at
+    /// the end of its quick access tiles when pinned, never inside a folder. When it was shown,
+    /// the next tab is chosen as for `close_tab`.
+    pub fn move_tab_to_space(&mut self, id: TabId, to: SpaceId) -> bool {
+        if to == self.active_space || !self.spaces.iter().any(|s| s.id == to) {
+            return false;
+        }
+        let Some(pos) = self.active_space().tabs.iter().position(|t| t.id == id) else {
+            return false;
+        };
+        let next = self.successor(id, pos);
+        self.recent.retain(|t| *t != id);
+        let space = self.active_space_mut();
+        let mut tab = space.tabs.remove(pos);
+        Self::hand_over(space, id, next);
+        tab.folder = None;
+        let target = self
+            .spaces
+            .iter_mut()
+            .find(|s| s.id == to)
+            .expect("target space checked above");
+        let at = target
+            .tabs
+            .iter()
+            .position(|t| !t.pinned)
+            .unwrap_or(target.tabs.len());
+        target.tabs.insert(at, tab);
+        true
+    }
+
+    /// Everything a space holds, taken before it is deleted so it can be put back.
+    pub fn snapshot_space(&self, id: SpaceId) -> Option<Removed> {
+        let at = self.spaces.iter().position(|s| s.id == id)?;
+        Some(Removed::Space {
+            space: self.spaces[at].clone(),
+            at,
+        })
+    }
+
+    /// A folder of the active space, its subfolders and their tabs, taken before deletion.
+    pub fn snapshot_folder(&self, id: FolderId) -> Option<Removed> {
+        let space = self.active_space();
+        let tree = folder_subtree(&space.folders, id);
+        if tree.is_empty() {
+            return None;
+        }
+        let pick = |f: &Option<FolderId>| f.is_some_and(|f| tree.contains(&f));
+        Some(Removed::Folder {
+            space: space.id,
+            folders: space
+                .folders
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| tree.contains(&f.id))
+                .map(|(i, f)| (i, f.clone()))
+                .collect(),
+            tabs: space
+                .tabs
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| pick(&t.folder))
+                .map(|(i, t)| (i, t.clone()))
+                .collect(),
+        })
+    }
+
+    /// Puts back a deleted space or folder (undo), at its former place. Refused when it is
+    /// still there or its space is gone; tabs that exist again are left alone.
+    pub fn undo_removal(&mut self, removed: Removed) -> bool {
+        match removed {
+            Removed::Space { space, at } => {
+                if self.spaces.iter().any(|s| s.id == space.id) {
+                    return false;
+                }
+                let at = at.min(self.spaces.len());
+                self.spaces.insert(at, space);
+                true
+            }
+            Removed::Folder {
+                space,
+                folders,
+                tabs,
+            } => {
+                let Some(target) = self.spaces.iter_mut().find(|s| s.id == space) else {
+                    return false;
+                };
+                if folders
+                    .iter()
+                    .any(|(_, f)| target.folders.iter().any(|x| x.id == f.id))
+                {
+                    return false;
+                }
+                for (i, folder) in folders {
+                    let at = i.min(target.folders.len());
+                    target.folders.insert(at, folder);
+                }
+                for (i, tab) in tabs {
+                    if !target.tabs.iter().any(|t| t.id == tab.id) {
+                        let at = i.min(target.tabs.len());
+                        target.tabs.insert(at, tab);
+                    }
+                }
+                true
+            }
+        }
+    }
+}
+
+/// A deleted space or folder with everything it held (see `Workspace::undo_removal`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Removed {
+    Space {
+        space: Space,
+        at: usize,
+    },
+    Folder {
+        space: SpaceId,
+        folders: Vec<(usize, Folder)>,
+        tabs: Vec<(usize, Tab)>,
+    },
+}
+
+impl Removed {
+    /// The tabs that come back with it.
+    pub fn tabs(&self) -> Vec<&Tab> {
+        match self {
+            Removed::Space { space, .. } => space.tabs.iter().collect(),
+            Removed::Folder { tabs, .. } => tabs.iter().map(|(_, t)| t).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -632,6 +940,80 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn a_space_color_must_be_a_hex_color() {
+        let mut ws = Workspace::new();
+        let id = ws.active_space().id;
+        assert!(ws.set_space_color(id, "#FF5C8A"));
+        assert_eq!(ws.active_space().color, "#ff5c8a");
+        assert!(!ws.set_space_color(id, "red"));
+        assert!(!ws.set_space_color(id, "#12345g"));
+        assert!(!ws.set_space_color(SpaceId(999), "#000000"));
+        assert_eq!(ws.active_space().color, "#ff5c8a");
+    }
+
+    #[test]
+    fn a_tab_moves_to_another_space_out_of_its_folder_and_the_previous_tab_takes_over() {
+        let mut ws = Workspace::new();
+        let first = ws.open_tab(u("https://a.test/"));
+        let moved = ws.open_tab(u("https://b.test/"));
+        let folder = ws.add_folder("F");
+        assert!(ws.move_tab(moved, None, Some(folder), false));
+        ws.activate_tab(moved);
+        let other = ws.add_space("Work", "#3aa0ff");
+        assert!(ws.move_tab_to_space(moved, other));
+        assert_eq!(ws.active_tab().map(|t| t.id), Some(first));
+        assert!(!ws.active_space().tabs.iter().any(|t| t.id == moved));
+        let target = ws.spaces().iter().find(|s| s.id == other).unwrap();
+        assert_eq!(target.tabs[0].id, moved);
+        assert_eq!(target.tabs[0].folder, None);
+        // Not to the space it is in, nor to an unknown one.
+        assert!(!ws.move_tab_to_space(first, ws.active_space().id));
+        assert!(!ws.move_tab_to_space(first, SpaceId(999)));
+    }
+
+    #[test]
+    fn a_deleted_space_comes_back_with_its_tabs_at_its_place() {
+        let mut ws = Workspace::new();
+        let other = ws.add_space("Work", "#3aa0ff");
+        ws.switch_space(other);
+        let tab = ws.open_tab(u("https://a.test/"));
+        let snap = ws.snapshot_space(other).unwrap();
+        assert_eq!(snap.tabs().len(), 1);
+        ws.delete_space(other).unwrap();
+        assert_eq!(ws.spaces().len(), 1);
+        assert!(ws.undo_removal(snap.clone()));
+        assert_eq!(ws.spaces()[1].id, other);
+        assert_eq!(ws.spaces()[1].tabs[0].id, tab);
+        // A second undo does nothing.
+        assert!(!ws.undo_removal(snap));
+    }
+
+    #[test]
+    fn a_deleted_folder_comes_back_with_its_subfolders_and_tabs() {
+        let mut ws = Workspace::new();
+        let loose = ws.open_tab(u("https://loose.test/"));
+        let inner = ws.open_tab(u("https://inner.test/"));
+        let deep = ws.open_tab(u("https://deep.test/"));
+        let top = ws.add_folder("Top");
+        let sub = ws.add_folder_in("Sub", Some(top)).unwrap();
+        ws.move_tab(inner, None, Some(top), false);
+        ws.move_tab(deep, None, Some(sub), false);
+        let before = ws.active_space().clone();
+        let snap = ws.snapshot_folder(top).unwrap();
+        assert_eq!(snap.tabs().len(), 2);
+        // What the app does: close the tabs inside, then delete the folder.
+        ws.close_tab(inner);
+        ws.close_tab(deep);
+        ws.delete_folder(top);
+        assert!(ws.undo_removal(snap));
+        let after = ws.active_space();
+        assert_eq!(after.folders, before.folders);
+        let ids = |s: &Space| s.tabs.iter().map(|t| (t.id, t.folder)).collect::<Vec<_>>();
+        assert_eq!(ids(after), ids(&before));
+        assert!(after.tabs.iter().any(|t| t.id == loose));
     }
 
     #[test]
@@ -778,6 +1160,111 @@ mod tests {
     }
 
     #[test]
+    fn closing_returns_to_the_tab_seen_before() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let c = ws.open_tab(u("https://c.test"));
+        ws.activate_tab(a);
+        ws.activate_tab(c);
+        assert!(ws.close_tab(c));
+        assert_eq!(
+            ws.active_tab().unwrap().id,
+            a,
+            "last seen, not the neighbour"
+        );
+        assert!(ws.close_tab(a));
+        assert_eq!(ws.active_tab().unwrap().id, b);
+        assert!(ws.close_tab(b));
+        assert_eq!(ws.active_tab(), None);
+    }
+
+    #[test]
+    fn closing_an_inactive_tab_keeps_the_active_one() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        assert!(ws.close_tab(a));
+        assert_eq!(ws.active_tab().unwrap().id, b);
+    }
+
+    #[test]
+    fn closing_without_history_falls_back_to_the_loose_neighbour() {
+        let mut ws = Workspace::new();
+        let sp = ws.active_space().id;
+        ws.import_tabs(sp, vec![(String::new(), "F".into(), u("https://f.test"))]);
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        ws.recent.clear();
+        // Order: b, a (newest first), then the imported tab, which sits in a folder.
+        assert!(ws.close_tab(b));
+        assert_eq!(ws.active_tab().unwrap().id, a);
+    }
+
+    #[test]
+    fn closing_one_pane_of_a_split_shows_the_other_alone() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let c = ws.open_tab(u("https://c.test"));
+        ws.activate_tab(b);
+        ws.activate_tab(c);
+        assert!(ws.set_split(a));
+        assert!(ws.close_tab(c));
+        assert_eq!(ws.active_tab().unwrap().id, a);
+        assert_eq!(ws.split_tab(), None);
+        assert!(ws.activate_tab(b));
+        assert_eq!(ws.split_tab(), None, "the old split does not come back");
+    }
+
+    #[test]
+    fn releasing_a_pinned_tab_keeps_it_but_shows_another() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let p = ws.open_tab(u("https://p.test"));
+        ws.toggle_pin(p);
+        assert!(!ws.release_tab(a), "ordinary tabs are closed, not released");
+        assert!(ws.release_tab(p));
+        assert_eq!(ws.active_tab().unwrap().id, a);
+        assert!(ws.active_space().tabs.iter().any(|t| t.id == p && t.pinned));
+    }
+
+    #[test]
+    fn ctrl_tab_goes_back_and_forth_between_the_last_two_tabs() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        ws.open_tab(u("https://b.test"));
+        let c = ws.open_tab(u("https://c.test"));
+        ws.activate_tab(a);
+        assert_eq!(ws.previous_tab(), Some(c));
+        ws.activate_tab(c);
+        assert_eq!(ws.previous_tab(), Some(a));
+        let other = ws.add_space("Other", "#fff");
+        ws.switch_space(other);
+        assert_eq!(ws.previous_tab(), None, "spaces are separate");
+    }
+
+    #[test]
+    fn sibling_tabs_follow_the_sidebar_order_and_wrap() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let p = ws.open_tab(u("https://p.test"));
+        ws.toggle_pin(p);
+        let f = ws.add_folder("F");
+        let inner = ws.open_tab(u("https://f.test"));
+        ws.move_tab(inner, None, Some(f), false);
+        // Sidebar: p | inner | b, a
+        ws.activate_tab(p);
+        assert_eq!(ws.sibling_tab(1), Some(inner));
+        ws.toggle_folder(f);
+        assert_eq!(ws.sibling_tab(1), Some(b), "folded tabs are skipped");
+        ws.activate_tab(a);
+        assert_eq!(ws.sibling_tab(1), Some(p), "wraps around");
+        assert_eq!(ws.sibling_tab(-1), Some(b));
+    }
+
+    #[test]
     fn deleting_a_space_returns_its_tabs_and_moves_focus() {
         let mut ws = Workspace::new();
         let first = ws.active_space().id;
@@ -827,9 +1314,16 @@ mod tests {
         let a = ws.open_tab(u("https://a.test"));
         let b = ws.open_tab(u("https://b.test"));
         let c = ws.open_tab(u("https://c.test"));
+        let order = |ws: &Workspace| {
+            ws.active_space()
+                .tabs
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(order(&ws), vec![c, b, a], "new tabs go on top");
         assert!(ws.move_tab(c, Some(a), None, false));
-        let order: Vec<_> = ws.active_space().tabs.iter().map(|t| t.id).collect();
-        assert_eq!(order, vec![c, a, b]);
+        assert_eq!(order(&ws), vec![b, c, a]);
 
         let f = ws.add_folder("Work");
         assert!(ws.move_tab(a, None, Some(f), false));

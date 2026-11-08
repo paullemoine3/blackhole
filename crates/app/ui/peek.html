@@ -11,9 +11,10 @@
 </style>
 </head>
 <body>
-<div class="hint"><kbd>esc</kbd> close · <kbd>⌘</kbd><kbd>↵</kbd> open in tab</div>
+<div class="hint"><kbd>Esc</kbd> close · <span id="open"></span> open in tab</div>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+document.getElementById('open').replaceChildren(...bhKeyParts('mod+enter').map(k => Object.assign(document.createElement('kbd'), { textContent: k })));
 document.addEventListener('mousedown', () => send({ cmd: 'close_peek' }));
 </script>
 </body>

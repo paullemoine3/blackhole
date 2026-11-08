@@ -38,7 +38,7 @@ cargo test --workspace --locked
 ```
 - Tests unitaires dans le crate concerné (domaine/application/infra en priorité). Tout nouveau comportement logique reçoit un test ciblé.
 - **Scénarios UI Windows** (feature `devtools`, harnais `crates/app/src/devtools.rs`) :
-  - `scripts\test-ui.ps1` : navigation, palette, paramètres, animations (sidebar, palette), bouton de mise à jour, maximize/restore. 17 captures dans `%TEMP%\bh_shots`.
+  - `scripts\test-ui.ps1` : navigation, palette, paramètres, animations (sidebar, palette), bouton de mise à jour, maximize/restore, onglets façon Arc, recherche dans la page. 20 captures dans `%TEMP%\bh_shots`.
   - `scripts\test-ext.ps1` : installe Dark Reader depuis le catalogue et vérifie l'injection (utiliser une page claire comme info.cern.ch ; example.com gère déjà le mode sombre).
   - Profil jetable `%TEMP%\bh_data` ; le script lit `%TEMP%\bh_script.txt`.
   - Protocole du script : `wait MS`, `shot NOM`, `shots NOM` (fenêtre des paramètres), `cmd JSON` (un `UiCommand`), `eval chrome|bar|home|palette|peek|settings|content JS`, `quit`. Les contrôles lisent les `eval` par indice : **ajouter un `eval` décale les indices suivants**, mettre à jour les `Check`.
@@ -59,7 +59,24 @@ cargo test --workspace --locked
 
 ## Pages d'erreur et User-Agent
 - Page « Site injoignable » (`ui/unreachable.html`) : via `PageLoadEvent::Failed` (vendor/wry ; WebView2 non testé) ou après `CONNECT_MAX` (20 s) ; test macOS `scripts/test-unreachable.sh`.
-- User-Agent macOS : `views::user_agent_for` (via `wry::USER_AGENT_RESOLVER`, à chaque navigation principale) force l'UA Safari (requis par Meet) sauf sur `docs.google.com`, où le token Safari rend Docs flou. Windows non concerné.
+- User-Agent macOS : `views::user_agent_for` (via `wry::USER_AGENT_RESOLVER`, à chaque navigation principale) force l'UA Safari (requis par Meet) sauf sur `docs.google.com`, où le token Safari rend Docs flou. Les demandes de nouvelle fenêtre (pas de cadre cible) ne changent pas l'UA de l'onglet ouvrant. Windows non concerné.
+
+## Menus et vocabulaire
+- Raccourcis affichés : `bhKeys('mod+shift+e')` → « ⌘⇧E » sur macOS, « Ctrl+Shift+E » ailleurs ; `bhKeyParts` pour des `<kbd>` (`ui/keys.js`, injecté par `views::ui_view`, `settings_view`, `panel_view`). Jamais de `⌘`/`Ctrl` en dur. Les actions de palette passent `keys` (spécification) plutôt que `hint`.
+- Menus (`cmd: 'menu'`, rendus par `palette.html`) : `icon` est un nom de la table `ICONS` (SVG en traits) ; `confirm: '…'` arme l'élément au premier clic. Actions de palette : `confirm` demande une seconde Entrée.
+- Vocabulaire : « quick access » (tuiles épinglées), « put to sleep » (`close_instance`, l'onglet garde sa place ; c'est aussi le bouton « − » d'un onglet d'accès rapide ou de dossier), « close » (`close`, archive), « delete » (conteneur + contenu, avec confirmation). Casse de phrase.
+- Suppression d'un espace ou d'un dossier : onglets archivés (`archive_tab` cherche dans tous les espaces) puis `drop_view`. Renommer un dossier : `UiCommand::EditFolder` → `bh.editFolderId`.
+- Annuler une suppression : instantané domaine (`snapshot_space` / `snapshot_folder` → `Removed`) gardé 15 s dans `Running::undo`, toast avec bouton (`bh.toast(m, {label, run})`), `UiCommand::UndoRemoval` → `undo_removal` (retire aussi les entrées d'archive). Les routes « Air Traffic » d'un espace supprimé ne reviennent pas.
+- Menu d'onglet : `reload_tab`, `duplicate_tab`, `copy` (copie via la palette), `move_tab_to_space` (la vue est libérée : nouveau profil de cookies), `close_other_tabs` (onglets libres seulement, archivés). Menu d'espace : `set_space_color` (`#rrggbb`, pastilles `color` dans les menus).
+- Palette : actions `key:<raccourci>` (rejouées par `shortcut`), `open_history` (`library_jump` → la Bibliothèque ouvre la section une fois).
+- Sonde média : une vidéo coupée par le site compte si elle joue, ne boucle pas et couvre ≥ 25 % de la fenêtre (Twitch démarre muet) ; `MEDIA_MUTE_JS` rend alors le son à ce qui joue.
+
+## Raccourcis, recherche et glisser-déposer
+- Windows : les vues d'onglet désactivent les raccourcis navigateur de WebView2 (`with_browser_accelerator_keys(false)` dans `views::build_tab`), sinon Ctrl+F/G/P, F5, Alt+←/→ n'atteignent jamais la page. `ui/shortcuts.js` les reprend (F5 → `reload`, Ctrl+F5 → `r`, Alt+←/→ → `[`/`]`).
+- Ctrl/⌘+F/G sont traités après la page (écouteur en phase bulle) et seulement si elle ne les a pas pris (`defaultPrevented`) : Google Docs garde sa propre recherche.
+- Barre de recherche (`ui/find.js`) : surlignage par l'API CSS Custom Highlight (`::highlight(bh-find)`), sans toucher la sélection ni le focus ; repli `window.find` sinon.
+- Une vue masquée mais pleine taille capte encore les glisser-déposer de la page (macOS) : la palette, la Bibliothèque et le panneau Easel sont parqués en 1×1 quand ils sont masqués (`palette_rect`, `place_panels`).
+- Cartes lecteur et téléchargement (`renderMedia`, `renderDownloads` dans `ui/index.html`) : mises à jour en place (signature / nœuds indexés par id), la carte lecteur reste sur le même onglet tant qu'il est listé. Côté Rust, `media::Linger` garde le dernier état avec média 5 s (pubs, lecteur recréé) ; la sonde `MEDIA_PROBE_JS` compte une vidéo en mise en mémoire tampon comme en lecture.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
