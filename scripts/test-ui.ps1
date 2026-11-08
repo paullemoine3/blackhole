@@ -259,16 +259,287 @@ eval palette document.body.classList.contains('comparing') + '|' + (document.que
 cmd {"cmd":"palette_close"}
 wait 400
 eval palette (() => { bh.open({mode: 'compare', color: '#7c5cff', compare: {items: [{id: 1, title: 'A', url: 'https://a.test/', name: 'Phone A', price: '199', currency: 'EUR', rating: '4.5', specs: {Weight: '200 g'}}, {id: 2, title: 'B', url: 'https://b.test/', name: 'Phone B', price: '179', currency: 'EUR', rating: '4.1', specs: {Weight: '250 g'}}]}}); const r = [...document.querySelectorAll('#ctable tr')].map(tr => tr.textContent).join('/') + '|' + [...document.querySelectorAll('#ctable .best')].map(td => td.textContent).join(','); bh.hide(); return r; })()
+cmd {"cmd":"open","input":"https://example.com/?bh=select"}
+wait 3500
+eval content (() => { window.__sel = (el) => { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); const b = r.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', {button: 2, bubbles: true, cancelable: true, composed: true, clientX: b.left + 4, clientY: b.top + b.height / 2})); }; const p = document.createElement('p'); p.id = 'bhsel'; p.textContent = 'Black hole sun'; const a = document.createElement('a'); a.id = 'bhlink'; a.href = 'https://example.net/'; a.textContent = 'Black hole link'; document.body.append(p, a); window.__sel(p); return 'selected'; })()
+wait 900
+shot 21-selection-menu
+eval palette document.body.classList.contains('menuing') + '|' + [...document.querySelectorAll('#menu button')].map(b => b.textContent).join(',')
+eval chrome (window.__n = state.tabs.length, window.__act = state.activeTab, 'count')
+eval palette (document.querySelector('#menu button').click(), 'search')
+wait 2500
+eval chrome (state.tabs.length - window.__n) + '|' + (state.activeTab !== window.__act) + '|' + (state.tabs.find(t => t.id === state.activeTab) || {}).url
+cmd {"cmd":"open","input":"https://example.com/?bh=address"}
+wait 3500
+eval content (() => { window.__sel = (el) => { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); const b = r.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu', {button: 2, bubbles: true, cancelable: true, composed: true, clientX: b.left + 4, clientY: b.top + b.height / 2})); }; const p = document.createElement('p'); p.id = 'bhsel'; p.textContent = 'example.org/bh-sel'; const a = document.createElement('a'); a.id = 'bhlink'; a.href = 'https://example.net/'; a.textContent = 'Black hole link'; document.body.append(p, a); window.__sel(p); return 'address'; })()
+wait 900
+eval palette [...document.querySelectorAll('#menu button')].map(b => b.textContent).join(',')
+eval chrome (window.__n = state.tabs.length, window.__act = state.activeTab, 'count')
+eval palette (document.querySelector('#menu button').dispatchEvent(new MouseEvent('click', {ctrlKey: true, bubbles: true, cancelable: true})), 'background')
+wait 2000
+eval chrome (state.tabs.length - window.__n) + '|' + (state.activeTab === window.__act) + '|' + state.tabs.some(t => t.url === 'https://example.org/bh-sel')
+eval content (document.getElementById('bhsel').textContent = 'javascript:alert(document.cookie)', window.__sel(document.getElementById('bhsel')), 'js')
+wait 900
+eval palette [...document.querySelectorAll('#menu button')].map(b => b.textContent).join(',')
+cmd {"cmd":"palette_close"}
+wait 400
+eval content (window.__sel(document.getElementById('bhlink')), 'link')
+wait 900
+eval palette [...document.querySelectorAll('#menu button')].map(b => b.textContent).join(',')
+cmd {"cmd":"palette_close"}
+wait 400
+cmd {"cmd":"open_settings","tab":"devices"}
+wait 1500
+shots 22-settings-devices
+eval settings document.querySelector('section.on').id + '|' + document.getElementById('devlist').textContent
+cmd {"cmd":"device_join","code":"nope"}
+wait 800
+eval settings document.getElementById('devstatus').textContent
+cmd {"cmd":"device_show_code"}
+wait 2500
+eval settings document.getElementById('devcode').hidden + '|' + document.getElementById('devcodetext').textContent
+cmd {"cmd":"device_cancel_pairing"}
+wait 800
+eval settings String(document.getElementById('devcode').hidden)
+cmd {"cmd":"close_settings"}
+wait 400
+cmd {"cmd":"open","input":"http://127.0.0.1:__AUTH_PORT__/"}
+wait 3000
+eval palette 'auth1:' + document.body.classList.contains('authing') + '|' + document.getElementById('ahost').textContent + '|' + document.getElementById('arealm').textContent + '|' + document.getElementById('awarn').textContent
+shot 23-http-auth
+eval palette 'auth2:' + (document.getElementById('auser').value = '__AUTH_USER__', document.getElementById('apass').value = 'wrong-password', document.getElementById('aok').click(), 'sent')
+wait 2000
+eval palette 'auth3:' + document.body.classList.contains('authing') + '|' + document.getElementById('auser').value + '|' + document.getElementById('apass').value.length + '|' + document.getElementById('awarn').textContent
+eval palette 'auth4:' + (document.getElementById('apass').value = '__AUTH_PASSWORD__', document.getElementById('aok').click(), 'sent')
+wait 2500
+eval content 'auth5:' + document.title + '|' + (document.querySelector('h1') || {}).textContent
+eval palette 'auth6:' + document.body.classList.contains('authing') + '|' + document.getElementById('apass').value.length
+cmd {"cmd":"open","input":"http://127.0.0.1:__AUTH_PORT__/forbidden"}
+wait 2500
+eval content 'auth7:' + document.title
+cmd {"cmd":"open","input":"http://127.0.0.1:__AUTH_PORT__/other"}
+wait 2500
+eval palette 'auth8:' + document.body.classList.contains('authing') + '|' + document.getElementById('arealm').textContent + '|' + (document.getElementById('acancel').click(), 'cancelled')
+wait 2000
+eval content 'auth9:' + document.title
+eval palette 'auth10:' + document.body.classList.contains('authing')
+cmd {"cmd":"open","input":"http://127.0.0.1:__AUTH_PORT__/other?esc"}
+wait 2500
+cmd {"cmd":"palette_close"}
+wait 1500
+eval content 'auth11:' + document.title
+cmd {"cmd":"open_settings","tab":"passwords"}
+wait 1500
+eval settings 'pw1:' + document.querySelector('section.on').id + '|' + document.getElementById('pwopen').hidden + '|' + document.getElementById('pwlist').textContent
+cmd {"cmd":"passwords","action":{"op":"save","origin":"example.com","username":"bh-test-user","password":"__PW_TEST__"}}
+wait 800
+eval settings 'pw2:' + document.getElementById('pwlist').textContent + '|' + document.body.innerHTML.includes('__PW_TEST__')
+eval settings 'pw3:' + (document.getElementById('pwadd').click(), document.getElementById('pwgen').click(), 'generate')
+wait 600
+eval settings 'pw4:' + document.getElementById('pwpass').value.length + '|' + !document.getElementById('pwedit').hidden
+shots 24-settings-passwords
+eval settings 'pw5:' + (document.getElementById('pwcancel').click(), 'closed')
+cmd {"cmd":"close_settings"}
+wait 400
+cmd {"cmd":"open","input":"https://example.com/"}
+wait 3500
+eval content 'pw6:' + (document.body.insertAdjacentHTML('beforeend', '<form id="bhf" onsubmit="event.preventDefault()"><input id="bhu" autocomplete="username"><input id="bhp" type="password"><button id="bhs">Sign in</button></form>'), document.getElementById('bhp').focus(), typeof window.__bhAutofill)
+wait 800
+eval content 'pw7:' + (window.__bhipc.postMessage(JSON.stringify({cmd: 'autofill_fill', index: 0})), window.__bhipc.postMessage(JSON.stringify({cmd: 'autofill_fill', index: 0, token: 'guess'})), 'forged')
+wait 800
+eval content 'pw8:' + document.getElementById('bhp').value.length + '|' + document.getElementById('bhu').value
+eval content 'pw9:' + (window.__bhipc.postMessage(JSON.stringify({cmd: 'login_submitted', username: 'bh-test-user', password: '__PW_TEST2__'})), 'submitted')
+wait 800
+eval chrome 'pw10:' + document.getElementById('toast').textContent
+eval chrome 'pw11:' + (document.querySelector('#toast button').click(), 'update')
+wait 600
+cmd {"cmd":"open_settings","tab":"passwords"}
+wait 1500
+eval settings 'pw12:' + ([...document.querySelectorAll('#pwlist button')].find(b => b.textContent === 'Show').click(), 'show')
+wait 600
+eval settings 'pw13:' + document.querySelectorAll('#pwlist .row').length + '|' + (document.querySelector('#pwlist code') || {}).textContent
+eval settings 'pw14:' + (() => { const d = [...document.querySelectorAll('#pwlist button')].find(b => b.textContent === 'Delete'); d.click(); d.click(); return 'deleted'; })()
+wait 800
+eval settings 'pw15:' + document.getElementById('pwlist').textContent
+eval chrome 'pw16:' + document.getElementById('toast').textContent
+cmd {"cmd":"close_settings"}
+wait 400
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/e401"}
+wait 2500
+eval content 'err1:' + document.title + '|' + document.getElementById('actions').textContent
+shot 25-error-401
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/e403"}
+wait 2500
+eval content 'err2:' + document.title + '|' + document.getElementById('hint').textContent
+shot 26-error-403
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/e502"}
+wait 2500
+eval content 'err3:' + document.title + '|' + document.getElementById('hint').textContent
+shot 27-error-5xx
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/loop"}
+wait 4000
+eval content 'err4:' + document.title
+shot 28-error-redirects
+cmd {"cmd":"open","input":"http://bh-missing.invalid/"}
+wait 4000
+eval content 'err5:' + document.title + '|' + document.getElementById('hint').textContent
+shot 29-error-dns
+cmd {"cmd":"open","input":"https://127.0.0.1:__TLS_PORT__/"}
+wait 3500
+eval content 'err6:' + document.title + '|' + document.getElementById('facts').textContent + '|' + document.getElementById('risky').textContent
+eval content 'err7:' + (document.getElementById('advanced').open = true, 'open')
+wait 400
+shot 30-error-certificate
+eval content 'err8:' + (window.__bhipc.postMessage(JSON.stringify({cmd: 'error_proceed', tab: 1})), document.querySelector('#risky button').click(), 'asked')
+wait 900
+eval palette 'err9:' + document.body.className + '|' + document.getElementById('menu').textContent
+shot 31-error-certificate-menu
+eval palette 'err10:' + ([...document.querySelectorAll('#menu button')].find(b => /not secure/.test(b.textContent)).click(), 'proceed')
+wait 3500
+eval content 'err11:' + document.title
+eval bar 'err12:' + document.getElementById('insecure').hidden + '|' + document.body.classList.contains('insecure') + '|' + document.body.classList.contains('secure') + '|' + getComputedStyle(document.body).position + '|' + (document.getElementById('omni').getBoundingClientRect().width > 300)
+shot 32-insecure-bar
+cmd {"cmd":"open","input":"https://example.com/"}
+wait 3500
+eval content 'err13:' + (window.__bhipc.postMessage(JSON.stringify({cmd: 'error_menu', x: 10, y: 10})), 'forged')
+wait 900
+eval palette 'err14:' + document.body.className
+eval bar 'err15:' + document.getElementById('insecure').hidden
+eval content 'err16:' + (location.href = 'https://stats.g.doubleclick.net/bh-test', 'go')
+wait 2000
+eval content 'err17:' + document.title + '|' + document.getElementById('actions').textContent
+shot 33-error-blocked
+errpage offline
+wait 800
+eval content 'err18:' + document.title
+shot 34-error-offline
+errpage clock
+wait 800
+eval content 'err19:' + document.title + '|' + document.getElementById('risky').textContent
+shot 35-error-clock
+errpage http_only
+wait 800
+eval content 'err20:' + document.title + '|' + document.getElementById('risky').textContent
+shot 36-error-http-only
+errpage unreachable
+wait 800
+eval content 'err21:' + document.title + '|' + !document.querySelector('.hole').hidden + '|' + document.querySelectorAll('svg:not([hidden])').length
+shot 37-error-unreachable
 quit
 '@
+# HTTP authentication: a local server answers 401 Basic (test-only credentials from the fixture).
+$authFixture = Get-Content (Join-Path $PSScriptRoot 'fixtures\http-auth.json') -Raw | ConvertFrom-Json
+$authPort = 18417
+# Password wallet: generated test passwords only (never real ones).
+$pwTest = 'bh-test-' + [guid]::NewGuid().ToString('N').Substring(0, 16)
+$pwTest2 = 'bh-test-' + [guid]::NewGuid().ToString('N').Substring(0, 16)
+$script = $script.Replace('__PW_TEST2__', $pwTest2).Replace('__PW_TEST__', $pwTest)
+$script = $script.Replace('__AUTH_PORT__', "$authPort").Replace('__AUTH_USER__', $authFixture.user).Replace('__AUTH_PASSWORD__', $authFixture.password)
+# Error pages: local http server (empty 401/403/502 answers, a redirect loop) and a local https
+# server with a self-signed certificate made for this run (in memory, nothing installed).
+$errPort = 18418
+$tlsPort = 18419
+$script = $script.Replace('__ERR_PORT__', "$errPort").Replace('__TLS_PORT__', "$tlsPort")
+$errServer = Start-Job -ArgumentList $errPort, $tlsPort -ScriptBlock {
+    param($port, $tlsPort)
+    $plain = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
+    $secure = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $tlsPort)
+    $plain.Start(); $secure.Start()
+    $X = [Security.Cryptography.X509Certificates.X509Certificate2]
+    $rsa = [Security.Cryptography.RSA]::Create(2048)
+    $req = [Security.Cryptography.X509Certificates.CertificateRequest]::new('CN=127.0.0.1', $rsa,
+        [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    $san = [Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
+    $san.AddIpAddress([Net.IPAddress]::Loopback)
+    $req.CertificateExtensions.Add($san.Build())
+    $made = $req.CreateSelfSigned([DateTimeOffset]::Now.AddDays(-1), [DateTimeOffset]::Now.AddDays(7))
+    # SChannel needs the key in a key container: round trip through PKCS#12.
+    $cert = $X::new($made.Export('Pfx', 'bh'), 'bh', 'UserKeySet')
+    $answer = {
+        param($stream)
+        $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
+        $path = (($reader.ReadLine()) -split ' ')[1]
+        while ($reader.ReadLine()) {}
+        $extra = ''; $body = ''
+        if ($path -like '/e401*') { $status = '401 Unauthorized' }
+        elseif ($path -like '/e403*') { $status = '403 Forbidden' }
+        elseif ($path -like '/e502*') { $status = '502 Bad Gateway' }
+        elseif ($path -like '/loop*') { $status = '302 Found'; $extra = "Location: /loop`r`n" }
+        elseif ($path -like '/favicon*') { $status = '404 Not Found' }
+        else { $status = '200 OK'; $body = '<title>bh-tls-ok</title><h1>Self-signed test page</h1>' }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+        $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n$extra`r`n")
+        $stream.Write($head, 0, $head.Length)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+    }
+    $deadline = (Get-Date).AddMinutes(8)
+    while ((Get-Date) -lt $deadline) {
+        if ($plain.Pending()) {
+            $client = $plain.AcceptTcpClient()
+            try { & $answer $client.GetStream() } catch {} finally { $client.Close() }
+        } elseif ($secure.Pending()) {
+            $client = $secure.AcceptTcpClient()
+            try {
+                $client.ReceiveTimeout = 3000
+                $ssl = [Net.Security.SslStream]::new($client.GetStream(), $false)
+                $ssl.AuthenticateAsServer($cert, $false, [Security.Authentication.SslProtocols]::Tls12, $false)
+                & $answer $ssl
+            } catch {} finally { $client.Close() }
+        } else { Start-Sleep -Milliseconds 30 }
+    }
+    $plain.Stop(); $secure.Stop()
+}
+$authServer = Start-Job -ArgumentList $authPort, $authFixture.user, $authFixture.password -ScriptBlock {
+    param($port, $user, $password)
+    $expected = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${user}:${password}"))
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
+    $listener.Start()
+    $deadline = (Get-Date).AddMinutes(8)
+    while ((Get-Date) -lt $deadline) {
+        if (-not $listener.Pending()) { Start-Sleep -Milliseconds 30; continue }
+        $client = $listener.AcceptTcpClient()
+        try {
+            $stream = $client.GetStream()
+            $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
+            $path = (($reader.ReadLine()) -split ' ')[1]
+            $auth = ''
+            while ($line = $reader.ReadLine()) { if ($line -match '^Authorization:\s*(.+)$') { $auth = $Matches[1].Trim() } }
+            $extra = ''
+            if ($path -like '/favicon*') { $status = '404 Not Found'; $body = 'none' }
+            elseif ($path -like '/forbidden*') { $status = '403 Forbidden'; $body = '<title>bh-403</title><h1>403 Forbidden</h1>' }
+            elseif ($path -notlike '/other*' -and $auth -eq $expected) { $status = '200 OK'; $body = '<title>bh-auth-ok</title><h1>Signed in</h1>' }
+            else {
+                $realm = if ($path -like '/other*') { 'Other test' } else { 'BlackHole test' }
+                $status = '401 Unauthorized'
+                $extra = "WWW-Authenticate: Basic realm=`"$realm`"`r`n"
+                $body = '<title>bh-auth-401</title><h1>401 Unauthorized</h1>'
+            }
+            $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+            $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n$extra`r`n")
+            $stream.Write($head, 0, $head.Length)
+            $stream.Write($bytes, 0, $bytes.Length)
+        } catch {} finally { $client.Close() }
+    }
+    $listener.Stop()
+}
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
 
 $logFile = Join-Path $tmp 'bh_run.log'
 # Redirecting to a file (rather than capturing the pipe) keeps the app from blocking on its output.
 $proc = Start-Process cmd -ArgumentList '/c', "cargo run -q -p blackhole --features devtools > `"$logFile`" 2>&1" -PassThru -WindowStyle Hidden
-if (-not $proc.WaitForExit(240000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
+if (-not $proc.WaitForExit(420000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
 $log = Get-Content $logFile
-$evals = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
+# The HTTP authentication evals are tagged ("authN:") and read apart: they shift no index.
+$all = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
+$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err)\d+:' })
+function AuthEval($n) { $all | Where-Object { $_ -match "-> `"auth${n}:" } | Select-Object -First 1 }
+# The password wallet evals too ("pwN:").
+function PwEval($n) { $all | Where-Object { $_ -match "-> `"pw${n}:" } | Select-Object -First 1 }
+# The error page evals too ("errN:").
+function ErrEval($n) { $all | Where-Object { $_ -match "-> `"err${n}:" } | Select-Object -First 1 }
+Stop-Job $authServer -ErrorAction SilentlyContinue; Remove-Job $authServer -Force -ErrorAction SilentlyContinue
+Stop-Job $errServer -ErrorAction SilentlyContinue; Remove-Job $errServer -Force -ErrorAction SilentlyContinue
 $saved = @($log | Where-Object { $_ -match '\[dev\] saved' })
 $log | Where-Object { $_ -match '\[dev\] (bad|unknown|eval failed|screenshot failed)' } | ForEach-Object { Write-Host $_ }
 
@@ -343,6 +614,50 @@ Check ($evals[80] -match '"1\|true\|.*filed into 1 folder.*Undo"') 'tidy: tabs f
 Check ($evals[82] -match '"0"') 'tidy: Undo puts the tabs back'
 Check ($evals[83] -match '"true\|true"') 'compare: the open tabs are read and shown side by side'
 Check ($evals[84] -match 'Price199 EUR179 EUR' -and $evals[84] -match 'Weight200 g250 g' -and $evals[84] -match '\|179 EUR,4\.5"') 'compare: fields in rows, lowest price and best rating stand out'
-Check ($saved.Count -eq 20) "screenshots saved ($($saved.Count)/20)"
+Check ($evals[86] -match '"true\|Search for .{1,3}Black hole sun.{1,3},Copy"') 'selection: right click offers to search it, or copy it'
+Check ($evals[89] -match '"1\|true\|https://duckduckgo\.com/\?q=Black\+hole\+sun') 'selection: the search opens in a new tab, in front, with the engine of the Settings'
+Check ($evals[91] -match 'Open address .{1,3}example\.org/bh-sel') 'selection: an address is offered to be opened instead'
+Check ($evals[94] -match '"1\|true\|true"') 'selection: Ctrl+click on the entry opens it in the background'
+Check ($evals[96] -match 'Search for .{1,3}javascript:alert' -and $evals[96] -notmatch 'Open address') 'selection: a javascript: address is only ever searched'
+Check ($evals[98] -match 'Search for .{1,3}Black hole link.{1,3},Copy,Open link in new tab,.*Copy link') 'selection on a link: search entries plus the link menu'
+Check ($evals[99] -match '"devices\|No device paired yet\."') 'devices: their own section in Settings, nothing paired'
+Check ($evals[100] -match '12 characters') 'devices: a wrong pairing code is refused'
+Check ($evals[101] -match '"false\|[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}"') 'devices: a pairing code is shown (ABCD-EFGH-JKMN)'
+Check ($evals[102] -match '"true"') 'devices: cancelling hides the code'
+Check ((AuthEval 1) -match 'auth1:true\|127\.0\.0\.1\|The site says: .{1,3}BlackHole test.{1,3}\|.*not secure') 'http auth: a 401 Basic page asks for a user name and password (realm, clear-text warning)'
+Check ((AuthEval 3) -match 'auth3:true\|bh-test-user\|0\|Wrong user name or password') 'http auth: refused credentials ask again, user name kept, password cleared'
+Check ((AuthEval 5) -match 'auth5:bh-auth-ok\|Signed in') 'http auth: the right credentials open the page'
+Check ((AuthEval 6) -match 'auth6:false\|0') 'http auth: the prompt closes and keeps no password'
+Check ((AuthEval 7) -match 'auth7:bh-403') 'http status: a 403 page is the server page, not "Site injoignable"'
+Check ((AuthEval 8) -match 'auth8:true\|The site says: .{1,3}Other test.{1,3}\|cancelled') 'http auth: another realm asks again'
+Check ((AuthEval 9) -match 'auth9:bh-auth-401') 'http auth: Cancel shows the server 401 page, not "Site injoignable"'
+Check ((AuthEval 10) -match 'auth10:false') 'http auth: Cancel closes the prompt'
+Check ((AuthEval 11) -match 'auth11:bh-auth-401') 'http auth: closing the palette (Esc) cancels like Cancel'
+Check ((PwEval 1) -match 'pw1:passwords\|false\|No saved password yet') 'passwords: their own section in Settings, open with the keychain, empty'
+Check ((PwEval 2) -match 'pw2:example\.combh-test-user.*\|false') 'passwords: added, listed by site and username, the password not in the page'
+Check ((PwEval 4) -match 'pw4:20\|true') 'passwords: the generator fills a 20-character password in the editor'
+Check ((PwEval 6) -match 'pw6:object') 'passwords: the autofill script is in the page (main frame)'
+Check ((PwEval 8) -match 'pw8:0\|"') 'passwords: a page posting autofill_fill itself (no menu token) gets nothing'
+Check ((PwEval 10) -match 'pw10:Update the password for bh-test-user on example\.com\?UpdateNever') 'passwords: a submitted login with a new password offers Update / Never'
+Check ((PwEval 13) -match "pw13:1\|$pwTest2") 'passwords: Update kept one entry with the new password, shown on request'
+Check ((PwEval 15) -match 'pw15:No saved password yet') 'passwords: deleted after a second click'
+Check ((PwEval 16) -match 'pw16:Password for example\.com deleted.*Undo') 'passwords: deleting offers Undo'
+Check ((ErrEval 1) -match 'err1:Connexion requise\|Se connecter') 'error page: an empty 401 shows "Connexion requise" with "Se connecter"'
+Check ((ErrEval 2) -match 'err2:Acc.{1,2}s refus.{1,2}\|.*127\.0\.0\.1') 'error page: an empty 403 shows the forbidden page'
+Check ((ErrEval 3) -match 'err3:Le serveur a un probl.{1,2}me \(502\)\|.*502') 'error page: an empty 502 shows the server error page'
+Check ((ErrEval 4) -match 'err4:Trop de redirections') 'error page: a redirect loop shows "Trop de redirections"'
+Check ((ErrEval 5) -match 'err5:Adresse introuvable\|.*bh-missing\.invalid') 'error page: an unknown name shows "Adresse introuvable"'
+Check ((ErrEval 6) -match 'err6:Connexion non s.{1,2}curis.{1,2}e\|H.{1,2}te127\.0\.0\.1Raison.*Continuer quand m.{1,2}me') 'error page: a self-signed certificate shows the details and the risky button'
+Check ((ErrEval 9) -match 'err9:.*open.*\|.*Continue to 127\.0\.0\.1 \(not secure\)') 'error page: the risky button opens the shell menu (a forged error_proceed from the page did nothing)'
+Check ((ErrEval 11) -match 'err11:bh-tls-ok') 'error page: after the menu, the self-signed site opens'
+Check ((ErrEval 12) -match 'err12:false\|true\|false\|static\|true') 'error page: the bar says "Not secure" after the exception, its layout unchanged'
+Check ((ErrEval 14) -match 'err14:' -and (ErrEval 14) -notmatch 'open')'error page: a web page posting error_menu opens no menu'
+Check ((ErrEval 15) -match 'err15:true') 'error page: no "Not secure" on a normal https page'
+Check ((ErrEval 17) -match 'err17:Bloqu.{1,2} par les Shields\|.*Autoriser ce site') 'error page: a blocked tracker opened as a page shows the Shields page'
+Check ((ErrEval 18) -match 'err18:Hors ligne') 'error page: offline variant'
+Check ((ErrEval 19) -match "err19:L'horloge de l'ordinateur est d.{1,2}r.{1,2}gl.{1,2}e\|Continuer quand m.{1,2}me") 'error page: wrong clock variant'
+Check ((ErrEval 20) -match 'err20:Pas de version s.{1,2}curis.{1,2}e\|Continuer en http') 'error page: http only variant'
+Check ((ErrEval 21) -match 'err21:Site injoignable\|true\|1"') 'error page: one scene per kind (the black hole for "Site injoignable")'
+Check ($saved.Count -eq 37) "screenshots saved ($($saved.Count)/37)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

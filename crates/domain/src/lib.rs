@@ -1,12 +1,18 @@
-//! Pure business rules. No I/O, no framework: only `url` for URL parsing.
+//! Pure business rules. No I/O, no framework: only `url` for URL parsing and
+//! `zeroize` to wipe secrets.
 
 pub mod changelog;
 pub mod easel;
+pub mod error_page;
 pub mod extension;
+pub mod handoff;
 pub mod history;
+pub mod http_auth;
 pub mod meetings;
 pub mod omnibox;
+pub mod passwords;
 pub mod privacy;
+pub mod selection;
 pub mod settings;
 pub mod watch;
 pub mod workspace;

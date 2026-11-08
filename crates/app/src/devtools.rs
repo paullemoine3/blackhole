@@ -116,6 +116,23 @@ impl Running {
                     eprintln!("[dev] eval failed: {e}");
                 }
             }
+            // An error page that cannot be caused on demand (no network, wrong clock): shown in
+            // the active tab for its screenshot.
+            "errpage" => {
+                use blackhole_domain::error_page::{CertProblem, ErrorPage};
+                let page = match rest.trim() {
+                    "offline" => ErrorPage::Offline,
+                    "clock" => ErrorPage::ClockWrong,
+                    "redirects" => ErrorPage::TooManyRedirects,
+                    "http_only" => ErrorPage::HttpOnly,
+                    "expired" => ErrorPage::Certificate(CertProblem::Expired),
+                    _ => ErrorPage::Unreachable,
+                };
+                let tab = self.svc.workspace().active_tab().map(|t| t.id);
+                if let (Some(tab), Ok(url)) = (tab, url::Url::parse("https://example.test/")) {
+                    self.show_error(tab, url, page);
+                }
+            }
             "quit" => event_loop.exit(),
             _ => eprintln!("[dev] unknown step: {line}"),
         }

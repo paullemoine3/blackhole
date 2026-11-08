@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="color-scheme" content="dark">
+<title>Erreur</title>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  :root { --accent: 124,92,255; --hot: 255,170,60; --warm: 255,90,40; }
+  body.danger { --accent: 220,50,80; --hot: 255,96,110; --warm: 220,40,70; }
+  body.calm { --accent: 70,130,255; --hot: 120,200,255; --warm: 70,120,255; }
+  body.amber { --accent: 230,150,40; --hot: 255,205,120; --warm: 255,138,60; }
+  body.green { --accent: 40,190,130; --hot: 61,220,151; --warm: 30,160,110; }
+  html, body { height: 100%; background: #0c0b12; color: #eceaf5; font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px;
+    background: radial-gradient(800px 500px at 50% 35%, rgba(var(--accent),.22), transparent 70%), #0c0b12; overflow-y: auto; }
+  .scene { position: relative; width: 320px; height: 220px; margin-bottom: 6px; flex: none; }
+  .hole { position: absolute; left: 50%; top: 50%; width: 170px; height: 170px; margin: -85px 0 0 -85px; border-radius: 50%;
+    background: radial-gradient(circle, #000 0 34%, rgba(var(--hot),.95) 38%, rgba(var(--warm),.5) 52%, rgba(var(--accent),.3) 64%, transparent 76%);
+    box-shadow: 0 0 80px rgba(var(--warm),.25), 0 0 160px rgba(var(--accent),.22); animation: pulse 4s ease-in-out infinite; }
+  .ring { position: absolute; left: 50%; top: 50%; width: 196px; height: 196px; margin: -98px 0 0 -98px; border-radius: 50%; border: 2px solid transparent;
+    border-top-color: rgba(var(--hot),.85); border-right-color: rgba(var(--accent),.75); animation: swirl 7s linear infinite; }
+  .hole[hidden], .ring[hidden] { display: none; }
+  .star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; box-shadow: 0 0 5px 1px rgba(190,170,255,.8); animation: twinkle 3s ease-in-out infinite; }
+  .art { position: absolute; inset: 0; width: 320px; height: 220px; overflow: hidden; }
+  svg[hidden] { display: none; }
+  .ship { position: absolute; left: 50%; top: 50%; width: 110px; height: 56px; margin: -92px 0 0 -128px; animation: drift 6s ease-in-out infinite; }
+  /* Shared motions; inside the SVGs, rotations name their own centre (transform-origin in px). */
+  .fb { transform-box: fill-box; transform-origin: center; }
+  .spark { transform-box: fill-box; transform-origin: center; animation: spark 1.1s steps(2, end) infinite; }
+  .debris { animation: debris 5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .blink { animation: blink 1.6s steps(2, end) infinite; }
+  .fast { animation-duration: .7s; }
+  .bob { animation: bob 4s ease-in-out infinite; }
+  .float { animation: float 7s ease-in-out infinite; }
+  .rot { animation: swirl 12s linear infinite; }
+  .rot.rev { animation-direction: reverse; }
+  .rot.quick { animation-duration: 2.4s; }
+  .rot.blur { animation-duration: .6s; }
+  .wave { animation: wave 2.2s ease-out infinite; transform-box: fill-box; transform-origin: 50% 0; }
+  .lost { animation: lost 2.2s ease-out infinite; }
+  .bar1 { animation: sig 3s steps(1, end) infinite; } .bar2 { animation: sig 3s steps(1, end) infinite -.5s; } .bar3 { animation: sig 3s steps(1, end) infinite -1s; }
+  .sweep { animation: swirl 3s linear infinite; transform-origin: 160px 104px; }
+  .ping { animation: ping 3s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  .scan { animation: scanlines 2.4s linear infinite; }
+  .beam { animation: beam 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+  .laser { animation: laser 1.2s ease-in-out infinite; }
+  .alarm { animation: alarm 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .trail { animation: trail 1.6s linear infinite; }
+  .out { animation: out 4s ease-in infinite; }
+  .scanbar { animation: scanbar 2.6s ease-in-out infinite; }
+  .knock { animation: knock 3s ease-in-out infinite; }
+  .flash { animation: flash 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .smoke { animation: smoke 3s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  .flame { animation: flame .5s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: 50% 100%; }
+  .jitter { animation: jitter .35s steps(2, end) infinite; }
+  .drip { animation: drip 2.4s linear infinite; }
+  .glitch { animation: glitch 2.2s steps(1, end) infinite; }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
+  .url { max-width: min(560px, 86vw); font-size: 13px; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  p.hint { max-width: 460px; font-size: 13px; opacity: .7; }
+  p.hint + p.hint { margin-top: -6px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button { font: inherit; color: #fff; background: rgba(124,92,255,.85); border: 0; border-radius: 9px; padding: 8px 20px; margin-top: 6px; cursor: pointer; }
+  button:hover { background: rgb(124,92,255); }
+  button.ghost { background: rgba(255,255,255,.08); }
+  button.ghost:hover { background: rgba(255,255,255,.14); }
+  button.risky { background: rgba(220,40,70,.18); color: #ffb3bd; border: 1px solid rgba(255,96,110,.45); }
+  button.risky:hover { background: rgba(220,40,70,.32); }
+  details { max-width: min(520px, 90vw); width: 100%; font-size: 12.5px; text-align: left; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 12px; }
+  summary { cursor: pointer; opacity: .75; list-style: none; text-align: center; }
+  summary::before { content: "▸ "; display: inline-block; transition: transform .2s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 10px 0 4px; }
+  dt { opacity: .55; }
+  dd { overflow-wrap: anywhere; }
+  .warn { margin: 8px 0 2px; opacity: .8; }
+  details .actions { margin-top: 6px; }
+  @keyframes pulse { 50% { transform: scale(1.06); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @keyframes twinkle { 50% { opacity: .25; } }
+  @keyframes drift { 0%, 100% { transform: translate(0, 0) rotate(-14deg); } 50% { transform: translate(10px, 8px) rotate(-6deg); } }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+  @keyframes float { 0%, 100% { transform: translate(0, 0) rotate(-4deg); } 50% { transform: translate(6px, -6px) rotate(5deg); } }
+  @keyframes spark { 0% { opacity: 1; transform: scale(1); } 100% { opacity: .15; transform: scale(.5); } }
+  @keyframes debris { 0%, 100% { transform: translate(0, 0) rotate(0); } 50% { transform: translate(6px, -5px) rotate(40deg); } }
+  @keyframes wave { 0% { opacity: .9; transform: scale(.5); } 70% { opacity: .3; } 100% { opacity: 0; transform: scale(1.4); } }
+  @keyframes lost { 0%, 35% { opacity: 0; } 45% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes sig { 0% { opacity: 1; } 33% { opacity: .15; } 66% { opacity: 1; } }
+  @keyframes blink { 50% { opacity: .2; } }
+  @keyframes ping { 0% { opacity: 0; transform: scale(.4); } 10% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.8); } }
+  @keyframes scanlines { from { transform: translateY(-10px); } to { transform: translateY(10px); } }
+  @keyframes beam { 0%, 100% { transform: rotate(-16deg); } 50% { transform: rotate(16deg); } }
+  @keyframes laser { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  @keyframes alarm { 0%, 100% { opacity: .15; transform: scale(.94); } 50% { opacity: .7; transform: scale(1.04); } }
+  @keyframes trail { from { transform: translateX(40px); opacity: 0; } 30% { opacity: .9; } to { transform: translateX(-60px); opacity: 0; } }
+  @keyframes out { 0% { transform: translate(0, 0) rotate(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(90px, -40px) rotate(160deg); opacity: 0; } }
+  @keyframes scanbar { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(26px); } }
+  @keyframes knock { 0%, 100% { transform: translateX(0); } 45% { transform: translateX(58px); } 52% { transform: translateX(44px) rotate(-12deg); } 70% { transform: translateX(10px); } }
+  @keyframes flash { 0%, 40%, 60%, 100% { opacity: 0; transform: scale(.6); } 47% { opacity: 1; transform: scale(1.2); } }
+  @keyframes smoke { 0% { opacity: .7; transform: translate(0, 0) scale(.4); } 100% { opacity: 0; transform: translate(14px, -46px) scale(1.6); } }
+  @keyframes flame { from { transform: scaleY(.7); } to { transform: scaleY(1.15); } }
+  @keyframes jitter { 0% { transform: translate(-2px, 1px); } 100% { transform: translate(2px, -1px); } }
+  @keyframes drip { from { transform: translateY(0); opacity: 1; } to { transform: translateY(40px); opacity: 0; } }
+  @keyframes glitch { 0%, 100% { opacity: 1; } 20% { opacity: .1; } 24% { opacity: 1; } 61% { opacity: .3; } 64% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  body.still *, body.still *::before, body.still *::after { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<div class="scene" aria-hidden="true">
+  <div class="star" style="left:12%;top:18%"></div><div class="star" style="left:86%;top:12%;animation-delay:-1s"></div>
+  <div class="star" style="left:92%;top:72%;animation-delay:-2s"></div><div class="star" style="left:6%;top:80%;animation-delay:-.5s"></div>
+  <div class="star" style="left:30%;top:6%;animation-delay:-1.5s"></div><div class="star" style="left:70%;top:90%;animation-delay:-2.4s"></div>
+  <div class="hole" hidden></div><div class="ring" hidden></div>
+
+  <!-- unreachable: a broken ship drifting by the black hole. -->
+  <svg class="ship" data-art="unreachable" viewBox="0 0 110 56" fill="none" stroke-linejoin="round" hidden>
+    <path d="M10 30 L44 18 L92 22 L104 30 L92 38 L44 42 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+    <path d="M62 22 L84 24 L92 30 L84 36 L62 38 Z" fill="#15131f" stroke="#8d86c9" stroke-width="1.5"/>
+    <path d="M70 26 L82 27 L85 30 L80 33 L70 34 Z" fill="#7c5cff" opacity=".55"/>
+    <path d="M30 20 L38 4 L50 6 L46 19 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+    <path d="M30 40 L36 52 L52 50 L46 41 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+    <path d="M44 18 L50 28 L42 33 L48 42" stroke="#0c0b12" stroke-width="3"/>
+    <path d="M8 24 L22 28 L14 32 L24 36 L10 38" stroke="#ff8a3c" stroke-width="2"/>
+    <circle class="spark" cx="12" cy="31" r="4" fill="#ffb020"/>
+    <circle class="spark" cx="46" cy="30" r="2.5" fill="#fff" style="animation-delay:-.5s"/>
+    <circle class="spark" cx="38" cy="10" r="2" fill="#ff8a3c" style="animation-delay:-.3s"/>
+    <path class="debris" d="M2 48 L10 44 L12 50 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="1.5"/>
+    <path class="debris" d="M100 8 L108 10 L104 16 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="1.5" style="animation-delay:-2s"/>
+  </svg>
+
+  <!-- offline: a satellite cut off from the planet, its signal fading. -->
+  <svg class="art" data-art="offline" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <radialGradient id="planet" cx=".4" cy=".2" r=".8"><stop offset="0" stop-color="#3550b8"/><stop offset=".6" stop-color="#1b2560"/><stop offset="1" stop-color="#0d1030"/></radialGradient>
+    </defs>
+    <circle cx="160" cy="400" r="230" fill="url(#planet)"/>
+    <circle cx="160" cy="400" r="234" stroke="#7cc0ff" stroke-opacity=".35" stroke-width="4"/>
+    <g fill="#ffcd78">
+      <circle cx="96" cy="196" r="1.6" class="blink" style="animation-delay:-.4s"/><circle cx="132" cy="186" r="1.4" class="blink"/>
+      <circle cx="178" cy="184" r="1.6" class="blink" style="animation-delay:-1s"/><circle cx="214" cy="192" r="1.3" class="blink" style="animation-delay:-.7s"/>
+      <circle cx="248" cy="204" r="1.5" class="blink" style="animation-delay:-1.3s"/>
+    </g>
+    <path class="wave" d="M140 120 Q160 132 180 120" stroke="#7cc0ff" stroke-width="2.5" stroke-dasharray="4 4"/>
+    <path class="wave" d="M130 132 Q160 150 190 132" stroke="#7cc0ff" stroke-width="2.5" stroke-dasharray="4 4" style="animation-delay:-.7s"/>
+    <path class="lost" d="M150 152 L170 168 M170 152 L150 168" stroke="#ff6070" stroke-width="3" stroke-linecap="round"/>
+    <g class="float" style="transform-origin:160px 80px">
+      <rect x="62" y="64" width="54" height="26" rx="2" fill="#1b2560" stroke="#8d86c9" stroke-width="2"/>
+      <path d="M80 64 V90 M98 64 V90 M62 77 H116" stroke="#8d86c9" stroke-width="1" opacity=".7"/>
+      <rect x="204" y="64" width="54" height="26" rx="2" fill="#1b2560" stroke="#8d86c9" stroke-width="2"/>
+      <path d="M222 64 V90 M240 64 V90 M204 77 H258" stroke="#8d86c9" stroke-width="1" opacity=".7"/>
+      <path d="M116 77 H138 M182 77 H204" stroke="#8d86c9" stroke-width="3"/>
+      <rect x="138" y="58" width="44" height="40" rx="6" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+      <circle cx="160" cy="78" r="8" fill="#15131f" stroke="#7c5cff" stroke-width="2"/>
+      <circle cx="160" cy="78" r="3" fill="#7c5cff" class="blink"/>
+      <path d="M146 98 Q160 112 174 98 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+      <path d="M170 58 L182 34 L190 40" stroke="#8d86c9" stroke-width="2" stroke-linecap="round"/>
+      <circle class="spark" cx="190" cy="40" r="3" fill="#ffb020"/>
+      <path d="M150 58 L144 46" stroke="#8d86c9" stroke-width="2"/><circle cx="144" cy="44" r="3" fill="#ff8a3c" class="blink fast"/>
+    </g>
+    <g transform="translate(262 22)">
+      <rect class="bar1" x="0" y="18" width="7" height="8" rx="1.5" fill="#ff6070"/>
+      <rect class="bar2" x="11" y="10" width="7" height="16" rx="1.5" fill="#ff6070" opacity=".35"/>
+      <rect class="bar3" x="22" y="2" width="7" height="24" rx="1.5" fill="#ff6070" opacity=".2"/>
+    </g>
+  </svg>
+
+  <!-- not_found: the ship's radar screen finds nothing at that name. -->
+  <svg class="art" data-art="not_found" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <radialGradient id="screen" cx=".5" cy=".5" r=".6"><stop offset="0" stop-color="#0c2a20"/><stop offset="1" stop-color="#05110d"/></radialGradient>
+      <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3ddc97" stop-opacity="0"/><stop offset="1" stop-color="#3ddc97" stop-opacity=".55"/></linearGradient>
+      <clipPath id="radarclip"><circle cx="160" cy="104" r="74"/></clipPath>
+    </defs>
+    <rect x="40" y="10" width="240" height="196" rx="22" fill="#1d1a2c" stroke="#8d86c9" stroke-width="2"/>
+    <rect x="50" y="20" width="220" height="176" rx="16" fill="#15131f" stroke="#3a3556" stroke-width="2"/>
+    <circle cx="60" cy="30" r="2.5" fill="#3a3556"/><circle cx="260" cy="30" r="2.5" fill="#3a3556"/>
+    <circle cx="60" cy="186" r="2.5" fill="#3a3556"/><circle cx="260" cy="186" r="2.5" fill="#3a3556"/>
+    <circle cx="160" cy="104" r="74" fill="url(#screen)" stroke="#3ddc97" stroke-opacity=".6" stroke-width="2"/>
+    <g clip-path="url(#radarclip)">
+      <g stroke="#3ddc97" stroke-opacity=".25">
+        <circle cx="160" cy="104" r="25"/><circle cx="160" cy="104" r="50"/>
+        <path d="M86 104 H234 M160 30 V178"/>
+      </g>
+      <path class="sweep" d="M160 104 L234 104 A74 74 0 0 0 212 52 Z" fill="url(#sweep)"/>
+      <g class="scan" stroke="#3ddc97" stroke-opacity=".08" stroke-width="2">
+        <path d="M80 34 H240 M80 46 H240 M80 58 H240 M80 70 H240 M80 82 H240 M80 94 H240 M80 106 H240 M80 118 H240 M80 130 H240 M80 142 H240 M80 154 H240 M80 166 H240 M80 178 H240"/>
+      </g>
+      <circle class="ping" cx="196" cy="74" r="4" fill="#3ddc97"/>
+      <circle class="ping" cx="124" cy="138" r="3.5" fill="#3ddc97" style="animation-delay:-1.4s"/>
+      <circle class="ping" cx="206" cy="140" r="3" fill="#3ddc97" style="animation-delay:-2.2s"/>
+    </g>
+    <path class="blink" d="M152 92 Q152 84 160 84 Q168 84 168 91 Q168 96 161 98 V103" stroke="#ffcd78" stroke-width="3.5" stroke-linecap="round"/>
+    <circle class="blink" cx="161" cy="111" r="2.6" fill="#ffcd78"/>
+    <circle cx="70" cy="196" r="3" fill="#3ddc97" class="blink"/><circle cx="82" cy="196" r="3" fill="#ffcd78" class="blink" style="animation-delay:-.8s"/>
+    <rect x="200" y="192" width="56" height="8" rx="4" fill="#0c2a20" stroke="#3ddc97" stroke-opacity=".5"/>
+    <rect class="glitch" x="203" y="194.5" width="22" height="3" rx="1.5" fill="#3ddc97"/>
+  </svg>
+
+  <!-- redirects: a ship caught between two wormholes, looping for ever. -->
+  <svg class="art" data-art="redirects" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <radialGradient id="worm" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000"/><stop offset=".55" stop-color="#2a1d6b"/><stop offset=".85" stop-color="#7c5cff" stop-opacity=".6"/><stop offset="1" stop-color="#7c5cff" stop-opacity="0"/></radialGradient>
+    </defs>
+    <ellipse cx="74" cy="110" rx="34" ry="56" fill="url(#worm)"/>
+    <ellipse cx="246" cy="110" rx="34" ry="56" fill="url(#worm)"/>
+    <ellipse class="rot quick" cx="74" cy="110" rx="30" ry="50" stroke="#7cc0ff" stroke-width="2" stroke-dasharray="10 8" style="transform-origin:74px 110px"/>
+    <ellipse class="rot quick rev" cx="246" cy="110" rx="30" ry="50" stroke="#ffcd78" stroke-width="2" stroke-dasharray="10 8" style="transform-origin:246px 110px"/>
+    <path id="loop" d="M74 110 C74 40 246 180 246 110 C246 40 74 180 74 110 Z" stroke="#8d86c9" stroke-opacity=".3" stroke-width="1.5" stroke-dasharray="3 6"/>
+    <g>
+      <path d="M-12 -7 L12 0 L-12 7 L-6 0 Z" fill="#2a2740" stroke="#c9c3ff" stroke-width="1.6"/>
+      <path d="M-14 -3 L-22 0 L-14 3" stroke="#ff8a3c" stroke-width="2" class="blink fast"/>
+      <animateMotion dur="3.6s" repeatCount="indefinite" rotate="auto"><mpath href="#loop"/></animateMotion>
+    </g>
+    <g opacity=".7">
+      <circle r="2.2" fill="#ffb020"><animateMotion dur="3.6s" begin="-.15s" repeatCount="indefinite"><mpath href="#loop"/></animateMotion></circle>
+      <circle r="1.6" fill="#ff8a3c"><animateMotion dur="3.6s" begin="-.3s" repeatCount="indefinite"><mpath href="#loop"/></animateMotion></circle>
+      <circle r="1.1" fill="#ff8a3c" opacity=".6"><animateMotion dur="3.6s" begin="-.45s" repeatCount="indefinite"><mpath href="#loop"/></animateMotion></circle>
+    </g>
+    <path d="M150 28 A14 14 0 1 1 146 40" stroke="#ffcd78" stroke-width="2.5" stroke-linecap="round" class="rot quick" style="transform-origin:160px 36px"/>
+    <path d="M144 34 L146 41 L153 39" stroke="#ffcd78" stroke-width="2.5" stroke-linecap="round" class="rot quick" style="transform-origin:160px 36px"/>
+  </svg>
+
+  <!-- certificate: a space blockade — warships hold the line, the station's lock is broken. -->
+  <svg class="art" data-art="certificate" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <linearGradient id="redbeam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff6070" stop-opacity=".55"/><stop offset="1" stop-color="#ff6070" stop-opacity="0"/></linearGradient>
+    </defs>
+    <circle class="alarm" cx="160" cy="70" r="58" stroke="#ff6070" stroke-width="2" stroke-dasharray="6 6"/>
+    <g class="rot" style="transform-origin:160px 70px">
+      <ellipse cx="160" cy="70" rx="46" ry="12" stroke="#8d86c9" stroke-width="3"/>
+    </g>
+    <circle cx="160" cy="70" r="26" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+    <rect x="150" y="66" width="20" height="16" rx="3" fill="#15131f" stroke="#ff8a9a" stroke-width="2"/>
+    <path d="M154 66 V60 Q154 53 160 53 Q166 53 166 60 V66" stroke="#ff8a9a" stroke-width="2.4"/>
+    <path d="M160 53 L163 61 L157 66 L161 74" stroke="#0c0b12" stroke-width="2"/>
+    <circle class="blink fast" cx="160" cy="74" r="2" fill="#ff8a9a"/>
+    <g>
+      <path class="beam" d="M52 160 L40 96 L64 96 Z" fill="url(#redbeam)"/>
+      <path class="beam" d="M106 172 L94 108 L118 108 Z" fill="url(#redbeam)" style="animation-delay:-1s"/>
+      <path class="beam" d="M214 172 L202 108 L226 108 Z" fill="url(#redbeam)" style="animation-delay:-2s"/>
+      <path class="beam" d="M268 160 L256 96 L280 96 Z" fill="url(#redbeam)" style="animation-delay:-.5s"/>
+    </g>
+    <path class="laser" d="M52 166 L106 178 L160 182 L214 178 L268 166" stroke="#ff6070" stroke-width="2"/>
+    <g class="bob" style="animation-delay:-.3s"><path d="M30 166 L52 154 L74 166 L52 174 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="2"/><circle cx="52" cy="164" r="2.5" fill="#ff6070" class="blink"/></g>
+    <g class="bob" style="animation-delay:-1.1s"><path d="M84 178 L106 166 L128 178 L106 186 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="2"/><circle cx="106" cy="176" r="2.5" fill="#ff6070" class="blink" style="animation-delay:-.4s"/></g>
+    <g class="bob" style="animation-delay:-2s"><path d="M134 184 L160 168 L186 184 L160 194 Z" fill="#26213a" stroke="#ff8a9a" stroke-width="2.4"/><path d="M152 182 H168" stroke="#ff6070" stroke-width="2" class="blink fast"/></g>
+    <g class="bob" style="animation-delay:-.7s"><path d="M192 178 L214 166 L236 178 L214 186 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="2"/><circle cx="214" cy="176" r="2.5" fill="#ff6070" class="blink" style="animation-delay:-.9s"/></g>
+    <g class="bob" style="animation-delay:-1.6s"><path d="M246 166 L268 154 L290 166 L268 174 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="2"/><circle cx="268" cy="164" r="2.5" fill="#ff6070" class="blink" style="animation-delay:-1.2s"/></g>
+  </svg>
+
+  <!-- clock: the ship's clock runs wild, hands spinning backwards. -->
+  <svg class="art" data-art="clock" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <g stroke="#c9c3ff" stroke-linecap="round" stroke-opacity=".6">
+      <path class="trail" d="M40 40 H70"/><path class="trail" d="M230 60 H262" style="animation-delay:-.5s"/>
+      <path class="trail" d="M60 170 H96" style="animation-delay:-1s"/><path class="trail" d="M240 168 H270" style="animation-delay:-1.3s"/>
+    </g>
+    <circle cx="160" cy="98" r="72" fill="#1d1a2c" stroke="#8d86c9" stroke-width="3"/>
+    <circle cx="160" cy="98" r="62" fill="#15131f" stroke="#3a3556" stroke-width="2"/>
+    <g stroke="#ffcd78" stroke-width="3" stroke-linecap="round">
+      <path d="M160 40 V48 M160 148 V156 M102 98 H110 M210 98 H218"/>
+    </g>
+    <g stroke="#8d86c9" stroke-width="2" stroke-linecap="round" opacity=".7">
+      <path d="M189 47.8 L185 54.7 M210.2 69 L203.3 73 M210.2 127 L203.3 123 M189 148.2 L185 141.3 M131 148.2 L135 141.3 M109.8 127 L116.7 123 M109.8 69 L116.7 73 M131 47.8 L135 54.7"/>
+    </g>
+    <path class="rot rev" d="M160 98 V64" stroke="#eceaf5" stroke-width="4" stroke-linecap="round" style="transform-origin:160px 98px; animation-duration:4s"/>
+    <path class="rot rev blur" d="M160 98 V50" stroke="#ff8a3c" stroke-width="2.5" stroke-linecap="round" style="transform-origin:160px 98px"/>
+    <circle cx="160" cy="98" r="5" fill="#ff8a3c"/>
+    <rect x="114" y="176" width="92" height="30" rx="7" fill="#15131f" stroke="#8d86c9" stroke-width="2"/>
+    <g class="glitch" fill="#ff6070" font-family="Consolas, Menlo, monospace" font-size="20" font-weight="700">
+      <text x="160" y="198" text-anchor="middle">88:88</text>
+    </g>
+    <path class="debris" d="M262 108 L272 104 L270 116 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="1.5"/>
+  </svg>
+
+  <!-- http_only: the airlock is open, data drifts out into space. -->
+  <svg class="art" data-art="http_only" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <rect x="70" y="56" width="120" height="120" rx="14" fill="#2a2740" stroke="#8d86c9" stroke-width="2.5"/>
+    <rect x="96" y="80" width="68" height="72" rx="6" fill="#05040a" stroke="#3a3556" stroke-width="2"/>
+    <g class="bob"><rect x="80" y="80" width="18" height="72" rx="4" fill="#2a2740" stroke="#ffcd78" stroke-width="2"/></g>
+    <path d="M164 80 L188 70 M164 152 L188 162" stroke="#ffcd78" stroke-width="2" opacity=".6"/>
+    <circle cx="180" cy="66" r="3" fill="#ff8a3c" class="blink fast"/>
+    <g fill="#7cc0ff" stroke="#c9e6ff" stroke-width="1">
+      <rect class="out" x="140" y="108" width="12" height="12" rx="2"/>
+      <rect class="out" x="146" y="120" width="9" height="9" rx="2" style="animation-delay:-1s"/>
+      <rect class="out" x="138" y="96" width="10" height="10" rx="2" style="animation-delay:-2s" fill="#ffcd78"/>
+      <rect class="out" x="150" y="130" width="8" height="8" rx="2" style="animation-delay:-3s"/>
+    </g>
+    <g class="bob" style="animation-delay:-1.2s">
+      <rect x="226" y="62" width="40" height="32" rx="6" fill="#15131f" stroke="#ffcd78" stroke-width="2.5"/>
+      <path d="M234 62 V50 Q234 36 246 36 Q258 36 258 46" stroke="#ffcd78" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="246" cy="76" r="4" fill="#ffcd78" class="blink"/>
+      <path d="M246 80 V86" stroke="#ffcd78" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <text x="246" y="122" text-anchor="middle" fill="#ffcd78" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" class="glitch">http://</text>
+  </svg>
+
+  <!-- unauthorized: a sealed airlock and its ID scanner. -->
+  <svg class="art" data-art="unauthorized" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <rect x="70" y="20" width="130" height="180" rx="20" fill="#2a2740" stroke="#8d86c9" stroke-width="2.5"/>
+    <rect x="82" y="32" width="106" height="156" rx="12" fill="#1d1a2c" stroke="#3a3556" stroke-width="2"/>
+    <path d="M135 34 V186" stroke="#0c0b12" stroke-width="3"/>
+    <path d="M90 60 L180 60 M90 160 L180 160" stroke="#ffcd78" stroke-width="5" stroke-dasharray="10 10" opacity=".5"/>
+    <circle cx="135" cy="110" r="20" fill="#15131f" stroke="#8d86c9" stroke-width="2"/>
+    <path class="rot" d="M135 94 A16 16 0 0 1 151 110" stroke="#ffcd78" stroke-width="3" stroke-linecap="round" style="transform-origin:135px 110px"/>
+    <circle cx="135" cy="110" r="5" fill="#ffcd78" class="blink"/>
+    <rect x="216" y="70" width="60" height="96" rx="10" fill="#15131f" stroke="#8d86c9" stroke-width="2"/>
+    <rect x="226" y="80" width="40" height="34" rx="4" fill="#0c2a20" stroke="#3ddc97" stroke-opacity=".6"/>
+    <path class="scanbar" d="M228 84 H264" stroke="#3ddc97" stroke-width="2.5" style="filter:drop-shadow(0 0 3px #3ddc97)"/>
+    <path d="M238 104 Q246 88 254 104 M241 104 Q246 94 251 104" stroke="#3ddc97" stroke-width="1.5" opacity=".7"/>
+    <g fill="#3a3556">
+      <rect x="228" y="122" width="10" height="8" rx="2"/><rect x="241" y="122" width="10" height="8" rx="2"/><rect x="254" y="122" width="10" height="8" rx="2"/>
+      <rect x="228" y="134" width="10" height="8" rx="2"/><rect x="241" y="134" width="10" height="8" rx="2" fill="#ffcd78" class="blink"/><rect x="254" y="134" width="10" height="8" rx="2"/>
+      <rect x="228" y="146" width="10" height="8" rx="2"/><rect x="241" y="146" width="10" height="8" rx="2"/><rect x="254" y="146" width="10" height="8" rx="2"/>
+    </g>
+  </svg>
+
+  <!-- forbidden: an energy dome around the planet, a ship bounces off it. -->
+  <svg class="art" data-art="forbidden" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <radialGradient id="redplanet" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#7a3a5a"/><stop offset="1" stop-color="#2a1028"/></radialGradient>
+      <pattern id="hex" width="16" height="14" patternUnits="userSpaceOnUse"><path d="M4 0 H12 L16 7 L12 14 H4 L0 7 Z" stroke="#ff6070" stroke-width=".8" stroke-opacity=".5"/></pattern>
+    </defs>
+    <circle cx="190" cy="112" r="42" fill="url(#redplanet)"/>
+    <path d="M160 96 Q190 90 222 104" stroke="#ff8a9a" stroke-opacity=".3" stroke-width="3"/>
+    <circle class="alarm" cx="190" cy="112" r="78" fill="url(#hex)" stroke="#ff6070" stroke-width="2.5"/>
+    <g class="rot" style="transform-origin:190px 112px; animation-duration:9s">
+      <g transform="translate(190 20)"><path d="M-7 0 L0 -7 L7 0 L0 7 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="1.8"/><circle r="2" fill="#ff6070" class="blink"/></g>
+      <g transform="translate(190 204)"><path d="M-7 0 L0 -7 L7 0 L0 7 Z" fill="#1d1a2c" stroke="#ff8a9a" stroke-width="1.8"/><circle r="2" fill="#ff6070" class="blink"/></g>
+    </g>
+    <circle class="flash" cx="114" cy="112" r="14" fill="#ffcd78" opacity="0"/>
+    <g class="knock">
+      <path d="M40 112 L64 104 L80 112 L64 120 Z" fill="#2a2740" stroke="#c9c3ff" stroke-width="2"/>
+      <path d="M38 108 L28 112 L38 116" stroke="#ff8a3c" stroke-width="2" class="blink fast"/>
+    </g>
+  </svg>
+
+  <!-- server: an overheating space station, smoke and alarms. -->
+  <svg class="art" data-art="server" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <g class="rot" style="transform-origin:160px 112px; animation-duration:20s">
+      <circle cx="160" cy="112" r="64" stroke="#8d86c9" stroke-width="8" stroke-opacity=".9"/>
+      <circle cx="160" cy="112" r="64" stroke="#15131f" stroke-width="3" stroke-dasharray="6 10"/>
+      <path d="M160 48 V90 M160 134 V176 M96 112 H138 M182 112 H224" stroke="#8d86c9" stroke-width="3"/>
+      <rect x="148" y="38" width="24" height="16" rx="3" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+      <rect x="148" y="170" width="24" height="16" rx="3" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+      <rect x="86" y="100" width="16" height="24" rx="3" fill="#2a2740" stroke="#8d86c9" stroke-width="2"/>
+      <rect x="218" y="100" width="16" height="24" rx="3" fill="#3a1d24" stroke="#ff8a3c" stroke-width="2"/>
+    </g>
+    <circle cx="160" cy="112" r="22" fill="#2a2740" stroke="#8d86c9" stroke-width="2.5"/>
+    <circle cx="160" cy="112" r="9" fill="#ff6070" class="blink fast"/>
+    <g>
+      <path class="flame" d="M232 74 Q226 62 234 52 Q236 62 242 60 Q246 70 240 76 Z" fill="#ffb020"/>
+      <path class="flame" d="M234 74 Q231 66 236 60 Q238 66 240 66 Q241 72 238 75 Z" fill="#fff3c4" style="animation-delay:-.2s"/>
+      <circle class="smoke" cx="238" cy="54" r="8" fill="#6b6380"/>
+      <circle class="smoke" cx="234" cy="56" r="7" fill="#57506a" style="animation-delay:-1s"/>
+      <circle class="smoke" cx="242" cy="52" r="6" fill="#6b6380" style="animation-delay:-2s"/>
+    </g>
+    <circle class="spark" cx="226" cy="82" r="3" fill="#ffb020"/>
+    <circle class="spark" cx="94" cy="96" r="2.5" fill="#fff" style="animation-delay:-.4s"/>
+    <g fill="#ff6070"><circle cx="60" cy="40" r="4" class="blink fast"/><circle cx="262" cy="190" r="4" class="blink fast" style="animation-delay:-.35s"/></g>
+    <path class="debris" d="M58 170 L68 164 L70 174 Z" fill="#2a2740" stroke="#8d86c9" stroke-width="1.5"/>
+  </svg>
+
+  <!-- blocked: a tracker drone caught in the Shields' tractor net. -->
+  <svg class="art" data-art="blocked" viewBox="0 0 320 220" fill="none" stroke-linejoin="round" hidden>
+    <defs>
+      <linearGradient id="tractor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cc0ff" stop-opacity=".55"/><stop offset="1" stop-color="#7cc0ff" stop-opacity=".05"/></linearGradient>
+    </defs>
+    <path d="M160 14 L180 22 V38 Q180 52 160 60 Q140 52 140 38 V22 Z" fill="#1b2560" stroke="#7cc0ff" stroke-width="2.5"/>
+    <path d="M152 37 L158 43 L169 31" stroke="#7cc0ff" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M146 58 L96 196 H224 L174 58 Z" fill="url(#tractor)"/>
+    <g class="rot" style="transform-origin:160px 132px; animation-duration:14s">
+      <circle cx="160" cy="132" r="52" stroke="#7cc0ff" stroke-width="1.5" stroke-dasharray="4 5"/>
+      <path d="M108 132 H212 M160 80 V184 M123 95 L197 169 M197 95 L123 169" stroke="#7cc0ff" stroke-width="1.2" stroke-opacity=".6"/>
+      <circle cx="160" cy="132" r="30" stroke="#7cc0ff" stroke-width="1.2" stroke-opacity=".6"/>
+    </g>
+    <g class="jitter">
+      <path d="M142 118 L130 104 M178 118 L190 104" stroke="#8d86c9" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="130" cy="102" r="3" fill="#ff8a3c" class="blink fast"/><circle cx="190" cy="102" r="3" fill="#ff8a3c" class="blink fast"/>
+      <circle cx="160" cy="132" r="20" fill="#2a2740" stroke="#c9c3ff" stroke-width="2"/>
+      <ellipse cx="160" cy="132" rx="12" ry="8" fill="#eceaf5"/>
+      <circle cx="160" cy="132" r="5" fill="#ff6070"/>
+      <path d="M146 150 L140 160 M174 150 L180 160" stroke="#8d86c9" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <g fill="#ff8a9a">
+      <rect class="drip" x="150" y="160" width="4" height="4"/><rect class="drip" x="164" y="162" width="3" height="3" style="animation-delay:-.8s"/>
+      <rect class="drip" x="158" y="158" width="3" height="3" style="animation-delay:-1.6s"/>
+    </g>
+  </svg>
+</div>
+<h1 id="title"></h1>
+<div class="url" id="url"></div>
+<p class="hint" id="hint"></p>
+<p class="hint" id="hint2" hidden></p>
+<div class="actions" id="actions"></div>
+<details id="advanced" hidden>
+  <summary>Avancé</summary>
+  <dl id="facts"></dl>
+  <p class="warn" id="warn"></p>
+  <div class="actions" id="risky"></div>
+</details>
+<script>
+// Everything that comes from the site (address, host, certificate names) is inserted with
+// textContent only.
+const cfg = __BH_ERROR__;
+const target = cfg.url || '';
+const host = cfg.host || target;
+const $ = (id) => document.getElementById(id);
+if (cfg.animations === false) document.body.classList.add('still');
+const retry = () => { location.href = target; };
+window.__bhRetry = retry;
+const back = () => { history.length > 1 ? history.back() : retry(); };
+const date = (secs) => {
+  if (!secs) return '';
+  try { return new Date(secs * 1000).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }); } catch (_) { return ''; }
+};
+// The shell asks before anything risky: its own menu, not this page, grants the exception.
+const ask = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  window.__bhipc && window.__bhipc.postMessage(JSON.stringify({ cmd: 'error_menu', x: r.left, y: r.bottom + 4 }));
+};
+const REASONS = {
+  expired: ['Le certificat a expiré', 'Le certificat de « {h} » a expiré : la connexion ne peut plus être garantie.'],
+  not_yet_valid: ['Le certificat n\'est pas encore valide', 'Le certificat de « {h} » n\'est pas encore entré en vigueur.'],
+  untrusted: ['Autorité inconnue', 'Le certificat de « {h} » vient d\'une autorité que ce système ne reconnaît pas.'],
+  self_signed: ['Certificat auto-signé', 'Le certificat de « {h} » est signé par lui-même : rien ne garantit l\'identité du serveur.'],
+  name_mismatch: ['Nom différent', 'Le certificat présenté n\'a pas été émis pour « {h} ».'],
+  revoked: ['Certificat révoqué', 'Le certificat de « {h} » a été révoqué par son émetteur.'],
+  invalid: ['Certificat invalide', 'Le certificat de « {h} » n\'a pas pu être vérifié.'],
+};
+const fill = (text) => text.split('{h}').join(host);
+const PAGES = {
+  unreachable: { hole: true, title: 'Site injoignable', hint: 'La connexion s\'est perdue dans le vide. Vérifiez votre réseau ou le VPN, puis réessayez.', main: 'retry' },
+  offline: { tint: 'calm', title: 'Hors ligne', hint: 'Aucun signal : cet ordinateur n\'est relié à aucun réseau. La page se rechargera dès le retour de la connexion.', main: 'retry' },
+  not_found: { tint: 'green', title: 'Adresse introuvable', hint: 'Aucune balise ne répond au nom « {h} » (DNS). Vérifiez l\'orthographe de l\'adresse ou votre connexion.', main: 'retry' },
+  redirects: { title: 'Trop de redirections', hint: 'Ce site vous renvoie en boucle d\'une page à l\'autre. Effacer ses cookies règle souvent le problème.', main: 'retry' },
+  certificate: { tint: 'danger', title: 'Connexion non sécurisée', hint: '', main: 'back', risky: 'Continuer quand même (non sécurisé)' },
+  clock: { tint: 'amber', title: 'L\'horloge de l\'ordinateur est déréglée', hint: '', main: 'retry', risky: 'Continuer quand même (non sécurisé)' },
+  http_only: { tint: 'amber', title: 'Pas de version sécurisée', hint: '« {h} » ne répond pas en https. BlackHole passe toujours par une connexion chiffrée ; en http, ce que vous envoyez peut être lu sur le réseau.', main: 'back', risky: 'Continuer en http (non sécurisé)' },
+  unauthorized: { tint: 'amber', title: 'Connexion requise', hint: '« {h} » demande de vous identifier pour ouvrir cette page.', main: 'login' },
+  forbidden: { tint: 'danger', title: 'Accès refusé', hint: '« {h} » refuse l\'accès à cette page, même identifié : elle est peut-être réservée à certains comptes ou réseaux.', main: 'back', second: 'retry' },
+  server: { tint: 'danger', title: 'Le serveur a un problème', hint: '« {h} » a répondu par une erreur {s}. Le souci vient du site, pas de votre connexion : réessayez dans un instant.', main: 'retry' },
+  blocked: { tint: 'calm', title: 'Bloqué par les Shields', hint: '', main: 'back', allow: true },
+};
+const kind = PAGES[cfg.kind] ? cfg.kind : 'unreachable';
+const page = PAGES[kind];
+// One scene per kind; the black hole stays the backdrop of "Site injoignable".
+if (page.tint) document.body.classList.add(page.tint);
+// `hidden` is an attribute only on SVG elements (no property).
+document.querySelector('[data-art="' + kind + '"]').removeAttribute('hidden');
+for (const el of document.querySelectorAll('.hole, .ring')) el.hidden = !page.hole;
+// SMIL motions (the looping ship) ignore CSS: stop them like the rest when motion is off.
+const still = cfg.animations === false || matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (still) for (const svg of document.querySelectorAll('svg')) svg.pauseAnimations && svg.pauseAnimations();
+
+let hint = page.hint;
+let title = page.title;
+const reason = REASONS[cfg.reason] || REASONS.invalid;
+if (cfg.kind === 'certificate') hint = reason[1];
+if (cfg.kind === 'clock') hint = 'L\'ordinateur indique le ' + date(Date.now() / 1000) + ' : le certificat de « {h} » ne peut pas être vérifié. Réglez la date et l\'heure, puis réessayez.';
+if (cfg.kind === 'blocked') hint = cfg.why === 'ad blocked'
+  ? '« {h} » est un serveur publicitaire bloqué par les Shields.'
+  : '« {h} » est un traqueur bloqué par les Shields : l\'ouvrir le laisserait suivre votre navigation.';
+if (cfg.kind === 'server' && cfg.status) title += ' (' + cfg.status + ')';
+document.title = title;
+$('title').textContent = title;
+$('url').textContent = target;
+$('hint').textContent = fill(hint).split('{s}').join(String(cfg.status || ''));
+if (cfg.kind === 'certificate' || cfg.kind === 'clock') {
+  $('hint2').hidden = false;
+  $('hint2').textContent = 'Quelqu\'un pourrait tenter d\'intercepter ce que vous envoyez (mots de passe, messages, cartes bancaires).';
+}
+
+const button = (label, run, cls) => {
+  const b = document.createElement('button');
+  b.textContent = label;
+  if (cls) b.className = cls;
+  b.onclick = run;
+  return b;
+};
+const ACTIONS = {
+  retry: ['Réessayer', retry],
+  back: ['Retour en lieu sûr', back],
+  login: ['Se connecter', retry],
+};
+const main = ACTIONS[page.main];
+$('actions').append(button(main[0], main[1]));
+if (page.second) $('actions').append(button(ACTIONS[page.second][0], ACTIONS[page.second][1], 'ghost'));
+if (page.main === 'back' && !page.second && cfg.kind !== 'blocked') $('actions').append(button('Réessayer', retry, 'ghost'));
+if (page.allow) $('actions').append(button('Autoriser ce site', ask, 'risky'));
+
+if (page.risky) {
+  $('advanced').hidden = false;
+  const facts = [['Hôte', host]];
+  if (cfg.kind !== 'http_only') facts.push(['Raison', reason[0]]);
+  if (cfg.issuer) facts.push(['Émetteur', cfg.issuer]);
+  if (cfg.subject) facts.push(['Sujet', cfg.subject]);
+  if (cfg.from) facts.push(['Valide du', date(cfg.from)]);
+  if (cfg.to) facts.push(['Valide jusqu\'au', date(cfg.to)]);
+  for (const [k, v] of facts) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    $('facts').append(dt, dd);
+  }
+  if (cfg.hsts) {
+    $('warn').textContent = '« ' + host + ' » impose une connexion sécurisée (HSTS) : impossible de continuer.';
+  } else {
+    $('warn').textContent = 'L\'exception vaut pour ce site uniquement, jusqu\'à la fermeture de BlackHole.';
+    $('risky').append(button(page.risky, ask, 'risky'));
+  }
+}
+if (cfg.kind === 'offline') window.addEventListener('online', retry);
+</script>
+</body>
+</html>

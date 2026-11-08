@@ -206,6 +206,8 @@ pub fn live_view(
         .with_initialization_script(guard)
         .with_initialization_script(shields)
         .with_initialization_script_for_main_only(crop, true)
+        // A hidden or captured view never prompts: the challenge is cancelled (401 page).
+        .with_http_auth_handler(|_, responder| drop(responder))
         .with_navigation_handler(move |raw| {
             let Ok(target) = Url::parse(&raw) else {
                 return false;
@@ -229,23 +231,35 @@ pub fn live_view(
         .build_as_child(window)
 }
 
-/// Shows the autofill suggestions (usernames only) under the focused login field.
-pub fn autofill_show(view: &WebView, usernames: &[String]) {
-    let list = serde_json::to_string(usernames).unwrap_or_else(|_| "[]".to_owned());
+/// Shows the autofill menu under the focused login field: `{names, locked, generate}`
+/// (usernames only, never a password).
+pub fn autofill_show(view: &WebView, menu: &serde_json::Value) {
     let _ = view.evaluate_script(&format!(
-        "window.__bhAutofill&&window.__bhAutofill.show({list})"
+        "window.__bhAutofill&&window.__bhAutofill.show({menu})"
     ));
 }
 
-/// Fills the focused login form with the chosen credentials.
+/// Fills the focused login form with the credentials the user picked.
 pub fn autofill_fill(view: &WebView, username: &str, password: &str) {
     let (u, p) = (
         serde_json::to_string(username).unwrap_or_default(),
-        serde_json::to_string(password).unwrap_or_default(),
+        zeroize::Zeroizing::new(serde_json::to_string(password).unwrap_or_default()),
     );
-    let _ = view.evaluate_script(&format!(
-        "window.__bhAutofill&&window.__bhAutofill.fill({u},{p})"
+    let script = zeroize::Zeroizing::new(format!(
+        "window.__bhAutofill&&window.__bhAutofill.fill({u},{})",
+        p.as_str()
     ));
+    let _ = view.evaluate_script(&script);
+}
+
+/// Writes a generated password into the new-password fields of the focused form.
+pub fn autofill_generated(view: &WebView, password: &str) {
+    let p = zeroize::Zeroizing::new(serde_json::to_string(password).unwrap_or_default());
+    let script = zeroize::Zeroizing::new(format!(
+        "window.__bhAutofill&&window.__bhAutofill.fillNew({})",
+        p.as_str()
+    ));
+    let _ = view.evaluate_script(&script);
 }
 
 /// Applies the enabled extensions' CSS (replacing the previous one) and runs their scripts.
@@ -345,6 +359,8 @@ fn build_tab(
 ) -> wry::Result<WebView> {
     let id = |slot: &TabSlot| TabId(slot.load(Ordering::Relaxed));
     let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
+    let (s_auth, auth) = (slot.clone(), mailbox.clone());
+    let (s_fail, fail, s_trust, trust) = (slot.clone(), mailbox.clone(), slot.clone(), mailbox.clone());
     let hosts: Vec<&str> = policy.blocked_domains().collect();
     let guard = PAGE_GUARD_JS.replace(
         "__BLOCKED_HOSTS__",
@@ -444,14 +460,25 @@ fn build_tab(
             ) {
                 return true;
             }
-            match policy.evaluate(&target) {
+            let host = target.host_str().unwrap_or_default().to_owned();
+            match crate::errors::with_exceptions(policy.evaluate(&target), &target) {
                 PrivacyDecision::Allow => true,
                 PrivacyDecision::Rewrite(url) => {
-                    nav.push(Msg::Redirect(id(&s_nav), url));
+                    let tab = id(&s_nav);
+                    // The automatic https upgrade: if the secure version fails, the error page
+                    // says the site has none.
+                    if target.scheme() == "http" && url.scheme() == "https" {
+                        nav.push(Msg::Upgraded(tab, target.clone()));
+                    }
+                    nav.push(Msg::Redirect(tab, url));
                     false
                 }
                 PrivacyDecision::Block(why) => {
-                    let host = target.host_str().unwrap_or_default().to_owned();
+                    let tab = id(&s_nav);
+                    // A blocked tracker opened as the page itself (not one of its frames).
+                    if tab.0 != 0 && wry::navigating_main_frame() && why != "unsupported scheme" {
+                        nav.push(Msg::BlockedPage(tab, target.clone(), why));
+                    }
                     nav.push(Msg::Blocked { why, host });
                     false
                 }
@@ -511,6 +538,26 @@ fn build_tab(
                 }
                 load.push(Msg::Url(tab, url));
             }
+        })
+        // HTTP authentication (a NAS, a router): the shell asks for the credentials.
+        .with_http_auth_handler(move |challenge, responder| {
+            auth.push(Msg::Auth(id(&s_auth), challenge, responder));
+        })
+        // Why a load failed, or its HTTP error status: picks the error page.
+        .with_load_failure_handler(move |failure| {
+            let tab = id(&s_fail);
+            if tab.0 != 0 {
+                fail.push(Msg::LoadFailure(tab, failure));
+            }
+        })
+        // A refused certificate goes on only for a host the user chose in the shell's menu.
+        .with_server_trust_handler(move |challenge| {
+            let allowed = crate::errors::cert_allowed(&challenge.host);
+            let tab = id(&s_trust);
+            if challenge.error != 0 && tab.0 != 0 {
+                trust.push(Msg::ServerTrust(tab, challenge));
+            }
+            allowed
         })
         .build_as_child(window)
 }
@@ -620,14 +667,18 @@ pub fn go_forward(view: &WebView) {
     let _ = view.go_forward();
 }
 
-/// Shell-themed page shown in a tab whose load failed. The error page exposes `__bhRetry`,
-/// since reloading its own (blank-origin) document would not retry the failed URL.
+/// Shell-themed page shown in a tab whose load failed (`ui/error.html`, one variant per
+/// `kind`). The error page exposes `__bhRetry`, since reloading its own (blank-origin)
+/// document would not retry the failed URL.
+pub fn error_page(config: &serde_json::Value) -> String {
+    // `<` is escaped so no text of the site can close the script block.
+    let literal = config.to_string().replace('<', "\\u003c");
+    include_str!("../ui/error.html").replace("__BH_ERROR__", &literal)
+}
+
+#[cfg(test)]
 pub fn unreachable_page(url: &str) -> String {
-    // `<` is escaped so the URL can never close the script block.
-    let literal = serde_json::to_string(url)
-        .unwrap_or_else(|_| "\"\"".to_owned())
-        .replace('<', "\\u003c");
-    include_str!("../ui/unreachable.html").replace("__BH_URL__", &literal)
+    error_page(&serde_json::json!({ "kind": "unreachable", "url": url }))
 }
 
 pub fn reload(view: &WebView) {
@@ -713,6 +764,6 @@ mod unreachable_tests {
         let page = unreachable_page("https://x.test/</script><script>alert(1)</script>");
         assert!(!page.contains("</script><script>alert"));
         assert!(page.contains("\\u003c/script>"));
-        assert!(!page.contains("__BH_URL__"));
+        assert!(!page.contains("__BH_ERROR__"));
     }
 }

@@ -372,6 +372,11 @@ features = [
     "NSValue",
     "NSRange",
     "NSRunLoop",
+    "NSURLAuthenticationChallenge",
+    "NSURLCredential",
+    "NSURLProtectionSpace",
+    "NSURLSession",
+    "NSURLResponse",
 ]
 default-features = false
 

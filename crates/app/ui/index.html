@@ -182,6 +182,8 @@
   #toast.act.show { pointer-events: auto; }
   #toast .txt { flex: 1; min-width: 0; }
   #toast button { flex: none; border: 0; border-radius: 7px; padding: 3px 9px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  #toast button.alt { background: rgba(255,255,255,.12); font-weight: 500; }
+  #toast.act { flex-wrap: wrap; }
 
 
 
@@ -360,6 +362,7 @@ function tabMenu(t, x, y) {
   items.push({ icon: 'copy', label: 'Duplicate', run: { cmd: 'duplicate_tab', id: t.id } });
   items.push({ icon: 'link', label: 'Copy link', copy: t.url });
   items.push({ icon: 'compare', label: 'Compare with the other tabs', run: { cmd: 'action', id: 'compare' } });
+  if (/^https?:/.test(t.url)) items.push(...(state.devices || []).map(d => ({ icon: 'devices', label: 'Continue on ' + d.name, run: { cmd: 'continue_on', id: t.id, device: d.id } })));
   if (t.id === state.activeTab && !t.asleep) items.push({ icon: 'code', label: 'Inspect page (developer tools)', run: { cmd: 'action', id: 'key:devtools' } });
   const md = (state.media || []).find(m => m.id === t.id);
   if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: md.muted ? 'Unmute tab' : 'Mute tab', run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
@@ -906,14 +909,18 @@ window.bh = {
   editSpace,
   editTab,
   editFolderId,
-  // `action` ({ label, run }) adds a button, e.g. Undo after a deletion; it stays longer.
+  // `action` ({ label, run }, or a list of them) adds buttons, e.g. Undo after a deletion or
+  // Save / Never for a password; it stays longer.
   toast(m, action) {
     const t = $('toast');
     const txt = el('span', 'txt', m);
     if (action) {
-      const b = el('button', null, action.label);
-      b.onclick = () => { t.classList.remove('show'); send(action.run); };
-      t.replaceChildren(txt, b);
+      const buttons = (Array.isArray(action) ? action : [action]).map((a, i) => {
+        const b = el('button', i ? 'alt' : null, a.label);
+        b.onclick = () => { t.classList.remove('show'); send(a.run); };
+        return b;
+      });
+      t.replaceChildren(txt, ...buttons);
     } else t.replaceChildren(txt);
     t.classList.toggle('act', !!action);
     t.classList.add('show');

@@ -8,18 +8,22 @@
 mod backdrop;
 #[cfg(feature = "devtools")]
 mod devtools;
+mod errors;
 mod extensions;
 mod favicons;
 mod ipc;
 mod media;
 mod compare;
 mod meet;
+mod handoff;
 mod watching;
+mod passwords;
 mod sidebar;
 mod stats;
 mod views;
 
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
+use blackhole_domain::http_auth;
 use blackhole_domain::{
     BlockLog, Easels, FolderId, Removed, SearchEngine, Settings, SpaceId, TabId,
 };
@@ -350,8 +354,8 @@ struct Running {
     /// Blank hidden page views ready to take the next tabs (see `views::spare_tab_view`).
     spares: Vec<(views::Store, views::TabSlot, WebView)>,
     spares_due: Option<Instant>,
-    /// Logins offered by the last autofill query of each tab (passwords stay in the shell).
-    autofill: HashMap<TabId, Vec<import::Login>>,
+    /// The password wallet: autofill, save offers, Settings › Passwords.
+    passwords: passwords::Passwords,
     last_active: HashMap<TabId, Instant>,
     /// Page zoom per site (host), for the session.
     zoom: HashMap<String, f64>,
@@ -385,6 +389,12 @@ struct Running {
     splash: HashMap<TabId, Instant>,
     /// Tabs opened but not yet answering at all (no commit), with the URL asked for.
     awaiting: HashMap<TabId, (Instant, Url)>,
+    /// Error pages of the tabs and what led to them (`errors.rs`).
+    errors: errors::Errors,
+    /// HTTP authentication prompts waiting for the user, their engine answers, and the one shown.
+    auth: http_auth::AuthPrompts,
+    auth_replies: HashMap<u64, wry::HttpAuthResponder>,
+    auth_shown: Option<u64>,
     #[cfg(target_os = "macos")]
     cards_rounded: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
@@ -404,6 +414,8 @@ struct Running {
     live_pending: Option<(TabId, String, (f64, f64))>,
     /// Google Calendar sync and the meeting card (see meet.rs).
     calendar: meet::Calendar,
+    /// Paired devices and "Continue on…" (see handoff.rs).
+    nearby: handoff::Nearby,
     /// Watched areas of pages (see watching.rs).
     watching: watching::Watching,
     /// The tab comparator (see compare.rs).
@@ -427,7 +439,6 @@ struct Running {
     app_ext: Vec<blackhole_macos_webext::AppExtension>,
     bar_exts: serde_json::Value,
     bar_exts_at: Instant,
-    vault_count: usize,
     settings_seq: u32,
     home_visible: bool,
     /// "What's new" shown on the start page until dismissed; empty when there is nothing to show.
@@ -767,6 +778,10 @@ impl Running {
             loading: HashMap::new(),
             splash: HashMap::new(),
             awaiting: HashMap::new(),
+            errors: errors::Errors::default(),
+            auth: http_auth::AuthPrompts::default(),
+            auth_replies: HashMap::new(),
+            auth_shown: None,
             #[cfg(target_os = "macos")]
             cards_rounded: Instant::now(),
             media: Arc::default(),
@@ -779,6 +794,7 @@ impl Running {
             last_frame: Instant::now(),
             live_pending: None,
             calendar: meet::Calendar::new(&data),
+            nearby: handoff::Nearby::new(&data, private_mode()),
             watching: watching::Watching::new(&data),
             comparing: compare::Comparing::new(),
             tidied: None,
@@ -802,8 +818,7 @@ impl Running {
             app_ext,
             bar_exts: json!([]),
             bar_exts_at: Instant::now(),
-            autofill: HashMap::new(),
-            vault_count: 0,
+            passwords: passwords::Passwords::new(&profile, private_mode()),
             settings_seq: 0,
             home_visible: true,
             splitbar: LazyView::new(),
@@ -1185,6 +1200,7 @@ impl Running {
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
             "media": self.media_json(),
             "meeting": self.calendar.card(),
+            "devices": self.nearby.menu_json(),
             "tidy": self.tidy_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
@@ -1243,6 +1259,7 @@ impl Running {
             "extensionsInPrivate": settings.extensions_in_private,
             "trackerBlocking": settings.tracker_blocking,
             "calendar": self.calendar_json(),
+            "devices": self.devices_json(),
             "adBlocking": settings.ad_blocking,
             "shields": {
                 "hideAds": settings.shields.hide_ads,
@@ -1279,8 +1296,9 @@ impl Running {
                 "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
                 "message": self.import_msg,
                 "bookmarks": self.bookmarks.load().len(),
-                "logins": self.vault_count,
+                "logins": self.passwords.count(),
             }),
+            "passwords": self.passwords.state_json(settings),
             "extensionsDir": extensions_dir(&self.data).display().to_string(),
             "extensions": self.svc.extensions().iter().map(|e| json!({
                 "id": e.id, "name": e.name, "version": e.version, "description": e.description,
@@ -1365,11 +1383,11 @@ impl Running {
         self.poll_update();
         self.poll_downloads();
         self.poll_captures();
-        while let Ok((msg, count, list)) = self.import_rx.try_recv() {
-            if let Some(m) = msg {
+        self.poll_passwords();
+        while let Ok((msg, _count, list)) = self.import_rx.try_recv() {
+            if let Some(m) = msg.filter(|m| !m.is_empty()) {
                 self.import_msg = m;
             }
-            self.vault_count = count;
             self.bookmark_list = self.bookmarks.load();
             self.file_bookmarks(list);
             self.ui_state();
@@ -1826,23 +1844,50 @@ impl Running {
     }
 
     /// Right click on a link of a page: open it in a new tab, a new window, a private window,
-    /// preview it, or copy it.
-    fn link_menu(&mut self, tab: TabId, raw: &str, x: f64, y: f64) {
-        let Ok(url) = Url::parse(raw) else { return };
-        if !matches!(url.scheme(), "http" | "https") {
+    /// preview it, or copy it. On selected text (`text`, untrusted): search it with the engine
+    /// of the Settings, or open it when it is a web address, or copy it.
+    fn link_menu(&mut self, tab: TabId, raw: &str, text: &str, x: f64, y: f64) {
+        use blackhole_domain::selection::{
+            clean_selection, excerpt, selection_action, SelectionAction,
+        };
+        let link = Url::parse(raw)
+            .ok()
+            .filter(|u| matches!(u.scheme(), "http" | "https"));
+        let selection = clean_selection(text);
+        let mut items = Vec::new();
+        if let Some(text) = &selection {
+            let short = excerpt(text, 30);
+            let action = selection_action(text, self.svc.settings().search_engine);
+            let (icon, label) = match &action {
+                SelectionAction::Open(_) => ("open", format!("Open address “{short}”")),
+                SelectionAction::Search(_) => ("search", format!("Search for “{short}”")),
+            };
+            let url = action.url().as_str();
+            // Ctrl/Cmd+click or middle click on the entry: in the background, like a link.
+            items.push(json!({"icon": icon, "label": label,
+                "run": {"cmd": "open_link", "url": url, "target": "front"},
+                "background": {"cmd": "open_link", "url": url, "target": "tab"}}));
+            items.push(json!({"icon": "copy", "label": "Copy", "copy": text}));
+        }
+        if let Some(url) = &link {
+            let link = url.as_str();
+            if !items.is_empty() {
+                items.push(json!({"sep": true}));
+            }
+            items.extend([
+                json!({"icon": "plus", "label": "Open link in new tab", "run": {"cmd": "open_link", "url": link, "target": "tab"}}),
+                json!({"icon": "window", "label": "Open link in new window", "run": {"cmd": "open_link", "url": link, "target": "window"}}),
+                json!({"icon": "sleep", "label": "Open link in private window", "run": {"cmd": "open_link", "url": link, "target": "private"}}),
+                json!({"sep": true}),
+                json!({"icon": "open", "label": "Preview link (Peek)", "run": {"cmd": "open_peek", "url": link}}),
+                json!({"icon": "link", "label": "Copy link", "copy": link}),
+            ]);
+        }
+        if items.is_empty() {
             return;
         }
-        let link = url.as_str();
-        let items = json!([
-            {"icon": "plus", "label": "Open link in new tab", "run": {"cmd": "open_link", "url": link, "target": "tab"}},
-            {"icon": "window", "label": "Open link in new window", "run": {"cmd": "open_link", "url": link, "target": "window"}},
-            {"icon": "sleep", "label": "Open link in private window", "run": {"cmd": "open_link", "url": link, "target": "private"}},
-            {"sep": true},
-            {"icon": "open", "label": "Preview link (Peek)", "run": {"cmd": "open_peek", "url": link}},
-            {"icon": "link", "label": "Copy link", "copy": link},
-        ]);
         let (ox, oy) = self.view_origin(tab);
-        self.show_menu((ox + x, oy + y), items);
+        self.show_menu((ox + x, oy + y), json!(items));
     }
 
     /// Middle click / Ctrl+click on a link, or "Open link in new tab": the tab opens at the top
@@ -2452,6 +2497,7 @@ impl Running {
             "os": std::env::consts::OS,
             "maximized": self.window.is_maximized(),
             "private": private_mode(),
+            "insecure": Url::parse(&url).is_ok_and(|u| errors::insecure(&u)),
             "url": url,
             "color": ws.active_space().color,
             "engine": self.svc.settings().search_engine.label(),
@@ -2480,14 +2526,7 @@ impl Running {
     }
 
     fn show_unreachable(&mut self, tab: TabId, url: Url) {
-        self.awaiting.remove(&tab);
-        self.loading.remove(&tab);
-        self.splash.remove(&tab);
-        if let Some(view) = self.tabs.get(&tab) {
-            let _ = view.load_html(&views::unreachable_page(url.as_str()));
-        }
-        self.page_url(tab, url);
-        self.sync();
+        self.show_error(tab, url, blackhole_domain::error_page::ErrorPage::Unreachable);
     }
 
     /// Ends the loading screen of a tab, and the progress of a page that went quiet.
@@ -3294,8 +3333,12 @@ impl Running {
         self.close_peek();
         match self.svc.resolve(input) {
             NavigationOutcome::Blocked(why) => self.toast(why),
-            NavigationOutcome::Go(_) => {
-                self.svc.open_tab(input);
+            NavigationOutcome::Go(url) => {
+                let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
+                let tab = self.svc.open_tab(input);
+                if let (Some(tab), "http", "https") = (tab, typed.scheme(), url.scheme()) {
+                    self.on_upgraded(tab, typed);
+                }
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
@@ -3306,6 +3349,7 @@ impl Running {
 
     fn navigate(&mut self, input: &str) {
         self.close_palette();
+        let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
         let active = if self.home_shown() {
             None
         } else {
@@ -3318,6 +3362,9 @@ impl Running {
         };
         match (active, self.svc.resolve(input)) {
             (Some(id), NavigationOutcome::Go(url)) => {
+                if typed.scheme() == "http" && url.scheme() == "https" {
+                    self.on_upgraded(id, typed);
+                }
                 if let Some(view) = self.tabs.get(&id) {
                     let _ = view.load_url(url.as_str());
                 }
@@ -3419,6 +3466,12 @@ impl Running {
     // ---- command bar --------------------------------------------------------------------
 
     fn open_palette(&mut self, mode: &str) {
+        // Another use of the palette replaces the sign-in prompt: it is cancelled.
+        if mode != "auth" {
+            if let Some(id) = self.auth_shown.take() {
+                self.reply_auth(id, None);
+            }
+        }
         self.close_peek();
         self.flush_raise(true);
         self.palette_mode = mode.to_owned();
@@ -3451,6 +3504,102 @@ impl Running {
             .palette
             .set_bounds(palette_rect(false, &self.window_size()));
         self.apply_focus();
+        // Closing the sign-in prompt any other way (Esc, click outside, another palette)
+        // cancels it: the server's own 401 page shows.
+        if self.palette_mode == "auth" {
+            if let Some(id) = self.auth_shown.take() {
+                self.answer_auth(id, None);
+            }
+        }
+    }
+
+    // ---- HTTP authentication --------------------------------------------------------------
+
+    /// A server asks for a user name and password. The tab is not unreachable: it waits for
+    /// the prompt, shown once the tab is on screen.
+    fn on_auth(&mut self, tab: TabId, challenge: &wry::HttpAuthChallenge, reply: wry::HttpAuthResponder) {
+        if !self.auth_tab_alive(tab) {
+            return; // `reply` dropped: cancelled.
+        }
+        self.awaiting.remove(&tab);
+        let realm = http_auth::realm_of(&challenge.challenge);
+        let id = self
+            .auth
+            .push(tab, &challenge.host, &realm, challenge.secure, challenge.retry);
+        self.auth_replies.insert(id, reply);
+        if self.splash.remove(&tab).is_some() {
+            self.sync();
+        }
+        self.service_auth();
+    }
+
+    /// Peek has no prompt (the palette would close it): its page gets the 401, opening it as
+    /// a tab asks.
+    fn auth_tab_alive(&self, tab: TabId) -> bool {
+        tab.0 != 0 && tab != PEEK_TAB && self.tabs.contains_key(&tab)
+    }
+
+    /// Tabs whose page is on screen: the active one and the other pane of a split.
+    fn auth_tabs_shown(&self) -> Vec<TabId> {
+        let mut shown = Vec::new();
+        if !self.home_shown() {
+            shown.extend(self.svc.workspace().active_tab().map(|t| t.id));
+        }
+        shown.extend(self.split_tab());
+        shown
+    }
+
+    /// Shows the oldest prompt of a tab on screen, unless one is up; drops those of closed tabs.
+    fn service_auth(&mut self) {
+        if self.auth.is_empty() {
+            return;
+        }
+        let gone: Vec<TabId> = self
+            .auth_replies
+            .keys()
+            .filter_map(|id| self.auth.get(*id).map(|c| c.tab))
+            .filter(|tab| !self.auth_tab_alive(*tab))
+            .collect();
+        for tab in gone {
+            for id in self.auth.drop_tab(tab) {
+                self.auth_replies.remove(&id);
+                if self.auth_shown == Some(id) {
+                    self.auth_shown = None;
+                    if self.palette_mode == "auth" {
+                        self.close_palette();
+                    }
+                }
+            }
+        }
+        if self.auth_shown.is_some() {
+            return;
+        }
+        let Some((id, _)) = self.auth.next_for(&self.auth_tabs_shown()) else {
+            return;
+        };
+        self.auth_shown = Some(id);
+        self.open_palette("auth");
+    }
+
+    /// Sends the answer to the engine (credentials are never kept nor logged), for every
+    /// challenge of the same site, then shows the next prompt if any.
+    fn answer_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
+        if self.auth_shown == Some(id) {
+            self.auth_shown = None;
+            if self.palette_mode == "auth" {
+                self.close_palette();
+            }
+        }
+        self.reply_auth(id, credentials);
+        self.service_auth();
+    }
+
+    fn reply_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
+        for each in self.auth.answer(id, credentials.is_some()) {
+            if let Some(reply) = self.auth_replies.remove(&each) {
+                reply.respond(credentials.clone());
+            }
+        }
     }
 
     fn active_site(&self) -> Option<String> {
@@ -3503,6 +3652,7 @@ impl Running {
         ];
         actions.extend(easel_actions);
         actions.extend(self.meeting_actions());
+        actions.extend(self.continue_actions());
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
@@ -3586,6 +3736,13 @@ impl Running {
             "color": space.color,
             "menu": self.menu,
             "compare": self.comparing.result,
+            "auth": self.auth_shown.and_then(|id| self.auth.get(id)).map(|c| json!({
+                "id": self.auth_shown,
+                "host": c.host,
+                "realm": c.realm,
+                "secure": c.secure,
+                "retry": c.retry,
+            })),
             "boostHost": site,
             "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
             "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
@@ -3632,6 +3789,12 @@ impl Running {
             "tidy" => self.handle_ui(UiCommand::Tidy),
             "compare" => self.compare_start(),
             other if other.starts_with("meet:") => self.open_meet(Some(other["meet:".len()..].to_owned())),
+            other if other.starts_with("continue:") => {
+                let tab = self.svc.workspace().active_tab().map(|t| t.id.0);
+                if let Some(tab) = tab {
+                    self.continue_on(tab, other["continue:".len()..].to_owned());
+                }
+            }
             "open_history" => {
                 self.library_jump = (self.library_jump.0 + 1, "history");
                 self.handle_ui(UiCommand::OpenLibrary);
@@ -3969,6 +4132,11 @@ impl Running {
                 }
             }
             UiCommand::PaletteClose => self.close_palette(),
+            UiCommand::AuthAnswer { id, user, password } => {
+                self.answer_auth(id, Some((user, password)));
+            }
+            UiCommand::AuthCancel { id } => self.answer_auth(id, None),
+            UiCommand::ErrorProceed { tab } => self.error_proceed(TabId(tab)),
             UiCommand::Action { id } => self.run_action(&id),
             UiCommand::SaveBoost { css } => self.save_boost(&css),
             UiCommand::ClosePeek => self.close_peek(),
@@ -4162,10 +4330,21 @@ impl Running {
             | UiCommand::CalendarRemove { .. }
             | UiCommand::CalendarSync
             | UiCommand::SetMeetingOption { .. }) => self.handle_calendar(command),
+            command @ (UiCommand::DeviceShowCode
+            | UiCommand::DeviceJoin { .. }
+            | UiCommand::DeviceCancelPairing
+            | UiCommand::DeviceForget { .. }
+            | UiCommand::ContinueOn { .. }) => self.handle_devices(command),
             UiCommand::OpenLink { url, target } => match target.as_str() {
                 "window" | "private" => {
                     if matches!(Url::parse(&url), Ok(u) if matches!(u.scheme(), "http" | "https")) {
                         open_window(target == "private", Some(&url));
+                    }
+                }
+                // A new tab shown at once (the selection's search or address).
+                "front" => {
+                    if matches!(Url::parse(&url), Ok(u) if matches!(u.scheme(), "http" | "https")) {
+                        self.open(&url);
                     }
                 }
                 _ => self.open_in_background(&url),
@@ -4446,6 +4625,7 @@ impl Running {
             UiCommand::Back => self.with_active_tab(views::go_back),
             UiCommand::Forward => self.with_active_tab(views::go_forward),
             UiCommand::Reload => self.with_active_tab(views::reload),
+            UiCommand::Passwords { action } => self.password_action(action),
             UiCommand::OpenSettings { tab } => {
                 self.settings_tab = tab;
                 self.settings_seq += 1;
@@ -4572,8 +4752,9 @@ impl Running {
             }
             UiCommand::ImportFile { kind } => {
                 let space = self.svc.workspace().active_space().id.0;
-                self.spawn_import(move |bookmarks, vault| {
-                    Some(import_file(bookmarks, vault, &kind, space))
+                let logins = self.passwords.import_sender();
+                self.spawn_import(move |bookmarks, _| {
+                    Some(import_file(bookmarks, &logins, &kind, space))
                 });
             }
             UiCommand::RemoveCatalog { id } => {
@@ -4788,15 +4969,26 @@ impl Running {
                 }
             }
             Msg::Page(_, PageEvent::OpenLink { url }) => self.open_in_background(&url),
-            Msg::Page(tab, PageEvent::LinkMenu { url, x, y }) => self.link_menu(tab, &url, x, y),
+            Msg::Page(tab, PageEvent::LinkMenu { url, text, x, y }) => {
+                self.link_menu(tab, &url, &text, x, y)
+            }
             Msg::Page(tab, PageEvent::DebugLog { msg }) => {
                 if cfg!(debug_assertions) {
                     eprintln!("[page {}] {}", tab.0, msg.chars().take(600).collect::<String>());
                 }
             }
             Msg::Page(tab, PageEvent::PipLeft { .. }) => self.pip_returned(tab),
-            Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
-            Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
+            Msg::Page(tab, PageEvent::AutofillQuery { fresh }) => self.autofill_query(tab, fresh),
+            Msg::Page(tab, PageEvent::AutofillFill { index, token }) => {
+                self.autofill_fill(tab, index, &token)
+            }
+            Msg::Page(tab, PageEvent::AutofillUnlock { token }) => self.autofill_unlock(tab, &token),
+            Msg::Page(tab, PageEvent::AutofillGenerate { token }) => {
+                self.autofill_generate(tab, &token)
+            }
+            Msg::Page(tab, PageEvent::LoginSubmitted { username, password }) => {
+                self.login_submitted(tab, &username, &password)
+            }
             Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),
             Msg::Page(tab, PageEvent::Favicon { url }) => {
                 let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
@@ -4814,11 +5006,14 @@ impl Running {
             }
             Msg::Url(tab, url) => self.page_url(tab, url),
             Msg::LoadStart(tab) => {
+                self.errors_load_start(tab);
                 self.awaiting.remove(&tab);
                 self.loading.insert(tab, Instant::now());
                 self.ui_bar();
             }
             Msg::Loaded(tab, url) => {
+                self.errors_loaded(tab, &url);
+                self.auth.loaded(tab);
                 self.loading.remove(&tab);
                 if self.splash.remove(&tab).is_some() {
                     self.sync();
@@ -4832,7 +5027,16 @@ impl Running {
                     }
                 }
             }
-            Msg::Failed(tab, url) => self.show_unreachable(tab, url),
+            Msg::Failed(tab, url) => self.on_failed(tab, url),
+            Msg::LoadFailure(tab, failure) => self.on_load_failure(tab, failure),
+            Msg::ServerTrust(tab, challenge) => self.on_server_trust(tab, challenge),
+            Msg::Upgraded(tab, plain) => self.on_upgraded(tab, plain),
+            Msg::BlockedPage(tab, url, why) => self.on_blocked_page(tab, url, why),
+            Msg::Page(tab, PageEvent::ErrorMenu { x, y }) => self.error_menu(tab, x, y),
+            Msg::Auth(tab, challenge, reply) => {
+                self.errors_auth_asked(tab);
+                self.on_auth(tab, &challenge, reply);
+            }
             Msg::Title(tab, _) if tab == PEEK_TAB => {}
             Msg::Title(tab, title) => {
                 self.svc.page_changed(tab, None, Some(title));
@@ -4942,58 +5146,6 @@ impl Running {
         }
     }
 
-    /// Offers the vault logins saved for the tab's site. Only https (or localhost) pages of the
-    /// foreground tab are served, and only usernames are sent to the page.
-    fn autofill_query(&mut self, tab: TabId) {
-        let active = self.svc.workspace().active_tab().map(|t| t.id);
-        if Some(tab) != active && Some(tab) != self.split_tab() {
-            return;
-        }
-        // A loaded password-manager extension owns the login fields: two menus would collide.
-        let manager_active = self.webext.as_ref().is_some_and(|h| {
-            matches!(
-                h.state("bitwarden"),
-                Some(blackhole_macos_webext::LoadState::Loaded)
-            )
-        });
-        if manager_active {
-            return;
-        }
-        let host = self.site_of(tab);
-        let secure = self
-            .svc
-            .workspace()
-            .spaces()
-            .iter()
-            .flat_map(|s| s.tabs.iter())
-            .find(|t| t.id == tab)
-            .is_some_and(|t| t.url.scheme() == "https" || host == "localhost");
-        let logins = if secure && !host.is_empty() {
-            Vault::new(&self.data).for_host(&host).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let names: Vec<String> = logins.iter().map(|l| l.username.clone()).collect();
-        if let Some(view) = self.tabs.get(&tab) {
-            views::autofill_show(view, &names);
-        }
-        self.autofill.insert(tab, logins);
-    }
-
-    fn autofill_fill(&mut self, tab: TabId, index: usize) {
-        let host = self.site_of(tab);
-        let Some(login) = self.autofill.get(&tab).and_then(|l| l.get(index)) else {
-            return;
-        };
-        // The site may have changed since the query.
-        if !blackhole_infrastructure::store::same_site(&login.url, &host) {
-            return;
-        }
-        if let Some(view) = self.tabs.get(&tab) {
-            views::autofill_fill(view, &login.username, &login.password);
-        }
-    }
-
     /// The sidebar's tidy-up suggestion: from `TIDY_FROM` loose tabs, the sites that would get
     /// a folder (`null` when there is none, or when dismissed this session).
     fn tidy_json(&self) -> serde_json::Value {
@@ -5036,6 +5188,10 @@ impl Running {
                 let grade = blackhole_domain::privacy_grade(trackers, ads);
                 let plural = |n: u32, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
                 items.push(json!({"head": format!("{site} · grade {grade}")}));
+                let shown = self.svc.workspace().active_tab().map(|t| t.url.clone());
+                if shown.is_some_and(|u| errors::insecure(&u)) {
+                    items.push(json!({"icon": "close", "label": "Non sécurisé: exception accepted until BlackHole quits"}));
+                }
                 items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(trackers, "tracker request"))}));
                 items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(ads, "ad request"))}));
                 if hosts.is_empty() {
@@ -5150,8 +5306,11 @@ impl ApplicationHandler<Wake> for App {
             app.service_media();
             app.service_stats();
             app.service_calendar();
+            app.service_auth();
+            app.service_nearby();
             app.service_watches();
             app.service_compare();
+            app.service_errors();
             if app.blur_due.is_some() {
                 app.pip_on_blur();
                 wake = wake.min(BLUR_DELAY);
@@ -5345,7 +5504,7 @@ fn store_bookmarks(
 
 fn import_file(
     bookmarks: &BookmarkStore,
-    vault: &Vault,
+    logins: &std::sync::mpsc::Sender<Vec<import::Login>>,
     kind: &str,
     space: u64,
 ) -> (String, Vec<import::Bookmark>) {
@@ -5361,11 +5520,12 @@ fn import_file(
         return ("Fichier illisible".into(), Vec::new());
     };
     if kind == "logins" {
-        let msg = match import::parse_logins_csv(&text).and_then(|l| {
-            let total = l.len();
-            vault.merge(l).map(|new| (new, total))
-        }) {
-            Ok((new, total)) => format!("{new} mots de passe ajoutés au coffre chiffré ({} déjà présents). Supprimez le fichier CSV : il contient vos mots de passe en clair.", total - new),
+        // Added to the wallet on the UI thread, which sets the message.
+        let msg = match import::parse_logins_csv(&text) {
+            Ok(list) => {
+                let _ = logins.send(list);
+                String::new()
+            }
             Err(e) => e,
         };
         return (msg, Vec::new());

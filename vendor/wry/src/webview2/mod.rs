@@ -589,6 +589,103 @@ impl InnerWebView {
       }
     }
 
+    if let Some(auth_handler) = attributes.http_auth_handler.take() {
+      let webview_10: ICoreWebView2_10 = webview.cast()?;
+      unsafe {
+        webview_10.add_BasicAuthenticationRequested(
+          &BasicAuthenticationRequestedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let url = {
+              let mut uri = PWSTR::null();
+              args.Uri(&mut uri)?;
+              take_pwstr(uri)
+            };
+            let challenge = {
+              let mut text = PWSTR::null();
+              args.Challenge(&mut text)?;
+              take_pwstr(text)
+            };
+            let (host, secure) = host_of(&url);
+            // The answer may come later (the user types it): the request waits on a deferral.
+            let deferral = args.GetDeferral()?;
+            let responder = crate::HttpAuthResponder::new(move |credentials| {
+              match credentials {
+                Some((user, password)) => {
+                  if let Ok(response) = args.Response() {
+                    let _ = response.SetUserName(&HSTRING::from(user));
+                    let _ = response.SetPassword(&HSTRING::from(password));
+                  }
+                }
+                None => {
+                  let _ = args.SetCancel(true);
+                }
+              }
+              let _ = deferral.Complete();
+            });
+            auth_handler(
+              crate::HttpAuthChallenge {
+                url,
+                host,
+                challenge,
+                secure,
+                retry: false,
+              },
+              responder,
+            );
+            Ok(())
+          })),
+          &mut token,
+        )?;
+      }
+    }
+
+    if let Some(trust_handler) = attributes.server_trust_handler.take() {
+      let webview_14: ICoreWebView2_14 = webview.cast()?;
+      unsafe {
+        webview_14.add_ServerCertificateErrorDetected(
+          &ServerCertificateErrorDetectedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let url = {
+              let mut uri = PWSTR::null();
+              args.RequestUri(&mut uri)?;
+              take_pwstr(uri)
+            };
+            let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+            let _ = args.ErrorStatus(&mut status);
+            let mut challenge = crate::ServerTrustChallenge {
+              host: host_of(&url).0,
+              url,
+              error: status.0 as i64,
+              ..Default::default()
+            };
+            if let Ok(cert) = args.ServerCertificate() {
+              let text = |get: &dyn Fn(*mut PWSTR) -> windows::core::Result<()>| {
+                let mut value = PWSTR::null();
+                match get(&mut value) {
+                  Ok(()) => take_pwstr(value),
+                  Err(_) => String::new(),
+                }
+              };
+              challenge.issuer = text(&|v| cert.Issuer(v));
+              challenge.subject = text(&|v| cert.Subject(v));
+              let _ = cert.ValidFrom(&mut challenge.valid_from);
+              let _ = cert.ValidTo(&mut challenge.valid_to);
+            }
+            // Only a host the user chose to trust goes on; anything else is cancelled (the
+            // navigation then fails and the app shows its own page, not WebView2's).
+            let action = if trust_handler(challenge) {
+              COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION_ALWAYS_ALLOW
+            } else {
+              COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION_CANCEL
+            };
+            args.SetAction(action)?;
+            Ok(())
+          })),
+          &mut token,
+        )?;
+      }
+    }
+
     // Navigation
     if let Some(mut url) = attributes.url {
       if let Some((protocol, _)) = url.split_once("://") {
@@ -720,6 +817,7 @@ impl InnerWebView {
       }
 
       // Page load handler
+      let load_failure_handler = attributes.load_failure_handler.take();
       if let Some(on_page_load_handler) = attributes.on_page_load_handler.take() {
         let on_page_load_handler = Rc::new(on_page_load_handler);
         let on_page_load_handler_ = on_page_load_handler.clone();
@@ -744,14 +842,32 @@ impl InnerWebView {
 
             let mut success = BOOL::default();
             let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+            let mut http_status = 0;
             if let Some(args) = args {
               let _ = args.IsSuccess(&mut success);
               let _ = args.WebErrorStatus(&mut status);
+              if let Ok(args) = args.cast::<ICoreWebView2NavigationCompletedEventArgs2>() {
+                let _ = args.HttpStatusCode(&mut http_status);
+              }
             } else {
               success = true.into();
             }
-            // A cancelled navigation (superseded, or turned into a download) is not a failure.
-            let failed = !success.as_bool() && status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED;
+            // WebView2 reports any 4xx/5xx answer as unsuccessful, but the server did answer and
+            // its page is shown: only a navigation without an HTTP response is a failure. A
+            // cancelled one (superseded, or turned into a download) is not a failure either.
+            let failed = !success.as_bool()
+              && http_status == 0
+              && status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED
+              && status != COREWEBVIEW2_WEB_ERROR_STATUS_VALID_AUTHENTICATION_CREDENTIALS_REQUIRED;
+            if let (false, Some(report)) = (success.as_bool(), &load_failure_handler) {
+              let http = http_status > 0;
+              report(crate::LoadFailure {
+                url: Self::url_from_webview(&webview)?,
+                domain: if http { "http" } else { "webview2" }.to_owned(),
+                code: if http { http_status as i64 } else { status.0 as i64 },
+                http_status: u16::try_from(http_status).unwrap_or(0),
+              });
+            }
             let event = if failed { PageLoadEvent::Failed } else { PageLoadEvent::Finished };
             on_page_load_handler(event, Self::url_from_webview(&webview)?);
 
@@ -2040,4 +2156,19 @@ fn is_windows_7() -> bool {
   let v = windows_version::OsVersion::current();
   // windows 7 is 6.1
   v.major == 6 && v.minor == 1
+}
+
+/// Host of an absolute URL (without user info or port), and whether it is https.
+fn host_of(url: &str) -> (String, bool) {
+  let Some((scheme, rest)) = url.split_once("://") else {
+    return (String::new(), false);
+  };
+  let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+  let authority = authority.rsplit('@').next().unwrap_or_default();
+  let host = if let Some(v6) = authority.strip_prefix('[') {
+    v6.split(']').next().unwrap_or_default()
+  } else {
+    authority.split(':').next().unwrap_or_default()
+  };
+  (host.to_ascii_lowercase(), scheme.eq_ignore_ascii_case("https"))
 }

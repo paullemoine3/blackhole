@@ -1,6 +1,16 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.19",
+        &[
+            "Continue on another device: pair two computers once with a code (Settings > Devices), then send a tab to the other one from its menu or the command bar; only its address travels, encrypted, on the local network (a YouTube or Twitch video resumes where it was)",
+            "Right click on selected text: search it in a new tab with your search engine (Cmd/Ctrl+click or middle click: in the background), open it when it is a web address, or copy it",
+            "Sites protected by a password of the browser (a NAS, a router, Transmission's web interface) ask for the user name and password instead of showing \"Site injoignable\"; a 401, 403 or 404 page from a server is shown as the server sends it",
+            "Passwords (Settings > Passwords): saved logins encrypted on this device, offered on the login fields of the exact site (https) and filled only when you pick one; BlackHole offers to save a login after you sign in, with search, copy (cleared after 30 s), a generator, CSV import and an optional master password",
+            "Error pages in the style of \"Site injoignable\" for each case: sign-in required (401) and access denied (403) or server error (5xx) when the server sends no page, unsafe connection (expired, self-signed or mismatched certificate, wrong computer clock) with its details and \"Continue anyway (not secure)\" under Advanced, for that site until BlackHole quits (never for HSTS sites, then \"Non sécurisé\" in the address bar), a site without https, a tracker blocked by the Shields (with \"Allow this site\"), too many redirects, offline and unknown address",
+        ],
+    ),
+    (
         "0.7.18",
         &[
             "Locking a tab on a URL is gone: a quick access or folder tab simply comes back on the page you left it on",

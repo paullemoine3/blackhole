@@ -1,0 +1,5 @@
+{
+  "_comment": "Test-only credentials for the local HTTP authentication server of scripts/test-ui.ps1 (127.0.0.1). Not a real account.",
+  "user": "bh-test-user",
+  "password": "mGaR1eba4W6_k-5F5NG9ld4n"
+}

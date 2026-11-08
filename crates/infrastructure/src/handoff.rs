@@ -1,0 +1,1063 @@
+//! "Continue on another device" over the local network, without a server or an account.
+//!
+//! Pairing: one device shows a 60-bit code (see `blackhole_domain::handoff`), the user types it
+//! on the other. Both stretch it into a temporary key, exchange a random half each under it,
+//! and keep `SHA-256(code key, both halves)` as the key of the pair, sealed in `devices.bin`
+//! (same vault key as the passwords). The code itself is never stored nor sent.
+//!
+//! Afterwards every datagram is ChaCha20-Poly1305 sealed with the key of the pair and carries
+//! its sender, its time and an identifier (stale or replayed copies are dropped). Devices find
+//! each other with an encrypted hello broadcast on the local network, then talk directly.
+//! Nothing listens while no device is paired and no pairing is in progress: the port (and the
+//! firewall prompt of Windows and macOS) only comes with the first pairing.
+//!
+//! The network runs on a thread of its own; the app sends [`Request`]s and reads [`Event`]s.
+
+use crate::store::Vault;
+use blackhole_domain::handoff::{self, Seen};
+use chacha20poly1305::{
+    aead::{rand_core::RngCore, Aead, AeadCore, KeyInit, OsRng, Payload},
+    ChaCha20Poly1305, Key, Nonce,
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// The UDP port of BlackHole on the local network (both devices use the same).
+pub const PORT: u16 = 47_807;
+/// Encrypted list of the paired devices and their keys.
+const FILE: &str = "devices.bin";
+const MAGIC: &[u8; 3] = b"BH1";
+/// Second byte after the magic: sealed with the key of a pair, or with a pairing code.
+const PAIRED: u8 = 0;
+const PAIRING: u8 = 1;
+const MAX_PACKET: usize = 16 * 1024;
+const MAX_URL: usize = 8 * 1024;
+const MAX_TITLE: usize = 300;
+const MAX_NAME: usize = 64;
+/// Rounds of SHA-256 turning a pairing code into its key: guessing the 60-bit code from a
+/// recorded pairing costs as much again for every guess.
+const STRETCH: u32 = 100_000;
+/// How long a shown code stays valid, and how long the other device tries it.
+const SHOW_FOR: Duration = Duration::from_secs(5 * 60);
+const JOIN_FOR: Duration = Duration::from_secs(20);
+const JOIN_EVERY: Duration = Duration::from_secs(1);
+/// A tab is sent again until the other device confirms, this many times.
+const SEND_TRIES: u32 = 6;
+const SEND_EVERY: Duration = Duration::from_millis(600);
+const HELLO_EVERY: Duration = Duration::from_secs(30);
+/// A device not heard of for this long is shown as away.
+const ONLINE_FOR: Duration = Duration::from_secs(95);
+const TICK: Duration = Duration::from_millis(100);
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut out = [0; N];
+    OsRng.fill_bytes(&mut out);
+    out
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    if text.len() != 2 * N {
+        return None;
+    }
+    let mut out = [0; N];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+fn bounded(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+/// The key of a pairing code (the same on both devices).
+#[must_use]
+pub fn code_key(code: u64) -> [u8; 32] {
+    let seed = Sha256::new()
+        .chain_update(b"BlackHole pairing v1")
+        .chain_update(code.to_be_bytes())
+        .finalize();
+    let mut key: [u8; 32] = seed.into();
+    for _ in 0..STRETCH {
+        key = Sha256::new()
+            .chain_update(key)
+            .chain_update(code.to_be_bytes())
+            .finalize()
+            .into();
+    }
+    key
+}
+
+/// The key a pair keeps: both random halves under the code's key.
+fn pair_key(code: &[u8; 32], shower: &[u8; 32], joiner: &[u8; 32]) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(b"BlackHole device v1")
+        .chain_update(code)
+        .chain_update(shower)
+        .chain_update(joiner)
+        .finalize()
+        .into()
+}
+
+/// A paired device.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Device {
+    pub id: String,
+    pub name: String,
+    key: String,
+    #[serde(default)]
+    pub paired_at: i64,
+}
+
+impl Device {
+    fn key(&self) -> Option<[u8; 32]> {
+        unhex(&self.key)
+    }
+}
+
+/// What `devices.bin` holds: this device's identifier and the devices paired with it.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Book {
+    #[serde(default)]
+    me: String,
+    #[serde(default)]
+    devices: Vec<Device>,
+}
+
+pub struct DeviceStore(Vault);
+
+impl DeviceStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self(Vault::named(data, FILE))
+    }
+
+    #[cfg(test)]
+    fn with_key(data: &std::path::Path) -> Self {
+        Self(Vault::named_with_key(data, FILE, [9; 32]))
+    }
+
+    fn load(&self) -> Result<Book, String> {
+        self.0.read_json()
+    }
+
+    fn save(&self, book: &Book) -> Result<(), String> {
+        self.0.write_json(book)
+    }
+}
+
+/// What travels, sealed. `from` is the sender's identifier, `at` its clock (Unix seconds).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Envelope {
+    from: String,
+    at: i64,
+    #[serde(flatten)]
+    message: Message,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "snake_case")]
+enum Message {
+    /// "I am here" (and, with `reply`, "where are you?").
+    Hello {
+        reply: bool,
+    },
+    /// A tab to open: its address only, and the playback position of its video.
+    Tab {
+        id: u64,
+        url: String,
+        title: String,
+        #[serde(default)]
+        position: Option<f64>,
+    },
+    Ack {
+        id: u64,
+    },
+    /// The sender forgot this device: forget it too.
+    Unpair,
+    /// Pairing, sealed with the code's key: the device typing the code, then the one showing it.
+    Offer {
+        name: String,
+        half: String,
+    },
+    Accept {
+        name: String,
+        half: String,
+    },
+}
+
+fn seal(key: &[u8; 32], kind: u8, envelope: &Envelope) -> Vec<u8> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let header = [MAGIC[0], MAGIC[1], MAGIC[2], kind];
+    let plain = serde_json::to_vec(envelope).unwrap_or_default();
+    let mut packet = header.to_vec();
+    packet.extend_from_slice(&nonce);
+    if let Ok(sealed) = cipher.encrypt(
+        &nonce,
+        Payload {
+            msg: &plain,
+            aad: &header,
+        },
+    ) {
+        packet.extend(sealed);
+    }
+    packet
+}
+
+/// The kind of a packet (`PAIRED` or `PAIRING`), when it looks like one of ours.
+fn kind_of(packet: &[u8]) -> Option<u8> {
+    (packet.len() > 16 && packet[..3] == MAGIC[..]).then(|| packet[3])
+}
+
+fn open(key: &[u8; 32], packet: &[u8]) -> Option<Envelope> {
+    kind_of(packet)?;
+    let (header, rest) = packet.split_at(4);
+    let (nonce, sealed) = rest.split_at(12);
+    let plain = ChaCha20Poly1305::new(Key::from_slice(key))
+        .decrypt(
+            Nonce::from_slice(nonce),
+            Payload {
+                msg: sealed,
+                aad: header,
+            },
+        )
+        .ok()?;
+    serde_json::from_slice(&plain).ok()
+}
+
+/// Where the service listens and whom it talks to.
+pub struct Config {
+    pub store: DeviceStore,
+    /// This device's name, as the other one shows it ("Continue on …").
+    pub name: String,
+    pub bind: IpAddr,
+    pub port: u16,
+    pub peer_port: u16,
+    pub broadcast: IpAddr,
+}
+
+impl Config {
+    /// The local network: listen on every interface, broadcast to the whole subnet.
+    pub fn lan(data: &std::path::Path, name: &str) -> Self {
+        Self::on(
+            DeviceStore::new(data),
+            name,
+            Ipv4Addr::UNSPECIFIED.into(),
+            Ipv4Addr::BROADCAST.into(),
+        )
+    }
+
+    /// Only this machine (development builds: no firewall prompt, nothing leaves it).
+    pub fn loopback(data: &std::path::Path, name: &str) -> Self {
+        Self::on(
+            DeviceStore::new(data),
+            name,
+            Ipv4Addr::LOCALHOST.into(),
+            Ipv4Addr::LOCALHOST.into(),
+        )
+    }
+
+    fn on(store: DeviceStore, name: &str, bind: IpAddr, broadcast: IpAddr) -> Self {
+        Self {
+            store,
+            name: bounded(name, MAX_NAME),
+            bind,
+            port: PORT,
+            peer_port: PORT,
+            broadcast,
+        }
+    }
+}
+
+pub enum Request {
+    /// Shows a pairing code (and listens for the device that types it).
+    ShowCode,
+    /// The code shown by the other device.
+    Join(String),
+    CancelPairing,
+    Send {
+        device: String,
+        url: String,
+        title: String,
+        position: Option<f64>,
+    },
+    Forget(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub online: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    Devices(Vec<DeviceInfo>),
+    /// The code to show (`None` once the pairing is over).
+    Code(Option<String>),
+    Paired(String),
+    Received {
+        from: String,
+        url: String,
+        title: String,
+        position: Option<f64>,
+    },
+    Delivered(String),
+    /// Something to tell the user (an error, mostly).
+    Status(String),
+}
+
+/// The app's side of the service.
+pub struct Handle {
+    tx: Sender<Request>,
+    rx: Receiver<Event>,
+}
+
+impl Handle {
+    pub fn request(&self, request: Request) {
+        let _ = self.tx.send(request);
+    }
+
+    pub fn next_event(&self) -> Option<Event> {
+        self.rx.try_recv().ok()
+    }
+}
+
+/// Starts the service (its thread ends with the [`Handle`]).
+pub fn spawn(config: Config) -> Handle {
+    let (tx, requests) = channel();
+    let (events, rx) = channel();
+    std::thread::Builder::new()
+        .name("handoff".into())
+        .spawn(move || Worker::new(config, events).run(&requests))
+        .ok();
+    Handle { tx, rx }
+}
+
+enum Pairing {
+    Showing {
+        key: [u8; 32],
+        until: Instant,
+        /// Answers already given, by the other half: sent again if the offer comes again.
+        answered: Vec<(String, Vec<u8>)>,
+    },
+    Joining {
+        key: [u8; 32],
+        half: [u8; 32],
+        packet: Vec<u8>,
+        next: Instant,
+        until: Instant,
+    },
+}
+
+struct Outgoing {
+    id: u64,
+    device: String,
+    packet: Vec<u8>,
+    tries: u32,
+    next: Instant,
+}
+
+struct Worker {
+    store: DeviceStore,
+    name: String,
+    bind: IpAddr,
+    port: u16,
+    peer_port: u16,
+    broadcast: IpAddr,
+    book: Book,
+    socket: Option<UdpSocket>,
+    pairing: Option<Pairing>,
+    outgoing: Vec<Outgoing>,
+    seen: Seen,
+    /// Where each device was last heard from, and when.
+    heard: HashMap<String, (IpAddr, Instant)>,
+    hello_due: Instant,
+    /// After a failed bind, when to try again (the error is told once).
+    bind_retry: Option<Instant>,
+    shown: Option<Vec<DeviceInfo>>,
+    events: Sender<Event>,
+}
+
+impl Worker {
+    fn new(config: Config, events: Sender<Event>) -> Self {
+        Self {
+            store: config.store,
+            name: config.name,
+            bind: config.bind,
+            port: config.port,
+            peer_port: config.peer_port,
+            broadcast: config.broadcast,
+            book: Book::default(),
+            socket: None,
+            pairing: None,
+            outgoing: Vec::new(),
+            seen: Seen::default(),
+            heard: HashMap::new(),
+            hello_due: Instant::now(),
+            bind_retry: None,
+            shown: None,
+            events,
+        }
+    }
+
+    fn emit(&self, event: Event) {
+        let _ = self.events.send(event);
+    }
+
+    fn run(mut self, requests: &Receiver<Request>) {
+        match self.store.load() {
+            Ok(book) => self.book = book,
+            Err(why) => self.emit(Event::Status(why)),
+        }
+        self.devices_changed();
+        loop {
+            self.update_socket();
+            let request = if self.socket.is_some() {
+                match requests.try_recv() {
+                    Ok(r) => Some(r),
+                    Err(TryRecvError::Empty) => None,
+                    Err(TryRecvError::Disconnected) => return,
+                }
+            } else {
+                match requests.recv_timeout(Duration::from_secs(1)) {
+                    Ok(r) => Some(r),
+                    Err(RecvTimeoutError::Timeout) => None,
+                    Err(RecvTimeoutError::Disconnected) => return,
+                }
+            };
+            if let Some(request) = request {
+                self.handle(request);
+                continue;
+            }
+            if let Some(socket) = &self.socket {
+                let mut buf = vec![0; MAX_PACKET];
+                if let Ok((n, from)) = socket.recv_from(&mut buf) {
+                    buf.truncate(n);
+                    self.receive(&buf, from);
+                }
+            }
+            self.tick();
+        }
+    }
+
+    /// Opens the port when something needs it, closes it when nothing does any more.
+    fn update_socket(&mut self) {
+        let needed = !self.book.devices.is_empty() || self.pairing.is_some();
+        if !needed {
+            self.socket = None;
+            return;
+        }
+        if self.socket.is_some() || self.bind_retry.is_some_and(|at| Instant::now() < at) {
+            return;
+        }
+        // Another BlackHole window may own the port: it receives; this one can still send
+        // (the answers come back to its own port).
+        let socket =
+            UdpSocket::bind((self.bind, self.port)).or_else(|_| UdpSocket::bind((self.bind, 0)));
+        match socket {
+            Ok(socket) => {
+                let _ = socket.set_broadcast(true);
+                let _ = socket.set_read_timeout(Some(TICK));
+                self.socket = Some(socket);
+                self.bind_retry = None;
+                self.hello_due = Instant::now() + HELLO_EVERY;
+                self.hello(true);
+            }
+            Err(why) => {
+                if self.bind_retry.is_none() {
+                    self.emit(Event::Status(format!(
+                        "The local network is not available ({why})"
+                    )));
+                }
+                self.bind_retry = Some(Instant::now() + HELLO_EVERY);
+                self.pairing = None;
+            }
+        }
+    }
+
+    fn listening(&self) -> bool {
+        self.socket
+            .as_ref()
+            .and_then(|s| s.local_addr().ok())
+            .is_some_and(|a| a.port() == self.port)
+    }
+
+    fn send(&self, packet: &[u8], to: SocketAddr) {
+        if let Some(socket) = &self.socket {
+            let _ = socket.send_to(packet, to);
+        }
+    }
+
+    /// To where the device was last heard from, or to the whole network.
+    fn send_to_device(&self, packet: &[u8], device: &str) {
+        let ip = self.heard.get(device).map_or(self.broadcast, |(ip, _)| *ip);
+        self.send(packet, SocketAddr::new(ip, self.peer_port));
+    }
+
+    fn envelope(&self, message: Message) -> Envelope {
+        Envelope {
+            from: self.book.me.clone(),
+            at: now_secs(),
+            message,
+        }
+    }
+
+    fn hello(&self, reply: bool) {
+        for device in &self.book.devices {
+            if let Some(key) = device.key() {
+                let packet = seal(&key, PAIRED, &self.envelope(Message::Hello { reply }));
+                self.send(&packet, SocketAddr::new(self.broadcast, self.peer_port));
+            }
+        }
+    }
+
+    fn save(&mut self) {
+        if let Err(why) = self.store.save(&self.book) {
+            self.emit(Event::Status(why));
+        }
+    }
+
+    fn devices_changed(&mut self) {
+        let list: Vec<DeviceInfo> = self
+            .book
+            .devices
+            .iter()
+            .map(|d| DeviceInfo {
+                id: d.id.clone(),
+                name: d.name.clone(),
+                online: self
+                    .heard
+                    .get(&d.id)
+                    .is_some_and(|(_, at)| at.elapsed() < ONLINE_FOR),
+            })
+            .collect();
+        if self.shown.as_ref() != Some(&list) {
+            self.shown = Some(list.clone());
+            self.emit(Event::Devices(list));
+        }
+    }
+
+    fn remember(&mut self, id: &str, name: &str, key: [u8; 32]) {
+        self.book.devices.retain(|d| d.id != id);
+        self.book.devices.push(Device {
+            id: id.to_owned(),
+            name: bounded(name, MAX_NAME),
+            key: hex(&key),
+            paired_at: now_secs(),
+        });
+        self.save();
+        self.emit(Event::Paired(bounded(name, MAX_NAME)));
+        self.devices_changed();
+    }
+
+    fn handle(&mut self, request: Request) {
+        if self.book.me.is_empty() && matches!(request, Request::ShowCode | Request::Join(_)) {
+            self.book.me = hex(&random_bytes::<16>());
+        }
+        match request {
+            Request::ShowCode => {
+                let code = handoff::code_from_random(u64::from_le_bytes(random_bytes()));
+                self.pairing = Some(Pairing::Showing {
+                    key: code_key(code),
+                    until: Instant::now() + SHOW_FOR,
+                    answered: Vec::new(),
+                });
+                self.update_socket();
+                if self.pairing.is_none() {
+                    return;
+                }
+                if !self.listening() {
+                    self.pairing = None;
+                    self.emit(Event::Status(
+                        "Another BlackHole window handles the devices: show the code from it"
+                            .into(),
+                    ));
+                    return;
+                }
+                self.emit(Event::Code(Some(handoff::format_code(code))));
+            }
+            Request::Join(typed) => {
+                let Some(code) = handoff::parse_code(&typed) else {
+                    self.emit(Event::Status(
+                        "Type the 12 characters shown on the other device".into(),
+                    ));
+                    return;
+                };
+                let key = code_key(code);
+                let half = random_bytes::<32>();
+                let offer = Message::Offer {
+                    name: self.name.clone(),
+                    half: hex(&half),
+                };
+                let packet = seal(&key, PAIRING, &self.envelope(offer));
+                self.pairing = Some(Pairing::Joining {
+                    key,
+                    half,
+                    packet,
+                    next: Instant::now(),
+                    until: Instant::now() + JOIN_FOR,
+                });
+                self.emit(Event::Code(None));
+                self.emit(Event::Status("Looking for the other device…".into()));
+            }
+            Request::CancelPairing => {
+                self.pairing = None;
+                self.emit(Event::Code(None));
+            }
+            Request::Send {
+                device,
+                url,
+                title,
+                position,
+            } => {
+                let Some(target) = self.book.devices.iter().find(|d| d.id == device).cloned()
+                else {
+                    self.emit(Event::Status("This device is no longer paired".into()));
+                    return;
+                };
+                let can = url::Url::parse(&url).is_ok_and(|u| handoff::can_continue(&u));
+                let Some(key) = target.key().filter(|_| can && url.len() <= MAX_URL) else {
+                    self.emit(Event::Status(
+                        "Only web pages can continue on another device".into(),
+                    ));
+                    return;
+                };
+                let id = u64::from_le_bytes(random_bytes());
+                let tab = Message::Tab {
+                    id,
+                    url,
+                    title: bounded(&title, MAX_TITLE),
+                    position: position.filter(|p| p.is_finite() && *p >= 0.0),
+                };
+                let packet = seal(&key, PAIRED, &self.envelope(tab));
+                self.outgoing.push(Outgoing {
+                    id,
+                    device,
+                    packet,
+                    tries: 0,
+                    next: Instant::now(),
+                });
+            }
+            Request::Forget(id) => {
+                let Some(device) = self.book.devices.iter().find(|d| d.id == id).cloned() else {
+                    return;
+                };
+                if let Some(key) = device.key() {
+                    let packet = seal(&key, PAIRED, &self.envelope(Message::Unpair));
+                    self.send_to_device(&packet, &id);
+                }
+                self.forget(&id);
+            }
+        }
+    }
+
+    fn forget(&mut self, id: &str) {
+        self.book.devices.retain(|d| d.id != id);
+        self.outgoing.retain(|o| o.device != id);
+        self.heard.remove(id);
+        self.save();
+        self.devices_changed();
+    }
+
+    fn tick(&mut self) {
+        let now = Instant::now();
+        if now >= self.hello_due && !self.book.devices.is_empty() {
+            self.hello_due = now + HELLO_EVERY;
+            self.hello(false);
+        }
+        match &mut self.pairing {
+            Some(Pairing::Showing { until, .. }) if now >= *until => {
+                self.pairing = None;
+                self.emit(Event::Code(None));
+            }
+            Some(Pairing::Joining { until, .. }) if now >= *until => {
+                self.pairing = None;
+                self.emit(Event::Status(
+                    "No device answered: is the code still shown on the other device, on the same network?".into(),
+                ));
+            }
+            Some(Pairing::Joining { packet, next, .. }) if now >= *next => {
+                *next = now + JOIN_EVERY;
+                let packet = packet.clone();
+                self.send(&packet, SocketAddr::new(self.broadcast, self.peer_port));
+            }
+            _ => {}
+        }
+        let mut failed = Vec::new();
+        for i in 0..self.outgoing.len() {
+            if now < self.outgoing[i].next {
+                continue;
+            }
+            if self.outgoing[i].tries == SEND_TRIES {
+                failed.push(i);
+                continue;
+            }
+            self.outgoing[i].tries += 1;
+            self.outgoing[i].next = now + SEND_EVERY;
+            self.send_to_device(&self.outgoing[i].packet, &self.outgoing[i].device);
+        }
+        for i in failed.into_iter().rev() {
+            let gone = self.outgoing.remove(i);
+            let name = self.name_of(&gone.device);
+            self.emit(Event::Status(format!(
+                "{name} did not answer: is BlackHole open on it, on the same network?"
+            )));
+        }
+        self.devices_changed();
+    }
+
+    fn name_of(&self, id: &str) -> String {
+        self.book
+            .devices
+            .iter()
+            .find(|d| d.id == id)
+            .map_or_else(|| "The other device".to_owned(), |d| d.name.clone())
+    }
+
+    fn receive(&mut self, packet: &[u8], from: SocketAddr) {
+        match kind_of(packet) {
+            Some(PAIRING) => self.receive_pairing(packet, from),
+            Some(PAIRED) => self.receive_paired(packet, from),
+            _ => {}
+        }
+    }
+
+    fn receive_pairing(&mut self, packet: &[u8], from: SocketAddr) {
+        let me = self.book.me.clone();
+        let fresh = |e: &Envelope| e.from != me && handoff::is_fresh(e.at, now_secs());
+        match &mut self.pairing {
+            Some(Pairing::Showing {
+                key,
+                until,
+                answered,
+            }) => {
+                let key = *key;
+                let Some(envelope) = open(&key, packet).filter(fresh) else {
+                    return;
+                };
+                let Message::Offer { name, half } = envelope.message else {
+                    return;
+                };
+                if let Some((_, reply)) = answered.iter().find(|(h, _)| *h == half) {
+                    let reply = reply.clone();
+                    self.send(&reply, from);
+                    return;
+                }
+                let Some(theirs) = unhex::<32>(&half) else {
+                    return;
+                };
+                let mine = random_bytes::<32>();
+                let accept = Message::Accept {
+                    name: self.name.clone(),
+                    half: hex(&mine),
+                };
+                let reply = seal(
+                    &key,
+                    PAIRING,
+                    &Envelope {
+                        from: me,
+                        at: now_secs(),
+                        message: accept,
+                    },
+                );
+                // Kept a little longer to answer the offer again if this answer is lost.
+                *until = (*until).min(Instant::now() + JOIN_FOR);
+                answered.push((half, reply.clone()));
+                self.send(&reply, from);
+                self.heard
+                    .insert(envelope.from.clone(), (from.ip(), Instant::now()));
+                self.remember(&envelope.from, &name, pair_key(&key, &mine, &theirs));
+                self.emit(Event::Code(None));
+            }
+            Some(Pairing::Joining { key, half, .. }) => {
+                let (key, half) = (*key, *half);
+                let Some(envelope) = open(&key, packet).filter(fresh) else {
+                    return;
+                };
+                let Message::Accept { name, half: theirs } = envelope.message else {
+                    return;
+                };
+                let Some(theirs) = unhex::<32>(&theirs) else {
+                    return;
+                };
+                self.pairing = None;
+                self.heard
+                    .insert(envelope.from.clone(), (from.ip(), Instant::now()));
+                self.remember(&envelope.from, &name, pair_key(&key, &theirs, &half));
+            }
+            None => {}
+        }
+    }
+
+    fn receive_paired(&mut self, packet: &[u8], from: SocketAddr) {
+        let Some((device, envelope)) = self.book.devices.iter().find_map(|d| {
+            let envelope = open(&d.key()?, packet)?;
+            (envelope.from == d.id).then(|| (d.clone(), envelope))
+        }) else {
+            return;
+        };
+        if !handoff::is_fresh(envelope.at, now_secs()) {
+            return;
+        }
+        self.heard
+            .insert(device.id.clone(), (from.ip(), Instant::now()));
+        let Some(key) = device.key() else { return };
+        match envelope.message {
+            Message::Hello { reply } => {
+                if reply {
+                    let packet = seal(
+                        &key,
+                        PAIRED,
+                        &self.envelope(Message::Hello { reply: false }),
+                    );
+                    self.send(&packet, SocketAddr::new(from.ip(), self.peer_port));
+                }
+            }
+            Message::Tab {
+                id,
+                url,
+                title,
+                position,
+            } => {
+                let ack = seal(&key, PAIRED, &self.envelope(Message::Ack { id }));
+                self.send(&ack, from);
+                let valid = url.len() <= MAX_URL
+                    && url::Url::parse(&url).is_ok_and(|u| handoff::can_continue(&u));
+                if valid && self.seen.first_time(id) {
+                    self.emit(Event::Received {
+                        from: device.name.clone(),
+                        url,
+                        title: bounded(&title, MAX_TITLE),
+                        position: position.filter(|p| p.is_finite() && *p >= 0.0),
+                    });
+                }
+            }
+            Message::Ack { id } => {
+                let before = self.outgoing.len();
+                self.outgoing
+                    .retain(|o| !(o.id == id && o.device == device.id));
+                if self.outgoing.len() < before {
+                    self.emit(Event::Delivered(device.name.clone()));
+                }
+            }
+            Message::Unpair => self.forget(&device.id),
+            Message::Offer { .. } | Message::Accept { .. } => {}
+        }
+        self.devices_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn envelope(message: Message) -> Envelope {
+        Envelope {
+            from: "a".into(),
+            at: 100,
+            message,
+        }
+    }
+
+    #[test]
+    fn a_sealed_packet_opens_only_with_its_key_and_untouched() {
+        let tab = envelope(Message::Tab {
+            id: 7,
+            url: "https://example.com/".into(),
+            title: "Example".into(),
+            position: Some(12.5),
+        });
+        let packet = seal(&[1; 32], PAIRED, &tab);
+        assert_eq!(kind_of(&packet), Some(PAIRED));
+        assert_eq!(open(&[1; 32], &packet), Some(tab));
+        assert_eq!(open(&[2; 32], &packet), None, "another pair's key");
+        let mut tampered = packet.clone();
+        *tampered.last_mut().unwrap() ^= 1;
+        assert_eq!(open(&[1; 32], &tampered), None);
+        let mut relabelled = packet.clone();
+        relabelled[3] = PAIRING;
+        assert_eq!(
+            open(&[1; 32], &relabelled),
+            None,
+            "the header is authenticated"
+        );
+        assert!(!String::from_utf8_lossy(&packet).contains("example.com"));
+        assert_eq!(kind_of(b"hello"), None);
+    }
+
+    #[test]
+    fn both_ends_derive_the_same_keys_from_the_code() {
+        let code = handoff::parse_code("ABCD-EFGH-JKMN").unwrap();
+        assert_eq!(code_key(code), code_key(code));
+        assert_ne!(code_key(code), code_key(code + 1));
+        let (s, j) = ([3; 32], [4; 32]);
+        assert_eq!(
+            pair_key(&code_key(code), &s, &j),
+            pair_key(&code_key(code), &s, &j)
+        );
+        assert_ne!(
+            pair_key(&code_key(code), &s, &j),
+            pair_key(&code_key(code), &j, &s)
+        );
+        assert_eq!(unhex::<2>(&hex(&[0xab, 0x01])), Some([0xab, 0x01]));
+        assert_eq!(unhex::<2>("zz00"), None);
+    }
+
+    #[test]
+    fn the_message_format_is_stable() {
+        let json = serde_json::to_string(&envelope(Message::Ack { id: 3 })).unwrap();
+        assert_eq!(json, r#"{"from":"a","at":100,"t":"ack","id":3}"#);
+        let old: Envelope = serde_json::from_str(
+            r#"{"from":"a","at":1,"t":"tab","id":1,"url":"https://a.test/","title":""}"#,
+        )
+        .unwrap();
+        assert!(matches!(old.message, Message::Tab { position: None, .. }));
+    }
+
+    #[test]
+    fn the_paired_devices_are_stored_encrypted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeviceStore::with_key(dir.path());
+        assert!(store.load().unwrap().devices.is_empty());
+        let book = Book {
+            me: "me".into(),
+            devices: vec![Device {
+                id: "d".into(),
+                name: "Laptop".into(),
+                key: hex(&[5; 32]),
+                paired_at: 1,
+            }],
+        };
+        store.save(&book).unwrap();
+        let raw = std::fs::read(dir.path().join(FILE)).unwrap();
+        assert!(!String::from_utf8_lossy(&raw).contains("Laptop"));
+        assert_eq!(store.load().unwrap().devices, book.devices);
+        assert_eq!(store.load().unwrap().devices[0].key(), Some([5; 32]));
+    }
+
+    fn free_port() -> u16 {
+        UdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    fn service(dir: &std::path::Path, name: &str, port: u16, peer_port: u16) -> Handle {
+        let mut config = Config::on(
+            DeviceStore::with_key(dir),
+            name,
+            Ipv4Addr::LOCALHOST.into(),
+            Ipv4Addr::LOCALHOST.into(),
+        );
+        config.port = port;
+        config.peer_port = peer_port;
+        spawn(config)
+    }
+
+    fn wait_for(handle: &Handle, mut wanted: impl FnMut(&Event) -> bool) -> Event {
+        let until = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < until {
+            match handle.rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(event) if wanted(&event) => return event,
+                _ => {}
+            }
+        }
+        panic!("event not received");
+    }
+
+    #[test]
+    fn two_devices_pair_send_a_tab_and_forget_each_other() {
+        let (da, db) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (pa, pb) = (free_port(), free_port());
+        let a = service(da.path(), "Desk", pa, pb);
+        let b = service(db.path(), "Laptop", pb, pa);
+        assert!(
+            matches!(wait_for(&a, |e| matches!(e, Event::Devices(_))), Event::Devices(l) if l.is_empty())
+        );
+
+        a.request(Request::Join("0000-0000-000".into()));
+        assert!(
+            matches!(wait_for(&a, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("12 characters"))
+        );
+
+        a.request(Request::ShowCode);
+        let Event::Code(Some(code)) = wait_for(&a, |e| matches!(e, Event::Code(Some(_)))) else {
+            unreachable!()
+        };
+        b.request(Request::Join(code.to_lowercase()));
+        assert_eq!(
+            wait_for(&a, |e| matches!(e, Event::Paired(_))),
+            Event::Paired("Laptop".into())
+        );
+        assert_eq!(
+            wait_for(&b, |e| matches!(e, Event::Paired(_))),
+            Event::Paired("Desk".into())
+        );
+        let Event::Devices(list) =
+            wait_for(&b, |e| matches!(e, Event::Devices(l) if !l.is_empty()))
+        else {
+            unreachable!()
+        };
+        assert_eq!(list[0].name, "Desk");
+
+        b.request(Request::Send {
+            device: list[0].id.clone(),
+            url: "https://www.youtube.com/watch?v=abc".into(),
+            title: "A video".into(),
+            position: Some(42.0),
+        });
+        assert_eq!(
+            wait_for(&a, |e| matches!(e, Event::Received { .. })),
+            Event::Received {
+                from: "Laptop".into(),
+                url: "https://www.youtube.com/watch?v=abc".into(),
+                title: "A video".into(),
+                position: Some(42.0),
+            }
+        );
+        assert_eq!(
+            wait_for(&b, |e| matches!(e, Event::Delivered(_))),
+            Event::Delivered("Desk".into())
+        );
+
+        b.request(Request::Send {
+            device: list[0].id.clone(),
+            url: "file:///etc/passwd".into(),
+            title: String::new(),
+            position: None,
+        });
+        assert!(
+            matches!(wait_for(&b, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("Only web pages"))
+        );
+
+        b.request(Request::Forget(list[0].id.clone()));
+        wait_for(&a, |e| matches!(e, Event::Devices(l) if l.is_empty()));
+        assert!(DeviceStore::with_key(da.path())
+            .load()
+            .unwrap()
+            .devices
+            .is_empty());
+        assert!(DeviceStore::with_key(db.path())
+            .load()
+            .unwrap()
+            .devices
+            .is_empty());
+    }
+}

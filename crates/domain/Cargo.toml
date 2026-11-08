@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 url.workspace = true
+zeroize = "1.8"
 
 [lints]
 workspace = true

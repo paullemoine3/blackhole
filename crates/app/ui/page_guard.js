@@ -162,17 +162,34 @@
     },
     true,
   );
-  // Right click on a link: the browser's own menu (new tab, new window…). Shift+right click, or
-  // a selection, keeps the engine's menu (copy, inspect).
+  // The selected text under the pointer (the shell bounds and cleans it again).
+  const selectionAt = (e) => {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed) return '';
+    for (let i = 0; i < sel.rangeCount; i++) {
+      for (const r of sel.getRangeAt(i).getClientRects()) {
+        if (e.clientX >= r.left - 2 && e.clientX <= r.right + 2 && e.clientY >= r.top - 2 && e.clientY <= r.bottom + 2) {
+          return String(sel).slice(0, 1000);
+        }
+      }
+    }
+    return '';
+  };
+  const editable = (e) =>
+    e.composedPath().some((n) => n && (n.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName)));
+  // Right click on a link, or on selected text: the browser's own menu (new tab, new window…,
+  // search the selection). Shift+right click, a text field (paste, spelling) and frames keep
+  // the engine's menu.
   addEventListener(
     'contextmenu',
     (e) => {
-      if (e.shiftKey || String(getSelection())) return;
+      if (e.shiftKey || editable(e)) return;
       const link = linkAt(e);
-      if (!link) return;
+      const text = selectionAt(e);
+      if (!link && !text.trim()) return;
       e.preventDefault();
       e.stopPropagation();
-      post({ cmd: 'link_menu', url: link.href, x: e.clientX, y: e.clientY });
+      post({ cmd: 'link_menu', url: link ? link.href : '', text, x: e.clientX, y: e.clientY });
     },
     true,
   );

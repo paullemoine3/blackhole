@@ -19,6 +19,9 @@ winit = "0.30"
 tracing = "0.1"
 rfd = "0.17.2"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+# Copying a saved password: written by the shell and wiped 30 s later (never through a page).
+arboard = { version = "3.4", default-features = false }
+zeroize = "1.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.21"

@@ -125,7 +125,7 @@ pub enum UiCommand {
     },
     /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
     UndoRemoval,
-    /// Link menu: `target` is "tab" (background), "window" or "private".
+    /// Link menu: `target` is "tab" (background), "front" (new tab shown), "window" or "private".
     OpenLink {
         url: String,
         target: String,
@@ -173,6 +173,20 @@ pub enum UiCommand {
     SetShield {
         name: String,
         on: bool,
+    },
+    /// Settings > Devices: shows a pairing code, or pairs with the code of the other device.
+    DeviceShowCode,
+    DeviceJoin {
+        code: String,
+    },
+    DeviceCancelPairing,
+    DeviceForget {
+        id: String,
+    },
+    /// Tab menu and command bar: opens the tab on a paired device.
+    ContinueOn {
+        id: u64,
+        device: String,
     },
     /// Link menu: previews the link in a floating window (Peek).
     OpenPeek {
@@ -239,6 +253,22 @@ pub enum UiCommand {
     },
     PaletteReady,
     PaletteClose,
+    /// The sign-in prompt of an HTTP authentication (palette): credentials for the server.
+    /// Never logged, never stored: they go straight to the engine.
+    AuthAnswer {
+        id: u64,
+        user: String,
+        password: String,
+    },
+    AuthCancel {
+        id: u64,
+    },
+    /// From the shell's own menu on an error page: go on despite the certificate, open the
+    /// http version, or let the blocked site through, for this run of the app only. Honoured
+    /// only for the error page the shell shows in that tab (never sent by a web page).
+    ErrorProceed {
+        tab: u64,
+    },
     Action {
         id: String,
     },
@@ -264,6 +294,10 @@ pub enum UiCommand {
     Back,
     Forward,
     Reload,
+    /// Settings › Passwords and the save toast (see `passwords::PasswordAction`).
+    Passwords {
+        action: crate::passwords::PasswordAction,
+    },
     OpenSettings {
         /// Section to show (`privacy`, `extensions`…).
         #[serde(default)]
@@ -520,17 +554,52 @@ pub enum PageEvent {
     OpenLink {
         url: String,
     },
-    /// Right click on a link: the shell shows its link menu at (x, y) in the page.
+    /// Right click on a link or on selected text: the shell shows its menu at (x, y) in the
+    /// page. `url` is empty off a link; `text` (untrusted, bounded by `clean_selection`) is the
+    /// selection under the pointer.
     LinkMenu {
+        #[serde(default)]
         url: String,
+        #[serde(default)]
+        text: String,
         x: f64,
         y: f64,
     },
-    /// A login field got focus: ask for the saved usernames of this site.
-    AutofillQuery,
-    /// The user picked the `index`-th suggestion from the last `AutofillQuery`.
+    /// A login field got focus: ask for the saved usernames of this origin (re-read from the
+    /// engine). `fresh`: a new-password field (sign-up, change of password).
+    AutofillQuery {
+        #[serde(default)]
+        fresh: bool,
+    },
+    /// The user picked the `index`-th suggestion from the last `AutofillQuery`. `token`: the
+    /// one-time value the shell put in that menu (a page script posting this itself lacks it).
     AutofillFill {
         index: usize,
+        #[serde(default)]
+        token: String,
+    },
+    /// "Unlock saved passwords…" was clicked in the menu (only after a locked query).
+    AutofillUnlock {
+        #[serde(default)]
+        token: String,
+    },
+    /// "Use a strong password" was clicked (only after a `fresh` query).
+    AutofillGenerate {
+        #[serde(default)]
+        token: String,
+    },
+    /// A login form was submitted. The page already knows these credentials; the shell only
+    /// offers to save them, and the password is wiped when the event is dropped.
+    LoginSubmitted {
+        #[serde(default)]
+        username: String,
+        password: crate::passwords::Secret,
+    },
+    /// The risky button of BlackHole's error page: the shell opens its own menu at (x, y) to
+    /// ask. Acted on only while that tab shows the error page; it grants nothing by itself.
+    ErrorMenu {
+        x: f64,
+        y: f64,
     },
     /// A video left Picture in Picture (untrusted: only acted on for a tab the shell floated).
     PipLeft {},
@@ -554,6 +623,16 @@ pub enum Msg {
     Loaded(TabId, Url),
     /// The page could not be reached: the tab shows the error page.
     Failed(TabId, Url),
+    /// Why a navigation failed (before `Failed`), or its HTTP error status (before `Loaded`).
+    LoadFailure(TabId, wry::LoadFailure),
+    /// A certificate the engine refused (details for the error page).
+    ServerTrust(TabId, wry::ServerTrustChallenge),
+    /// The http address the shell upgraded to https in this tab.
+    Upgraded(TabId, Url),
+    /// The tab itself was sent to a blocked tracker or ad server.
+    BlockedPage(TabId, Url, &'static str),
+    /// The server asks for a user name and password (HTTP Basic or Digest).
+    Auth(TabId, wry::HttpAuthChallenge, wry::HttpAuthResponder),
     Title(TabId, String),
     /// A page asked for a new window (`target=_blank`, `window.open`).
     OpenTab(Url),
@@ -742,6 +821,12 @@ mod tests {
             serde_json::from_str(r#"{"cmd":"link_menu","url":"https://a.test/","x":3,"y":4}"#)
                 .unwrap();
         assert!(matches!(menu, PageEvent::LinkMenu { x, .. } if x == 3.0));
+        let selected: PageEvent =
+            serde_json::from_str(r#"{"cmd":"link_menu","text":"black hole","x":3,"y":4}"#)
+                .unwrap();
+        assert!(
+            matches!(selected, PageEvent::LinkMenu { url, text, .. } if url.is_empty() && text == "black hole")
+        );
         // Opening a window or picking the Easel is for the shell's own pages only: from a page,
         // `target` does not exist (the event only opens a background tab).
         let window = r#"{"cmd":"open_link","url":"https://a.test/","target":"window"}"#;
@@ -763,6 +848,11 @@ mod tests {
             r#"{"cmd":"live_capture_to","easel":null}"#,
             r#"{"cmd":"live_capture_to","easel":4}"#,
             r#"{"cmd":"open_peek","url":"https://a.test/"}"#,
+            r#"{"cmd":"device_show_code"}"#,
+            r#"{"cmd":"device_join","code":"ABCD-EFGH-JKMN"}"#,
+            r#"{"cmd":"device_cancel_pairing"}"#,
+            r#"{"cmd":"device_forget","id":"ab12"}"#,
+            r#"{"cmd":"continue_on","id":3,"device":"ab12"}"#,
         ] {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
             assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
@@ -817,5 +907,29 @@ mod tests {
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"install_catalog","id":"x"}"#).is_err()
         );
+    }
+
+    #[test]
+    fn password_events_parse_and_pages_cannot_drive_the_wallet() {
+        use crate::passwords::PasswordAction;
+        // Older pages send the query without `fresh`.
+        assert!(matches!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"autofill_query"}"#),
+            Ok(PageEvent::AutofillQuery { fresh: false })
+        ));
+        let submitted = r#"{"cmd":"login_submitted","username":"u","password":"pw-test"}"#;
+        assert!(matches!(
+            serde_json::from_str::<PageEvent>(submitted),
+            Ok(PageEvent::LoginSubmitted { password, .. }) if password.as_str() == "pw-test"
+        ));
+        let reveal = r#"{"cmd":"passwords","action":{"op":"reveal","id":"a"}}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(reveal),
+            Ok(UiCommand::Passwords { action: PasswordAction::Reveal { id } }) if id == "a"
+        ));
+        assert!(serde_json::from_str::<PageEvent>(reveal).is_err());
+        let unlock = r#"{"cmd":"passwords","action":{"op":"unlock","password":"pw-test"}}"#;
+        assert!(serde_json::from_str::<UiCommand>(unlock).is_ok());
+        assert!(serde_json::from_str::<PageEvent>(unlock).is_err());
     }
 }

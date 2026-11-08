@@ -280,6 +280,19 @@ impl Vault {
         self.load().map_or(0, |l| l.len())
     }
 
+    #[must_use]
+    pub fn exists(&self) -> bool {
+        self.path.exists()
+    }
+
+    /// Deletes the file (its logins moved to the password wallet, see `wallet::open_at_start`).
+    pub fn remove(&self) -> Result<(), String> {
+        match fs::remove_file(&self.path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        }
+    }
+
     /// Logins saved for the site `host` (see [`same_site`]), for autofill.
     pub fn for_host(&self, host: &str) -> Result<Vec<Login>, String> {
         Ok(self

@@ -146,9 +146,15 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 
 - `page_guard.js` (cadre principal) : clic molette / Ctrl-⌘+clic sur un lien → `open_link`
   (onglet en arrière-plan, `open_in_background`) ; clic droit sur un lien → `link_menu` (notre
-  menu : nouvel onglet, nouvelle fenêtre, fenêtre privée, Peek, copier). Maj+clic droit ou une
-  sélection gardent le menu du moteur. Une page ne peut pas ouvrir de fenêtre elle-même : seule
-  la commande d'interface `open_link` a un `target`.
+  menu : nouvel onglet, nouvelle fenêtre, fenêtre privée, Peek, copier). Maj+clic droit, un champ
+  de saisie et les iframes gardent le menu du moteur. Une page ne peut pas ouvrir de fenêtre
+  elle-même : seule la commande d'interface `open_link` a un `target`.
+- Recherche sur la sélection (0.7.19) : clic droit sur du texte sélectionné → `link_menu` avec
+  `text` (non fiable) ; `domain::selection` (`clean_selection` : 500 caractères, espaces
+  normalisés, caractères invisibles retirés ; `selection_action` : adresse http(s) via
+  `omnibox::web_address` ou recherche avec le moteur des Réglages ; `excerpt`). Entrée
+  `open_link` `target: "front"`, et `background` (Ctrl/⌘+clic, clic molette dans `palette.html`)
+  → `target: "tab"`. Sur un lien, les entrées du lien suivent.
 - Boucliers : `PrivacyPolicy::with_ads` (traqueurs `blocklist.txt` + pubs `adlist.txt`, chacun
   son interrupteur) et `Shields` (masquer les pubs, sauter les pubs YouTube, masquer les bandeaux
   cookies) appliqués par `ui/shields.js` à la création de la page ; réglages dans `Settings`
@@ -181,17 +187,79 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   insérées par `textContent` uniquement).
 - `ureq` utilise les certificats du système (`native-certs`) : nécessaire derrière un antivirus
   qui inspecte le HTTPS ; les téléchargements gardent leur vérification SHA-256.
+- Continuer sur l'autre appareil : règles pures dans `domain/handoff.rs` (code d'appairage 60 bits
+  Crockford, `resume_url` pour la position YouTube/Twitch, `is_fresh`, `Seen`) ; réseau dans
+  `infrastructure/handoff.rs` (thread, UDP `PORT` 47807, ChaCha20-Poly1305, clé de paire dérivée du
+  code étiré et de deux moitiés aléatoires, `devices.bin` via `Vault::named`). Aucun port ouvert sans
+  appareil appairé ni appairage en cours ; réseau local seulement, sans serveur ; seule l'adresse
+  (et la position vidéo) voyage, jamais cookies ni session. App : `handoff.rs` (`Nearby`, désactivé
+  en fenêtre privée, `Config::loopback` en build `devtools`), Réglages > Devices, « Continue on … »
+  dans le menu d'onglet et la palette. macOS : `NSLocalNetworkUsageDescription` dans
+  `package-macos.sh`. Échange Windows ↔ Mac non testé.
 - `test-easel.ps1` : un `eval` qui ne fait que piloter l'interface renvoie `__skip…` et n'est pas
   compté dans les indices des `Check`.
 
 ## Pages d'erreur et User-Agent
 
-- Page « Site injoignable » (`ui/unreachable.html`) : affichée via `PageLoadEvent::Failed`
-  (vendor/wry, WebView2 non testé) ou après `CONNECT_MAX` (20 s) sans démarrage de
-  chargement ; test macOS `scripts/test-unreachable.sh`.
+- Pages d'erreur (0.7.19) : un gabarit `ui/error.html` (style sci-fi, une variante par `kind` :
+  unreachable, offline, not_found, redirects, certificate, clock, http_only, unauthorized, forbidden,
+  server, blocked), rempli par `views::error_page(&json)` (données du site par `textContent`, `<`
+  échappé). Classement pur dans `domain/error_page.rs` (`classify` des codes WebView2 / `NSError`,
+  `classify_status`, `is_bare_error_body`, `hsts_preloaded`, `Bypasses`). App `errors.rs` :
+  `Msg::LoadFailure` (wry `with_load_failure_handler`, avant `Failed`/`Finished`) → `on_failed` ;
+  401/403/5xx seulement si le corps est vide ou une ligne de statut sans titre (sonde JS après
+  `Loaded`) ; `CONNECT_MAX` (20 s) → « injoignable » ; https auto (`Msg::Upgraded`) en échec →
+  `http_only` ; traqueur ouvert comme page (`wry::navigating_main_frame`) → `blocked`.
+- Contournement (certificat, http, Shields) : le bouton de la page n'envoie que `PageEvent::ErrorMenu`
+  (ouvre le menu du shell, seulement si l'onglet affiche notre page) ; seule l'entrée du menu
+  (`UiCommand::ErrorProceed`) accorde l'exception, pour l'hôte et jusqu'à la fermeture (mémoire,
+  jamais sur disque), refusée pour un hôte HSTS préchargé (liste partielle, aucun moteur n'expose la
+  sienne). Certificat : wry `with_server_trust_handler` (WebView2 `ServerCertificateErrorDetected`,
+  `AlwaysAllow` seulement pour un hôte accepté, sinon `Cancel` ; WKWebView `ServerTrust` →
+  `credentialForTrust` pour un hôte accepté, sinon traitement par défaut). « Non sécurisé » dans la
+  barre et le rapport de confidentialité (`errors::insecure`). Test : fin de `test-ui.ps1` (`eval`
+  « errN: » hors indices, serveurs locaux 18418 et 18419 auto-signé, étape harnais `errpage KIND`).
+  macOS : compilation croisée seulement ; détails du certificat (émetteur, dates) absents sur macOS.
+- Un statut HTTP (401, 403, 404, 5xx) n'est jamais « injoignable » : WebView2 marque ces réponses
+  `IsSuccess=false`, wry ne renvoie `Failed` que sans réponse HTTP (`HttpStatusCode == 0`).
+- Authentification HTTP (Basic/Digest, ex. NAS Transmission) : `with_http_auth_handler` de wry
+  (WebView2 `BasicAuthenticationRequested` avec report ; WKWebView `didReceiveAuthenticationChallenge`,
+  identifiants `ForSession`, autres défis en traitement par défaut) → `Msg::Auth` → invite de la palette
+  (mode `auth`, `UiCommand::AuthAnswer/AuthCancel`). Règles dans `domain/http_auth.rs` (realm, file,
+  onglet affiché seulement, réponse commune au même realm, nouvel essai). Identifiants jamais stockés
+  ni journalisés ; fermer la palette annule (page 401 du serveur). Peek et vues cachées annulent.
+  Test : fin de `test-ui.ps1` (serveur local 401, `scripts/fixtures/http-auth.json`, `eval` « authN: »
+  hors indices). Comportement macOS non testé.
 - User-Agent macOS : `views::user_agent_for` choisit l'UA à chaque navigation principale
   via `wry::USER_AGENT_RESOLVER` (UA Safari forcé pour Meet, UA WebKit par défaut pour
   `docs.google.com` : le token Safari rend Docs flou). Windows non concerné.
+
+## Mots de passe (0.7.19)
+
+- Règles pures dans `domain/passwords.rs` : `Entry` (id stable, `modified` en ms, `device`,
+  pierre tombale `deleted` aux secrets effacés, purge après 90 j), `origin_of` (origine exacte,
+  https ou localhost seulement), `offer` (Save / Update / Nothing, liste « Never »), `merge`
+  (dernière modification par id, appareil en départage), `generate`, `http_auth_candidates`
+  (point d'accroche pour l'invite d'authentification HTTP, non branché). `Drop` remet à zéro le
+  mot de passe et les notes ; `Debug` ne les affiche jamais.
+- Fichier `passwords.bin` (`infrastructure/wallet.rs`), séparé de `vault.bin` : contenu
+  XChaCha20-Poly1305 sous une clé de données aléatoire, en-tête (format, appareil, KDF, clé
+  enveloppée) authentifié. Clé enveloppée par un secret du trousseau (`keyring` « passwords-key » :
+  Credential Manager / Keychain) ou par Argon2id (64 Mio, 3 passes) d'un mot de passe maître.
+  `open_at_start` migre `vault.bin` au premier lancement puis le supprime. Fichier JSON écrit par
+  `write_later`.
+- App `passwords.rs` : `autofill.js` (cadre principal) ne reçoit que les identifiants ; le shell
+  relit l'origine sur le moteur (`page_origin`) et ne remplit que sur un message portant le jeton
+  à usage unique du dernier menu (une page qui poste `autofill_fill` elle-même n'obtient rien).
+  `autofill.js` capture `Reflect.apply`, `JSON.stringify`, `addEventListener` et le pont natif
+  (`chrome.webview` / `webkit.messageHandlers.ipc`) avant les scripts de la page. Soumission →
+  `login_submitted` (`Secret` remis à zéro, jamais journalisé) → toast Save/Update + Never
+  (`bh.toast` accepte une liste de boutons). Réglages > Passwords : liste sans secrets, un mot de
+  passe envoyé à la page des Réglages seulement sur Show/Edit, copie par `arboard` (exclue de
+  l'historique, effacée après 30 s), générateur, mot de passe maître, verrouillage
+  (`Settings::password_lock_minutes`). Fenêtre privée : lecture seule. Import CSV → portefeuille.
+- Test : fin de `test-ui.ps1` (`eval` « pwN: » hors indices, mots de passe de test générés).
+  Trousseau macOS (Keychain) et `arboard` macOS vérifiés par compilation croisée seulement.
 
 ## Livraison et entretien
 

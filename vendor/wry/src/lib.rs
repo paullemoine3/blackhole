@@ -456,6 +456,93 @@ impl RequestAsyncResponder {
   }
 }
 
+/// Why a navigation of the main frame failed, or the HTTP error status it got. See
+/// [`WebViewBuilder::with_load_failure_handler`].
+#[derive(Debug, Clone)]
+pub struct LoadFailure {
+  pub url: String,
+  /// `"webview2"` (code: `COREWEBVIEW2_WEB_ERROR_STATUS`), an `NSError` domain on Apple
+  /// platforms, or `"http"` for an answer with an error status (code: the status).
+  pub domain: String,
+  pub code: i64,
+  /// The HTTP status of the answer, 0 when the server did not answer.
+  pub http_status: u16,
+}
+
+/// A server certificate the engine could not verify. See
+/// [`WebViewBuilder::with_server_trust_handler`].
+#[derive(Debug, Clone, Default)]
+pub struct ServerTrustChallenge {
+  pub url: String,
+  pub host: String,
+  /// Windows: the `COREWEBVIEW2_WEB_ERROR_STATUS` of the certificate. Apple platforms: 0 (the
+  /// trust is not evaluated here; the failure reaches the load failure handler).
+  pub error: i64,
+  pub issuer: String,
+  pub subject: String,
+  /// Validity, in seconds since the Unix epoch (0 when unknown).
+  pub valid_from: f64,
+  pub valid_to: f64,
+}
+
+thread_local! {
+  static NAVIGATING_MAIN_FRAME: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Inside a navigation handler: whether the navigation being decided is the main frame's
+/// (WebView2 only asks for the main frame; WKWebView asks for every frame).
+pub fn navigating_main_frame() -> bool {
+  NAVIGATING_MAIN_FRAME.with(|c| c.get())
+}
+
+#[allow(dead_code)]
+pub(crate) fn set_navigating_main_frame(main: bool) {
+  NAVIGATING_MAIN_FRAME.with(|c| c.set(main));
+}
+
+/// A server asking for HTTP authentication. See [`WebViewBuilder::with_http_auth_handler`].
+#[derive(Debug, Clone)]
+pub struct HttpAuthChallenge {
+  /// The URL of the request, or on macOS the origin of the protected space.
+  pub url: String,
+  pub host: String,
+  /// The realm on macOS; the raw `WWW-Authenticate` value (`Basic realm="…"`) on Windows.
+  pub challenge: String,
+  /// Whether the credentials travel encrypted (https).
+  pub secure: bool,
+  /// Whether credentials given for this challenge were refused already (macOS only).
+  pub retry: bool,
+}
+
+/// Answers an [`HttpAuthChallenge`] once. Dropping it unanswered cancels the challenge.
+pub struct HttpAuthResponder {
+  answer: Option<Box<dyn FnOnce(Option<(String, String)>)>>,
+}
+
+impl HttpAuthResponder {
+  #[allow(dead_code)]
+  pub(crate) fn new(answer: impl FnOnce(Option<(String, String)>) + 'static) -> Self {
+    Self {
+      answer: Some(Box::new(answer)),
+    }
+  }
+
+  /// Sends the user name and password to the server, or cancels with `None`.
+  pub fn respond(mut self, credentials: Option<(String, String)>) {
+    if let Some(answer) = self.answer.take() {
+      answer(credentials);
+    }
+  }
+}
+
+impl Drop for HttpAuthResponder {
+  fn drop(&mut self) {
+    if let Some(answer) = self.answer.take() {
+      answer(None);
+    }
+  }
+}
+
 /// Response for the new window request handler.
 ///
 /// See [`WebViewBuilder::with_new_window_req_handler`].
@@ -698,6 +785,15 @@ struct WebViewAttributes<'a> {
   ///   due to API limitations.
   pub download_completed_handler: Option<Rc<dyn Fn(String, Option<PathBuf>, bool) + 'static>>,
 
+  /// HTTP authentication (Basic, Digest) asked by a server. See [`WebViewBuilder::with_http_auth_handler`].
+  pub http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder) + 'static>>,
+
+  /// Details of a failed main-frame navigation. See [`WebViewBuilder::with_load_failure_handler`].
+  pub load_failure_handler: Option<Box<dyn Fn(LoadFailure) + 'static>>,
+
+  /// Certificate errors. See [`WebViewBuilder::with_server_trust_handler`].
+  pub server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool + 'static>>,
+
   /// A new window request handler to decide if incoming url is allowed to be opened.
   ///
   /// A new window is requested to be opened by the [window.open] API.
@@ -870,6 +966,9 @@ impl Default for WebViewAttributes<'_> {
       navigation_handler: None,
       download_started_handler: Some(Box::new(|_, _| true)),
       download_completed_handler: None,
+      http_auth_handler: None,
+      load_failure_handler: None,
+      server_trust_handler: None,
       new_window_req_handler: None,
       clipboard: false,
       #[cfg(debug_assertions)]
@@ -1386,6 +1485,60 @@ impl<'a> WebViewBuilder<'a> {
     download_completed_handler: impl Fn(String, Option<PathBuf>, bool) + 'static,
   ) -> Self {
     self.attrs.download_completed_handler = Some(Rc::new(download_completed_handler));
+    self
+  }
+
+  /// Called when a server asks for HTTP authentication (`401` with `WWW-Authenticate: Basic` or
+  /// `Digest`). Answer through the [`HttpAuthResponder`], now or later on the main thread;
+  /// dropping it unanswered cancels the challenge and the server's own `401` page is shown.
+  ///
+  /// ## Platform-specific:
+  ///
+  /// - **Windows**: `BasicAuthenticationRequested` (`ICoreWebView2_10`); without this handler
+  ///   WebView2 shows its own dialog.
+  /// - **macOS / iOS**: `webView:didReceiveAuthenticationChallenge:completionHandler:`; without
+  ///   this handler the challenge is rejected. Credentials live for the session only.
+  /// - **Linux / Android**: Unsupported.
+  pub fn with_http_auth_handler(
+    mut self,
+    handler: impl Fn(HttpAuthChallenge, HttpAuthResponder) + 'static,
+  ) -> Self {
+    self.attrs.http_auth_handler = Some(Box::new(handler));
+    self
+  }
+
+  /// Called with the details of a main-frame navigation that failed (before
+  /// [`PageLoadEvent::Failed`]), or that got an HTTP error status (4xx/5xx, before
+  /// [`PageLoadEvent::Finished`]). Cancelled navigations are reported too, with their code.
+  ///
+  /// ## Platform-specific:
+  ///
+  /// - **Windows**: `NavigationCompleted` (`WebErrorStatus`, `HttpStatusCode`).
+  /// - **macOS / iOS**: the `NSError` of `didFail(Provisional)Navigation`, and the status of
+  ///   `decidePolicyForNavigationResponse` for the main frame.
+  /// - **Linux / Android**: Unsupported.
+  pub fn with_load_failure_handler(mut self, handler: impl Fn(LoadFailure) + 'static) -> Self {
+    self.attrs.load_failure_handler = Some(Box::new(handler));
+    self
+  }
+
+  /// Decides whether to go on despite a server certificate the engine refused: return `true`
+  /// only for a host the user chose to trust. Without this handler the engine's default applies.
+  ///
+  /// ## Platform-specific:
+  ///
+  /// - **Windows**: `ServerCertificateErrorDetected` (`ICoreWebView2_14`): `true` sets
+  ///   `AlwaysAllow` (kept by WebView2 for this certificate until the app quits), `false`
+  ///   cancels the request.
+  /// - **macOS / iOS**: `didReceiveAuthenticationChallenge` with a server trust: called for
+  ///   every one, with `error` 0; `true` answers with a credential for that trust, `false`
+  ///   keeps WebKit's default evaluation (an invalid certificate then fails the navigation).
+  /// - **Linux / Android**: Unsupported.
+  pub fn with_server_trust_handler(
+    mut self,
+    handler: impl Fn(ServerTrustChallenge) -> bool + 'static,
+  ) -> Self {
+    self.attrs.server_trust_handler = Some(Box::new(handler));
     self
   }
 

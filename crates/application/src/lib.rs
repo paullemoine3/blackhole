@@ -221,6 +221,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         true
     }
 
+    /// Minutes before a wallet with a master password locks again; ignored unless one of
+    /// `Settings::LOCK_CHOICES`.
+    pub fn set_password_lock(&mut self, minutes: u32) {
+        if Settings::LOCK_CHOICES.contains(&minutes) {
+            self.settings.password_lock_minutes = minutes;
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
     /// Switches one of the Privacy shields by name: `ads` (the ad server list), `hide_ads`,
     /// `video_ads` or `cookie_banners` (what pages clean up). False for an unknown name.
     pub fn set_shield(&mut self, name: &str, on: bool) -> bool {

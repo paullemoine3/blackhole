@@ -89,29 +89,37 @@ pub fn is_extension_popout(url: &Url) -> bool {
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Url {
     let input = input.trim();
     if let Ok(url) = Url::parse(input) {
-        if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() {
-            return url;
-        }
         if is_extension_page(&url) {
             return url;
+        }
+    }
+    web_address(input).unwrap_or_else(|| engine.search_url(input))
+}
+
+/// The web address `input` reads as, if any: an http(s) URL, or a bare host with an optional
+/// path (`example.com/x`, `localhost:3000`, `192.168.1.90:7878`). Always http(s).
+pub fn web_address(input: &str) -> Option<Url> {
+    let input = input.trim();
+    if let Ok(url) = Url::parse(input) {
+        if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() {
+            return Some(url);
         }
     }
     let looks_like_host = !input.contains(char::is_whitespace)
         && (input.contains('.') || input.starts_with("localhost"))
         && !input.starts_with('.')
         && !input.ends_with('.');
-    if looks_like_host {
-        if let Ok(url) = Url::parse(&format!("https://{input}")) {
-            // A bare LAN address (nas:5000, 192.168.1.90:7878) cannot serve https.
-            if crate::privacy::is_local(&url) {
-                if let Ok(http) = Url::parse(&format!("http://{input}")) {
-                    return http;
-                }
-            }
-            return url;
+    if !looks_like_host {
+        return None;
+    }
+    let url = Url::parse(&format!("https://{input}")).ok()?;
+    // A bare LAN address (nas:5000, 192.168.1.90:7878) cannot serve https.
+    if crate::privacy::is_local(&url) {
+        if let Ok(http) = Url::parse(&format!("http://{input}")) {
+            return Some(http);
         }
     }
-    engine.search_url(input)
+    Some(url)
 }
 
 #[cfg(test)]

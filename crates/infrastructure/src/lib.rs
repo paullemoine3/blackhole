@@ -10,10 +10,12 @@ use std::{fs, path::PathBuf};
 use url::Url;
 
 pub mod catalog;
+pub mod handoff;
 pub mod import;
 pub mod peers;
 pub mod store;
 pub mod updater;
+pub mod wallet;
 mod writer;
 
 pub use writer::{flush_writes, write_later};
@@ -428,6 +430,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_reminders: dto.meeting_reminders,
             meeting_card: dto.meeting_card,
             meeting_notes: dto.meeting_notes,
+            password_lock_minutes: dto.password_lock_minutes,
             collapsed_sections: dto.collapsed_sections.into_iter().collect(),
         }))
     }
@@ -460,6 +463,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_reminders: settings.meeting_reminders,
             meeting_card: settings.meeting_card,
             meeting_notes: settings.meeting_notes,
+            password_lock_minutes: settings.password_lock_minutes,
             collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
@@ -561,12 +565,18 @@ struct SettingsDto {
     meeting_card: bool,
     #[serde(default = "default_true")]
     meeting_notes: bool,
+    #[serde(default = "default_lock_minutes")]
+    password_lock_minutes: u32,
     #[serde(default)]
     collapsed_sections: Vec<String>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_lock_minutes() -> u32 {
+    15
 }
 
 fn default_spares() -> u32 {
@@ -710,6 +720,7 @@ mod tests {
             meeting_reminders: false,
             meeting_card: true,
             meeting_notes: false,
+            password_lock_minutes: 5,
             collapsed_sections: ["pinned".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
@@ -744,6 +755,34 @@ mod tests {
         assert!(p.is_blocked_host("c.amazon-adsystem.com"));
         for site in ["youtube.com", "www.google.com", "twitch.tv", "github.com"] {
             assert!(!p.is_blocked_host(site), "{site}");
+        }
+    }
+
+    /// A self-hosted site (a NAS behind Cloudflare, Transmission's web interface) must never be
+    /// caught by a list entry that is too broad: no bare suffix, no CDN or proxy domain.
+    #[test]
+    fn built_in_lists_never_catch_a_self_hosted_site() {
+        for entry in super::domains(super::BLOCKLIST).chain(super::domains(super::ADLIST)) {
+            assert!(entry.contains('.'), "bare suffix in a list: {entry}");
+            assert!(entry.split('.').all(|label| !label.is_empty()), "malformed entry: {entry}");
+        }
+        let p = super::default_privacy_policy();
+        for host in [
+            "nas.example.fr",
+            "torrent.home.example.fr",
+            "cloudflare.com",
+            "cdnjs.cloudflare.com",
+            "192.168.1.10",
+        ] {
+            assert!(!p.is_blocked_host(host), "{host}");
+        }
+        for url in [
+            "https://nas.example.fr/transmission/web/",
+            "https://nas.example.fr/transmission/web/javascript/main.js",
+            "https://nas.example.fr/transmission/rpc",
+        ] {
+            let url = Url::parse(url).unwrap();
+            assert_eq!(p.evaluate(&url), blackhole_domain::PrivacyDecision::Allow, "{url}");
         }
     }
 

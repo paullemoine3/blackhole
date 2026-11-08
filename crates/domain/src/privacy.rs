@@ -438,6 +438,22 @@ mod tests {
     }
 
     #[test]
+    fn a_listed_suffix_never_blocks_a_whole_country() {
+        // Only domains with a dot are compared: a bare `fr` (or `com`) never matches.
+        let p = PrivacyPolicy::with_ads(["fr".to_owned()], ["com".to_owned()]);
+        for url in ["https://nas.example.fr/web/main.js", "https://example.com/"] {
+            let url = Url::parse(url).unwrap();
+            assert_eq!(p.evaluate(&url), PrivacyDecision::Allow, "{url}");
+        }
+        // A listed domain blocks itself and below, never its parent nor a look-alike.
+        let p = PrivacyPolicy::with_ads(Vec::new(), ["ads.example.fr".to_owned()]);
+        assert!(p.is_blocked_host("x.ads.example.fr"));
+        assert!(!p.is_blocked_host("example.fr"));
+        assert!(!p.is_blocked_host("nas.example.fr"));
+        assert!(!p.is_blocked_host("myads.example.fr"));
+    }
+
+    #[test]
     fn localhost_stays_http() {
         let url = Url::parse("http://localhost:3000/").unwrap();
         assert_eq!(policy().evaluate(&url), PrivacyDecision::Allow);

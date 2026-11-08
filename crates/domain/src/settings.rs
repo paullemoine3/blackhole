@@ -45,6 +45,8 @@ pub struct Settings {
     pub meeting_card: bool,
     /// Joining a calendar meeting opens its notes in an Easel (the meeting copilot).
     pub meeting_notes: bool,
+    /// Minutes without use before a wallet with a master password locks again (0: at quit).
+    pub password_lock_minutes: u32,
     /// Sidebar sections folded by the user (`pinned`, `folders`). Remembered between launches.
     pub collapsed_sections: BTreeSet<String>,
 }
@@ -78,6 +80,8 @@ impl Settings {
     pub const SPARE_CHOICES: [u32; 3] = [0, 1, 2];
     pub const DEFAULT_SPARES: u32 = 2;
     pub const SLEEP_CHOICES: [u32; 3] = [5, 10, 15];
+    /// Choices of `password_lock_minutes` (0: only when BlackHole quits).
+    pub const LOCK_CHOICES: [u32; 4] = [5, 15, 60, 0];
     pub const DEFAULT_SLEEP_MINUTES: u32 = 10;
     pub const SIDEBAR_WIDTH_CHOICES: [u32; 3] = [200, 240, 280];
     pub const SECTIONS: [&'static str; 2] = ["pinned", "folders"];
@@ -107,6 +111,7 @@ impl Default for Settings {
             meeting_reminders: true,
             meeting_card: true,
             meeting_notes: true,
+            password_lock_minutes: 15,
             collapsed_sections: BTreeSet::new(),
         }
     }

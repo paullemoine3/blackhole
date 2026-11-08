@@ -5,7 +5,10 @@
 use std::sync::{Arc, Mutex};
 
 use objc2::{MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
-use objc2_foundation::{MainThreadMarker, NSError, NSObjectProtocol};
+use objc2_foundation::{
+  MainThreadMarker, NSError, NSObjectProtocol, NSURLAuthenticationChallenge, NSURLCredential,
+  NSURLSessionAuthChallengeDisposition,
+};
 use objc2_web_kit::{
   WKDownload, WKNavigation, WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate,
   WKNavigationResponse, WKNavigationResponsePolicy,
@@ -17,12 +20,13 @@ use crate::wkwebview::ios::WKWebView::WKWebView;
 use objc2_web_kit::WKWebView;
 
 use crate::{
-  PageLoadEvent, WryWebView, url_from_webview,
+  HttpAuthChallenge, HttpAuthResponder, LoadFailure, PageLoadEvent, ServerTrustChallenge,
+  WryWebView, url_from_webview,
   wkwebview::{
     download::{navigation_download_action, navigation_download_response},
     navigation::{
-      did_commit_navigation, did_fail_navigation, did_finish_navigation, navigation_policy, navigation_policy_response,
-      web_content_process_did_terminate,
+      did_commit_navigation, did_fail_navigation, did_finish_navigation, did_receive_authentication_challenge,
+      navigation_policy, navigation_policy_response, web_content_process_did_terminate,
     },
   },
 };
@@ -36,6 +40,9 @@ pub struct WryNavigationDelegateIvars {
   pub download_delegate: Option<Retained<WryDownloadDelegate>>,
   pub on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, Option<String>)>>,
   pub on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
+  pub http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
+  pub load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
+  pub server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,
 }
 
 define_class!(
@@ -117,6 +124,16 @@ define_class!(
       navigation_download_response(self, webview, response, download);
     }
 
+    #[unsafe(method(webView:didReceiveAuthenticationChallenge:completionHandler:))]
+    fn did_receive_authentication_challenge(
+      &self,
+      webview: &WKWebView,
+      challenge: &NSURLAuthenticationChallenge,
+      handler: &block2::Block<dyn Fn(NSURLSessionAuthChallengeDisposition, *mut NSURLCredential)>,
+    ) {
+      did_receive_authentication_challenge(self, webview, challenge, handler);
+    }
+
     #[unsafe(method(webViewWebContentProcessDidTerminate:))]
     fn web_content_process_did_terminate(&self, webview: &WKWebView) {
       web_content_process_did_terminate(self, webview);
@@ -134,6 +151,9 @@ impl WryNavigationDelegate {
     download_delegate: Option<Retained<WryDownloadDelegate>>,
     on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, String)>>,
     on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
+    http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
+    load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
+    server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,
     mtm: MainThreadMarker,
   ) -> Retained<Self> {
     let navigation_policy_function = Box::new(move |url: String| -> bool {
@@ -171,6 +191,9 @@ impl WryNavigationDelegate {
         download_delegate,
         on_page_load_handler,
         on_web_content_process_terminate_handler,
+        http_auth_handler,
+        load_failure_handler,
+        server_trust_handler,
       });
 
     unsafe { msg_send![super(delegate), init] }
