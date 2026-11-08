@@ -125,14 +125,62 @@ pub enum UiCommand {
     },
     /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
     UndoRemoval,
-    /// Locks a quick-access or folder tab on its current page, or releases it.
-    LockTab {
-        id: u64,
-        locked: bool,
+    /// Link menu: `target` is "tab" (background), "window" or "private".
+    OpenLink {
+        url: String,
+        target: String,
     },
-    /// Brings a locked tab back to its locked page (shown first if needed).
-    ResetTab {
+    /// The area just picked becomes a watched area (the picker's menu).
+    WatchArea,
+    /// Library > Watches: stop watching, read again now, everything seen.
+    WatchRemove {
         id: u64,
+    },
+    WatchCheck {
+        id: u64,
+    },
+    WatchesSeen,
+    /// Files the loose tabs into folders by site (the sidebar's suggestion); `Untidy` undoes
+    /// it, `DismissTidy` hides the suggestion for this session.
+    Tidy,
+    Untidy,
+    DismissTidy,
+    /// The sidebar's shield: the privacy report of the site shown, as a menu at (x, y).
+    PrivacyReport {
+        x: f64,
+        y: f64,
+    },
+    /// Opens Google Meet: a room (`url`), or a new meeting. Reuses the Meet tab of quick access
+    /// or of a folder when there is one (never one in a call).
+    OpenMeet {
+        #[serde(default)]
+        url: Option<String>,
+    },
+    /// Settings > Calendar: a secret iCal address of Google Calendar.
+    CalendarAdd {
+        url: String,
+    },
+    CalendarRemove {
+        index: usize,
+    },
+    CalendarSync,
+    /// Settings > Calendar: `reminders` or `card`.
+    SetMeetingOption {
+        name: String,
+        on: bool,
+    },
+    /// Settings > Privacy: `name` is `ads`, `hide_ads`, `video_ads` or `cookie_banners`.
+    SetShield {
+        name: String,
+        on: bool,
+    },
+    /// Link menu: previews the link in a floating window (Peek).
+    OpenPeek {
+        url: String,
+    },
+    /// The area picked for a live capture goes to this Easel (`None`: a new one).
+    LiveCaptureTo {
+        easel: Option<u64>,
     },
     ToggleFolder {
         id: u64,
@@ -204,6 +252,12 @@ pub enum UiCommand {
     WindowMinimize,
     WindowMaximize,
     WindowClose,
+    /// The top bar of a secondary window ("settings" or "easel") drawn by its page: `action` is
+    /// "drag", "minimize", "maximize" (toggles) or "close".
+    PanelWindow {
+        window: String,
+        action: String,
+    },
     Shortcut {
         key: String,
     },
@@ -462,6 +516,16 @@ pub enum PageEvent {
     Peek {
         url: String,
     },
+    /// Middle click or Ctrl/Cmd+click on a link: open it in a background tab (http(s) only).
+    OpenLink {
+        url: String,
+    },
+    /// Right click on a link: the shell shows its link menu at (x, y) in the page.
+    LinkMenu {
+        url: String,
+        x: f64,
+        y: f64,
+    },
     /// A login field got focus: ask for the saved usernames of this site.
     AutofillQuery,
     /// The user picked the `index`-th suggestion from the last `AutofillQuery`.
@@ -469,10 +533,7 @@ pub enum PageEvent {
         index: usize,
     },
     /// A video left Picture in Picture (untrusted: only acted on for a tab the shell floated).
-    PipLeft {
-        #[serde(default)]
-        paused: bool,
-    },
+    PipLeft {},
     /// The user clicked an area while the picker was armed (honoured only then; untrusted).
     LivePick {
         selector: String,
@@ -673,6 +734,49 @@ mod tests {
     }
 
     #[test]
+    fn link_events_parse_and_pages_cannot_open_windows_themselves() {
+        let open: PageEvent =
+            serde_json::from_str(r#"{"cmd":"open_link","url":"https://a.test/"}"#).unwrap();
+        assert!(matches!(open, PageEvent::OpenLink { .. }));
+        let menu: PageEvent =
+            serde_json::from_str(r#"{"cmd":"link_menu","url":"https://a.test/","x":3,"y":4}"#)
+                .unwrap();
+        assert!(matches!(menu, PageEvent::LinkMenu { x, .. } if x == 3.0));
+        // Opening a window or picking the Easel is for the shell's own pages only: from a page,
+        // `target` does not exist (the event only opens a background tab).
+        let window = r#"{"cmd":"open_link","url":"https://a.test/","target":"window"}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(window),
+            Ok(UiCommand::OpenLink { target, .. }) if target == "window"
+        ));
+        assert!(matches!(
+            serde_json::from_str::<PageEvent>(window),
+            Ok(PageEvent::OpenLink { .. })
+        ));
+        for raw in [
+            r#"{"cmd":"open_meet"}"#,
+            r#"{"cmd":"open_meet","url":"https://meet.google.com/abc-defg-hij"}"#,
+            r#"{"cmd":"calendar_add","url":"https://calendar.google.com/calendar/ical/a/private-b/basic.ics"}"#,
+            r#"{"cmd":"calendar_remove","index":0}"#,
+            r#"{"cmd":"calendar_sync"}"#,
+            r#"{"cmd":"set_meeting_option","name":"card","on":false}"#,
+            r#"{"cmd":"live_capture_to","easel":null}"#,
+            r#"{"cmd":"live_capture_to","easel":4}"#,
+            r#"{"cmd":"open_peek","url":"https://a.test/"}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn pip_left_parses_with_or_without_extra_fields() {
+        for raw in [r#"{"cmd":"pip_left"}"#, r#"{"cmd":"pip_left","paused":true}"#] {
+            assert!(matches!(serde_json::from_str::<PageEvent>(raw), Ok(PageEvent::PipLeft {})), "{raw}");
+        }
+    }
+
+    #[test]
     fn tab_menu_commands_parse_and_pages_cannot_send_them() {
         let cases = [
             r#"{"cmd":"reload_tab","id":1}"#,
@@ -696,16 +800,6 @@ mod tests {
             Ok(UiCommand::EditFolder { id: 4 })
         ));
         assert!(serde_json::from_str::<PageEvent>(edit).is_err());
-    }
-
-    #[test]
-    fn reset_tab_parses_and_pages_cannot_send_it() {
-        let reset = r#"{"cmd":"reset_tab","id":3}"#;
-        assert!(matches!(
-            serde_json::from_str::<UiCommand>(reset),
-            Ok(UiCommand::ResetTab { id: 3 })
-        ));
-        assert!(serde_json::from_str::<PageEvent>(reset).is_err());
     }
 
     #[test]

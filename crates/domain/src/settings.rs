@@ -1,4 +1,4 @@
-use crate::{SearchEngine, SpaceId};
+use crate::{SearchEngine, Shields, SpaceId};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// User preferences. New settings are added here with a sensible private default.
@@ -36,6 +36,15 @@ pub struct Settings {
     pub sidebar_open: bool,
     /// Tracker blocklist on (default) or off.
     pub tracker_blocking: bool,
+    /// Ad server blocklist on (default) or off.
+    pub ad_blocking: bool,
+    /// What pages are asked to clean up (ad slots, video ads, cookie banners); all on by default.
+    pub shields: Shields,
+    /// Calendar sync: a toast when a meeting starts, and the next meeting in the sidebar.
+    pub meeting_reminders: bool,
+    pub meeting_card: bool,
+    /// Joining a calendar meeting opens its notes in an Easel (the meeting copilot).
+    pub meeting_notes: bool,
     /// Sidebar sections folded by the user (`pinned`, `folders`). Remembered between launches.
     pub collapsed_sections: BTreeSet<String>,
 }
@@ -93,6 +102,11 @@ impl Default for Settings {
             extensions_in_private: false,
             sidebar_open: true,
             tracker_blocking: true,
+            ad_blocking: true,
+            shields: Shields::default(),
+            meeting_reminders: true,
+            meeting_card: true,
+            meeting_notes: true,
             collapsed_sections: BTreeSet::new(),
         }
     }

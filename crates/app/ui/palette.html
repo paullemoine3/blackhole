@@ -101,6 +101,23 @@
   .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 6px 12px; background: rgba(255,255,255,.1); }
   .btn:hover { background: rgba(255,255,255,.18); }
   .btn.primary { background: var(--accent); color: #fff; }
+  /* Tab comparator: the products of the open tabs side by side. */
+  #compare { display: none; padding: 16px 18px 14px; }
+  body.comparing #compare { display: block; }
+  body.comparing .search, body.comparing #list, body.comparing .foot { display: none; }
+  body.comparing #panel { width: min(1000px, calc(100vw - 48px)); top: 10vh; }
+  #compare h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  #cpick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  #cpick label { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: rgba(255,255,255,.07); font-size: 12.5px; cursor: pointer; max-width: 260px; }
+  #cpick label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cwrap { max-height: 62vh; overflow: auto; }
+  #ctable { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  #ctable th, #ctable td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.07); vertical-align: top; overflow-wrap: anywhere; }
+  #ctable th { font-weight: 600; cursor: pointer; }
+  #ctable th:hover { color: #fff; text-decoration: underline; }
+  #ctable td:first-child, #ctable th:first-child { width: 150px; opacity: .6; font-weight: 500; cursor: default; text-decoration: none; }
+  #ctable .best { color: #6ee7a8; font-weight: 600; }
+  #ctable small { display: block; opacity: .55; font-weight: 400; }
   /* Emoji picker */
   #emoji { display: none; padding: 18px 20px 16px; }
   body.picking #emoji { display: block; }
@@ -129,6 +146,11 @@
       <h2>Icon · <span id="ename"></span></h2>
       <div id="grid"></div>
       <div class="actions" style="margin-top:0"><input id="eq" placeholder="Type or paste an emoji" spellcheck="false" autocomplete="off"><button class="btn" id="eclear">Remove</button><button class="btn primary" id="eok">Apply</button></div>
+    </div>
+    <div id="compare">
+      <h2>Compare tabs</h2>
+      <div id="cpick"></div>
+      <div id="cwrap"><table id="ctable"></table></div>
     </div>
     <div id="boost">
       <h2>Boost · <span id="bhost"></span></h2>
@@ -254,9 +276,6 @@ const ICONS = {
   pin: '<path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5"/>',
   edit: '<path d="M10.5 3l2.5 2.5L6 12.5H3.5V10z"/>',
   split: '<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M8 3v10"/>',
-  lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>',
-  unlock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.8-1"/>',
-  reset: '<path d="M3.5 8a4.5 4.5 0 1 0 1.4-3.3M3.5 2.5v2.8h2.8"/>',
   sleep: '<path d="M12.5 9.5A5 5 0 1 1 6.5 3.5a4 4 0 0 0 6 6z"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8"/>',
   trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9"/>',
@@ -277,6 +296,14 @@ const ICONS = {
   sound: '<path d="M2.5 6v4h2.5l3.5 3V3L5 6zM11 5.5a3.5 3.5 0 0 1 0 5"/>',
   mute: '<path d="M2.5 6v4h2.5l3.5 3V3L5 6zM11 6l3 4M14 6l-3 4"/>',
   check: '<path d="M3.5 8.5l3 3 6-7"/>',
+  video: '<rect x="1.5" y="4" width="9" height="8" rx="1.8"/><path d="M10.5 7l4-2.2v6.4l-4-2.2"/>',
+  code: '<path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/>',
+  shield: '<path d="M8 1.8l5 2v3.7c0 3.2-2.1 5.6-5 6.7-2.9-1.1-5-3.5-5-6.7V3.8z"/>',
+  eye: '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+  settings: '<circle cx="8" cy="8" r="2.3"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/>',
+  tidy: '<path d="M2.5 4.5h11M2.5 8h7M2.5 11.5h4M12 9.5l1.5 1.5 2-3"/>',
+  watch: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>',
+  compare: '<rect x="2" y="3" width="5" height="10" rx="1"/><rect x="9" y="3" width="5" height="10" rx="1"/>',
 };
 // `color` draws a swatch (space colors), with the icon (a check mark) on top of it.
 function menuIcon(name, color) {
@@ -335,6 +362,72 @@ function showMenu(m) {
   box.style.setProperty('--oy', (m.y > y ? '100%' : '0'));
 }
 
+// The tab comparator: pick the pages (products found are picked first, five at most), then
+// one column per page and one row per field; the lowest price and the best rating stand out.
+// Page data only ever goes in through textContent.
+let cmpItems = [], cmpPicked = new Set();
+const cmpNum = (v) => { const n = parseFloat(String(v || '').replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : null; };
+function showCompare(c) {
+  cmpItems = (c && c.items) || [];
+  const products = cmpItems.filter(i => i.price || i.rating);
+  cmpPicked = new Set((products.length >= 2 ? products : cmpItems).slice(0, 5).map(i => i.id));
+  $('cpick').replaceChildren(...cmpItems.map(i => {
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = cmpPicked.has(i.id);
+    box.onchange = () => { box.checked ? cmpPicked.add(i.id) : cmpPicked.delete(i.id); drawCompare(); };
+    const name = document.createElement('span');
+    name.textContent = i.name || i.title || host(i.url);
+    label.append(box, name);
+    return label;
+  }));
+  drawCompare();
+}
+function drawCompare() {
+  const cols = cmpItems.filter(i => cmpPicked.has(i.id));
+  const cell = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text || '—'; if (cls) e.className = cls; return e; };
+  const head = document.createElement('tr');
+  head.append(cell('th', ''));
+  for (const i of cols) {
+    const th = cell('th', i.name || i.title || host(i.url));
+    const sub = document.createElement('small');
+    sub.textContent = host(i.url);
+    th.append(sub);
+    th.title = 'Show this tab';
+    th.onclick = () => { send({ cmd: 'activate', id: i.id }); close(); };
+    head.append(th);
+  }
+  const prices = cols.map(i => cmpNum(i.price)), ratings = cols.map(i => cmpNum(i.rating));
+  const low = Math.min(...prices.filter(n => n != null)), high = Math.max(...ratings.filter(n => n != null));
+  const rows = [
+    ['Price', (i) => i.price ? `${i.price} ${i.currency || ''}`.trim() : '', (i, k) => prices[k] === low && cols.length > 1],
+    ['Rating', (i) => i.rating, (i, k) => ratings[k] === high && cols.length > 1],
+    ['Reviews', (i) => i.reviews],
+    ['Brand', (i) => i.brand],
+    ['Availability', (i) => i.availability],
+  ];
+  // Specifications shared by at least two pages (or all of them when only one has some).
+  const counts = new Map();
+  for (const i of cols) for (const k of Object.keys(i.specs || {})) counts.set(k, (counts.get(k) || 0) + 1);
+  const shared = [...counts].filter(([, n]) => n >= Math.min(2, cols.length)).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  for (const [k] of shared) rows.push([k, (i) => (i.specs || {})[k]]);
+  const body = rows
+    .filter(([, get]) => cols.some(i => get(i)))
+    .map(([name, get, best]) => {
+      const tr = document.createElement('tr');
+      tr.append(cell('td', name));
+      cols.forEach((i, k) => tr.append(cell('td', get(i), best && best(i, k) ? 'best' : '')));
+      return tr;
+    });
+  if (!cols.length) {
+    const tr = document.createElement('tr');
+    tr.append(cell('td', 'Pick the tabs to compare'));
+    body.push(tr);
+  }
+  $('ctable').replaceChildren(head, ...body);
+}
+
 function saveBoost() { send({ cmd: 'save_boost', css: $('css').value }); }
 
 window.bh = {
@@ -349,6 +442,9 @@ window.bh = {
     const menuing = s.mode === 'menu';
     document.body.classList.toggle('menuing', menuing);
     if (menuing) { showMenu(s.menu); return; }
+    const comparing = s.mode === 'compare';
+    document.body.classList.toggle('comparing', comparing);
+    if (comparing) { showCompare(s.compare); return; }
     const boosting = s.mode === 'boost';
     const picking = s.mode === 'emoji';
     document.body.classList.toggle('boosting', boosting);
@@ -385,14 +481,14 @@ window.bh = {
     $('q').focus();
     if (pristine) $('q').select();
   },
-  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing'); $('q').blur(); $('eq').blur(); },
+  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'comparing'); $('q').blur(); $('eq').blur(); },
 };
 
 $('q').addEventListener('input', () => { pristine = false; sel = 0; armed = null; draw(); });
 document.addEventListener('keydown', (e) => {
   if (!document.body.classList.contains('open')) return;
   if (e.key === 'Escape') { e.preventDefault(); close(); return; }
-  if (document.body.classList.contains('menuing')) return;
+  if (document.body.classList.contains('menuing') || document.body.classList.contains('comparing')) return;
   if (document.body.classList.contains('picking')) {
     if (e.key === 'Enter') { e.preventDefault(); applyIcon($('eq').value); }
     return;

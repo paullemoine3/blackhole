@@ -56,7 +56,9 @@ cmd {"cmd":"live_pick"}
 wait 500
 eval content String(window.__bhPick === true)
 eval content (() => { const h = document.querySelector('p').getBoundingClientRect(); const x = h.left + h.width / 2, y = h.top + h.height / 2; for (const t of ['mousemove', 'click']) document.elementFromPoint(x, y).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })); return 'picked'; })()
-wait 1500
+wait 1000
+eval palette (document.querySelector('#menu button').click(), '__skip: area sent to the current Easel')
+wait 1200
 eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
@@ -138,7 +140,8 @@ $logFile = Join-Path $tmp 'bh_run.log'
 $proc = Start-Process cmd -ArgumentList '/c', "cargo run -q -p blackhole --features devtools > `"$logFile`" 2>&1" -PassThru -WindowStyle Hidden
 if (-not $proc.WaitForExit(240000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
 $log = Get-Content $logFile -Encoding UTF8
-$evals = @($log | Where-Object { $_ -match '\[dev\] eval ->' } | ForEach-Object { $_ -replace '\\"', '"' })
+# Steps that only drive the UI answer "__skip…" and are left out, so the indices below hold.
+$evals = @($log | Where-Object { $_ -match '\[dev\] eval ->' -and $_ -notmatch '__skip' } | ForEach-Object { $_ -replace '\\"', '"' })
 $log | Where-Object { $_ -match '\[dev\] (bad|unknown|eval failed|screenshot failed)' } | ForEach-Object { Write-Host $_ }
 
 $fail = $false
@@ -174,7 +177,7 @@ Check ($evals[24] -match 'before.:.section secrow') 'pinned: header sits right a
 Check ($evals[24] -match 'bms.:false') 'imports: no separate bookmark list, they are folders and tabs'
 Check ($evals[25] -match 'Imp One|imp1\.test') 'import: bookmarks become tabs filed in a real folder'
 Check ($evals[25] -match 'Imp Two') 'import: every link is a regular tab'
-Check ($evals[26] -match 'rail":6') 'library: six sections in the rail (History included)'
+Check ($evals[26] -match 'rail":7') 'library: seven sections in the rail (History and Watched Areas included)'
 Check ($evals[26] -match 'archived":true') 'library: cleared tab is archived'
 Check ($evals[27] -match 'home') 'library: closes back to the browser'
 Check ($evals[28] -match 'card.:true') 'media: a card appears for a tab playing in the background'

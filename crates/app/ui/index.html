@@ -87,6 +87,24 @@
   #dls { display: flex; flex-direction: column; gap: 6px; }
   #dls:empty, #media:empty { display: none; }
   #media { display: flex; flex-direction: column; gap: 6px; }
+  #tidy:empty { display: none; }
+  #tidy .td { margin: 2px 4px 6px; padding: 9px 10px; border-radius: 10px; font-size: 12px; background: rgba(255,255,255,.07); box-shadow: 0 0 0 1px rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 6px; animation: dl-in .2s ease-out; }
+  #tidy .q { font-weight: 600; }
+  #tidy .gs { display: flex; flex-wrap: wrap; gap: 4px; }
+  #tidy .gs span { padding: 1px 7px; border-radius: 6px; background: rgba(255,255,255,.1); opacity: .85; }
+  #tidy .bt { display: flex; justify-content: flex-end; gap: 6px; }
+  #tidy button { border: 0; border-radius: 7px; padding: 4px 10px; font: inherit; cursor: pointer; color: inherit; background: rgba(255,255,255,.1); }
+  #tidy button.go { background: var(--accent); color: #fff; font-weight: 600; }
+  body.noanim #tidy .td { animation: none; }
+  #meet:empty { display: none; }
+  #meet .mt { display: flex; align-items: center; gap: 9px; padding: 8px 8px 8px 10px; border-radius: 10px; font-size: 12px; background: color-mix(in srgb, var(--accent) 22%, rgba(255,255,255,.06)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); animation: dl-in .2s ease-out; }
+  #meet .mt.on { box-shadow: 0 0 0 1px var(--accent), 0 0 14px -4px var(--glow); }
+  #meet .mt svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+  #meet .tx { flex: 1; min-width: 0; }
+  #meet .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #meet .wh { opacity: .7; font-size: 11px; }
+  #meet button { flex: none; border: 0; border-radius: 8px; padding: 5px 10px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  body.noanim #meet .mt { animation: none; }
   .mc { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; animation: dl-in .2s ease-out; }
   .mc .top { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
   .mc .top .dot { flex: none; }
@@ -97,11 +115,7 @@
   .mc button:hover { background: rgba(255,255,255,.2); }
   .mc .cl { background: none; width: 22px; height: 22px; opacity: .6; }
   .snd { flex: none; border: 0; background: none; color: inherit; font-size: 11px; padding: 0 2px; cursor: pointer; opacity: .85; }
-  /* Quick access tabs: the speaker replaces the icon while the pointer is over the tile. */
   #pinned .tab { position: relative; }
-  #pinned .snd { display: none; position: absolute; inset: 0; margin: auto; width: 32px; height: 32px; border-radius: 9px; font-size: 16px; opacity: 1; background: rgba(0,0,0,.35); }
-  #pinned .tab:hover .snd { display: block; }
-  #pinned .tab:hover:has(.snd) .dot { visibility: hidden; }
   body.noanim .mc, body.noanim .mc * { animation: none !important; transition: none !important; }
   .dl { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; cursor: pointer; animation: dl-in .2s ease-out; }
   .dl:hover { background: rgba(255,255,255,.14); }
@@ -123,8 +137,6 @@
   .dot { flex: none; width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
   .dot img, .tile img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
   .dot.ico { background: rgba(255,255,255,.16) !important; padding: 2px; box-sizing: border-box; font-size: 0; }
-  .tab.locked .dot { position: relative; }
-  .tab.locked .dot::after { content: '🔒'; position: absolute; right: -5px; bottom: -5px; font-size: 8px; line-height: 1; }
   .title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .x { opacity: 0; width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
   .tab:hover .x { opacity: .7; } .x:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
@@ -223,9 +235,11 @@
   <div id="folders"></div>
   <div id="foldsep"></div>
   <div class="newrow"><button class="new" id="new" title="New tab">＋<span class="full-only"> New tab</span></button></div>
+  <div id="tidy"></div>
   <div id="tabs"></div>
 </div>
   <div id="spaces"></div>
+  <div id="meet"></div>
   <div id="media"></div>
   <div id="dls"></div>
   <button class="update" id="update" hidden><span class="ico"></span><span class="full-only" id="updtxt"></span></button>
@@ -269,8 +283,8 @@ function withIcon(node, url, favicons) {
 function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
 
 function tabNode(t) {
-  const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : '') + (t.locked ? ' locked' : ''));
-  n.title = (t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title) + (t.locked ? ' — URL locked (click it again to come back to the locked page)' : '');
+  const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : ''));
+  n.title = t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title;
   n.dataset.tab = t.id;
   n.dataset.pinned = t.pinned ? '1' : '';
   n.dataset.folder = t.folder == null ? '' : t.folder;
@@ -285,7 +299,8 @@ function tabNode(t) {
     sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
     n.append(d, el('span', 'title', t.title), sp);
   } else n.append(d, el('span', 'title', t.title));
-  const md = (state.media || []).find(m => m.id === t.id);
+  // No speaker on quick access tiles: it covered the tile, so a playing tab was hard to click.
+  const md = !t.pinned && (state.media || []).find(m => m.id === t.id);
   if (md && (md.playing || md.muted)) {
     const sn = el('button', 'snd', md.muted ? '🔇' : '🔊');
     sn.title = md.muted ? 'Unmute this tab' : 'Playing — click to mute';
@@ -310,8 +325,17 @@ function tabNode(t) {
     x.onclick = (e) => { e.stopPropagation(); send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id }); };
     n.append(x);
   }
-  n.onmousedown = (e) => { if (e.button === 0) down = { id: t.id, node: n, x: e.clientX, y: e.clientY }; };
+  n.onmousedown = (e) => {
+    if (e.button === 0) down = { id: t.id, node: n, x: e.clientX, y: e.clientY };
+    else if (e.button === 1) e.preventDefault(); // no autoscroll
+  };
   n.onclick = () => { if (!justDragged) send({ cmd: 'activate', id: t.id }); };
+  // Middle click: a quick access or folder tab goes to sleep (it stays), another tab closes.
+  n.onauxclick = (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id });
+  };
   n.oncontextmenu = (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); };
   return n;
 }
@@ -331,12 +355,12 @@ function tabMenu(t, x, y) {
     else if (t.id !== state.activeTab) items.push({ icon: 'split', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
   }
   if (t.folder != null) items.push({ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
-  if (keep) items.push({ icon: t.locked ? 'unlock' : 'lock', label: t.locked ? 'Unlock URL' : 'Lock URL on this page', run: { cmd: 'lock_tab', id: t.id, locked: !t.locked } });
-  if (keep && t.locked) items.push({ icon: 'reset', label: 'Back to the locked page', run: { cmd: 'reset_tab', id: t.id } });
   items.push({ sep: true });
   if (!t.asleep) items.push({ icon: 'reload', label: 'Reload', run: { cmd: 'reload_tab', id: t.id } });
   items.push({ icon: 'copy', label: 'Duplicate', run: { cmd: 'duplicate_tab', id: t.id } });
   items.push({ icon: 'link', label: 'Copy link', copy: t.url });
+  items.push({ icon: 'compare', label: 'Compare with the other tabs', run: { cmd: 'action', id: 'compare' } });
+  if (t.id === state.activeTab && !t.asleep) items.push({ icon: 'code', label: 'Inspect page (developer tools)', run: { cmd: 'action', id: 'key:devtools' } });
   const md = (state.media || []).find(m => m.id === t.id);
   if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: md.muted ? 'Unmute tab' : 'Mute tab', run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
   const others = state.spaces.filter(sp => sp.id !== state.activeSpace);
@@ -345,10 +369,16 @@ function tabMenu(t, x, y) {
     items.push(...others.map(sp => ({ icon: sp.icon || 'space', color: sp.icon ? null : sp.color, label: sp.name, run: { cmd: 'move_tab_to_space', id: t.id, space: sp.id } })));
   }
   items.push({ sep: true });
-  if (keep && !t.asleep) items.push({ icon: 'sleep', label: 'Put to sleep', run: { cmd: 'close_instance', id: t.id } });
   const loose = state.tabs.filter(o => o.id !== t.id && !o.pinned && o.folder == null).length;
   if (loose) items.push({ icon: 'close', label: 'Close other tabs', confirm: 'Click again to close ' + plural(loose, 'tab'), run: { cmd: 'close_other_tabs', id: t.id } });
-  items.push({ icon: 'close', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+  if (t.pinned) {
+    // Closing a quick access tab never takes it off the list (like Cmd/Ctrl+W): it only stops
+    // its page. "Remove from quick access" above is the way to take it off.
+    if (!t.asleep) items.push({ icon: 'close', label: 'Close tab', run: { cmd: 'close_instance', id: t.id } });
+  } else {
+    if (keep && !t.asleep) items.push({ icon: 'sleep', label: 'Put to sleep', run: { cmd: 'close_instance', id: t.id } });
+    items.push({ icon: 'close', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+  }
   openMenu(x, y, items);
 }
 
@@ -400,6 +430,7 @@ function createMenu(x, y) {
     { icon: 'folder', label: 'New folder', run: { cmd: 'new_folder' } },
     { icon: 'space', label: 'New space', run: { cmd: 'action', id: 'new_space' } },
     { icon: 'easel', label: 'New Easel', run: { cmd: 'action', id: 'new_easel' } },
+    { icon: 'video', label: 'New Google Meet', run: { cmd: 'open_meet' } },
     ...(easels.length ? [{ sep: true }, { head: 'Easels' }] : []),
     ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
@@ -866,6 +897,8 @@ window.bh = {
     if (before) motion.play(before, prev, s);
     if (switched) motion.spaces(prev.activeSpace, s.activeSpace);
     renderUpdate(s.update, s.version);
+    renderMeeting(s.meeting);
+    renderTidy(s.tidy);
     renderMedia(s);
     renderDownloads(s.downloads);
   },
@@ -925,6 +958,50 @@ function renderDownloads(list) {
 // It stays on the player it shows while that tab is listed, and is only rebuilt when what it
 // shows changes: a state refresh no longer replays its animation or reloads its icon.
 let mediaId = null, mediaSig = '';
+// Tidy-up suggestion: the loose tabs of the busiest sites, filed into one folder per site.
+let tidySig = '';
+function renderTidy(t) {
+  const sig = t ? JSON.stringify(t) : '';
+  if (sig === tidySig) return;
+  tidySig = sig;
+  if (!t) { $('tidy').replaceChildren(); return; }
+  const card = el('div', 'td');
+  const folders = t.groups.length;
+  card.append(el('div', 'q', `Tidy up ${t.tabs} tabs into ${folders} folder${folders === 1 ? '' : 's'}?`));
+  const gs = el('div', 'gs');
+  gs.append(...t.groups.map(g => el('span', null, `${g.name} · ${g.count}`)));
+  const bt = el('div', 'bt');
+  const later = el('button', null, 'Not now');
+  later.onclick = () => send({ cmd: 'dismiss_tidy' });
+  const go = el('button', 'go', 'Tidy up');
+  go.onclick = () => send({ cmd: 'tidy' });
+  bt.append(later, go);
+  card.append(gs, bt);
+  $('tidy').replaceChildren(card);
+}
+// The next meeting of the synced calendars (Settings > Calendar), with a Join button. Only
+// rebuilt when it changes (its "In N min" moves once a minute).
+let meetSig = '';
+function renderMeeting(m) {
+  const box = $('meet');
+  const sig = m ? JSON.stringify(m) : '';
+  if (sig === meetSig) return;
+  const fresh = !meetSig || !m || JSON.parse(meetSig).url !== m.url;
+  meetSig = sig;
+  if (!m) { box.replaceChildren(); return; }
+  const card = fresh || !box.firstChild ? el('div', 'mt') : box.firstChild;
+  card.className = 'mt' + (m.on ? ' on' : '');
+  card.title = m.title + ' — ' + m.when;
+  const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  ico.setAttribute('viewBox', '0 0 16 16');
+  ico.innerHTML = '<rect x="1.5" y="4" width="9" height="8" rx="1.8"/><path d="M10.5 7l4-2.2v6.4l-4-2.2"/>';
+  const tx = el('div', 'tx');
+  tx.append(el('div', 'nm', m.title), el('div', 'wh', m.when));
+  const join = el('button', null, 'Join');
+  join.onclick = () => send({ cmd: 'open_meet', url: m.url });
+  card.replaceChildren(ico, tx, join);
+  if (!card.parentNode) box.replaceChildren(card);
+}
 function renderMedia(s) {
   const box = $('media');
   const list = (s.media || []).filter(m => m.id !== s.activeTab);
@@ -979,7 +1056,9 @@ function renderUpdate(u, current) {
     : u.state === 'error' ? u.error : 'BlackHole ' + u.version + ' is available (you have ' + current + ')';
 }
 $('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
-$('shield').onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
+// The privacy report of the site shown opens above the shield.
+$('shield').onclick = () => { const r = $('shield').getBoundingClientRect(); send({ cmd: 'privacy_report', x: r.left, y: r.top - 8 }); };
+$('shield').title = 'Privacy report of this site';
 $('new').onclick = () => send({ cmd: 'new_tab' });
 $('new').title = 'New tab (' + bhKeys('mod+t') + ')';
 $('gear').title = 'Settings (' + bhKeys('mod+,') + ')';

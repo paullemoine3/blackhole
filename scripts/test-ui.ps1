@@ -167,6 +167,98 @@ eval chrome state.tabs.length + '|' + state.folders.length + '|' + document.getE
 eval chrome (document.querySelector('#toast button').click(), 'undo')
 wait 800
 eval chrome state.tabs.length + '|' + state.folders.length + '|' + state.tabs.filter(t => t.folder != null).length
+cmd {"cmd":"open","input":"https://example.net"}
+wait 3000
+eval chrome (() => { const n = [...document.querySelectorAll('#tabs .tab')].find(n => state.tabs.find(t => t.id == n.dataset.tab).url.includes('example.net')); window.__mid = +n.dataset.tab; n.dispatchEvent(new MouseEvent('auxclick', {button: 1, bubbles: true, cancelable: true})); return 'mid'; })()
+wait 900
+eval chrome String(state.tabs.some(t => t.id === window.__mid))
+eval chrome (send({cmd: 'pin', id: state.activeTab}), 'pin')
+wait 800
+eval chrome (() => { const n = document.querySelector('#pinned .tab'); window.__pin = +n.dataset.tab; n.dispatchEvent(new MouseEvent('auxclick', {button: 1, bubbles: true, cancelable: true})); send({cmd: 'close', id: window.__pin}); return 'closed'; })()
+wait 900
+eval chrome state.tabs.filter(t => t.pinned).map(t => t.id).includes(window.__pin) + '|' + document.querySelectorAll('#pinned .snd').length
+cmd {"cmd":"open_settings","tab":"general"}
+wait 2000
+eval settings document.body.classList.contains('windows') + '|' + getComputedStyle(document.getElementById('top')).height + '|' + !!document.querySelector('nav button svg')
+cmd {"cmd":"panel_window","window":"settings","action":"close"}
+wait 500
+cmd {"cmd":"open","input":"https://example.com/?bh=links"}
+wait 3500
+eval chrome (window.__n = state.tabs.length, window.__act = state.activeTab, 'count')
+eval content (() => { const a = document.querySelector('a[href]'); a.dispatchEvent(new MouseEvent('auxclick', {button: 1, bubbles: true, cancelable: true, composed: true})); return 'middle'; })()
+wait 2000
+eval chrome (state.tabs.length - window.__n) + '|' + (state.activeTab === window.__act)
+eval content (() => { const a = document.querySelector('a[href]'); a.dispatchEvent(new MouseEvent('contextmenu', {button: 2, bubbles: true, cancelable: true, composed: true, clientX: 40, clientY: 40})); return 'right'; })()
+wait 900
+eval palette document.body.classList.contains('menuing') + '|' + [...document.querySelectorAll('#menu button')].map(b => b.textContent).join(',')
+cmd {"cmd":"palette_close"}
+wait 400
+eval content String(window.__bhShields) + '|' + document.adoptedStyleSheets.length
+cmd {"cmd":"open_settings","tab":"privacy"}
+wait 2000
+eval settings [...document.querySelectorAll('#shields .opt')].map(o => o.classList.contains('sel') ? 1 : 0).join('')
+cmd {"cmd":"set_shield","name":"video_ads","on":false}
+wait 600
+eval settings [...document.querySelectorAll('#shields .opt')].map(o => o.classList.contains('sel') ? 1 : 0).join('')
+cmd {"cmd":"set_shield","name":"video_ads","on":true}
+cmd {"cmd":"panel_window","window":"settings","action":"close"}
+wait 500
+cmd {"cmd":"capture_live","selector":"body","w":300,"h":200}
+wait 900
+cmd {"cmd":"capture_live","selector":"body","w":300,"h":200}
+wait 900
+eval palette [...document.querySelectorAll('#menu .mhead, #menu button')].map(b => b.textContent).join(',')
+eval palette (document.querySelector('#menu button').click(), 'picked')
+wait 900
+eval chrome (state.easels || []).map(e => e.count).join(',')
+cmd {"cmd":"open_settings","tab":"calendar"}
+wait 2000
+eval settings document.querySelector('nav button.on').dataset.tab + '|' + document.getElementById('calsrc').textContent
+cmd {"cmd":"calendar_add","url":"https://evil.test/calendar/ical/x/private-y/basic.ics"}
+wait 700
+eval settings document.getElementById('calstatus').textContent
+cmd {"cmd":"calendar_add","url":"https://calendar.google.com/calendar/ical/bh-test%40example.com/private-00000000/basic.ics"}
+wait 8000
+eval settings document.getElementById('calsrc').textContent + '|' + document.getElementById('calstatus').textContent
+cmd {"cmd":"calendar_remove","index":0}
+wait 800
+eval settings document.getElementById('calsrc').textContent
+cmd {"cmd":"panel_window","window":"settings","action":"close"}
+wait 500
+eval chrome (bh.render({...state, meeting: {title: 'Standup', url: 'https://meet.google.com/abc-defg-hij', when: 'In 5 min · 09:30', on: false}}), document.querySelector('#meet .nm').textContent + '|' + document.querySelector('#meet button').textContent)
+eval chrome (bh.render({...state, meeting: null}), String(document.getElementById('meet').children.length))
+eval chrome (window.__n = state.tabs.length, 'count')
+cmd {"cmd":"open_meet"}
+wait 3500
+eval chrome (state.tabs.length - window.__n) + '|' + state.tabs.some(t => /google\.com/.test(t.url))
+cmd {"cmd":"open","input":"https://example.com/?bh=report"}
+wait 2500
+cmd {"cmd":"privacy_report","x":20,"y":500}
+wait 900
+eval palette [...document.querySelectorAll('#menu .mhead, #menu button')].map(b => b.textContent).join(',')
+cmd {"cmd":"palette_close"}
+wait 400
+cmd {"cmd":"open","input":"https://example.com/?tidy=1"}
+wait 700
+cmd {"cmd":"open","input":"https://example.com/?tidy=2"}
+wait 700
+cmd {"cmd":"open","input":"https://example.com/?tidy=3"}
+wait 700
+cmd {"cmd":"open","input":"https://example.com/?tidy=4"}
+wait 1200
+eval chrome JSON.stringify(state.tidy && state.tidy.groups.map(g => g.name)) + '|' + !!document.querySelector('#tidy .go')
+eval chrome (window.__f = state.folders.length, document.querySelector('#tidy .go').click(), 'tidy')
+wait 1000
+eval chrome (state.folders.length - window.__f) + '|' + (state.tidy === null) + '|' + document.getElementById('toast').textContent
+eval chrome (document.querySelector('#toast button').click(), 'undo')
+wait 1000
+eval chrome String(state.folders.length - window.__f)
+cmd {"cmd":"action","id":"compare"}
+wait 2500
+eval palette document.body.classList.contains('comparing') + '|' + (document.querySelectorAll('#cpick label').length >= 2)
+cmd {"cmd":"palette_close"}
+wait 400
+eval palette (() => { bh.open({mode: 'compare', color: '#7c5cff', compare: {items: [{id: 1, title: 'A', url: 'https://a.test/', name: 'Phone A', price: '199', currency: 'EUR', rating: '4.5', specs: {Weight: '200 g'}}, {id: 2, title: 'B', url: 'https://b.test/', name: 'Phone B', price: '179', currency: 'EUR', rating: '4.1', specs: {Weight: '250 g'}}]}}); const r = [...document.querySelectorAll('#ctable tr')].map(tr => tr.textContent).join('/') + '|' + [...document.querySelectorAll('#ctable .best')].map(td => td.textContent).join(','); bh.hide(); return r; })()
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -191,7 +283,7 @@ Check ($evals[3] -match 'example\.com') 'back: returns to example.com'
 Check ($evals[4] -match 'catalog') 'settings: extension catalog present'
 function Width($line) { if ($line -match '(\d+(\.\d+)?)\s*$') { [double]$Matches[1] } else { -1 } }
 $mid = Width $evals[5]; $hidden = Width $evals[6]; $peek = Width $evals[7]; $open = Width $evals[8]
-Check ($mid -gt $open -and $mid -lt $hidden) "sidebar animation: page width is mid-way while hiding ($mid)"
+Check ($mid -eq $hidden -and $mid -gt $open) "sidebar animation: the page slides at its final width, not resized on every frame ($mid)"
 Check (($hidden - $open) -gt 200 -and ($hidden - $open) -lt 260) "sidebar: hiding gives its width to the page ($hidden vs $open)"
 Check ($open -gt 0 -and $open -lt $hidden) "sidebar: toggling again reopens it ($open)"
 Check ($peek -eq $hidden) "sidebar flyout: floats over the page without pushing it ($peek)"
@@ -228,6 +320,29 @@ Check ($evals[45] -match '#2fd4a0') 'space color: changed from its menu (stored 
 Check ($evals[46] -match '110%') 'command bar: a shortcut command (zoom in) runs like its keys'
 Check ($evals[49] -match '"1\|0\|Folder .*deleted.*Undo"') 'delete folder: its tab goes, a toast offers Undo'
 Check ($evals[51] -match '"2\|1\|1"') 'undo: the folder comes back with its tab inside'
+Check ($evals[53] -match '"false"') 'middle click: closes an ordinary tab'
+Check ($evals[56] -match '"true\|0"') 'quick access: closing (middle click, close) keeps the tile, no speaker on tiles'
+Check ($evals[57] -match '"true\|38px\|true"') 'settings window: own top bar like the main window, drawn icons'
+Check ($evals[60] -match '"1\|true"') 'middle click on a link: a new tab in the background'
+Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window') 'right click on a link: the link menu'
+Check ($evals[63] -match '"true\|[1-9]') 'shields: the clean-up script and its sheet are in the page'
+Check ($evals[64] -match '"1111"' -and $evals[65] -match '"1101"') 'privacy: shields listed and switched one by one'
+Check ($evals[66] -match 'Add the live area to,.*New Easel,Watch this area for changes') 'live capture: asks which Easel, or to watch the area'
+Check ($evals[68] -match '"1"') 'live capture: added to the Easel chosen (a new one)'
+Check ($evals[69] -match '"calendar\|No calendar yet\."') 'calendar: its own section in Settings'
+Check ($evals[70] -match 'secret address') 'calendar: only a Google Calendar secret address is accepted'
+Check ($evals[71] -match 'bh-test@example\.com' -and $evals[71] -notmatch 'private-0') 'calendar: added, shown by its name only (the secret stays hidden)'
+Check ($evals[71] -match 'not found|HTTP 4') 'calendar: synced over https with calendar.google.com (a fake address is reported)'
+Check ($evals[72] -match 'No calendar yet') 'calendar: removed'
+Check ($evals[73] -match '"Standup\|Join"') 'meeting card: the next meeting with a Join button'
+Check ($evals[74] -match '"0"') 'meeting card: gone when there is no meeting'
+Check ($evals[76] -match '"1\|true"') 'New Google Meet: opens Meet in a new tab'
+Check ($evals[77] -match 'example\.com · grade [A-E],.*Privacy settings') 'privacy report: the site shown, its grade and what was blocked'
+Check ($evals[78] -match 'example\.com' -and $evals[78] -match '\|true"') 'tidy: the sidebar suggests a folder for the busiest site'
+Check ($evals[80] -match '"1\|true\|.*filed into 1 folder.*Undo"') 'tidy: tabs filed into a folder, with Undo'
+Check ($evals[82] -match '"0"') 'tidy: Undo puts the tabs back'
+Check ($evals[83] -match '"true\|true"') 'compare: the open tabs are read and shown side by side'
+Check ($evals[84] -match 'Price199 EUR179 EUR' -and $evals[84] -match 'Weight200 g250 g' -and $evals[84] -match '\|179 EUR,4\.5"') 'compare: fields in rows, lowest price and best rating stand out'
 Check ($saved.Count -eq 20) "screenshots saved ($($saved.Count)/20)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

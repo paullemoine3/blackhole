@@ -1,7 +1,43 @@
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use url::Url;
+
+/// What the page itself is asked to clean up (Brave-style "shields"), on top of the blocked
+/// requests: applied by a script in every page opened (or reloaded) afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shields {
+    /// Hide ad slots and the space they leave (cosmetic filtering).
+    pub hide_ads: bool,
+    /// Skip the ads of video players (YouTube).
+    pub video_ads: bool,
+    /// Hide cookie consent banners (and give the page its scrolling back).
+    pub cookie_banners: bool,
+}
+
+impl Default for Shields {
+    fn default() -> Self {
+        Self {
+            hide_ads: true,
+            video_ads: true,
+            cookie_banners: true,
+        }
+    }
+}
+
+impl Shields {
+    fn bits(self) -> u8 {
+        u8::from(self.hide_ads) | (u8::from(self.video_ads) << 1) | (u8::from(self.cookie_banners) << 2)
+    }
+
+    fn from_bits(bits: u8) -> Self {
+        Self {
+            hide_ads: bits & 1 != 0,
+            video_ads: bits & 2 != 0,
+            cookie_banners: bits & 4 != 0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrivacyDecision {
@@ -14,9 +50,14 @@ pub enum PrivacyDecision {
 /// Decides whether and how a navigation may proceed.
 #[derive(Debug, Clone)]
 pub struct PrivacyPolicy {
+    /// Trackers and analytics.
     blocked_domains: HashSet<String>,
+    /// Ad servers, blocked on their own switch.
+    ad_domains: HashSet<String>,
     /// Shared by every clone, so switching it applies to views that already exist.
     blocking: Arc<AtomicBool>,
+    ads: Arc<AtomicBool>,
+    shields: Arc<AtomicU8>,
 }
 
 impl Default for PrivacyPolicy {
@@ -36,12 +77,21 @@ fn is_tracking_param(key: &str) -> bool {
 
 impl PrivacyPolicy {
     pub fn new(blocked_domains: impl IntoIterator<Item = String>) -> Self {
+        Self::with_ads(blocked_domains, [])
+    }
+
+    /// Trackers and ad servers, each list on its own switch (both on at first).
+    pub fn with_ads(
+        trackers: impl IntoIterator<Item = String>,
+        ads: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let lower = |list: &mut dyn Iterator<Item = String>| list.map(|d| d.to_lowercase()).collect();
         Self {
-            blocked_domains: blocked_domains
-                .into_iter()
-                .map(|d| d.to_lowercase())
-                .collect(),
+            blocked_domains: lower(&mut trackers.into_iter()),
+            ad_domains: lower(&mut ads.into_iter()),
             blocking: Arc::new(AtomicBool::new(true)),
+            ads: Arc::new(AtomicBool::new(true)),
+            shields: Arc::new(AtomicU8::new(Shields::default().bits())),
         }
     }
 
@@ -54,30 +104,58 @@ impl PrivacyPolicy {
         self.blocking.load(Ordering::Relaxed)
     }
 
-    /// The raw blocklist, for engines that must enforce it inside the page (empty when off).
+    /// Turns the ad server blocklist on or off.
+    pub fn set_ad_blocking(&self, on: bool) {
+        self.ads.store(on, Ordering::Relaxed);
+    }
+
+    pub fn is_blocking_ads(&self) -> bool {
+        self.ads.load(Ordering::Relaxed)
+    }
+
+    pub fn set_shields(&self, shields: Shields) {
+        self.shields.store(shields.bits(), Ordering::Relaxed);
+    }
+
+    pub fn shields(&self) -> Shields {
+        Shields::from_bits(self.shields.load(Ordering::Relaxed))
+    }
+
+    /// The raw blocklist, for engines that must enforce it inside the page: the lists that are
+    /// on (empty when both are off).
     pub fn blocked_domains(&self) -> impl Iterator<Item = &str> {
-        let on = self.is_blocking();
+        let (trackers, ads) = (self.is_blocking(), self.is_blocking_ads());
         self.blocked_domains
             .iter()
-            .filter(move |_| on)
+            .filter(move |_| trackers)
+            .chain(self.ad_domains.iter().filter(move |_| ads))
             .map(String::as_str)
     }
 
-    pub fn is_blocked_host(&self, host: &str) -> bool {
-        if !self.is_blocking() {
-            return false;
+    /// Why `host` (or a domain above it) is blocked, if it is.
+    fn block_reason(&self, host: &str) -> Option<&'static str> {
+        let (trackers, ads) = (self.is_blocking(), self.is_blocking_ads());
+        if !trackers && !ads {
+            return None;
         }
         let host = host.to_lowercase();
         let mut candidate = host.as_str();
         loop {
-            if self.blocked_domains.contains(candidate) {
-                return true;
+            if trackers && self.blocked_domains.contains(candidate) {
+                return Some("tracker blocked");
+            }
+            if ads && self.ad_domains.contains(candidate) {
+                return Some("ad blocked");
             }
             match candidate.split_once('.') {
                 Some((_, rest)) if rest.contains('.') => candidate = rest,
-                _ => return false,
+                _ => return None,
             }
         }
+    }
+
+    pub fn is_blocked_host(&self, host: &str) -> bool {
+        self.block_reason(host).is_some()
     }
 
     pub fn evaluate(&self, url: &Url) -> PrivacyDecision {
@@ -89,10 +167,8 @@ impl PrivacyPolicy {
             "https" | "http" | "about" | "data" | "blob" => {}
             _ => return PrivacyDecision::Block("unsupported scheme"),
         }
-        if let Some(host) = url.host_str() {
-            if self.is_blocked_host(host) {
-                return PrivacyDecision::Block("tracker blocked");
-            }
+        if let Some(why) = url.host_str().and_then(|host| self.block_reason(host)) {
+            return PrivacyDecision::Block(why);
         }
 
         let mut rewritten = url.clone();
@@ -164,10 +240,59 @@ pub struct BlockedHost {
 pub struct BlockLog {
     entries: Vec<BlockedHost>,
     total: u32,
+    /// Per site, how often each blocked host was tried (the privacy report of a site).
+    by_site: Vec<(String, Vec<(String, u32)>)>,
+}
+
+/// A site's privacy grade from what it tried this session: A (nothing) to E (a lot). A tracker
+/// weighs twice an ad.
+pub fn privacy_grade(trackers: u32, ads: u32) -> char {
+    match trackers * 2 + ads {
+        0 => 'A',
+        1..=4 => 'B',
+        5..=12 => 'C',
+        13..=30 => 'D',
+        _ => 'E',
+    }
 }
 
 impl BlockLog {
     const MAX_HOSTS: usize = 200;
+    const MAX_SITES: usize = 100;
+    const MAX_PER_SITE: usize = 100;
+
+    /// The hosts `site` tried to reach and were blocked, most frequent first.
+    pub fn for_site(&self, site: &str) -> Vec<(String, u32)> {
+        let site = site.to_lowercase();
+        let mut out = self
+            .by_site
+            .iter()
+            .find(|(s, _)| *s == site)
+            .map(|(_, hosts)| hosts.clone())
+            .unwrap_or_default();
+        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
+    fn record_for_site(&mut self, site: &str, host: &str) {
+        if site.is_empty() {
+            return;
+        }
+        let at = match self.by_site.iter().position(|(s, _)| s == site) {
+            Some(at) => at,
+            None if self.by_site.len() < Self::MAX_SITES => {
+                self.by_site.push((site.to_owned(), Vec::new()));
+                self.by_site.len() - 1
+            }
+            None => return,
+        };
+        let hosts = &mut self.by_site[at].1;
+        if let Some(entry) = hosts.iter_mut().find(|(h, _)| h == host) {
+            entry.1 += 1;
+        } else if hosts.len() < Self::MAX_PER_SITE {
+            hosts.push((host.to_owned(), 1));
+        }
+    }
 
     /// Counts a blocked request. `host` comes from a page, so anything that is not a plain
     /// hostname is filed under "unknown".
@@ -190,6 +315,7 @@ impl BlockLog {
             String::new()
         };
         self.total += 1;
+        self.record_for_site(&site, &host);
         if let Some(entry) = self.entries.iter_mut().find(|e| e.host == host) {
             entry.count += 1;
             entry.site = site;
@@ -224,6 +350,61 @@ mod tests {
 
     fn policy() -> PrivacyPolicy {
         PrivacyPolicy::new(["doubleclick.net".to_owned()])
+    }
+
+    #[test]
+    fn trackers_and_ads_are_blocked_on_their_own_switch() {
+        let p = PrivacyPolicy::with_ads(["tracker.test".to_owned()], ["Ads.Test".to_owned()]);
+        let ad = Url::parse("https://cdn.ads.test/banner.js").unwrap();
+        let tracker = Url::parse("https://x.tracker.test/t").unwrap();
+        assert_eq!(p.evaluate(&ad), PrivacyDecision::Block("ad blocked"));
+        assert_eq!(p.evaluate(&tracker), PrivacyDecision::Block("tracker blocked"));
+        assert_eq!(p.blocked_domains().count(), 2);
+        // A clone made before the switch follows it (views that already exist).
+        let clone = p.clone();
+        p.set_ad_blocking(false);
+        assert_eq!(clone.evaluate(&ad), PrivacyDecision::Allow);
+        assert!(clone.is_blocked_host("tracker.test"));
+        assert_eq!(clone.blocked_domains().collect::<Vec<_>>(), ["tracker.test"]);
+        p.set_blocking(false);
+        assert_eq!(clone.blocked_domains().count(), 0);
+    }
+
+    #[test]
+    fn the_report_of_a_site_counts_only_what_this_site_tried() {
+        let mut log = BlockLog::default();
+        log.record("tracker.test", "news.test");
+        log.record("tracker.test", "news.test");
+        log.record("ads.test", "news.test");
+        log.record("tracker.test", "shop.test");
+        log.record("x.test", "not a site!");
+        assert_eq!(log.for_site("News.Test"), [("tracker.test".to_owned(), 2), ("ads.test".to_owned(), 1)]);
+        assert_eq!(log.for_site("shop.test"), [("tracker.test".to_owned(), 1)]);
+        assert!(log.for_site("other.test").is_empty());
+        assert_eq!(log.total(), 5);
+    }
+
+    #[test]
+    fn the_privacy_grade_goes_from_a_to_e() {
+        assert_eq!(privacy_grade(0, 0), 'A');
+        assert_eq!(privacy_grade(1, 2), 'B');
+        assert_eq!(privacy_grade(3, 4), 'C');
+        assert_eq!(privacy_grade(10, 5), 'D');
+        assert_eq!(privacy_grade(20, 0), 'E');
+    }
+
+    #[test]
+    fn shields_are_on_by_default_and_shared_by_clones() {
+        let p = policy();
+        assert_eq!(p.shields(), Shields::default());
+        let clone = p.clone();
+        let some = Shields {
+            hide_ads: false,
+            video_ads: true,
+            cookie_banners: false,
+        };
+        p.set_shields(some);
+        assert_eq!(clone.shields(), some);
     }
 
     #[test]

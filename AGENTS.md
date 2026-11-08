@@ -54,9 +54,16 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   l'onglet quitté qui n'est plus à l'écran (pas l'autre volet d'un split).
 - Vues de réserve : créées sans URL (`spare_tab_view`), jamais sur `about:blank`, sinon
   cette page reste la première de l'historique de l'onglet (Précédent y mène).
-- Onglet verrouillé : y revenir ne recharge que si l'hôte ou le chemin a changé (la query
-  et le `#` réécrits par les applis web ne comptent pas) ; recliquer l'onglet affiché ou
-  « Back to the locked page » (`reset_tab`) force le retour.
+- Accès rapide (onglets épinglés) : fermer (menu, ⌘W, clic molette, commande `close`) ne
+  les retire jamais de la liste, ça les met en veille ; seul « Remove from quick access » les
+  retire. Clic molette : veille pour un onglet d'accès rapide ou de dossier, fermeture sinon.
+  Pas de bouton son sur les tuiles. La fonction « Lock URL » a été retirée (un ancien champ
+  `locked` dans `workspace.json` est ignoré au chargement).
+- PiP : quitter la fenêtre flottante ne change jamais d'onglet (la page ne distingue pas
+  « fermer » de « retour à l'onglet ») ; la carte lecteur reste dans la barre latérale.
+- Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
+  titre transparente sur macOS) ; leur page dessine la barre du haut (38 px, teinte de l'espace,
+  boutons) et la pilote par `UiCommand::PanelWindow`.
 - Pour les données utilisateur, utiliser `blackhole_infrastructure::write_later`
   et `flush_writes` avant relecture ou fermeture ; conserver les écritures atomiques.
 - Enregistrer les préférences persistantes dans `Settings`, avec
@@ -83,6 +90,10 @@ cargo test --workspace --locked
 
 La CI teste sur macOS et Windows. Pour un changement de code, exécuter les tests
 pertinents et Clippy sans avertissement ; signaler les vérifications impossibles.
+Depuis Windows, vérifier aussi le code macOS avec `cargo clippy --workspace --all-targets
+--target aarch64-apple-darwin` (faux `CC`/`AR` pour la cible, voir copilot-instructions) ;
+MSRV 1.80 : pas d'API plus récente. Animation de la sidebar : la page glisse à largeur
+fixe, la boucle est cadencée à 8 ms (`FRAME`), ne pas revenir à un redimensionnement par image.
 Ajouter un test ciblé pour tout nouveau comportement logique, de préférence dans
 les couches internes, avec les tests unitaires existants.
 
@@ -130,6 +141,48 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Palette : une action `key:<raccourci>` rejoue le raccourci (`shortcut`), avec `keys` pour l'affichage.
 - Déplacer un onglet d'espace (`move_tab_to_space`) libère sa vue : elle est recréée sur le profil
   (cookies) du nouvel espace. « Copy link » passe par `execCommand('copy')` dans la palette.
+
+## Liens, boucliers et capture en direct (0.7.18)
+
+- `page_guard.js` (cadre principal) : clic molette / Ctrl-⌘+clic sur un lien → `open_link`
+  (onglet en arrière-plan, `open_in_background`) ; clic droit sur un lien → `link_menu` (notre
+  menu : nouvel onglet, nouvelle fenêtre, fenêtre privée, Peek, copier). Maj+clic droit ou une
+  sélection gardent le menu du moteur. Une page ne peut pas ouvrir de fenêtre elle-même : seule
+  la commande d'interface `open_link` a un `target`.
+- Boucliers : `PrivacyPolicy::with_ads` (traqueurs `blocklist.txt` + pubs `adlist.txt`, chacun
+  son interrupteur) et `Shields` (masquer les pubs, sauter les pubs YouTube, masquer les bandeaux
+  cookies) appliqués par `ui/shields.js` à la création de la page ; réglages dans `Settings`
+  (`ad_blocking`, `shields`), commande `SetShield`. Ne jamais mettre le domaine d'un site dans
+  `adlist.txt` ; ne pas couper le son sur YouTube (la pub et la vidéo partagent le `<video>`).
+- Capture en direct : la zone choisie attend dans `live_pending` ; un menu demande l'Easel
+  (ou un nouveau) → `LiveCaptureTo`. Sans Easel dans l'espace, il est créé directement.
+- Barres de défilement des pages d'interface : `ui/theme.js`, injecté avec `keys.js`.
+- Meet et agenda : règles pures dans `domain/meetings.rs` ; lecture iCal (fuseaux `chrono-tz`,
+  récurrences `rrule`, EXDATE, RECURRENCE-ID, annulés) et téléchargement dans
+  `infrastructure/calendar.rs` (https, `calendar.google.com` seulement, sans redirection, taille
+  plafonnée) ; adresses secrètes chiffrées (`calendars.bin`, `Vault::named`). App : `meet.rs`
+  (synchro en thread toutes les 10 min, carte « prochaine réunion », rappel, `open_meet` qui
+  réutilise l'onglet Meet d'accès rapide ou de dossier sauf s'il est en appel). La page des
+  Réglages ne reçoit jamais l'adresse secrète, seulement le nom de l'agenda.
+- Outils de développement des pages : `with_devtools(true)` sur les onglets (feature `devtools`
+  de wry, active en release), raccourci `devtools` (F12, Ctrl+Maj+I, ⌘⌥I) géré par
+  `shortcuts.js` puisque les raccourcis natifs de WebView2 sont coupés.
+- Rapport de confidentialité : `BlockLog::for_site` (décompte borné par site), `privacy_grade`,
+  menu `privacy_report` ancré au bouclier ; pubs et traqueurs distingués par `PrivacyPolicy`.
+- Rangement : `Workspace::tidy_suggestion` / `tidy` / `untidy` (`site_of_host`), carte `#tidy`
+  dans la barre latérale (dès `TIDY_FROM` onglets libres), Undo par toast.
+- Copilote de réunion : `Meeting::notes_template`, `agenda_of` ; `meet.rs` crée ou rouvre l'Easel
+  « Notes · titre · jour » et ouvre la fenêtre Easel (réglage `meeting_notes`).
+- Veille de zone : `domain/watch.rs`, `WatchStore` (`watches.json`), `app/watching.rs` (une vue
+  cachée à la fois, lecture à 8 s, abandon à 14 s, toutes les 30 min), section Library « Watched
+  Areas ». Démarrée depuis le menu du sélecteur de zone (`WatchArea`).
+- Comparateur : `ui/compare.js` (JSON-LD Product, Open Graph, tableau de caractéristiques) lancé
+  dans chaque onglet chargé, `app/compare.rs`, palette en mode `compare` (données de page
+  insérées par `textContent` uniquement).
+- `ureq` utilise les certificats du système (`native-certs`) : nécessaire derrière un antivirus
+  qui inspecte le HTTPS ; les téléchargements gardent leur vérification SHA-256.
+- `test-easel.ps1` : un `eval` qui ne fait que piloter l'interface renvoie `__skip…` et n'est pas
+  compté dans les indices des `Check`.
 
 ## Pages d'erreur et User-Agent
 

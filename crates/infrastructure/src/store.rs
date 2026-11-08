@@ -186,8 +186,13 @@ impl Vault {
 
     #[cfg(test)]
     fn with_key(data: &std::path::Path, key: [u8; 32]) -> Self {
+        Self::named_with_key(data, "vault.bin", key)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn named_with_key(data: &std::path::Path, file: &str, key: [u8; 32]) -> Self {
         Self {
-            path: data.join("vault.bin"),
+            path: data.join(file),
             key: Some(key),
         }
     }
@@ -210,9 +215,18 @@ impl Vault {
         }
     }
 
-    pub fn load(&self) -> Result<Vec<Login>, String> {
+    /// Another file sealed with the same key (e.g. the secret calendar addresses).
+    pub fn named(data: &std::path::Path, file: &str) -> Self {
+        Self {
+            path: data.join(file),
+            key: None,
+        }
+    }
+
+    /// The decrypted JSON content; the default value while the file does not exist.
+    pub fn read_json<T: serde::de::DeserializeOwned + Default>(&self) -> Result<T, String> {
         let Ok(raw) = fs::read(&self.path) else {
-            return Ok(Vec::new());
+            return Ok(T::default());
         };
         if raw.len() < 12 {
             return Err("coffre corrompu".into());
@@ -222,6 +236,28 @@ impl Vault {
             .decrypt(Nonce::from_slice(&raw[..12]), &raw[12..])
             .map_err(|_| "coffre illisible (clé ou fichier modifié)".to_string())?;
         serde_json::from_slice(&plain).map_err(|e| e.to_string())
+    }
+
+    /// Encrypts `value` as JSON (fresh nonce) and replaces the file atomically.
+    pub fn write_json<T: serde::Serialize>(&self, value: &T) -> Result<(), String> {
+        let key = self.key()?;
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
+        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+        let mut blob = nonce.to_vec();
+        let plain = serde_json::to_vec(value).map_err(|e| e.to_string())?;
+        blob.extend(
+            cipher
+                .encrypt(&nonce, plain.as_ref())
+                .map_err(|e| e.to_string())?,
+        );
+        let tmp = self.path.with_extension("tmp");
+        create_parent(&self.path)?;
+        fs::write(&tmp, blob).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, &self.path).map_err(|e| e.to_string())
+    }
+
+    pub fn load(&self) -> Result<Vec<Login>, String> {
+        self.read_json()
     }
 
     /// Adds logins not already stored (same site + username) and returns how many were new.
@@ -236,24 +272,7 @@ impl Vault {
                 all.push(l);
             }
         }
-        let key = self.key()?;
-        let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
-        let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-        let mut blob = nonce.to_vec();
-        blob.extend(
-            cipher
-                .encrypt(
-                    &nonce,
-                    serde_json::to_vec(&all)
-                        .map_err(|e| e.to_string())?
-                        .as_ref(),
-                )
-                .map_err(|e| e.to_string())?,
-        );
-        let tmp = self.path.with_extension("tmp");
-        create_parent(&self.path)?;
-        fs::write(&tmp, blob).map_err(|e| e.to_string())?;
-        fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
+        self.write_json(&all)?;
         Ok(all.len() - before)
     }
 
@@ -330,6 +349,76 @@ fn save_list<T: Serialize>(path: &std::path::Path, list: &[T]) -> Result<(), Str
     fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
+/// Watched areas of pages (`watches.json`).
+pub struct WatchStore {
+    path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+struct WatchDto {
+    id: u64,
+    url: String,
+    selector: String,
+    title: String,
+    #[serde(default)]
+    value: String,
+    #[serde(default)]
+    previous: String,
+    #[serde(default)]
+    checked_at: i64,
+    #[serde(default)]
+    changed_at: i64,
+    #[serde(default)]
+    unread: bool,
+}
+
+impl WatchStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("watches.json"),
+        }
+    }
+
+    pub fn load(&self) -> blackhole_domain::watch::Watches {
+        let dtos: Vec<WatchDto> = load_list(&self.path);
+        blackhole_domain::watch::Watches::restore(
+            dtos.into_iter()
+                .filter(|d| d.url.starts_with("https://") || d.url.starts_with("http://"))
+                .map(|d| blackhole_domain::watch::Watch {
+                    id: d.id,
+                    url: d.url,
+                    selector: d.selector,
+                    title: d.title,
+                    value: d.value,
+                    previous: d.previous,
+                    checked_at: d.checked_at,
+                    changed_at: d.changed_at,
+                    unread: d.unread,
+                })
+                .collect(),
+        )
+    }
+
+    pub fn save(&self, watches: &blackhole_domain::watch::Watches) -> Result<(), String> {
+        let dtos: Vec<WatchDto> = watches
+            .all()
+            .iter()
+            .map(|w| WatchDto {
+                id: w.id,
+                url: w.url.clone(),
+                selector: w.selector.clone(),
+                title: w.title.clone(),
+                value: w.value.clone(),
+                previous: w.previous.clone(),
+                checked_at: w.checked_at,
+                changed_at: w.changed_at,
+                unread: w.unread,
+            })
+            .collect();
+        save_list(&self.path, &dtos)
+    }
+}
+
 /// Download history (`downloads.json`), newest last.
 pub struct DownloadStore {
     path: PathBuf,
@@ -375,6 +464,24 @@ impl ArchiveStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watches_survive_a_restart_and_odd_entries_are_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = WatchStore::new(dir.path());
+        let mut w = blackhole_domain::watch::Watches::default();
+        let id = w.add("https://shop.test/p", "#price", "Headphones", 0).unwrap();
+        w.record(id, Some("249 €"), 10);
+        w.record(id, Some("199 €"), 20);
+        store.save(&w).unwrap();
+        assert_eq!(store.load(), w);
+        fs::write(
+            dir.path().join("watches.json"),
+            r#"[{"id":1,"url":"javascript:alert(1)","selector":"a","title":"x"}]"#,
+        )
+        .unwrap();
+        assert!(store.load().all().is_empty());
+    }
 
     fn bm(url: &str) -> Bookmark {
         Bookmark {

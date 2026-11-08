@@ -18,16 +18,21 @@ mod writer;
 
 pub use writer::{flush_writes, write_later};
 
-const BLOCKLIST: &str = include_str!("../blocklist.txt");
+pub mod calendar;
 
+const BLOCKLIST: &str = include_str!("../blocklist.txt");
+const ADLIST: &str = include_str!("../adlist.txt");
+
+fn domains(list: &str) -> impl Iterator<Item = String> + '_ {
+    list.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_owned)
+}
+
+/// Built-in trackers and ad servers, each list on its own switch.
 pub fn default_privacy_policy() -> PrivacyPolicy {
-    PrivacyPolicy::new(
-        BLOCKLIST
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            .map(str::to_owned),
-    )
+    PrivacyPolicy::with_ads(domains(BLOCKLIST), domains(ADLIST))
 }
 
 /// Per-user data directory (`~/Library/Application Support` on macOS, `%APPDATA%` on Windows).
@@ -211,8 +216,7 @@ struct TabDto {
     folder: Option<u64>,
     #[serde(default)]
     renamed: bool,
-    #[serde(default)]
-    locked: Option<String>,
+    // A former `locked` URL (removed feature) in older files is ignored on load.
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,7 +276,6 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         pinned: t.pinned,
                         folder: t.folder.map(|f| f.0),
                         renamed: t.renamed,
-                        locked: t.locked.as_ref().map(ToString::to_string),
                     })
                     .collect(),
                 folders: s
@@ -337,11 +340,6 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                             pinned: t.pinned,
                             folder: t.folder.filter(|f| known(*f) && !t.pinned).map(FolderId),
                             renamed: t.renamed,
-                            locked: t
-                                .locked
-                                .as_deref()
-                                .and_then(|u| Url::parse(u).ok())
-                                .filter(|_| t.pinned || t.folder.is_some_and(known)),
                         })
                     })
                     .collect(),
@@ -421,6 +419,15 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             extensions_in_private: dto.extensions_in_private,
             sidebar_open: dto.sidebar_open,
             tracker_blocking: dto.tracker_blocking,
+            ad_blocking: dto.ad_blocking,
+            shields: blackhole_domain::Shields {
+                hide_ads: dto.hide_ads,
+                video_ads: dto.skip_video_ads,
+                cookie_banners: dto.hide_cookie_banners,
+            },
+            meeting_reminders: dto.meeting_reminders,
+            meeting_card: dto.meeting_card,
+            meeting_notes: dto.meeting_notes,
             collapsed_sections: dto.collapsed_sections.into_iter().collect(),
         }))
     }
@@ -446,6 +453,13 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             extensions_in_private: settings.extensions_in_private,
             sidebar_open: settings.sidebar_open,
             tracker_blocking: settings.tracker_blocking,
+            ad_blocking: settings.ad_blocking,
+            hide_ads: settings.shields.hide_ads,
+            skip_video_ads: settings.shields.video_ads,
+            hide_cookie_banners: settings.shields.cookie_banners,
+            meeting_reminders: settings.meeting_reminders,
+            meeting_card: settings.meeting_card,
+            meeting_notes: settings.meeting_notes,
             collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
@@ -533,6 +547,20 @@ struct SettingsDto {
     sidebar_open: bool,
     #[serde(default = "default_true")]
     tracker_blocking: bool,
+    #[serde(default = "default_true")]
+    ad_blocking: bool,
+    #[serde(default = "default_true")]
+    hide_ads: bool,
+    #[serde(default = "default_true")]
+    skip_video_ads: bool,
+    #[serde(default = "default_true")]
+    hide_cookie_banners: bool,
+    #[serde(default = "default_true")]
+    meeting_reminders: bool,
+    #[serde(default = "default_true")]
+    meeting_card: bool,
+    #[serde(default = "default_true")]
+    meeting_notes: bool,
     #[serde(default)]
     collapsed_sections: Vec<String>,
 }
@@ -610,6 +638,17 @@ mod tests {
     }
 
     #[test]
+    fn a_tab_saved_with_the_former_locked_url_still_loads() {
+        let raw = r##"{"version":1,"active_space":1,"spaces":[{"id":1,"name":"Personal","color":"#7c5cff",
+            "active_tab":2,"tabs":[{"id":2,"title":"A","url":"https://a.test/","pinned":true,
+            "locked":"https://a.test/home"}]}]}"##;
+        let ws = super::from_dto(serde_json::from_str(raw).unwrap());
+        let tab = &ws.active_space().tabs[0];
+        assert!(tab.pinned);
+        assert_eq!(tab.url.as_str(), "https://a.test/");
+    }
+
+    #[test]
     fn icons_and_split_survive_a_restart() {
         let dir = tempfile::tempdir().unwrap();
         let repo = JsonWorkspaceRepository::new(dir.path().into());
@@ -662,6 +701,15 @@ mod tests {
             extensions_in_private: true,
             sidebar_open: false,
             tracker_blocking: false,
+            ad_blocking: false,
+            shields: blackhole_domain::Shields {
+                hide_ads: true,
+                video_ads: false,
+                cookie_banners: true,
+            },
+            meeting_reminders: false,
+            meeting_card: true,
+            meeting_notes: false,
             collapsed_sections: ["pinned".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
@@ -683,7 +731,20 @@ mod tests {
         assert!(!old.extensions_in_private);
         assert!(old.sidebar_open, "pinned open by default");
         assert!(old.tracker_blocking, "blocker on by default");
+        assert!(old.ad_blocking, "ads blocked by default");
+        assert_eq!(old.shields, blackhole_domain::Shields::default(), "shields on by default");
+        assert!(old.meeting_reminders && old.meeting_card, "meetings shown by default");
         assert!(old.collapsed_sections.is_empty());
+    }
+
+    #[test]
+    fn built_in_lists_block_trackers_and_ads_but_no_site_of_its_own() {
+        let p = super::default_privacy_policy();
+        assert!(p.is_blocked_host("stats.g.doubleclick.net"));
+        assert!(p.is_blocked_host("c.amazon-adsystem.com"));
+        for site in ["youtube.com", "www.google.com", "twitch.tv", "github.com"] {
+            assert!(!p.is_blocked_host(site), "{site}");
+        }
     }
 
     #[test]

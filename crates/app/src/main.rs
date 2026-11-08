@@ -12,6 +12,9 @@ mod extensions;
 mod favicons;
 mod ipc;
 mod media;
+mod compare;
+mod meet;
+mod watching;
 mod sidebar;
 mod stats;
 mod views;
@@ -167,6 +170,16 @@ fn card_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> (f64, 
         (window.height - BAR_HEIGHT - CARD_GAP).max(1.0),
     )
 }
+/// The page while the sidebar opens or hides: it keeps the width it has with the sidebar hidden
+/// and only its left edge moves (the window clips the rest), so the site is not laid out again
+/// on every frame (what made the motion stutter); its final size is set once, at the end.
+fn sliding(main: wry::Rect, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
+    let scale = 1.0;
+    let at = main.position.to_logical::<f64>(scale);
+    let size = main.size.to_logical::<f64>(scale);
+    views::rect(at.x, at.y, (window.width - 2.0 * CARD_GAP).max(1.0), size.height)
+}
+
 /// Where the command bar lives: the whole window while open, a parked 1x1 view otherwise. A hidden
 /// full-window view still wins the drag destination lookup and would swallow in-page drags.
 fn palette_rect(open: bool, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
@@ -194,6 +207,10 @@ fn library_rect(window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
 /// Quiet time after a tab creation before the overlays (palette, flyout) are rebuilt on top.
 const RAISE_DELAY: Duration = Duration::from_millis(400);
 const BLUR_DELAY: Duration = Duration::from_millis(350);
+/// A site needs this many loose tabs to be suggested as a folder; the sidebar only suggests a
+/// tidy-up from `TIDY_FROM` loose tabs.
+const TIDY_MIN: usize = 3;
+const TIDY_FROM: usize = 6;
 /// How long the Undo of a deleted space or folder stays possible (the toast shows for 8 s).
 const UNDO_FOR: Duration = Duration::from_secs(15);
 /// How often an unfocused but still visible window is checked for being covered.
@@ -226,7 +243,9 @@ enum UpdateMsg {
     Downloaded(PathBuf),
     Failed(String),
 }
-const FRAME: Duration = Duration::from_millis(16);
+/// One frame of the sidebar's motion (~120 per second): paced with a precise sleep, since the
+/// system timer behind `WaitUntil` (15.6 ms on Windows) made the frames uneven.
+const FRAME: Duration = Duration::from_millis(8);
 /// How long a rarely used page of the shell (library, easel tab, split bar) stays loaded once hidden.
 const PANEL_KEEP: Duration = Duration::from_secs(60);
 
@@ -377,6 +396,21 @@ struct Running {
     undo: Option<(Instant, Removed)>,
     /// Library section asked for by the command bar ("Open History"), with a request number.
     library_jump: (u32, &'static str),
+    /// Whether the Settings and Easel windows are maximized, last time their page was told.
+    panels_maxed: (bool, bool),
+    /// When the sidebar's last frame was drawn (motion pacing).
+    last_frame: Instant,
+    /// A live capture area waiting for the user to choose its Easel.
+    live_pending: Option<(TabId, String, (f64, f64))>,
+    /// Google Calendar sync and the meeting card (see meet.rs).
+    calendar: meet::Calendar,
+    /// Watched areas of pages (see watching.rs).
+    watching: watching::Watching,
+    /// The tab comparator (see compare.rs).
+    comparing: compare::Comparing,
+    /// The last tidy-up, for its Undo; whether the suggestion was dismissed this session.
+    tidied: Option<blackhole_domain::Tidied>,
+    tidy_dismissed: bool,
     /// Tabs whose media card was closed; they come back when the tab plays again.
     media_dismissed: HashSet<u64>,
     svc: BrowserService<JsonWorkspaceRepository>,
@@ -741,6 +775,14 @@ impl Running {
             media_hold: media::Linger::new(media::LINGER),
             undo: None,
             library_jump: (0, ""),
+            panels_maxed: (false, false),
+            last_frame: Instant::now(),
+            live_pending: None,
+            calendar: meet::Calendar::new(&data),
+            watching: watching::Watching::new(&data),
+            comparing: compare::Comparing::new(),
+            tidied: None,
+            tidy_dismissed: false,
             media_dismissed: HashSet::new(),
             svc,
             mailbox,
@@ -937,6 +979,11 @@ impl Running {
             let _ = bar.set_bounds(views::rect(cx, cy, cw, SPLIT_HEADER));
         }
         let (main, side) = self.content_rects();
+        let main = if self.sidebar.moving() && side.is_none() {
+            sliding(main, &size)
+        } else {
+            main
+        };
         let _ = self.active_view().set_bounds(main);
         self.place_panels();
         for item in self.live.keys().copied().collect::<Vec<_>>() {
@@ -1137,10 +1184,11 @@ impl Running {
             "downloads": self.downloads_json(),
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
             "media": self.media_json(),
+            "meeting": self.calendar.card(),
+            "tidy": self.tidy_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
             "tabs": space.tabs.iter().map(|t| json!({
                 "id": t.id.0, "title": t.title, "url": t.url.as_str(), "pinned": t.pinned,
-                "locked": t.locked.is_some(),
                 "folder": t.folder.map(|f| f.0),
                 "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
                 "asleep": !self.tabs.contains_key(&t.id),
@@ -1182,6 +1230,9 @@ impl Running {
         let settings = self.svc.settings();
         let state = json!({
             "os": std::env::consts::OS,
+            // The window's own top bar: the space's color and the maximize button's state.
+            "color": self.svc.workspace().active_space().color,
+            "maximized": win.window.is_maximized(),
             "version": env!("CARGO_PKG_VERSION"),
             "engine": settings.search_engine.id(),
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
@@ -1191,6 +1242,13 @@ impl Running {
             "hardwareAcceleration": settings.hardware_acceleration,
             "extensionsInPrivate": settings.extensions_in_private,
             "trackerBlocking": settings.tracker_blocking,
+            "calendar": self.calendar_json(),
+            "adBlocking": settings.ad_blocking,
+            "shields": {
+                "hideAds": settings.shields.hide_ads,
+                "videoAds": settings.shields.video_ads,
+                "cookieBanners": settings.shields.cookie_banners,
+            },
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
             "maxLiveTabs": settings.max_live_tabs,
@@ -1478,25 +1536,7 @@ impl Running {
             win.window.focus_window();
             return;
         }
-        #[allow(unused_mut)]
-        let mut attrs = Window::default_attributes()
-            .with_title("BlackHole Settings")
-            .with_theme(Some(winit::window::Theme::Dark))
-            .with_inner_size(LogicalSize::new(820.0, 600.0))
-            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
-        // Owned by the main window so it always stays above it.
-        #[cfg(windows)]
-        {
-            use winit::{
-                platform::windows::WindowAttributesExtWindows,
-                raw_window_handle::{HasWindowHandle, RawWindowHandle},
-            };
-            if let Ok(handle) = self.window.window_handle() {
-                if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                    attrs = attrs.with_owner_window(h.hwnd.get());
-                }
-            }
-        }
+        let attrs = self.panel_window_attributes("BlackHole Settings", (820.0, 600.0));
         let Ok(window) = event_loop.create_window(attrs) else {
             return;
         };
@@ -1509,6 +1549,71 @@ impl Running {
 
     fn close_settings(&mut self) {
         self.settings = None;
+    }
+
+    /// A secondary window (Settings, Easel) dressed like the main one: its page draws the top
+    /// bar (title, and on Windows the minimize / maximize / close buttons). Owned by the main
+    /// window on Windows so it always stays above it.
+    fn panel_window_attributes(
+        &self,
+        title: &str,
+        (width, height): (f64, f64),
+    ) -> winit::window::WindowAttributes {
+        #[allow(unused_mut)]
+        let mut attrs = Window::default_attributes()
+            .with_title(title)
+            .with_theme(Some(winit::window::Theme::Dark))
+            .with_inner_size(LogicalSize::new(width, height))
+            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
+        #[cfg(windows)]
+        {
+            use winit::{
+                platform::windows::{IconExtWindows, WindowAttributesExtWindows},
+                raw_window_handle::{HasWindowHandle, RawWindowHandle},
+            };
+            attrs = attrs.with_decorations(false).with_undecorated_shadow(true);
+            if let Ok(icon) = winit::window::Icon::from_resource(1, None) {
+                attrs = attrs.with_window_icon(Some(icon));
+            }
+            if let Ok(handle) = self.window.window_handle() {
+                if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                    attrs = attrs.with_owner_window(h.hwnd.get());
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            attrs = attrs
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+                .with_title_hidden(true);
+        }
+        attrs
+    }
+
+    /// The buttons and drag area of a secondary window's top bar.
+    fn panel_window_action(&mut self, which: &str, action: &str) {
+        let window = match which {
+            "settings" => self.settings.as_ref().map(|w| &w.window),
+            "easel" => self.easel.as_ref().map(|w| &w.window),
+            _ => None,
+        };
+        let Some(window) = window else { return };
+        match action {
+            "drag" => {
+                let _ = window.drag_window();
+            }
+            "minimize" => window.set_minimized(true),
+            "maximize" => {
+                window.set_maximized(!window.is_maximized());
+            }
+            "close" => match which {
+                "settings" => self.close_settings(),
+                _ => self.close_easel(),
+            },
+            _ => {}
+        }
     }
 
     fn settings_window_id(&self) -> Option<WindowId> {
@@ -1524,24 +1629,7 @@ impl Running {
             win.window.focus_window();
             return;
         }
-        #[allow(unused_mut)]
-        let mut attrs = Window::default_attributes()
-            .with_title("BlackHole Easel")
-            .with_theme(Some(winit::window::Theme::Dark))
-            .with_inner_size(LogicalSize::new(1100.0, 720.0))
-            .with_min_inner_size(LogicalSize::new(640.0, 440.0));
-        #[cfg(windows)]
-        {
-            use winit::{
-                platform::windows::WindowAttributesExtWindows,
-                raw_window_handle::{HasWindowHandle, RawWindowHandle},
-            };
-            if let Ok(handle) = self.window.window_handle() {
-                if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                    attrs = attrs.with_owner_window(h.hwnd.get());
-                }
-            }
-        }
+        let attrs = self.panel_window_attributes("BlackHole Easel", (1100.0, 720.0));
         let Ok(window) = event_loop.create_window(attrs) else {
             return;
         };
@@ -1688,17 +1776,131 @@ impl Running {
         }
     }
 
-    /// Adds a live card for `selector` of the page of `tab`; the address comes from the engine.
-    fn capture_live(&mut self, tab: TabId, selector: &str, size: (f64, f64)) {
+    /// An area was picked: ask which Easel of the space it goes to (or a new one), or whether
+    /// to watch it for changes.
+    fn live_picked(&mut self, tab: TabId, selector: String, size: (f64, f64)) {
+        let space = self.svc.workspace().active_space().id.0;
+        let easels: Vec<(u64, String)> = self
+            .easels
+            .all()
+            .iter()
+            .filter(|e| self.easel_space(e) == space)
+            .map(|e| (e.id, e.name.clone()))
+            .collect();
+        self.live_pending = Some((tab, selector, size));
+        let current = self.easel_current;
+        let mut items = vec![json!({"head": "Add the live area to"})];
+        items.extend(easels.iter().map(|(id, name)| {
+            json!({
+                "icon": if Some(*id) == current { "check" } else { "easel" },
+                "label": name, "run": {"cmd": "live_capture_to", "easel": id},
+            })
+        }));
+        items.push(json!({"sep": true}));
+        items.push(json!({"icon": "plus", "label": "New Easel", "run": {"cmd": "live_capture_to", "easel": null}}));
+        items.push(json!({"sep": true}));
+        items.push(json!({"icon": "watch", "label": "Watch this area for changes", "run": {"cmd": "watch_area"}}));
+        // In the middle of the page, where the area was just picked.
+        let (x, y) = self.view_origin(tab);
+        let size = self.window_size();
+        let at = (x + (size.width - x) / 2.0 - 120.0, y + 120.0);
+        self.show_menu(at, json!(items));
+    }
+
+    /// Top-left corner of a page view in the window (logical pixels).
+    fn view_origin(&self, tab: TabId) -> (f64, f64) {
+        let scale = self.scale();
+        self.view_of(tab)
+            .and_then(|v| v.bounds().ok())
+            .map(|b| {
+                let p = b.position.to_logical::<f64>(scale);
+                (p.x, p.y)
+            })
+            .unwrap_or((card_rect(&self.sidebar, &self.window_size()).0, BAR_HEIGHT))
+    }
+
+    /// Shows a menu (drawn by the command bar overlay) at a point of the window.
+    fn show_menu(&mut self, (x, y): (f64, f64), items: serde_json::Value) {
+        self.menu = Some(json!({"x": x, "y": y, "items": items}));
+        self.open_palette("menu");
+    }
+
+    /// Right click on a link of a page: open it in a new tab, a new window, a private window,
+    /// preview it, or copy it.
+    fn link_menu(&mut self, tab: TabId, raw: &str, x: f64, y: f64) {
+        let Ok(url) = Url::parse(raw) else { return };
+        if !matches!(url.scheme(), "http" | "https") {
+            return;
+        }
+        let link = url.as_str();
+        let items = json!([
+            {"icon": "plus", "label": "Open link in new tab", "run": {"cmd": "open_link", "url": link, "target": "tab"}},
+            {"icon": "window", "label": "Open link in new window", "run": {"cmd": "open_link", "url": link, "target": "window"}},
+            {"icon": "sleep", "label": "Open link in private window", "run": {"cmd": "open_link", "url": link, "target": "private"}},
+            {"sep": true},
+            {"icon": "open", "label": "Preview link (Peek)", "run": {"cmd": "open_peek", "url": link}},
+            {"icon": "link", "label": "Copy link", "copy": link},
+        ]);
+        let (ox, oy) = self.view_origin(tab);
+        self.show_menu((ox + x, oy + y), items);
+    }
+
+    /// Middle click / Ctrl+click on a link, or "Open link in new tab": the tab opens at the top
+    /// of the list and starts loading, while the page shown stays on screen.
+    fn open_in_background(&mut self, raw: &str) {
+        let Ok(url) = Url::parse(raw) else { return };
+        if !matches!(url.scheme(), "http" | "https") {
+            return;
+        }
+        let ws = self.svc.workspace();
+        let (space, shown) = (ws.active_space().id, ws.active_tab().map(|t| t.id));
+        let Some(id) = self.svc.open_tab(url.as_str()) else {
+            return;
+        };
+        // Air Traffic may file it in another space: it goes there, the user stays here.
+        self.svc.switch_space(space);
+        if let Some(prev) = shown.filter(|prev| *prev != id) {
+            self.svc.activate_tab(prev);
+        }
+        let tab = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .find(|t| t.id == id)
+            .cloned();
+        if let Some(tab) = tab {
+            self.ensure_view(&tab);
+        }
+        self.sync();
+    }
+
+    /// Adds a live card for `selector` of the page of `tab` to `easel` (`None`: a new Easel);
+    /// the address comes from the engine.
+    fn capture_live(&mut self, tab: TabId, selector: &str, size: (f64, f64), easel: Option<u64>) {
         let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
         let title = self
             .svc
             .workspace()
-            .active_tab()
-            .filter(|t| t.id == tab)
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .find(|t| t.id == tab)
             .map(|t| t.title.clone())
             .unwrap_or_default();
-        let (Some(url), Some(easel)) = (page, self.easel_or_create()) else {
+        let easel = match easel.filter(|id| self.easels.get(*id).is_some()) {
+            Some(id) => {
+                self.easel_current = Some(id);
+                Some(id)
+            }
+            None => {
+                self.easel_current = self.easels.create("");
+                self.tag_easel_space();
+                self.easel_current
+            }
+        };
+        let (Some(url), Some(easel)) = (page, easel) else {
             self.toast("This page cannot be captured");
             return;
         };
@@ -1810,6 +2012,7 @@ impl Running {
             "now": now_secs(),
             // A section to show, applied once per request (the page keeps its own choice after).
             "jump": json!([self.library_jump.0, self.library_jump.1]),
+            "watches": self.watches_json(),
         });
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -1894,6 +2097,10 @@ impl Running {
                     })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
                 "colors": blackhole_domain::easel::COLORS,
+                // The Easel window's own top bar (not drawn when embedded as a tab).
+                "os": std::env::consts::OS,
+                "spaceColor": self.svc.workspace().active_space().color,
+                "maximized": self.easel.as_ref().is_some_and(|w| w.window.is_maximized()),
             })
         };
         if let Some(win) = &self.easel {
@@ -2117,7 +2324,9 @@ impl Running {
             UiCommand::CaptureLive { selector, w, h } => {
                 let tab = self.svc.workspace().active_tab().map(|t| t.id);
                 match tab {
-                    Some(tab) if !self.home_shown() => self.capture_live(tab, &selector, (w, h)),
+                    Some(tab) if !self.home_shown() => {
+                        self.live_picked(tab, selector, (w, h));
+                    }
                     _ => self.toast("Open a web page to capture an area"),
                 }
             }
@@ -2335,11 +2544,16 @@ impl Running {
         self.ui(format!("window.bh&&bh.toast({})", json!(message)));
     }
 
+    /// A toast with a button that runs `run` (a `UiCommand`), shown a little longer.
+    fn toast_action(&self, message: &str, label: &str, run: serde_json::Value) {
+        let action = json!({"label": label, "run": run});
+        self.ui(format!("window.bh&&bh.toast({},{action})", json!(message)));
+    }
+
     /// A toast with an Undo button, for the space or folder just deleted (`removed`).
     fn toast_undo(&mut self, message: &str, removed: Removed) {
         self.undo = Some((Instant::now(), removed));
-        let action = json!({"label": "Undo", "run": {"cmd": "undo_removal"}});
-        self.ui(format!("window.bh&&bh.toast({},{action})", json!(message)));
+        self.toast_action(message, "Undo", json!({"cmd": "undo_removal"}));
     }
 
     /// The toast's Undo: the deleted space or folder comes back with its tabs (asleep), and they
@@ -2389,48 +2603,11 @@ impl Running {
         }
     }
 
-    /// A locked tab comes back to its locked page when it is shown again. Switching to it only
-    /// goes back when the page left the locked address (another site or path: the query and the
-    /// `#fragment` that web apps rewrite on their own do not count, so the tab is not reloaded
-    /// on every visit) and plays nothing. `force` (a click on the tab already shown, or "Back to
-    /// locked page") always goes back, like Arc's reset of a pinned tab.
-    fn return_to_lock(&mut self, id: TabId, force: bool) {
-        let Some(locked) = self
-            .svc
-            .workspace()
-            .active_space()
-            .tabs
-            .iter()
-            .find(|t| t.id == id)
-            .and_then(|t| t.locked.clone())
-        else {
-            return;
-        };
-        let Some(view) = self.tabs.get(&id) else {
-            return;
-        };
-        let here = view.url().ok().and_then(|raw| Url::parse(&raw).ok());
-        let away = here.as_ref().is_none_or(|here| {
-            if force {
-                let (mut a, mut b) = (here.clone(), locked.clone());
-                a.set_fragment(None);
-                b.set_fragment(None);
-                a != b
-            } else {
-                here.host_str() != locked.host_str()
-                    || here.path().trim_end_matches('/') != locked.path().trim_end_matches('/')
-            }
-        });
-        if away && (force || !self.is_playing(id)) {
-            let _ = view.load_url(locked.as_str());
-        }
-    }
-
     fn ensure_view(&mut self, tab: &blackhole_domain::Tab) {
         if self.tabs.contains_key(&tab.id) {
             return;
         }
-        let url = tab.locked.as_ref().unwrap_or(&tab.url);
+        let url = &tab.url;
         let bounds = self.full_content_bounds();
         let store = self.store_of_tab(tab.id);
         if let Some(at) = self.spares.iter().position(|(s, ..)| *s == store) {
@@ -2670,7 +2847,7 @@ impl Running {
             if probe.pip {
                 self.pip_seen = true;
             } else if self.pip_seen {
-                self.pip_returned(tab, !probe.playing);
+                self.pip_returned(tab);
             }
         }
         let now = self.media_json();
@@ -3021,17 +3198,13 @@ impl Running {
         }
     }
 
-    /// The floating window's "back to tab" button: show the tab it came from. A paused video was
-    /// closed with the window's own close button instead.
-    fn pip_returned(&mut self, tab: TabId, paused: bool) {
-        if self.pip_tab == Some(tab) && self.shown != Some(tab) {
+    /// The video left its floating window. The page cannot tell the window's close button from
+    /// its "back to tab" one (and closing does not pause it), so nothing is switched: the video
+    /// goes on in its tab and the sidebar's player card (its title opens the tab) stays.
+    fn pip_returned(&mut self, tab: TabId) {
+        if self.pip_tab == Some(tab) {
             self.pip_tab = None;
             self.pip_seen = false;
-            if !paused {
-                self.window.set_minimized(false);
-                self.window.focus_window();
-                self.handle_ui(UiCommand::Activate { id: tab.0 });
-            }
         }
     }
 
@@ -3321,11 +3494,15 @@ impl Running {
             json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
             json!({"id": "clear_history", "label": "Clear browsing history", "confirm": "Press again to erase all history"}),
             json!({"id": "open_history", "label": "Open History", "hint": "Library"}),
+            json!({"id": "tidy", "label": "Tidy up tabs into folders by site", "hint": "Tabs"}),
+            json!({"id": "open_watches", "label": "Watched areas", "hint": "Library"}),
+            json!({"id": "compare", "label": "Compare open tabs (price, rating, specs)", "hint": "Tabs"}),
             json!({"id": "key:shift+t", "label": "Reopen the tab closed last", "keys": "mod+shift+t"}),
             json!({"id": "key:n", "label": "New window", "keys": "mod+n"}),
             json!({"id": "key:shift+n", "label": "New private window", "keys": "mod+shift+n"}),
         ];
         actions.extend(easel_actions);
+        actions.extend(self.meeting_actions());
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
@@ -3359,6 +3536,10 @@ impl Running {
                 json!({"id": "key:zoom_out", "label": "Zoom out", "keys": "mod+minus"}),
                 json!({"id": "key:zoom_reset", "label": "Reset zoom", "keys": "mod+0"}),
                 json!({"id": "key:r", "label": "Reload without the cache", "keys": "mod+r"}),
+                json!({
+                    "id": "key:devtools", "label": "Developer tools (elements, console, network)",
+                    "keys": if cfg!(target_os = "macos") { "mod+alt+i" } else { "F12" },
+                }),
             ]);
             actions.push(json!({"id": "pip", "label": "Picture in Picture", "hint": "Video"}));
             actions.push(
@@ -3404,6 +3585,7 @@ impl Running {
             "engine": self.svc.settings().search_engine.label(),
             "color": space.color,
             "menu": self.menu,
+            "compare": self.comparing.result,
             "boostHost": site,
             "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
             "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
@@ -3446,8 +3628,16 @@ impl Running {
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "open_library" => self.handle_ui(UiCommand::OpenLibrary),
+            "new_meet" => self.open_meet(None),
+            "tidy" => self.handle_ui(UiCommand::Tidy),
+            "compare" => self.compare_start(),
+            other if other.starts_with("meet:") => self.open_meet(Some(other["meet:".len()..].to_owned())),
             "open_history" => {
                 self.library_jump = (self.library_jump.0 + 1, "history");
+                self.handle_ui(UiCommand::OpenLibrary);
+            }
+            "open_watches" => {
+                self.library_jump = (self.library_jump.0 + 1, "watches");
                 self.handle_ui(UiCommand::OpenLibrary);
             }
             // The commands that have a shortcut run exactly as the shortcut does.
@@ -3808,6 +3998,14 @@ impl Running {
                 self.spares_due = Some(Instant::now() + SPARES_DELAY);
                 self.ui_state();
             }
+            UiCommand::SetShield { name, on } => {
+                if self.svc.set_shield(&name, on) {
+                    // Spare views carry the lists and page scripts of their creation time.
+                    self.spares.clear();
+                    self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                    self.ui_state();
+                }
+            }
             UiCommand::SetSectionCollapsed { section, collapsed } => {
                 self.svc.set_section_collapsed(&section, collapsed);
             }
@@ -3827,37 +4025,23 @@ impl Running {
             UiCommand::Activate { id } => {
                 self.close_palette();
                 self.close_peek();
-                // Clicking the tab already on screen resets a locked tab to its page.
-                let again = self.shown == Some(TabId(id)) && !self.home_shown();
                 self.svc.activate_tab(TabId(id));
-                self.return_to_lock(TabId(id), again);
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
                 self.sync();
             }
-            UiCommand::LockTab { id, locked } => {
-                // Lock on the page shown right now: a web app may have changed its address
-                // without a navigation the shell has heard of yet.
-                if locked {
-                    self.refresh_url(TabId(id));
-                }
-                if !self.svc.set_tab_locked(TabId(id), locked) {
-                    self.toast("Only quick access and folder tabs can be locked");
-                }
-                self.ui_state();
-            }
-            UiCommand::ResetTab { id } => {
-                let id = TabId(id);
-                self.close_palette();
-                self.close_peek();
-                self.svc.activate_tab(id);
-                self.home_visible = false;
-                self.easel_tab = false;
-                self.library = false;
-                // A sleeping tab has no view yet: `sync` creates it on the locked page.
-                self.return_to_lock(id, true);
-                self.sync();
+            // A quick access tab is never taken off the list by closing it: it only stops.
+            UiCommand::Close { id }
+                if self
+                    .svc
+                    .workspace()
+                    .active_space()
+                    .tabs
+                    .iter()
+                    .any(|t| t.id.0 == id && t.pinned) =>
+            {
+                self.handle_ui(UiCommand::CloseInstance { id });
             }
             UiCommand::Close { id } => {
                 self.archive_tab(TabId(id));
@@ -3937,6 +4121,65 @@ impl Running {
                 }
             }
             UiCommand::UndoRemoval => self.undo_removal(),
+            UiCommand::PrivacyReport { x, y } => self.privacy_report((x, y + BAR_HEIGHT)),
+            UiCommand::WatchArea => {
+                if let Some((tab, selector, _)) = self.live_pending.take() {
+                    self.watch_area(tab, &selector);
+                }
+            }
+            command @ (UiCommand::WatchRemove { .. }
+            | UiCommand::WatchCheck { .. }
+            | UiCommand::WatchesSeen) => self.handle_watch(command),
+            UiCommand::Tidy => {
+                let groups = self.svc.workspace().tidy_suggestion(TIDY_MIN);
+                if groups.is_empty() {
+                    self.toast("Nothing to tidy up");
+                    return;
+                }
+                let done = self.svc.tidy(&groups);
+                let message = format!(
+                    "{} tabs filed into {} folder{}",
+                    done.tabs(),
+                    groups.len(),
+                    if groups.len() == 1 { "" } else { "s" }
+                );
+                self.tidied = Some(done);
+                self.sync();
+                self.toast_action(&message, "Undo", json!({"cmd": "untidy"}));
+            }
+            UiCommand::Untidy => {
+                if let Some(done) = self.tidied.take() {
+                    self.svc.untidy(&done);
+                    self.sync();
+                }
+            }
+            UiCommand::DismissTidy => {
+                self.tidy_dismissed = true;
+                self.ui_state();
+            }
+            command @ (UiCommand::OpenMeet { .. }
+            | UiCommand::CalendarAdd { .. }
+            | UiCommand::CalendarRemove { .. }
+            | UiCommand::CalendarSync
+            | UiCommand::SetMeetingOption { .. }) => self.handle_calendar(command),
+            UiCommand::OpenLink { url, target } => match target.as_str() {
+                "window" | "private" => {
+                    if matches!(Url::parse(&url), Ok(u) if matches!(u.scheme(), "http" | "https")) {
+                        open_window(target == "private", Some(&url));
+                    }
+                }
+                _ => self.open_in_background(&url),
+            },
+            UiCommand::OpenPeek { url } => {
+                if let Ok(url) = Url::parse(&url) {
+                    self.open_peek(&url);
+                }
+            }
+            UiCommand::LiveCaptureTo { easel } => {
+                if let Some((tab, selector, size)) = self.live_pending.take() {
+                    self.capture_live(tab, &selector, size, easel);
+                }
+            }
             UiCommand::SetSpaceColor { id, color } => {
                 if self.svc.set_space_color(SpaceId(id), &color) {
                     self.sync();
@@ -4196,6 +4439,9 @@ impl Running {
             UiCommand::WindowMinimize => self.window.set_minimized(true),
             UiCommand::WindowMaximize => self.window.set_maximized(!self.window.is_maximized()),
             UiCommand::WindowClose => self.quit = true,
+            UiCommand::PanelWindow { window, action } => {
+                self.panel_window_action(&window, &action)
+            }
             UiCommand::Shortcut { key } => self.shortcut(&key),
             UiCommand::Back => self.with_active_tab(views::go_back),
             UiCommand::Forward => self.with_active_tab(views::go_forward),
@@ -4442,6 +4688,8 @@ impl Running {
             "p" => self.with_active_tab(|v| {
                 let _ = v.print();
             }),
+            // The engine's inspector for the page shown: elements and styles, console, network.
+            "devtools" => self.with_active_tab(WebView::open_devtools),
             _ => {}
         }
     }
@@ -4536,15 +4784,17 @@ impl Running {
             }
             Msg::Page(tab, PageEvent::LivePick { selector, w, h }) => {
                 if self.live_pick.take() == Some(tab) {
-                    self.capture_live(tab, &selector, (w, h));
+                    self.live_picked(tab, selector, (w, h));
                 }
             }
+            Msg::Page(_, PageEvent::OpenLink { url }) => self.open_in_background(&url),
+            Msg::Page(tab, PageEvent::LinkMenu { url, x, y }) => self.link_menu(tab, &url, x, y),
             Msg::Page(tab, PageEvent::DebugLog { msg }) => {
                 if cfg!(debug_assertions) {
                     eprintln!("[page {}] {}", tab.0, msg.chars().take(600).collect::<String>());
                 }
             }
-            Msg::Page(tab, PageEvent::PipLeft { paused }) => self.pip_returned(tab, paused),
+            Msg::Page(tab, PageEvent::PipLeft { .. }) => self.pip_returned(tab),
             Msg::Page(tab, PageEvent::AutofillQuery) => self.autofill_query(tab),
             Msg::Page(tab, PageEvent::AutofillFill { index }) => self.autofill_fill(tab, index),
             Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),
@@ -4744,6 +4994,70 @@ impl Running {
         }
     }
 
+    /// The sidebar's tidy-up suggestion: from `TIDY_FROM` loose tabs, the sites that would get
+    /// a folder (`null` when there is none, or when dismissed this session).
+    fn tidy_json(&self) -> serde_json::Value {
+        let ws = self.svc.workspace();
+        let loose = ws.active_space().tabs.iter().filter(|t| !t.pinned && t.folder.is_none()).count();
+        if self.tidy_dismissed || loose < TIDY_FROM {
+            return serde_json::Value::Null;
+        }
+        let groups = ws.tidy_suggestion(TIDY_MIN);
+        if groups.is_empty() {
+            return serde_json::Value::Null;
+        }
+        json!({
+            "tabs": groups.iter().map(|g| g.tabs.len()).sum::<usize>(),
+            "groups": groups.iter().map(|g| json!({"name": g.name, "count": g.tabs.len()})).collect::<Vec<_>>(),
+        })
+    }
+
+    /// The shield's report: for the site shown, what was blocked this session (trackers and
+    /// ads apart, the hosts tried most) and a grade; on the start page, the session total.
+    fn privacy_report(&mut self, at: (f64, f64)) {
+        let mut items = Vec::new();
+        match self.active_site() {
+            Some(site) => {
+                let hosts = self.blocked.for_site(&site);
+                let policy = self.svc.policy();
+                let is_ad = |host: &str| {
+                    Url::parse(&format!("https://{host}/")).is_ok_and(|u| {
+                        policy.evaluate(&u) == blackhole_domain::PrivacyDecision::Block("ad blocked")
+                    })
+                };
+                let (mut trackers, mut ads) = (0, 0);
+                for (host, n) in &hosts {
+                    if is_ad(host) {
+                        ads += n;
+                    } else {
+                        trackers += n;
+                    }
+                }
+                let grade = blackhole_domain::privacy_grade(trackers, ads);
+                let plural = |n: u32, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+                items.push(json!({"head": format!("{site} · grade {grade}")}));
+                items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(trackers, "tracker request"))}));
+                items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(ads, "ad request"))}));
+                if hosts.is_empty() {
+                    items.push(json!({"icon": "check", "label": "Nothing tried to follow you here"}));
+                } else {
+                    items.push(json!({"sep": true}));
+                    items.push(json!({"head": "Blocked hosts"}));
+                    items.extend(hosts.iter().take(8).map(|(host, n)| {
+                        json!({"icon": if is_ad(host) { "close" } else { "eye" }, "label": format!("{host} · {n}")})
+                    }));
+                }
+            }
+            None => {
+                items.push(json!({"head": "This session"}));
+                items.push(json!({"icon": "shield", "label": format!("{} requests blocked", self.blocked.total())}));
+            }
+        }
+        items.push(json!({"sep": true}));
+        items.push(json!({"icon": "settings", "label": "Privacy settings", "run": {"cmd": "open_settings", "tab": "privacy"}}));
+        self.show_menu(at, json!(items));
+    }
+
     fn site_of(&self, tab: TabId) -> String {
         let ws = self.svc.workspace();
         let url = ws
@@ -4803,6 +5117,7 @@ impl ApplicationHandler<Wake> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut wake = PEERS_EVERY;
+        let mut animating = false;
         if let Self::Running(app) = self {
             app.service_windows(event_loop);
             if std::mem::take(&mut app.ui_stale) {
@@ -4834,6 +5149,9 @@ impl ApplicationHandler<Wake> for App {
             app.service_peers();
             app.service_media();
             app.service_stats();
+            app.service_calendar();
+            app.service_watches();
+            app.service_compare();
             if app.blur_due.is_some() {
                 app.pip_on_blur();
                 wake = wake.min(BLUR_DELAY);
@@ -4847,8 +5165,13 @@ impl ApplicationHandler<Wake> for App {
                 wake = wake.min(Duration::from_millis(250));
             }
             if app.sidebar.moving() {
+                let since = app.last_frame.elapsed();
+                if since < FRAME {
+                    std::thread::sleep(FRAME - since);
+                }
+                app.last_frame = Instant::now();
                 app.tick_sidebar();
-                wake = FRAME;
+                animating = true;
             }
             #[cfg(feature = "devtools")]
             {
@@ -4858,7 +5181,12 @@ impl ApplicationHandler<Wake> for App {
                 }
             }
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + wake));
+        // While the sidebar moves, the loop runs frame after frame (paced above).
+        event_loop.set_control_flow(if animating {
+            ControlFlow::Poll
+        } else {
+            ControlFlow::WaitUntil(Instant::now() + wake)
+        });
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _: Wake) {
@@ -4873,8 +5201,17 @@ impl ApplicationHandler<Wake> for App {
         app.pump();
         app.service_windows(event_loop);
         if app.settings_window_id() == Some(id) {
-            if matches!(event, WindowEvent::CloseRequested) {
-                app.close_settings();
+            match event {
+                WindowEvent::CloseRequested => app.close_settings(),
+                // The top bar's maximize button follows the window.
+                WindowEvent::Resized(_) => {
+                    let maxed = app.settings.as_ref().is_some_and(|w| w.window.is_maximized());
+                    if maxed != app.panels_maxed.0 {
+                        app.panels_maxed.0 = maxed;
+                        app.ui_settings();
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -4883,6 +5220,11 @@ impl ApplicationHandler<Wake> for App {
                 WindowEvent::CloseRequested => app.close_easel(),
                 WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                     app.easel_resized();
+                    let maxed = app.easel.as_ref().is_some_and(|w| w.window.is_maximized());
+                    if maxed != app.panels_maxed.1 {
+                        app.panels_maxed.1 = maxed;
+                        app.ui_easel();
+                    }
                 }
                 _ => {}
             }

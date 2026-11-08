@@ -163,8 +163,10 @@ fn capture_rgba(window: &Window) -> Option<(u32, u32, Vec<u8>)> {
     let bytes = data.bytes();
     let mut rgba = Vec::with_capacity(w * h * 4);
     for y in 0..h {
-        for px in bytes[y * stride..y * stride + w * 4].chunks_exact(4) {
-            rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
+        // BGRA rows padded to `stride`; an indexed loop keeps the crate's 1.80 floor (`as_chunks` is 1.88).
+        for x in 0..w {
+            let at = y * stride + x * 4;
+            rgba.extend_from_slice(&[bytes[at + 2], bytes[at + 1], bytes[at], 255]);
         }
     }
     Some((w as u32, h as u32, rgba))

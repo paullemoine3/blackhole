@@ -8,9 +8,22 @@
   :root { --accent: #7c5cff; }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; background: #100f17; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
-  body { display: grid; grid-template-columns: 220px 1fr; }
-  body.embedded { grid-template-columns: 1fr; }
-  body.embedded nav, body:not(.embedded) .only-tab { display: none; }
+  body { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 38px minmax(0, 1fr); }
+  body.embedded { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
+  body.embedded nav, body.embedded #top, body:not(.embedded) .only-tab { display: none; }
+  /* Window top bar: the same height, tint and window buttons as the main window's (bar.html). */
+  #top { grid-column: 1 / -1; display: flex; align-items: center; padding-left: 14px; user-select: none; -webkit-user-select: none; background: radial-gradient(700px 500px at 0% 0%, var(--glow, rgba(124,92,255,.35)), transparent 70%), var(--tint, #100f17); }
+  body.macos #top { padding-left: 84px; }
+  #top .brand { flex: 1; padding: 0; font-size: 13px; gap: 9px; }
+  #top .logo { width: 18px; height: 18px; }
+  .win { display: none; align-self: stretch; }
+  body.windows .win { display: flex; }
+  .win button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; width: 46px; height: 100%; display: grid; place-items: center; opacity: .8; }
+  .win button:hover { background: rgba(255,255,255,.12); opacity: 1; }
+  .win button.close:hover { background: #e81123; color: #fff; }
+  .win svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+  #wmax .restore, body.maxed #wmax .square { display: none; }
+  body.maxed #wmax .restore { display: block; }
   nav { padding: 18px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); overflow-y: auto; user-select: none; -webkit-user-select: none; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 14px; font-weight: 600; font-size: 15px; }
   .logo { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
@@ -20,7 +33,7 @@
   .btn.danger:hover { background: #c2455b; }
   .easel { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; font: inherit; padding: 8px 10px; border-radius: 9px; cursor: pointer; opacity: .75; }
   .easel:hover { background: rgba(255,255,255,.07); opacity: 1; }
-  .easel.on { background: rgba(124,92,255,.28); opacity: 1; }
+  .easel.on { background: color-mix(in srgb, var(--accent) 28%, transparent); opacity: 1; }
   .easel .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .easel .count { font-size: 11px; opacity: .6; }
   section { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
@@ -52,8 +65,15 @@
 </style>
 </head>
 <body>
-<nav>
+<header id="top">
   <div class="brand"><span class="logo"></span>Easels</div>
+  <div class="win">
+    <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+    <button id="wmax" title="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+    <button id="wclose" class="close" title="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+  </div>
+</header>
+<nav>
   <button class="btn primary" id="new">+ New Easel</button>
   <div id="list"></div>
 </nav>
@@ -206,10 +226,32 @@ function layout() {
 $('board').addEventListener('scroll', layout);
 addEventListener('resize', layout);
 
+// The window's own top bar (hidden when the Easel is shown as a tab).
+const mix = (hex, r) => {
+  const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
+  return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
+};
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+const win = (action) => send({ cmd: 'panel_window', window: 'easel', action });
+$('wmin').onclick = () => win('minimize');
+$('wmax').onclick = () => win('maximize');
+$('wclose').onclick = () => { flush(); win('close'); };
+$('top').addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('button')) win('drag'); });
+$('top').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) win('maximize'); });
+
 window.bh = {
   render(s) {
     for (const e of s.easels) for (const i of e.items) if (pending.has(i.id) && e.id === s.current) i.text = pending.get(i.id);
     flush();
+    if (s.spaceColor && !s.embedded) {
+      const root = document.documentElement.style;
+      root.setProperty('--accent', s.spaceColor);
+      root.setProperty('--glow', rgba(s.spaceColor, .5));
+      root.setProperty('--tint', mix(s.spaceColor, .3));
+    }
+    document.body.classList.toggle('macos', s.os === 'macos');
+    document.body.classList.toggle('windows', s.os === 'windows');
+    document.body.classList.toggle('maxed', !!s.maximized);
     state = s;
     document.body.classList.toggle('embedded', !!s.embedded);
     const e = current();

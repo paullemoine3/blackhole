@@ -124,6 +124,59 @@
     true,
   );
 
+  // The link under the pointer, through shadow roots (YouTube's titles live in custom elements).
+  const linkAt = (e) => {
+    const a = e.composedPath ? e.composedPath().find((n) => n && n.tagName === 'A' && n.href) : null;
+    return a && /^https?:/.test(a.href) ? a : null;
+  };
+  const mac = /mac/i.test(navigator.platform);
+  // Middle click, or Ctrl/Cmd+click, on a link: a new tab in the background, like other
+  // browsers. Caught before the page, which may handle clicks itself (single-page apps).
+  addEventListener(
+    'auxclick',
+    (e) => {
+      const link = e.button === 1 && linkAt(e);
+      if (!link) return;
+      e.preventDefault();
+      e.stopPropagation();
+      post({ cmd: 'open_link', url: link.href });
+    },
+    true,
+  );
+  addEventListener(
+    'mousedown',
+    (e) => {
+      if (e.button === 1 && linkAt(e)) e.preventDefault(); // no autoscroll over a link
+    },
+    true,
+  );
+  addEventListener(
+    'click',
+    (e) => {
+      if (e.button !== 0 || e.shiftKey || e.altKey || !(mac ? e.metaKey : e.ctrlKey)) return;
+      const link = linkAt(e);
+      if (!link) return;
+      e.preventDefault();
+      e.stopPropagation();
+      post({ cmd: 'open_link', url: link.href });
+    },
+    true,
+  );
+  // Right click on a link: the browser's own menu (new tab, new window…). Shift+right click, or
+  // a selection, keeps the engine's menu (copy, inspect).
+  addEventListener(
+    'contextmenu',
+    (e) => {
+      if (e.shiftKey || String(getSelection())) return;
+      const link = linkAt(e);
+      if (!link) return;
+      e.preventDefault();
+      e.stopPropagation();
+      post({ cmd: 'link_menu', url: link.href, x: e.clientX, y: e.clientY });
+    },
+    true,
+  );
+
   // Single-page apps change the URL without a navigation; tell the shell to re-read it.
   const report = () => post({ cmd: 'location' });
   for (const method of ['pushState', 'replaceState']) {

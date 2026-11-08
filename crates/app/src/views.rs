@@ -19,6 +19,21 @@ const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
 /// Shortcut notation shared by BlackHole's own pages (`bhKeys`).
 const KEYS_JS: &str = include_str!("../ui/keys.js");
+/// Look shared by BlackHole's own pages (scroll bars in the theme).
+const THEME_JS: &str = include_str!("../ui/theme.js");
+const SHIELDS_JS: &str = include_str!("../ui/shields.js");
+/// What a page says about the product it shows, for the tab comparator.
+pub const COMPARE_JS: &str = include_str!("../ui/compare.js");
+
+/// The page clean-up script with the shields switched on now (fixed for the page's lifetime:
+/// a change applies to pages opened or reloaded afterwards).
+fn shields_script(policy: &PrivacyPolicy) -> String {
+    let s = policy.shields();
+    let config = serde_json::json!({
+        "hideAds": s.hide_ads, "videoAds": s.video_ads, "cookieBanners": s.cookie_banners,
+    });
+    SHIELDS_JS.replace("__SHIELDS__", &config.to_string())
+}
 const DEBUG_LOG_JS: &str = include_str!("../ui/debug_log.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
@@ -100,6 +115,7 @@ pub fn ui_view(
         .with_background_color(if overlay { CLEAR } else { SHELL_BG })
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
+        .with_initialization_script_for_main_only(THEME_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
@@ -124,6 +140,7 @@ pub fn settings_view(
         .with_background_color(SHELL_BG)
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
+        .with_initialization_script_for_main_only(THEME_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                 mailbox.push(Msg::Ui(command));
@@ -149,6 +166,7 @@ pub fn panel_view(
         .with_background_color(SHELL_BG)
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
+        .with_initialization_script_for_main_only(THEME_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                 mailbox.push(Msg::Ui(command));
@@ -173,6 +191,7 @@ pub fn live_view(
         "__BLOCKED_HOSTS__",
         &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
     );
+    let shields = shields_script(policy);
     let crop = LIVE_CROP_JS.replace(
         "__SELECTOR__",
         &serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned()),
@@ -185,6 +204,7 @@ pub fn live_view(
         .with_visible(false)
         .with_background_color(PAGE_BG)
         .with_initialization_script(guard)
+        .with_initialization_script(shields)
         .with_initialization_script_for_main_only(crop, true)
         .with_navigation_handler(move |raw| {
             let Ok(target) = Url::parse(&raw) else {
@@ -330,6 +350,7 @@ fn build_tab(
         "__BLOCKED_HOSTS__",
         &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
     );
+    let shields = shields_script(policy);
     let (events, nav, popups, title, load) = (
         mailbox.clone(),
         mailbox.clone(),
@@ -393,9 +414,11 @@ fn build_tab(
         .with_bounds(bounds)
         .with_visible(false)
         .with_background_color(PAGE_BG)
-        .with_devtools(cfg!(debug_assertions))
+        // Web pages can be inspected (F12): elements and styles, console, network.
+        .with_devtools(true)
         .with_back_forward_navigation_gestures(true)
         .with_initialization_script(guard)
+        .with_initialization_script(shields)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_initialization_script_for_main_only(AUTOFILL_JS, true)
         .with_initialization_script_for_main_only(FAVICON_JS, true)

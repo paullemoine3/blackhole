@@ -22,6 +22,9 @@
     // Windows: the engine's own browser keys are off in tabs (see views::build_tab), so
     // F5 / Ctrl+F5 and Alt+←/→ are handled here like any shortcut.
     if (!mac && e.key === 'F5' && !e.altKey && !e.shiftKey) return e.ctrlKey ? 'r' : 'reload';
+    // Developer tools of the page: F12 or Ctrl+Shift+I (Cmd+Option+I on macOS).
+    if (e.key === 'F12' && !e.ctrlKey && !e.metaKey && !e.altKey) return 'devtools';
+    if (e.code === 'KeyI' && (mac ? e.metaKey && e.altKey && !e.ctrlKey : e.ctrlKey && e.shiftKey && !e.altKey)) return 'devtools';
     if (!mac && e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       return e.key === 'ArrowLeft' ? '[' : ']';
     }

@@ -83,6 +83,8 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let fresh = stored.is_none();
         let settings = stored.unwrap_or_default();
         policy.set_blocking(settings.tracker_blocking);
+        policy.set_ad_blocking(settings.ad_blocking);
+        policy.set_shields(settings.shields);
         Self {
             workspace,
             settings,
@@ -204,6 +206,38 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         self.settings.tracker_blocking = on;
         self.policy.set_blocking(on);
         let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// Calendar options by name: `reminders` (a toast when a meeting starts) or `card` (the next
+    /// meeting in the sidebar). False for an unknown name.
+    pub fn set_meeting_option(&mut self, name: &str, on: bool) -> bool {
+        match name {
+            "reminders" => self.settings.meeting_reminders = on,
+            "card" => self.settings.meeting_card = on,
+            "notes" => self.settings.meeting_notes = on,
+            _ => return false,
+        }
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
+    /// Switches one of the Privacy shields by name: `ads` (the ad server list), `hide_ads`,
+    /// `video_ads` or `cookie_banners` (what pages clean up). False for an unknown name.
+    pub fn set_shield(&mut self, name: &str, on: bool) -> bool {
+        let shields = &mut self.settings.shields;
+        match name {
+            "ads" => {
+                self.settings.ad_blocking = on;
+                self.policy.set_ad_blocking(on);
+            }
+            "hide_ads" => shields.hide_ads = on,
+            "video_ads" => shields.video_ads = on,
+            "cookie_banners" => shields.cookie_banners = on,
+            _ => return false,
+        }
+        self.policy.set_shields(self.settings.shields);
+        let _ = self.repo.save_settings(&self.settings);
+        true
     }
 
     /// Folds or unfolds a sidebar section (`Settings::SECTIONS`), remembered between launches.
@@ -441,12 +475,6 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
-    pub fn set_tab_locked(&mut self, id: TabId, locked: bool) -> bool {
-        let ok = self.workspace.set_locked(id, locked);
-        self.persist();
-        ok
-    }
-
     pub fn rename_folder(&mut self, id: FolderId, name: &str) -> bool {
         let ok = self.workspace.rename_folder(id, name);
         self.persist();
@@ -480,6 +508,18 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let ok = self.workspace.delete_folder(id);
         self.persist();
         ok
+    }
+
+    /// Files the loose tabs of each group into a folder named after its site.
+    pub fn tidy(&mut self, groups: &[blackhole_domain::TidyGroup]) -> blackhole_domain::Tidied {
+        let done = self.workspace.tidy(groups);
+        self.persist();
+        done
+    }
+
+    pub fn untidy(&mut self, done: &blackhole_domain::Tidied) {
+        self.workspace.untidy(done);
+        self.persist();
     }
 
     pub fn set_space_color(&mut self, id: SpaceId, color: &str) -> bool {
@@ -658,6 +698,20 @@ mod tests {
         svc.forget_history(&url);
         let again = BrowserService::start(repo, PrivacyPolicy::default());
         assert!(again.recent_activity(5).is_empty());
+    }
+
+    #[test]
+    fn shields_are_remembered_and_drive_the_policy() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert!(svc.set_shield("ads", false));
+        assert!(svc.set_shield("cookie_banners", false));
+        assert!(!svc.set_shield("bogus", false));
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(!again.settings().ad_blocking);
+        assert!(!again.policy().is_blocking_ads());
+        let shields = again.policy().shields();
+        assert!(shields.hide_ads && shields.video_ads && !shields.cookie_banners);
     }
 
     #[test]

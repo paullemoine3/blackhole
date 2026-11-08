@@ -88,7 +88,7 @@
     },
   };
 
-  const left = (video) => post({ cmd: 'pip_left', paused: !!video.paused });
+  const left = () => post({ cmd: 'pip_left' });
   document.addEventListener(
     'leavepictureinpicture',
     (e) => e.target instanceof HTMLVideoElement && left(e.target),

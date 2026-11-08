@@ -13,7 +13,8 @@ blackhole-macos-webext.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
-wry = "0.57"
+# `devtools`: the inspector (elements, console, network) of web pages, in release builds too.
+wry = { version = "0.57", features = ["devtools"] }
 winit = "0.30"
 tracing = "0.1"
 rfd = "0.17.2"

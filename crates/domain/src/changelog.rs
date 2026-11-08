@@ -1,6 +1,32 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.7.18",
+        &[
+            "Locking a tab on a URL is gone: a quick access or folder tab simply comes back on the page you left it on",
+            "Closing a quick access tab never takes it off the list (menu, Cmd/Ctrl+W, middle click): use Remove from quick access for that",
+            "Middle click on a tab: a quick access or folder tab goes to sleep, another tab closes",
+            "Quick access tiles no longer show a speaker over the icon, so a playing tab is easy to click",
+            "Closing the floating video (Picture in Picture) no longer jumps to its tab; the player card stays in the sidebar",
+            "The Settings and Easel windows have the same top bar as the browser window, in the space's color",
+            "Middle click (or Cmd/Ctrl+click) on a link, a video title included, opens it in a new tab in the background",
+            "Right click on a link: open it in a new tab, a new window or a private window, preview it or copy it",
+            "After picking an area for a live capture, you choose the Easel it goes to (or a new one)",
+            "Shields, as in Brave: ad servers are blocked besides trackers, and pages can hide their ad slots, skip YouTube ads and drop cookie banners, each one switched in Settings > Privacy",
+            "Scroll bars of the menus, Settings, Library and Easel follow the theme",
+            "New Google Meet (sidebar menu, command bar): reuses your Meet tab of quick access or of a folder, never one that is in a call",
+            "Google Calendar sync (Settings > Calendar, with the calendar's secret iCal address, stored encrypted): the next meeting with a Join button in the sidebar, a reminder when it starts, Join from the command bar",
+            "Developer tools for web pages: F12 or Ctrl+Shift+I (Cmd+Option+I on macOS), or Inspect in the tab menu: elements and styles, console, network",
+            "Downloads (extension catalog, updates, calendars) trust the system's certificates, so they work behind an antivirus that inspects HTTPS",
+            "Privacy report: the shield in the sidebar shows, for the site open, its grade (A to E), the trackers and ads it tried this session and the hosts blocked",
+            "Tidy up: from 6 loose tabs, the sidebar offers to file the tabs of the busiest sites into one folder per site (with Undo)",
+            "Meeting copilot: joining a calendar meeting opens its notes in an Easel, with the agenda and the attendees filled in",
+            "Watch an area: after picking an area of a page, choose Watch this area for changes; it is read again every half hour and a change is told with the value before and after (Library > Watched Areas)",
+            "Compare tabs: the products of the open tabs side by side (price, rating, reviews, brand, availability, shared specifications), lowest price and best rating highlighted",
+            "Smoother sidebar: showing or hiding it now runs at about 120 frames per second, and the page slides along instead of being laid out again on every frame",
+        ],
+    ),
+    (
         "0.7.17",
         &[
             "Tabs work like Arc: a new tab opens at the top of the list, and closing a tab brings back the one you saw just before",

@@ -18,8 +18,6 @@ pub struct Tab {
     pub folder: Option<FolderId>,
     /// The user chose the title: page title changes no longer replace it.
     pub renamed: bool,
-    /// Address the tab always comes back to when it is clicked (quick-access and folder tabs).
-    pub locked: Option<Url>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folder {
@@ -341,7 +339,6 @@ impl Workspace {
                 pinned: false,
                 folder: None,
                 renamed: false,
-                locked: None,
             },
         );
         space.active_tab = Some(id);
@@ -511,9 +508,6 @@ impl Workspace {
         };
         tab.pinned = !tab.pinned;
         tab.folder = None;
-        if !tab.pinned {
-            tab.locked = None;
-        }
         space.tabs.sort_by_key(|t| !t.pinned); // stable: pinned first, order kept
         true
     }
@@ -602,7 +596,6 @@ impl Workspace {
                 pinned: false,
                 folder: Some(folder_id),
                 renamed: false,
-                locked: None,
             });
             added += 1;
         }
@@ -722,9 +715,6 @@ impl Workspace {
         let mut tab = space.tabs.remove(pos);
         tab.pinned = pinned;
         tab.folder = folder;
-        if !pinned && folder.is_none() {
-            tab.locked = None;
-        }
         let at = before
             .and_then(|b| space.tabs.iter().position(|t| t.id == b))
             .unwrap_or(space.tabs.len());
@@ -749,18 +739,6 @@ impl Workspace {
                 }
             }
         }
-    }
-
-    /// Locks a quick-access or folder tab on the page it shows now, or releases it.
-    pub fn set_locked(&mut self, id: TabId, locked: bool) -> bool {
-        let tab = self
-            .spaces
-            .iter_mut()
-            .flat_map(|s| s.tabs.iter_mut())
-            .find(|t| t.id == id && (t.pinned || t.folder.is_some()));
-        let Some(tab) = tab else { return false };
-        tab.locked = locked.then(|| tab.url.clone());
-        true
     }
 
     /// Gives a tab a title of the user's choosing; a blank name hands the title back to the page.
@@ -910,6 +888,94 @@ impl Workspace {
     }
 }
 
+/// A folder suggested by `Workspace::tidy_suggestion`: the loose tabs of one site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TidyGroup {
+    pub name: String,
+    pub tabs: Vec<TabId>,
+}
+
+/// What `Workspace::tidy` did, to undo it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tidied {
+    created: Vec<FolderId>,
+    moved: Vec<TabId>,
+}
+
+impl Tidied {
+    pub fn tabs(&self) -> usize {
+        self.moved.len()
+    }
+}
+
+/// The site of a host, for grouping: `www.` dropped and subdomains folded into the registrable
+/// part (`docs.github.com` → `github.com`, `news.bbc.co.uk` → `bbc.co.uk`).
+pub fn site_of_host(host: &str) -> String {
+    let host = host.trim_start_matches("www.").to_ascii_lowercase();
+    let labels: Vec<&str> = host.split('.').collect();
+    let n = labels.len();
+    // A short second-level label under a country code is part of the suffix (co.uk, com.au).
+    let keep = if n >= 3 && labels[n - 1].len() == 2 && labels[n - 2].len() <= 3 { 3 } else { 2 };
+    labels[n.saturating_sub(keep)..].join(".")
+}
+
+impl Workspace {
+    /// Loose tabs of the active space grouped by site: every site with `min` tabs or more is a
+    /// folder to make (or to fill, when a folder of that name exists), biggest first.
+    pub fn tidy_suggestion(&self, min: usize) -> Vec<TidyGroup> {
+        let mut groups: Vec<TidyGroup> = Vec::new();
+        for tab in self.active_space().tabs.iter().filter(|t| !t.pinned && t.folder.is_none()) {
+            let Some(host) = tab.url.host_str() else { continue };
+            let name = site_of_host(host);
+            match groups.iter_mut().find(|g| g.name == name) {
+                Some(g) => g.tabs.push(tab.id),
+                None => groups.push(TidyGroup { name, tabs: vec![tab.id] }),
+            }
+        }
+        groups.retain(|g| g.tabs.len() >= min.max(2));
+        groups.sort_by(|a, b| b.tabs.len().cmp(&a.tabs.len()).then_with(|| a.name.cmp(&b.name)));
+        groups
+    }
+
+    /// Files each group's tabs into a folder named after it (an existing top-level folder of
+    /// that name is reused, else one is made).
+    pub fn tidy(&mut self, groups: &[TidyGroup]) -> Tidied {
+        let mut done = Tidied::default();
+        for group in groups {
+            let existing = self
+                .active_space()
+                .folders
+                .iter()
+                .find(|f| f.parent.is_none() && f.name.eq_ignore_ascii_case(&group.name))
+                .map(|f| f.id);
+            let folder = match existing {
+                Some(id) => id,
+                None => {
+                    let id = self.add_folder(&group.name);
+                    done.created.push(id);
+                    id
+                }
+            };
+            for &tab in &group.tabs {
+                if self.move_tab(tab, None, Some(folder), false) {
+                    done.moved.push(tab);
+                }
+            }
+        }
+        done
+    }
+
+    /// Puts the tabs back out of their folders and removes the folders `tidy` made.
+    pub fn untidy(&mut self, done: &Tidied) {
+        for &tab in &done.moved {
+            self.move_tab(tab, None, None, false);
+        }
+        for &folder in &done.created {
+            self.delete_folder(folder);
+        }
+    }
+}
+
 /// A deleted space or folder with everything it held (see `Workspace::undo_removal`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Removed {
@@ -940,6 +1006,46 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn sites_fold_subdomains_and_country_suffixes() {
+        assert_eq!(site_of_host("www.GitHub.com"), "github.com");
+        assert_eq!(site_of_host("docs.github.com"), "github.com");
+        assert_eq!(site_of_host("news.bbc.co.uk"), "bbc.co.uk");
+        assert_eq!(site_of_host("localhost"), "localhost");
+    }
+
+    #[test]
+    fn tidying_files_the_loose_tabs_of_a_site_and_can_be_undone() {
+        let mut ws = Workspace::new();
+        let gh: Vec<TabId> = ["https://github.com/a", "https://docs.github.com/b", "https://github.com/c"]
+            .iter()
+            .map(|raw| ws.open_tab(u(raw)))
+            .collect();
+        let lone = ws.open_tab(u("https://example.com/"));
+        let pinned = ws.open_tab(u("https://github.com/pinned"));
+        ws.toggle_pin(pinned);
+        let groups = ws.tidy_suggestion(3);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].name, "github.com");
+        assert_eq!(groups[0].tabs.len(), 3, "pinned and other sites are left alone");
+        let done = ws.tidy(&groups);
+        assert_eq!(done.tabs(), 3);
+        let folder = ws.active_space().folders[0].id;
+        assert!(gh.iter().all(|id| ws.active_space().tabs.iter().any(|t| t.id == *id && t.folder == Some(folder))));
+        assert!(ws.tidy_suggestion(3).is_empty());
+        // A folder of the same name is reused the next time.
+        ws.open_tab(u("https://github.com/d"));
+        ws.open_tab(u("https://github.com/e"));
+        ws.open_tab(u("https://github.com/f"));
+        let again = ws.tidy(&ws.tidy_suggestion(3));
+        assert_eq!(ws.active_space().folders.len(), 1);
+        ws.untidy(&again);
+        ws.untidy(&done);
+        assert!(ws.active_space().folders.is_empty());
+        assert!(ws.active_space().tabs.iter().all(|t| t.folder.is_none()));
+        assert!(ws.active_space().tabs.iter().any(|t| t.id == lone));
     }
 
     #[test]
@@ -1014,21 +1120,6 @@ mod tests {
         let ids = |s: &Space| s.tabs.iter().map(|t| (t.id, t.folder)).collect::<Vec<_>>();
         assert_eq!(ids(after), ids(&before));
         assert!(after.tabs.iter().any(|t| t.id == loose));
-    }
-
-    #[test]
-    fn only_pinned_tabs_can_be_locked_and_unpinning_releases_the_lock() {
-        let mut ws = Workspace::new();
-        let id = ws.open_tab(u("https://example.com/home"));
-        assert!(!ws.set_locked(id, true));
-        ws.toggle_pin(id);
-        assert!(ws.set_locked(id, true));
-        ws.update_page(id, Some(u("https://example.com/other")), None);
-        let tab = &ws.active_space().tabs[0];
-        assert_eq!(tab.locked, Some(u("https://example.com/home")));
-        assert_eq!(tab.url, u("https://example.com/other"));
-        ws.toggle_pin(id);
-        assert_eq!(ws.active_space().tabs[0].locked, None);
     }
 
     #[test]
