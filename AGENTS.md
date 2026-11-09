@@ -3,7 +3,7 @@
 Ces consignes s'appliquent à tout le dépôt. Répondre en français, de façon concise.
 Ce fichier est l'index de référence (règles courtes) ; `.github/copilot-instructions.md`
 détaille les mêmes sujets (protocole des scripts UI, mémoire, Easel, release). En cas de
-doute, suivre le plus strict. Voir aussi `README.md` (commandes) et `docs/macos.md`.
+doute, suivre le plus strict. Voir aussi `README.md` (commandes), `docs/macos.md` et `docs/design-system/` (tokens, composants et règles visuelles de l’interface).
 Maintenance : mettre à jour les deux fichiers ensemble quand l'architecture, les scripts
 ou les commandes changent.
 

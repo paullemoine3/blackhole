@@ -1,0 +1,1941 @@
+{
+ "$description": "BlackHole — design tokens (W3C DTCG). Thème sombre unique ; les valeurs par espace sont dans $extensions.blackhole.modes.",
+ "color": {
+  "primitive": {
+   "ink-950": {
+    "$type": "color",
+    "$value": "#07060c",
+    "$description": "Primitive. Fond du splash de lancement (home.html #splash)."
+   },
+   "ink-900": {
+    "$type": "color",
+    "$value": "#0c0b12",
+    "$description": "Primitive. Fond de la page d’accueil, des pages d’erreur et de l’écran d’attente (home.html, error.html)."
+   },
+   "ink-850": {
+    "$type": "color",
+    "$value": "#100f17",
+    "$description": "Primitive. Fond du shell : SHELL_BG (16,15,23) dans views.rs, html de index/bar/settings/easel/splitbar, base de mix()."
+   },
+   "ink-800": {
+    "$type": "color",
+    "$value": "#14131c",
+    "$description": "Primitive. Fond pointillé du tableau Easel (easel.html #board)."
+   },
+   "ink-700": {
+    "$type": "color",
+    "$value": "#1b1a26",
+    "$description": "Primitive. Toast de la barre latérale, liseré intérieur du bouton radio ; base du panneau de la palette (27,26,38)."
+   },
+   "ink-650": {
+    "$type": "color",
+    "$value": "#1e1d2a",
+    "$description": "Primitive. Base du menu contextuel (palette.html #menu, rgba(30,29,42,.97))."
+   },
+   "ink-600": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-550}",
+    "$description": "Déprécié : utiliser `ink-550`. Ancienne valeur #2a2838. Fantôme d’onglet : #2a2838 → #2b2a3a, écart invisible. ink-550 est gardé car c’est la couleur de carte Easel enregistrée."
+   },
+   "ink-550": {
+    "$type": "color",
+    "$value": "#2b2a3a",
+    "$description": "Primitive. Toast d’Easel et couleur de carte Easel par défaut (easel::COLORS[0]). Quasi-doublon de ink-600."
+   },
+   "fg-100": {
+    "$type": "color",
+    "$value": "#eceaf5",
+    "$description": "Primitive. Couleur de texte unique de toutes les pages du shell."
+   },
+   "white": {
+    "$type": "color",
+    "$value": "#ffffff",
+    "$description": "Primitive. Texte sur l’accent, pastilles d’initiales, curseur d’interrupteur."
+   },
+   "black": {
+    "$type": "color",
+    "$value": "#000000",
+    "$description": "Primitive. Cœur du trou noir (logo, splash, pages d’erreur)."
+   },
+   "space-violet": {
+    "$type": "color",
+    "$value": "#7c5cff",
+    "$description": "Primitive. Teinte d’espace « Violet » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-pink": {
+    "$type": "color",
+    "$value": "#ff5c8a",
+    "$description": "Primitive. Teinte d’espace « Pink » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-green": {
+    "$type": "color",
+    "$value": "#2fd4a0",
+    "$description": "Primitive. Teinte d’espace « Green » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-amber": {
+    "$type": "color",
+    "$value": "#ffb020",
+    "$description": "Primitive. Teinte d’espace « Amber » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-blue": {
+    "$type": "color",
+    "$value": "#3aa0ff",
+    "$description": "Primitive. Teinte d’espace « Blue » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-red": {
+    "$type": "color",
+    "$value": "#e5534b",
+    "$description": "Primitive. Teinte d’espace « Red » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-teal": {
+    "$type": "color",
+    "$value": "#14b8c4",
+    "$description": "Primitive. Teinte d’espace « Teal » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "space-grey": {
+    "$type": "color",
+    "$value": "#8b8a99",
+    "$description": "Primitive. Teinte d’espace « Grey » (COLORS, index.html:393), choisie dans le menu de l’espace."
+   },
+   "violet-300": {
+    "$type": "color",
+    "$value": "#a78bff",
+    "$description": "Primitive. Ondes du trou noir à l’ouverture de la palette (rgba(167,139,255,.55))."
+   },
+   "violet-200": {
+    "$type": "color",
+    "$value": "#c9bcff",
+    "$description": "Primitive. Glyphe des commandes de la palette (.ico.glyph)."
+   },
+   "violet-100": {
+    "$type": "color",
+    "$value": "#beaaff",
+    "$description": "Primitive. Halo des étoiles (splash, pages d’erreur : rgba(190,170,255,.8–.9))."
+   },
+   "wordmark": {
+    "$type": "color",
+    "$value": "#8f74ff",
+    "$description": "Primitive. Remplissage du mot « BlackHole » dans docs/title.svg."
+   },
+   "accretion-hot": {
+    "$type": "color",
+    "$value": "#ffaa3c",
+    "$description": "Primitive. Disque d’accrétion chaud (logo, splash, erreurs : rgba(255,170,60,.95))."
+   },
+   "accretion-warm": {
+    "$type": "color",
+    "$value": "#ff5a28",
+    "$description": "Primitive. Disque d’accrétion externe (rgba(255,90,40,.5)), halo du logo (255,120,40)."
+   },
+   "accretion-ring": {
+    "$type": "color",
+    "$value": "#ffcd78",
+    "$description": "Arc doré de l’anneau en orbite (rgba(255,205,120,.9)) : logo, splash, erreurs, ouverture de la palette."
+   },
+   "loader-gold": {
+    "$type": "color",
+    "$value": "#ffb020",
+    "$description": "Primitive. Fin du dégradé des barres de chargement (bar.html #progress, home #wait). Identique à space-amber."
+   },
+   "red-500": {
+    "$type": "color",
+    "$value": "#e5534b",
+    "$description": "Primitive. Téléchargement en échec (.dl.bad), teinte d’espace Red."
+   },
+   "red-600": {
+    "$type": "color",
+    "$value": "#b4443c",
+    "$description": "Primitive. Bouton de mise à jour en erreur (.update.error)."
+   },
+   "red-400": {
+    "$type": "color",
+    "$value": "#ff5a5a",
+    "$description": "Primitive. Base des actions armées / destructrices (rgba(255,90,90,.85))."
+   },
+   "rose-600": {
+    "$type": "color",
+    "$value": "#c2455b",
+    "$description": "Primitive. Survol du bouton danger d’Easel ; couleur de carte Easel « rose »."
+   },
+   "crimson-500": {
+    "$type": "color",
+    "$value": "#dc2846",
+    "$description": "Primitive. Fond des alertes « non sécurisé » (rgba(220,40,70,…))."
+   },
+   "green-300": {
+    "$type": "color",
+    "$value": "#6ee7a8",
+    "$description": "Primitive. Meilleure valeur du comparateur de produits (palette #ctable .best)."
+   },
+   "green-200": {
+    "$type": "color",
+    "$value": "#8ff0b4",
+    "$description": "Primitive. Éclair du compteur de bloqueurs (@keyframes bump)."
+   },
+   "orange-200": {
+    "$type": "color",
+    "$value": "#ffb86b",
+    "$description": "Primitive. Avertissement dans la boîte d’authentification HTTP."
+   },
+   "win-close": {
+    "$type": "color",
+    "$value": "#e81123",
+    "$description": "Primitive. Survol du bouton Fermer des fenêtres Windows (bar, settings, easel)."
+   },
+   "violet-fixed-85": {
+    "$type": "color",
+    "$value": "{color.semantic.accent-selection}",
+    "$description": "Déprécié : utiliser `accent-selection`. Ancienne valeur #7c5cffd9. Bouton de la carte Nouveautés : suit l’espace. Sur les pages d’erreur, le bouton principal prend la teinte de la page (`error-*-accent` à 85 %)."
+   },
+   "violet-fixed-wash": {
+    "$type": "color",
+    "$value": "{color.semantic.accent-glow-soft}",
+    "$description": "Déprécié : utiliser `accent-glow-soft`. Ancienne valeur #7c5cff38. Lueur de l’accueil et carte Nouveautés : suivent l’espace."
+   },
+   "violet-fixed-border": {
+    "$type": "color",
+    "$value": "{color.semantic.accent-border}",
+    "$description": "Déprécié : utiliser `accent-border`. Ancienne valeur #7c5cff73. Bordure de la carte Nouveautés : suit l’espace."
+   }
+  },
+  "semantic": {
+   "bg-shell": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-850}",
+    "$description": "Fond du shell (barre latérale, barre du haut, Réglages, Easel, barre de partage). Égal à SHELL_BG, visible avant que la page ne peigne."
+   },
+   "bg-page": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-900}",
+    "$description": "Fond des pages internes plein écran : accueil, erreurs, Bibliothèque, attente de nouvel onglet. Plus sombre que bg-shell exprès : la page est une carte posée dans le cadre teinté."
+   },
+   "bg-splash": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-950}",
+    "$description": "Fond du splash de lancement."
+   },
+   "bg-board": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-800}",
+    "$description": "Tableau Easel, sous la trame de points fill-dot."
+   },
+   "surface-panel": {
+    "$type": "color",
+    "$value": "#1b1a26f5",
+    "$description": "Panneau de la palette de commandes (rgba(27,26,38,.96)) et pastille d’aide du mode aperçu (.95)."
+   },
+   "surface-menu": {
+    "$type": "color",
+    "$value": "#1e1d2af7",
+    "$description": "Menu contextuel (rgba(30,29,42,.97))."
+   },
+   "surface-toast": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-700}",
+    "$description": "Toast de la barre latérale."
+   },
+   "surface-toast-easel": {
+    "$type": "color",
+    "$value": "{color.semantic.surface-toast}",
+    "$description": "Déprécié : utiliser `surface-toast`. Ancienne valeur {ink-550}. Toast d’Easel : #2b2a3a → #1b1a26, même toast que la barre latérale."
+   },
+   "surface-ghost": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-600}",
+    "$description": "Copie d’onglet qui suit le pointeur pendant un glisser."
+   },
+   "scrim": {
+    "$type": "color",
+    "$value": "#06050c80",
+    "$description": "Voile derrière la palette et en mode aperçu (rgba(6,5,12,.5))."
+   },
+   "scrim-peek": {
+    "$type": "color",
+    "$value": "{color.semantic.scrim}",
+    "$description": "Déprécié : utiliser `scrim`. Ancienne valeur #06050c8c. Même voile pour la palette et l’aperçu."
+   },
+   "scrim-caption": {
+    "$type": "color",
+    "$value": "#000000aa",
+    "$description": "Bandeau de légende des vignettes de la Bibliothèque (#000a)."
+   },
+   "fill-sunken": {
+    "$type": "color",
+    "$value": "#ffffff05",
+    "$description": "Colonne de navigation de Réglages et d’Easel. (rgba(255,255,255,0.02))"
+   },
+   "fill-faint": {
+    "$type": "color",
+    "$value": "#ffffff0a",
+    "$description": "Bloc <details> des pages d’erreur ; dégradé de la carte Nouveautés. (rgba(255,255,255,0.04))"
+   },
+   "fill-card": {
+    "$type": "color",
+    "$value": "#ffffff0d",
+    "$description": "Cartes de Réglages et de l’accueil ; survol des lignes de Réglages. (rgba(255,255,255,0.05))"
+   },
+   "fill-field": {
+    "$type": "color",
+    "$value": "#ffffff0f",
+    "$description": "Champs de saisie (.field, #auth input, #eq, #css), volet de la barre de partage, zone de dépôt. (rgba(255,255,255,0.06))"
+   },
+   "fill-hover": {
+    "$type": "color",
+    "$value": "#ffffff12",
+    "$description": "Survol de la navigation de Réglages/Easel, des options ; tuiles épinglées ; carte de rangement. (rgba(255,255,255,0.07))"
+   },
+   "fill-hover-strong": {
+    "$type": "color",
+    "$value": "#ffffff14",
+    "$description": "Survol des onglets, dossiers, « nouvel onglet » ; omnibox ; contrôle segmenté ; bouton fantôme d’erreur. (rgba(255,255,255,0.08))"
+   },
+   "fill-raised": {
+    "$type": "color",
+    "$value": "#ffffff17",
+    "$description": "Cartes média et téléchargement ; survol des favoris de l’accueil ; onglet en vue partagée. (rgba(255,255,255,0.09))"
+   },
+   "fill-control": {
+    "$type": "color",
+    "$value": "#ffffff1a",
+    "$description": "Bouton neutre (.btn), survol des icônes, puces, boutons de la carte média. (rgba(255,255,255,0.1))"
+   },
+   "fill-control-strong": {
+    "$type": "color",
+    "$value": "#ffffff1f",
+    "$description": "Survol des boutons de fenêtre ; kbd ; compteur ; volet focalisé ; champ de renommage. (rgba(255,255,255,0.12))"
+   },
+   "fill-pressed": {
+    "$type": "color",
+    "$value": "#ffffff24",
+    "$description": "Survol de l’omnibox, zoom, pastille privée, cellule emoji, téléchargement survolé, piste de progression. (rgba(255,255,255,0.14))"
+   },
+   "fill-selected": {
+    "$type": "color",
+    "$value": "#ffffff29",
+    "$description": "Onglet actif ; fond des favicons (.dot.ico). (rgba(255,255,255,0.16))"
+   },
+   "fill-control-hover": {
+    "$type": "color",
+    "$value": "#ffffff2e",
+    "$description": "Survol du bouton neutre (.btn:hover), outils des cartes Easel ; piste de l’interrupteur éteint. (rgba(255,255,255,0.18))"
+   },
+   "fill-selected-strong": {
+    "$type": "color",
+    "$value": "#ffffff33",
+    "$description": "Onglet épinglé actif ; survol des boutons de la carte média ; puce de la ligne sélectionnée. (rgba(255,255,255,0.2))"
+   },
+   "fill-glint": {
+    "$type": "color",
+    "$value": "#ffffff38",
+    "$description": "Pastille glyphe sur la ligne sélectionnée ; reflet du bouton de mise à jour ; pouce de défilement. (rgba(255,255,255,0.22))"
+   },
+   "fill-dot": {
+    "$type": "color",
+    "$value": "#ffffff12",
+    "$description": "Trame de points du tableau Easel (rgba(255,255,255,.07), pas 24px)."
+   },
+   "border-hairline": {
+    "$type": "color",
+    "$value": "#ffffff0f",
+    "$description": "Lignes de raccourcis, volets de la barre de partage, cartes récentes de l’accueil. (rgba(255,255,255,0.06))"
+   },
+   "border-faint": {
+    "$type": "color",
+    "$value": "#ffffff12",
+    "$description": "Pied de la palette, lignes du comparateur, contour de la carte-page. (rgba(255,255,255,0.07))"
+   },
+   "border-divider": {
+    "$type": "color",
+    "$value": "#ffffff14",
+    "$description": "Séparateurs : pied de la barre latérale, navigation Réglages/Easel, en-tête Easel, recherche de la palette. (rgba(255,255,255,0.08))"
+   },
+   "border-card": {
+    "$type": "color",
+    "$value": "#ffffff17",
+    "$description": "Cartes de Réglages et de l’accueil. (rgba(255,255,255,0.09))"
+   },
+   "border-default": {
+    "$type": "color",
+    "$value": "#ffffff1a",
+    "$description": "Panneau de la palette, omnibox, contour des cartes média/téléchargement, kbd, séparateur de menu. (rgba(255,255,255,0.1))"
+   },
+   "border-field": {
+    "$type": "color",
+    "$value": "#ffffff1f",
+    "$description": "Champs de saisie, menu contextuel, pastille d’aperçu, bordure gauche des dossiers. (rgba(255,255,255,0.12))"
+   },
+   "border-strong": {
+    "$type": "color",
+    "$value": "#ffffff24",
+    "$description": "Toasts, cartes Easel, séparateurs d’épingles et de dossiers. (rgba(255,255,255,0.14))"
+   },
+   "border-hover": {
+    "$type": "color",
+    "$value": "#ffffff2e",
+    "$description": "Survol de l’omnibox et du titre d’Easel. (rgba(255,255,255,0.18))"
+   },
+   "border-dashed": {
+    "$type": "color",
+    "$value": "#ffffff4c",
+    "$description": "Zone de dépôt « Drop here to pin ». (rgba(255,255,255,0.3))"
+   },
+   "border-radio": {
+    "$type": "color",
+    "$value": "#ffffff66",
+    "$description": "Bouton radio éteint. (rgba(255,255,255,0.4))"
+   },
+   "text-primary": {
+    "$type": "color",
+    "$value": "{color.primitive.fg-100}",
+    "$description": "Tout le texte, sur bg-shell, bg-page, surface-panel et les remplissages fill-*. Contraste 16:1 sur bg-shell."
+   },
+   "text-secondary": {
+    "$type": "color",
+    "$value": "#eceaf599",
+    "$description": "Texte secondaire quand l’opacité ne peut pas servir (texte sur fond déjà translucide, canvas) : text-primary à 60 %, équivaut à `opacity-muted`. Dates, hôtes, statistiques."
+   },
+   "text-on-accent": {
+    "$type": "color",
+    "$value": "{color.primitive.white}",
+    "$description": "Texte des boutons primaires, ligne sélectionnée, badges, sur accent. Voir le contraste par espace dans le README."
+   },
+   "text-placeholder": {
+    "$type": "color",
+    "$value": "#eceaf580",
+    "$description": "Placeholder de tous les champs et adresse vide de la barre du haut (rgba(236,234,245,.5))."
+   },
+   "text-placeholder-bar": {
+    "$type": "color",
+    "$value": "{color.semantic.text-placeholder}",
+    "$description": "Déprécié : utiliser `text-placeholder`. Ancienne valeur #eceaf580. Même valeur, nom unique."
+   },
+   "text-stats": {
+    "$type": "color",
+    "$value": "{color.semantic.text-secondary}",
+    "$description": "Déprécié : utiliser `text-secondary`. Ancienne valeur #ffffff8c. Statistiques de la barre latérale : blanc .55 → #eceaf5 .6."
+   },
+   "accent": {
+    "$type": "color",
+    "$value": "#7c5cff",
+    "$description": "Couleur de l’espace actif (--accent, posée par JS depuis state.color). Boutons primaires, sélection, focus des champs, interrupteurs, barres de progression.",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff",
+      "pink": "#ff5c8a",
+      "green": "#2fd4a0",
+      "amber": "#ffb020",
+      "blue": "#3aa0ff",
+      "red": "#e5534b",
+      "teal": "#14b8c4",
+      "grey": "#8b8a99"
+     }
+    }
+   },
+   "accent-glow": {
+    "$type": "color",
+    "$value": "#7c5cff80",
+    "$description": "--glow : lueur radiale en haut de la barre latérale et de la barre du haut, halos (rgba(c,.5)).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff80",
+      "pink": "#ff5c8a80",
+      "green": "#2fd4a080",
+      "amber": "#ffb02080",
+      "blue": "#3aa0ff80",
+      "red": "#e5534b80",
+      "teal": "#14b8c480",
+      "grey": "#8b8a9980"
+     }
+    }
+   },
+   "accent-glow-soft": {
+    "$type": "color",
+    "$value": "#7c5cff38",
+    "$description": "--glow2 : lueur en bas à droite de la barre latérale (rgba(c,.22)).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff38",
+      "pink": "#ff5c8a38",
+      "green": "#2fd4a038",
+      "amber": "#ffb02038",
+      "blue": "#3aa0ff38",
+      "red": "#e5534b38",
+      "teal": "#14b8c438",
+      "grey": "#8b8a9938"
+     }
+    }
+   },
+   "tint-top": {
+    "$type": "color",
+    "$value": "#30265d",
+    "$description": "--tint1 / --tint : fond teinté du shell = mix(couleur, 30 %) vers ink-850. Haut de la barre latérale, barre du haut, en-tête 38px de Réglages et d’Easel.",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#30265d",
+      "pink": "#58263a",
+      "green": "#194a40",
+      "amber": "#583f1a",
+      "blue": "#1d3a5d",
+      "red": "#502327",
+      "teal": "#11424b",
+      "grey": "#35343e"
+     }
+    }
+   },
+   "tint-bottom": {
+    "$type": "color",
+    "$value": "#2a214f",
+    "$description": "--tint2 : bas du dégradé de la barre latérale = mix(couleur, 24 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#2a214f",
+      "pink": "#492133",
+      "green": "#173e38",
+      "amber": "#493619",
+      "blue": "#1a324f",
+      "red": "#431f23",
+      "teal": "#113841",
+      "grey": "#2e2d36"
+     }
+    }
+   },
+   "accent-selection": {
+    "$type": "color",
+    "$value": "#7c5cffd9",
+    "$description": "--sel : ligne sélectionnée de la palette, survol du menu contextuel (rgba(c,.85)).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cffd9",
+      "pink": "#ff5c8ad9",
+      "green": "#2fd4a0d9",
+      "amber": "#ffb020d9",
+      "blue": "#3aa0ffd9",
+      "red": "#e5534bd9",
+      "teal": "#14b8c4d9",
+      "grey": "#8b8a99d9"
+     }
+    }
+   },
+   "accent-wash": {
+    "$type": "color",
+    "$value": "#7c5cff47",
+    "$description": "Élément actif de la navigation de Réglages et d’Easel (color-mix accent 28 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff47",
+      "pink": "#ff5c8a47",
+      "green": "#2fd4a047",
+      "amber": "#ffb02047",
+      "blue": "#3aa0ff47",
+      "red": "#e5534b47",
+      "teal": "#14b8c447",
+      "grey": "#8b8a9947"
+     }
+    }
+   },
+   "accent-lit": {
+    "$type": "color",
+    "$value": "#7c5cff6b",
+    "$description": "Départ de l’animation tab-lit quand un onglet devient actif (color-mix accent 42 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff6b",
+      "pink": "#ff5c8a6b",
+      "green": "#2fd4a06b",
+      "amber": "#ffb0206b",
+      "blue": "#3aa0ff6b",
+      "red": "#e5534b6b",
+      "teal": "#14b8c46b",
+      "grey": "#8b8a996b"
+     }
+    }
+   },
+   "accent-border": {
+    "$type": "color",
+    "$value": "#7c5cff73",
+    "$description": "Contour de la carte réunion (color-mix accent 45 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff73",
+      "pink": "#ff5c8a73",
+      "green": "#2fd4a073",
+      "amber": "#ffb02073",
+      "blue": "#3aa0ff73",
+      "red": "#e5534b73",
+      "teal": "#14b8c473",
+      "grey": "#8b8a9973"
+     }
+    }
+   },
+   "accent-halo": {
+    "$type": "color",
+    "$value": "#7c5cff8c",
+    "$description": "Halo de l’interrupteur allumé (color-mix accent 55 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff8c",
+      "pink": "#ff5c8a8c",
+      "green": "#2fd4a08c",
+      "amber": "#ffb0208c",
+      "blue": "#3aa0ff8c",
+      "red": "#e5534b8c",
+      "teal": "#14b8c48c",
+      "grey": "#8b8a998c"
+     }
+    }
+   },
+   "accent-shadow": {
+    "$type": "color",
+    "$value": "#7c5cff99",
+    "$description": "Ombre colorée de l’espace actif (color-mix --c 60 %).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#7c5cff99",
+      "pink": "#ff5c8a99",
+      "green": "#2fd4a099",
+      "amber": "#ffb02099",
+      "blue": "#3aa0ff99",
+      "red": "#e5534b99",
+      "teal": "#14b8c499",
+      "grey": "#8b8a9999"
+     }
+    }
+   },
+   "accent-deep": {
+    "$type": "color",
+    "$value": "#44338c",
+    "$description": "Fin du dégradé 145° des puces d’espace (color-mix --c 55 %, #000).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#44338c",
+      "pink": "#8c334c",
+      "green": "#1a7558",
+      "amber": "#8c6112",
+      "blue": "#20588c",
+      "red": "#7e2e29",
+      "teal": "#0b656c",
+      "grey": "#4c4c54"
+     }
+    }
+   },
+   "meet-fill": {
+    "$type": "color",
+    "$value": "#9379ff44",
+    "$description": "Fond de la carte réunion (color-mix accent 22 %, rgba(255,255,255,.06)).",
+    "$extensions": {
+     "blackhole.modes": {
+      "violet": "#9379ff44",
+      "pink": "#ff799f44",
+      "green": "#53dcb144",
+      "amber": "#ffbe4744",
+      "blue": "#5db1ff44",
+      "red": "#ea716b44",
+      "teal": "#3dc4ce44",
+      "grey": "#9f9fab44"
+     }
+    }
+   },
+   "palette-glyph-fill": {
+    "$type": "color",
+    "$value": "{color.semantic.accent-glow-soft}",
+    "$description": "Déprécié : utiliser `accent-glow-soft`. Ancienne valeur #7c5cff38. Glyphes de la palette : violet fixe → accent de l’espace à 22 % ; le glyphe prend `accent`."
+   },
+   "danger-fill": {
+    "$type": "color",
+    "$value": "#ff5a5ad9",
+    "$description": "Action armée (2ᵉ clic pour confirmer) et survol destructeur : Réglages, palette, Bibliothèque, fermeture de volet (rgba(255,90,90,.85)). L’accueil utilise .9 : incohérence."
+   },
+   "danger-solid": {
+    "$type": "color",
+    "$value": "{color.primitive.red-500}",
+    "$description": "Barre de téléchargement en échec."
+   },
+   "danger-deep": {
+    "$type": "color",
+    "$value": "{color.semantic.danger-solid}",
+    "$description": "Déprécié : utiliser `danger-solid`. Ancienne valeur {red-600}. Bouton de mise à jour en erreur : départ du dégradé #b4443c → #e5534b."
+   },
+   "danger-hover-easel": {
+    "$type": "color",
+    "$value": "{color.semantic.danger-fill}",
+    "$description": "Déprécié : utiliser `danger-fill`. Ancienne valeur {rose-600}. Survol du bouton danger d’Easel : #c2455b → rgba(255,90,90,.85), comme toutes les actions destructrices."
+   },
+   "danger-text": {
+    "$type": "color",
+    "$value": "#ff8a8a",
+    "$description": "Libellé d’une action destructrice du menu contextuel."
+   },
+   "danger-text-soft": {
+    "$type": "color",
+    "$value": "#ffb3bd",
+    "$description": "Texte rouge clair : sous-titre d’une commande armée, puce « Not secure », bouton risqué."
+   },
+   "insecure-text": {
+    "$type": "color",
+    "$value": "{color.semantic.danger-text-soft}",
+    "$description": "Déprécié : utiliser `danger-text-soft`. Ancienne valeur #ffb3bd. Même valeur, nom unique."
+   },
+   "insecure-fill": {
+    "$type": "color",
+    "$value": "#dc284638",
+    "$description": "Fond de la puce « Not secure » et du bouton risqué des pages d’erreur (rgba(220,40,70,.22))."
+   },
+   "insecure-border": {
+    "$type": "color",
+    "$value": "#ff606e66",
+    "$description": "Bordure de la puce « Not secure » et du bouton risqué (rgba(255,96,110,.4))."
+   },
+   "media-off": {
+    "$type": "color",
+    "$value": "#ff5a5a66",
+    "$description": "Bouton coupé (micro/caméra/son) de la carte média : red-400 à 40 %."
+   },
+   "success": {
+    "$type": "color",
+    "$value": "{color.primitive.space-green}",
+    "$description": "Appareil synchronisé en ligne (Réglages .dot.on)."
+   },
+   "success-text": {
+    "$type": "color",
+    "$value": "{color.primitive.green-300}",
+    "$description": "Meilleure valeur du comparateur."
+   },
+   "success-flash": {
+    "$type": "color",
+    "$value": "{color.semantic.success-text}",
+    "$description": "Déprécié : utiliser `success-text`. Ancienne valeur {green-200}. Éclair du compteur de bloqueurs : #8ff0b4 → #6ee7a8."
+   },
+   "warning-text": {
+    "$type": "color",
+    "$value": "{color.primitive.orange-200}",
+    "$description": "Avertissement de l’authentification HTTP."
+   }
+  },
+  "error-page": {
+   "error-violet-accent": {
+    "$type": "color",
+    "$value": "#7c5cff",
+    "$description": "Page d’erreur « violet » (par défaut) : lueur de fond, halo extérieur et arc violet du trou noir (--accent)."
+   },
+   "error-violet-hot": {
+    "$type": "color",
+    "$value": "#ffaa3c",
+    "$description": "Page d’erreur « violet » : anneau intérieur chaud et arc de l’orbite (--hot)."
+   },
+   "error-violet-warm": {
+    "$type": "color",
+    "$value": "#ff5a28",
+    "$description": "Page d’erreur « violet » : disque externe et halo proche (--warm)."
+   },
+   "error-danger-accent": {
+    "$type": "color",
+    "$value": "#dc3250",
+    "$description": "Page d’erreur « danger » (certificate, forbidden, server) : lueur de fond, halo extérieur et arc violet du trou noir (--accent)."
+   },
+   "error-danger-hot": {
+    "$type": "color",
+    "$value": "#ff606e",
+    "$description": "Page d’erreur « danger » : anneau intérieur chaud et arc de l’orbite (--hot)."
+   },
+   "error-danger-warm": {
+    "$type": "color",
+    "$value": "#dc2846",
+    "$description": "Page d’erreur « danger » : disque externe et halo proche (--warm)."
+   },
+   "error-calm-accent": {
+    "$type": "color",
+    "$value": "#4682ff",
+    "$description": "Page d’erreur « calm » (offline, blocked) : lueur de fond, halo extérieur et arc violet du trou noir (--accent)."
+   },
+   "error-calm-hot": {
+    "$type": "color",
+    "$value": "#78c8ff",
+    "$description": "Page d’erreur « calm » : anneau intérieur chaud et arc de l’orbite (--hot)."
+   },
+   "error-calm-warm": {
+    "$type": "color",
+    "$value": "#4678ff",
+    "$description": "Page d’erreur « calm » : disque externe et halo proche (--warm)."
+   },
+   "error-amber-accent": {
+    "$type": "color",
+    "$value": "#e69628",
+    "$description": "Page d’erreur « amber » (clock, http_only, unauthorized) : lueur de fond, halo extérieur et arc violet du trou noir (--accent)."
+   },
+   "error-amber-hot": {
+    "$type": "color",
+    "$value": "#ffcd78",
+    "$description": "Page d’erreur « amber » : anneau intérieur chaud et arc de l’orbite (--hot)."
+   },
+   "error-amber-warm": {
+    "$type": "color",
+    "$value": "#ff8a3c",
+    "$description": "Page d’erreur « amber » : disque externe et halo proche (--warm)."
+   },
+   "error-green-accent": {
+    "$type": "color",
+    "$value": "#28be82",
+    "$description": "Page d’erreur « green » (not_found) : lueur de fond, halo extérieur et arc violet du trou noir (--accent)."
+   },
+   "error-green-hot": {
+    "$type": "color",
+    "$value": "#3ddc97",
+    "$description": "Page d’erreur « green » : anneau intérieur chaud et arc de l’orbite (--hot)."
+   },
+   "error-green-warm": {
+    "$type": "color",
+    "$value": "#1ea06e",
+    "$description": "Page d’erreur « green » : disque externe et halo proche (--warm)."
+   }
+  },
+  "library": {
+   "lib-accent": {
+    "$type": "color",
+    "$value": "{color.semantic.accent}",
+    "$description": "Déprécié : utiliser `accent`. Ancienne valeur #6a8cff. Bibliothèque : #6a8cff → accent de l’espace (le JS le passait déjà quand il était connu)."
+   },
+   "lib-bg": {
+    "$type": "color",
+    "$value": "{color.semantic.bg-page}",
+    "$description": "Déprécié : utiliser `bg-page`. Ancienne valeur #16171c. Bibliothèque : #16171c → #0c0b12, comme l’accueil (page interne)."
+   },
+   "lib-fg": {
+    "$type": "color",
+    "$value": "{color.semantic.text-primary}",
+    "$description": "Déprécié : utiliser `text-primary`. Ancienne valeur #e8e9ee. Bibliothèque : #e8e9ee → #eceaf5."
+   },
+   "lib-dim": {
+    "$type": "color",
+    "$value": "{color.semantic.text-secondary}",
+    "$description": "Déprécié : utiliser `text-secondary`. Ancienne valeur #8b8e99. Bibliothèque : #8b8e99 → #eceaf5 à 60 %."
+   },
+   "lib-card": {
+    "$type": "color",
+    "$value": "{color.semantic.fill-raised}",
+    "$description": "Déprécié : utiliser `fill-raised`. Ancienne valeur #22242b. Bibliothèque : #22242b → blanc 9 % (tuiles, champ, colonnes)."
+   },
+   "lib-note-bg": {
+    "$type": "color",
+    "$value": "#f4f4f6",
+    "$description": "Bibliothèque : cartes de notes, seul fond clair de l’interface, gardé volontairement : la note imite une feuille de papier."
+   },
+   "lib-note-fg": {
+    "$type": "color",
+    "$value": "#222222",
+    "$description": "Bibliothèque : texte des cartes de notes."
+   },
+   "lib-note-dim": {
+    "$type": "color",
+    "$value": "#666666",
+    "$description": "Bibliothèque : petit texte des cartes de notes."
+   }
+  },
+  "easel-card": {
+   "easel-ink": {
+    "$type": "color",
+    "$value": "{color.primitive.ink-550}",
+    "$description": "Couleur de carte Easel « encre (défaut) » (easel::COLORS), fond de la carte entière."
+   },
+   "easel-violet": {
+    "$type": "color",
+    "$value": "{color.primitive.space-violet}",
+    "$description": "Couleur de carte Easel « violet » (easel::COLORS), fond de la carte entière."
+   },
+   "easel-green": {
+    "$type": "color",
+    "$value": "#2e8b6e",
+    "$description": "Couleur de carte Easel « vert » (easel::COLORS), fond de la carte entière."
+   },
+   "easel-ochre": {
+    "$type": "color",
+    "$value": "#c9822b",
+    "$description": "Couleur de carte Easel « ocre » (easel::COLORS), fond de la carte entière."
+   },
+   "easel-rose": {
+    "$type": "color",
+    "$value": "{color.primitive.rose-600}",
+    "$description": "Couleur de carte Easel « rose » (easel::COLORS), fond de la carte entière."
+   },
+   "easel-blue": {
+    "$type": "color",
+    "$value": "#2f6fb5",
+    "$description": "Couleur de carte Easel « bleu » (easel::COLORS), fond de la carte entière."
+   }
+  }
+ },
+ "shadow": {
+  "shadow-page-card": {
+   "$type": "shadow",
+   "$value": "0 14px 36px #00000080, 0 3px 10px #00000066, 0 0 0 1px #ffffff12",
+   "$description": "Élévation de la carte-page au-dessus du cadre teinté (index.html #cardshadow), rayon radius-panel."
+  },
+  "shadow-flyout": {
+   "$type": "shadow",
+   "$value": "6px 0 24px #00000073",
+   "$description": "Barre latérale en survol quand elle est repliée (body.flyout)."
+  },
+  "shadow-ghost": {
+   "$type": "shadow",
+   "$value": "0 8px 24px #00000080",
+   "$description": "Onglet fantôme pendant un glisser."
+  },
+  "shadow-easel-card": {
+   "$type": "shadow",
+   "$value": "0 6px 22px #00000059",
+   "$description": "Cartes posées sur le tableau Easel."
+  },
+  "shadow-palette": {
+   "$type": "shadow",
+   "$value": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #7c5cff",
+   "$description": "Panneau de la palette de commandes ; le dernier halo prend l’accent.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #7c5cff",
+     "pink": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #ff5c8a",
+     "green": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #2fd4a0",
+     "amber": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #ffb020",
+     "blue": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #3aa0ff",
+     "red": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #e5534b",
+     "teal": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #14b8c4",
+     "grey": "0 30px 80px #0000008c, 0 0 0 1px #00000066, 0 0 70px -20px #8b8a99"
+    }
+   }
+  },
+  "shadow-menu": {
+   "$type": "shadow",
+   "$value": "0 18px 50px #0000008c, 0 0 0 1px #00000059",
+   "$description": "Menu contextuel."
+  },
+  "shadow-ring": {
+   "$type": "shadow",
+   "$value": "0 0 0 1px #ffffff1a",
+   "$description": "Contour des cartes média, téléchargement et rangement."
+  },
+  "shadow-ring-update": {
+   "$type": "shadow",
+   "$value": "0 0 0 1px #ffffff1a",
+   "$description": "Déprécié : utiliser `shadow-ring`. Ancienne valeur 0 0 0 1px #ffffff24. Contour du bouton de mise à jour : blanc .14 → .1, comme les autres cartes de la barre latérale."
+  },
+  "shadow-tab-active": {
+   "$type": "shadow",
+   "$value": "inset 0 0 0 1px #ffffff0f, 0 1px 0 #ffffff0a",
+   "$description": "Onglet actif de la barre latérale."
+  },
+  "shadow-tab-split": {
+   "$type": "shadow",
+   "$value": "inset 3px 0 0 #7c5cff",
+   "$description": "Onglet affiché en vue partagée : filet d’accent à gauche.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "inset 3px 0 0 #7c5cff",
+     "pink": "inset 3px 0 0 #ff5c8a",
+     "green": "inset 3px 0 0 #2fd4a0",
+     "amber": "inset 3px 0 0 #ffb020",
+     "blue": "inset 3px 0 0 #3aa0ff",
+     "red": "inset 3px 0 0 #e5534b",
+     "teal": "inset 3px 0 0 #14b8c4",
+     "grey": "inset 3px 0 0 #8b8a99"
+    }
+   }
+  },
+  "shadow-pinned-active": {
+   "$type": "shadow",
+   "$value": "0 0 0 1px #ffffff33, 0 8px 18px -8px #7c5cff80",
+   "$description": "Tuile épinglée active.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 0 1px #ffffff33, 0 8px 18px -8px #7c5cff80",
+     "pink": "0 0 0 1px #ffffff33, 0 8px 18px -8px #ff5c8a80",
+     "green": "0 0 0 1px #ffffff33, 0 8px 18px -8px #2fd4a080",
+     "amber": "0 0 0 1px #ffffff33, 0 8px 18px -8px #ffb02080",
+     "blue": "0 0 0 1px #ffffff33, 0 8px 18px -8px #3aa0ff80",
+     "red": "0 0 0 1px #ffffff33, 0 8px 18px -8px #e5534b80",
+     "teal": "0 0 0 1px #ffffff33, 0 8px 18px -8px #14b8c480",
+     "grey": "0 0 0 1px #ffffff33, 0 8px 18px -8px #8b8a9980"
+    }
+   }
+  },
+  "shadow-space-active": {
+   "$type": "shadow",
+   "$value": "0 0 0 2px #ffffffeb, 0 5px 14px #7c5cff99",
+   "$description": "Puce de l’espace actif.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 0 2px #ffffffeb, 0 5px 14px #7c5cff99",
+     "pink": "0 0 0 2px #ffffffeb, 0 5px 14px #ff5c8a99",
+     "green": "0 0 0 2px #ffffffeb, 0 5px 14px #2fd4a099",
+     "amber": "0 0 0 2px #ffffffeb, 0 5px 14px #ffb02099",
+     "blue": "0 0 0 2px #ffffffeb, 0 5px 14px #3aa0ff99",
+     "red": "0 0 0 2px #ffffffeb, 0 5px 14px #e5534b99",
+     "teal": "0 0 0 2px #ffffffeb, 0 5px 14px #14b8c499",
+     "grey": "0 0 0 2px #ffffffeb, 0 5px 14px #8b8a9999"
+    }
+   }
+  },
+  "shadow-update-hover": {
+   "$type": "shadow",
+   "$value": "0 0 0 1px #ffffff4d, 0 6px 20px #7c5cff80",
+   "$description": "Bouton de mise à jour survolé.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 0 1px #ffffff4d, 0 6px 20px #7c5cff80",
+     "pink": "0 0 0 1px #ffffff4d, 0 6px 20px #ff5c8a80",
+     "green": "0 0 0 1px #ffffff4d, 0 6px 20px #2fd4a080",
+     "amber": "0 0 0 1px #ffffff4d, 0 6px 20px #ffb02080",
+     "blue": "0 0 0 1px #ffffff4d, 0 6px 20px #3aa0ff80",
+     "red": "0 0 0 1px #ffffff4d, 0 6px 20px #e5534b80",
+     "teal": "0 0 0 1px #ffffff4d, 0 6px 20px #14b8c480",
+     "grey": "0 0 0 1px #ffffff4d, 0 6px 20px #8b8a9980"
+    }
+   }
+  },
+  "shadow-meet-live": {
+   "$type": "shadow",
+   "$value": "0 0 0 1px #7c5cff, 0 0 14px -4px #7c5cff80",
+   "$description": "Carte réunion en cours.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 0 1px #7c5cff, 0 0 14px -4px #7c5cff80",
+     "pink": "0 0 0 1px #ff5c8a, 0 0 14px -4px #ff5c8a80",
+     "green": "0 0 0 1px #2fd4a0, 0 0 14px -4px #2fd4a080",
+     "amber": "0 0 0 1px #ffb020, 0 0 14px -4px #ffb02080",
+     "blue": "0 0 0 1px #3aa0ff, 0 0 14px -4px #3aa0ff80",
+     "red": "0 0 0 1px #e5534b, 0 0 14px -4px #e5534b80",
+     "teal": "0 0 0 1px #14b8c4, 0 0 14px -4px #14b8c480",
+     "grey": "0 0 0 1px #8b8a99, 0 0 14px -4px #8b8a9980"
+    }
+   }
+  },
+  "shadow-switch-on": {
+   "$type": "shadow",
+   "$value": "0 0 10px #7c5cff8c",
+   "$description": "Interrupteur allumé.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 10px #7c5cff8c",
+     "pink": "0 0 10px #ff5c8a8c",
+     "green": "0 0 10px #2fd4a08c",
+     "amber": "0 0 10px #ffb0208c",
+     "blue": "0 0 10px #3aa0ff8c",
+     "red": "0 0 10px #e5534b8c",
+     "teal": "0 0 10px #14b8c48c",
+     "grey": "0 0 10px #8b8a998c"
+    }
+   }
+  },
+  "shadow-switch-knob": {
+   "$type": "shadow",
+   "$value": "0 1px 3px #0000004d",
+   "$description": "Curseur de l’interrupteur."
+  },
+  "shadow-omni-hover": {
+   "$type": "shadow",
+   "$value": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #7c5cff80",
+   "$description": "Omnibox survolée.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #7c5cff80",
+     "pink": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #ff5c8a80",
+     "green": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #2fd4a080",
+     "amber": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #ffb02080",
+     "blue": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #3aa0ff80",
+     "red": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #e5534b80",
+     "teal": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #14b8c480",
+     "grey": "0 0 0 3px #ffffff0a, 0 6px 18px -10px #8b8a9980"
+    }
+   }
+  },
+  "shadow-split-focus": {
+   "$type": "shadow",
+   "$value": "inset 0 -2px 0 #7c5cff",
+   "$description": "Volet focalisé de la barre de partage.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "inset 0 -2px 0 #7c5cff",
+     "pink": "inset 0 -2px 0 #ff5c8a",
+     "green": "inset 0 -2px 0 #2fd4a0",
+     "amber": "inset 0 -2px 0 #ffb020",
+     "blue": "inset 0 -2px 0 #3aa0ff",
+     "red": "inset 0 -2px 0 #e5534b",
+     "teal": "inset 0 -2px 0 #14b8c4",
+     "grey": "inset 0 -2px 0 #8b8a99"
+    }
+   }
+  },
+  "shadow-progress": {
+   "$type": "shadow",
+   "$value": "0 0 8px #7c5cff",
+   "$description": "Lueur de la barre de chargement.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 0 8px #7c5cff",
+     "pink": "0 0 8px #ff5c8a",
+     "green": "0 0 8px #2fd4a0",
+     "amber": "0 0 8px #ffb020",
+     "blue": "0 0 8px #3aa0ff",
+     "red": "0 0 8px #e5534b",
+     "teal": "0 0 8px #14b8c4",
+     "grey": "0 0 8px #8b8a99"
+    }
+   }
+  },
+  "shadow-tile-lift": {
+   "$type": "shadow",
+   "$value": "0 10px 22px -10px #000000b3",
+   "$description": "Tuile de favori soulevée (accueil)."
+  },
+  "shadow-item-hover": {
+   "$type": "shadow",
+   "$value": "0 10px 24px -16px #7c5cffb2",
+   "$description": "Carte récente survolée (accueil) : lueur de l’espace.",
+   "$extensions": {
+    "blackhole.modes": {
+     "violet": "0 10px 24px -16px #7c5cffb2",
+     "pink": "0 10px 24px -16px #ff5c8ab2",
+     "green": "0 10px 24px -16px #2fd4a0b2",
+     "amber": "0 10px 24px -16px #ffb020b2",
+     "blue": "0 10px 24px -16px #3aa0ffb2",
+     "red": "0 10px 24px -16px #e5534bb2",
+     "teal": "0 10px 24px -16px #14b8c4b2",
+     "grey": "0 10px 24px -16px #8b8a99b2"
+    }
+   }
+  },
+  "shadow-lib-lift": {
+   "$type": "shadow",
+   "$value": "0 10px 22px -10px #000000b3",
+   "$description": "Déprécié : utiliser `shadow-tile-lift`. Ancienne valeur 0 12px 26px -14px #000000. Bibliothèque : même soulèvement que l’accueil."
+  },
+  "glow-logo": {
+   "$type": "shadow",
+   "$value": "0 0 30px #ff78284d",
+   "$description": "Halo du logo de l’accueil."
+  },
+  "glow-hole": {
+   "$type": "shadow",
+   "$value": "0 0 80px #ff782847, 0 0 160px #7c5cff40",
+   "$description": "Halo du trou noir du splash ; les pages d’erreur en dérivent avec leurs teintes."
+  },
+  "glow-star": {
+   "$type": "shadow",
+   "$value": "0 0 6px 1px #beaaffe6",
+   "$description": "Étoiles du splash (5px/.8 sur les pages d’erreur)."
+  }
+ },
+ "dimension": {
+  "space": {
+   "space-1": {
+    "$type": "dimension",
+    "$value": "1px",
+    "$description": "Marges de champ inline (.fedit), padding des puces."
+   },
+   "space-2": {
+    "$type": "dimension",
+    "$value": "2px",
+    "$description": "Écarts des listes d’onglets et de dossiers, padding du contrôle segmenté."
+   },
+   "space-3": {
+    "$type": "dimension",
+    "$value": "3px",
+    "$description": "Hors échelle : utiliser `space-4`. Était : Écart des puces de la barre de partage."
+   },
+   "space-4": {
+    "$type": "dimension",
+    "$value": "4px",
+    "$description": "Écart des rangées d’icônes, de la navigation, padding de menu (5)."
+   },
+   "space-5": {
+    "$type": "dimension",
+    "$value": "5px",
+    "$description": "Hors échelle : utiliser `space-6`. Était : Padding du menu contextuel, écart de la carte téléchargement."
+   },
+   "space-6": {
+    "$type": "dimension",
+    "$value": "6px",
+    "$description": "Écart des épingles, des espaces, du pied."
+   },
+   "space-7": {
+    "$type": "dimension",
+    "$value": "7px",
+    "$description": "Hors échelle : utiliser `space-8`. Était : Padding vertical des onglets et boutons (.btn 7px 14px)."
+   },
+   "space-8": {
+    "$type": "dimension",
+    "$value": "8px",
+    "$description": "Écart des onglets, padding des rangées."
+   },
+   "space-9": {
+    "$type": "dimension",
+    "$value": "9px",
+    "$description": "Hors échelle : utiliser `space-10`. Était : Padding des options de Réglages, écart de la carte réunion."
+   },
+   "space-10": {
+    "$type": "dimension",
+    "$value": "10px",
+    "$description": "Écart de la barre latérale, padding des cartes et rangées."
+   },
+   "space-12": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$description": "Padding horizontal des barres, écart des grilles."
+   },
+   "space-14": {
+    "$type": "dimension",
+    "$value": "14px",
+    "$description": "Padding gauche de l’en-tête 38px, padding des cartes de notes."
+   },
+   "space-16": {
+    "$type": "dimension",
+    "$value": "16px",
+    "$description": "Padding de la navigation de Réglages, écart des colonnes."
+   },
+   "space-18": {
+    "$type": "dimension",
+    "$value": "18px",
+    "$description": "Marge entre cartes, padding des cartes de l’accueil."
+   },
+   "space-20": {
+    "$type": "dimension",
+    "$value": "20px",
+    "$description": "Padding horizontal de la palette."
+   },
+   "space-22": {
+    "$type": "dimension",
+    "$value": "22px",
+    "$description": "Hors échelle : utiliser `space-24`. Était : Marge sous le chapeau de Réglages."
+   },
+   "space-24": {
+    "$type": "dimension",
+    "$value": "24px",
+    "$description": "Padding des pages d’erreur."
+   },
+   "space-28": {
+    "$type": "dimension",
+    "$value": "28px",
+    "$description": "Padding de la page Réglages et de l’accueil."
+   },
+   "space-36": {
+    "$type": "dimension",
+    "$value": "36px",
+    "$description": "Padding horizontal de Réglages."
+   },
+   "space-40": {
+    "$type": "dimension",
+    "$value": "40px",
+    "$description": "Padding bas des pages."
+   },
+   "space-56": {
+    "$type": "dimension",
+    "$value": "56px",
+    "$description": "Padding haut de l’accueil."
+   }
+  },
+  "radius": {
+   "radius-hair": {
+    "$type": "dimension",
+    "$value": "4px",
+    "$description": "Déprécié : utiliser `radius-bar`. Ancienne valeur 3px. Barres de progression 3 → 4px (invisible sur 3px de haut)."
+   },
+   "radius-bar": {
+    "$type": "dimension",
+    "$value": "4px",
+    "$description": "Barres de progression et de téléchargement, icône d’extension, ligne de dépôt."
+   },
+   "radius-key": {
+    "$type": "dimension",
+    "$value": "6px",
+    "$description": "Déprécié : utiliser `radius-chip`. Ancienne valeur 5px. kbd, code, petits boutons d’onglet 5 → 6px."
+   },
+   "radius-chip": {
+    "$type": "dimension",
+    "$value": "6px",
+    "$description": "Petits éléments : pastille d’onglet, favicons, puces, kbd, code, champ de renommage, boutons des toasts, segment actif."
+   },
+   "radius-chip-button": {
+    "$type": "dimension",
+    "$value": "6px",
+    "$description": "Déprécié : utiliser `radius-chip`. Ancienne valeur 7px. Boutons des toasts, segments, zoom, icônes de palette 7 → 6px (rayon intérieur d’un conteneur de 8px avec 2px de marge)."
+   },
+   "radius-control": {
+    "$type": "dimension",
+    "$value": "8px",
+    "$description": "Tout ce qui se clique : boutons, boutons icône, onglets, dossiers, champs, options, navigation, items de menu, segments (conteneur)."
+   },
+   "radius-row": {
+    "$type": "dimension",
+    "$value": "8px",
+    "$description": "Déprécié : utiliser `radius-control`. Ancienne valeur 9px. Onglets, dossiers, boutons, champs, options, navigation 9 → 8px : un seul rayon pour tout ce qui se clique."
+   },
+   "radius-card-sm": {
+    "$type": "dimension",
+    "$value": "10px",
+    "$description": "Cartes de la barre latérale, toasts, omnibox, lignes de la palette, détails d’erreur."
+   },
+   "radius-space": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$description": "Déprécié : utiliser `radius-card`. Ancienne valeur 11px. Puces d’espace 11 → 12px."
+   },
+   "radius-card": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$description": "Cartes Easel, favoris et récents de l’accueil, puces d’espace, cartes de la Bibliothèque."
+   },
+   "radius-menu": {
+    "$type": "dimension",
+    "$value": "14px",
+    "$description": "Déprécié : utiliser `radius-panel`. Ancienne valeur 13px. Menu contextuel 13 → 14px (padding 6px, items 8px)."
+   },
+   "radius-panel": {
+    "$type": "dimension",
+    "$value": "14px",
+    "$description": "Cartes de section (Réglages, accueil), carte-page, menu contextuel, tuiles de l’accueil."
+   },
+   "radius-card-lg": {
+    "$type": "dimension",
+    "$value": "14px",
+    "$description": "Déprécié : utiliser `radius-panel`. Ancienne valeur 16px. Cartes de l’accueil 16 → 14px, comme celles de Réglages."
+   },
+   "radius-dialog": {
+    "$type": "dimension",
+    "$value": "18px",
+    "$description": "Palette de commandes, tuile de l’écran d’attente."
+   },
+   "radius-pill": {
+    "$type": "dimension",
+    "$value": "999px",
+    "$description": "Pastille privée, aide du mode aperçu."
+   },
+   "radius-round": {
+    "$type": "dimension",
+    "$value": "50%",
+    "$description": "Logo, radio, curseur, points de statut."
+   }
+  },
+  "size": {
+   "size-topbar": {
+    "$type": "dimension",
+    "$value": "38px",
+    "$description": "Hauteur de la barre du haut et de l’en-tête de Réglages et d’Easel."
+   },
+   "size-traffic-lights": {
+    "$type": "dimension",
+    "$value": "84px",
+    "$description": "Retrait gauche sur macOS pour les feux de fenêtre."
+   },
+   "size-sidebar": {
+    "$type": "dimension",
+    "$value": "240px",
+    "$description": "Largeur par défaut de la barre latérale (--sw, réglable)."
+   },
+   "size-settings-nav": {
+    "$type": "dimension",
+    "$value": "210px",
+    "$description": "Colonne de navigation latérale des fenêtres : Réglages, Easel, Bibliothèque."
+   },
+   "size-easel-nav": {
+    "$type": "dimension",
+    "$value": "210px",
+    "$description": "Déprécié : utiliser `size-settings-nav`. Ancienne valeur 220px. Navigation d’Easel 220 → 210px, comme Réglages et la Bibliothèque."
+   },
+   "size-icon-button": {
+    "$type": "dimension",
+    "$value": "32px",
+    "$description": "Bouton icône de la barre latérale."
+   },
+   "size-bar-button": {
+    "$type": "dimension",
+    "$value": "28px",
+    "$description": "Bouton de la barre du haut."
+   },
+   "size-window-button": {
+    "$type": "dimension",
+    "$value": "46px",
+    "$description": "Boutons de fenêtre Windows."
+   },
+   "size-omnibox": {
+    "$type": "dimension",
+    "$value": "30px",
+    "$description": "Hauteur de l’omnibox."
+   },
+   "size-tab-dot": {
+    "$type": "dimension",
+    "$value": "18px",
+    "$description": "Pastille d’initiale des onglets."
+   },
+   "size-pinned": {
+    "$type": "dimension",
+    "$value": "48px",
+    "$description": "Hauteur d’une tuile épinglée."
+   },
+   "size-space": {
+    "$type": "dimension",
+    "$value": "34px",
+    "$description": "Hauteur et largeur minimale d’une puce d’espace."
+   },
+   "size-switch-w": {
+    "$type": "dimension",
+    "$value": "30px",
+    "$description": "Largeur de l’interrupteur."
+   },
+   "size-switch-h": {
+    "$type": "dimension",
+    "$value": "18px",
+    "$description": "Hauteur de l’interrupteur ; curseur 14px."
+   },
+   "size-palette": {
+    "$type": "dimension",
+    "$value": "640px",
+    "$description": "Largeur de la palette (1000px en mode comparateur)."
+   },
+   "size-progress": {
+    "$type": "dimension",
+    "$value": "3px",
+    "$description": "Épaisseur des barres de chargement."
+   },
+   "size-scrollbar": {
+    "$type": "dimension",
+    "$value": "10px",
+    "$description": "Barres de défilement des pages (theme.js) ; 6px dans la barre latérale."
+   },
+   "icon-xs": {
+    "$type": "dimension",
+    "$value": "12px",
+    "$description": "Icône en ligne : cadenas de l’omnibox, chevrons, petite croix. CSS --bh-icon-xs."
+   },
+   "icon-sm": {
+    "$type": "dimension",
+    "$value": "16px",
+    "$description": "Taille par défaut : menus, boutons, barre du haut, navigation (Réglages, Easel, Bibliothèque), actions de rangée. CSS --bh-icon-sm."
+   },
+   "icon-md": {
+    "$type": "dimension",
+    "$value": "20px",
+    "$description": "Icône de tête d’une section ou d’une carte, grande loupe de la palette. CSS --bh-icon-md."
+   },
+   "icon-lg": {
+    "$type": "dimension",
+    "$value": "24px",
+    "$description": "États vides, vignettes sans image. CSS --bh-icon-lg."
+   },
+   "icon-stroke": {
+    "$type": "dimension",
+    "$value": "1.5px",
+    "$description": "Trait de toutes les icônes : viewBox 16, non mis à l’échelle (vector-effect: non-scaling-stroke), extrémités et jointures rondes, currentColor. CSS --bh-icon-stroke."
+   },
+   "size-hit-min": {
+    "$type": "dimension",
+    "$value": "24px",
+    "$description": "Zone de clic minimale d’une action de rangée (✕, ⋯, partage). CSS --bh-size-hit-min."
+   }
+  }
+ },
+ "number": {
+  "opacity": {
+   "opacity-disabled": {
+    "$type": "number",
+    "$value": 0.4,
+    "$description": "Tout contrôle désactivé."
+   },
+   "opacity-dragging": {
+    "$type": "number",
+    "$value": 0.35,
+    "$description": "Onglet en cours de glisser."
+   },
+   "opacity-asleep": {
+    "$type": "number",
+    "$value": 0.5,
+    "$description": "Déprécié : utiliser `opacity-section`. Ancienne valeur 0.45. Onglet endormi, en-tête de menu .45 → .5."
+   },
+   "opacity-section": {
+    "$type": "number",
+    "$value": 0.5,
+    "$description": "Titres de section en capitales, textes vides."
+   },
+   "opacity-muted": {
+    "$type": "number",
+    "$value": 0.6,
+    "$description": "Chapeaux, sous-titres, URL d’erreur, texte secondaire des cartes, compteurs, puce d’espace inactive."
+   },
+   "opacity-tertiary": {
+    "$type": "number",
+    "$value": 0.6,
+    "$description": "Déprécié : utiliser `opacity-muted`. Ancienne valeur 0.6. Même valeur (.6)."
+   },
+   "opacity-space-idle": {
+    "$type": "number",
+    "$value": 0.6,
+    "$description": "Déprécié : utiliser `opacity-muted`. Ancienne valeur 0.62. Puce d’espace inactive .62 → .6."
+   },
+   "opacity-secondary": {
+    "$type": "number",
+    "$value": 0.7,
+    "$description": "Icônes et boutons au repos, indices, chevrons, navigation."
+   },
+   "opacity-idle": {
+    "$type": "number",
+    "$value": 0.7,
+    "$description": "Déprécié : utiliser `opacity-secondary`. Ancienne valeur 0.75. Boutons icône et navigation au repos .75 → .7."
+   },
+   "opacity-soft": {
+    "$type": "number",
+    "$value": 0.85,
+    "$description": "Sous-éléments presque pleins."
+   },
+   "opacity-space-hover": {
+    "$type": "number",
+    "$value": 0.85,
+    "$description": "Déprécié : utiliser `opacity-soft`. Ancienne valeur 0.92. Puce d’espace survolée .92 → .85."
+   }
+  },
+  "z-index": {
+   "z-under": {
+    "$type": "number",
+    "$value": -1,
+    "$description": "Ombre de la carte-page, sous la barre latérale."
+   },
+   "z-wait": {
+    "$type": "number",
+    "$value": 9,
+    "$description": "Écran d’attente de l’onglet, canvas d’effets de la Bibliothèque."
+   },
+   "z-splash": {
+    "$type": "number",
+    "$value": 10,
+    "$description": "Splash de lancement."
+   },
+   "z-ghost-out": {
+    "$type": "number",
+    "$value": 30,
+    "$description": "Rangée qui s’efface après fermeture."
+   },
+   "z-dropcard": {
+    "$type": "number",
+    "$value": 40,
+    "$description": "Indicateur de dépôt."
+   },
+   "z-ghost": {
+    "$type": "number",
+    "$value": 50,
+    "$description": "Onglet fantôme pendant le glisser."
+   }
+  }
+ },
+ "duration": {
+  "duration-instant": {
+   "$type": "duration",
+   "$value": "150ms",
+   "$description": "Déprécié : utiliser `duration-fast`. Ancienne valeur 0.12s. Bouton « … » de l’accueil .12 → .15s."
+  },
+  "duration-fast": {
+   "$type": "duration",
+   "$value": "150ms",
+   "$description": "Pression des boutons, survol des boutons de barre et de la Bibliothèque, petits fondus."
+  },
+  "duration-hover": {
+   "$type": "duration",
+   "$value": "180ms",
+   "$description": "Survol des onglets et rangées, entrée d’une section de Réglages."
+  },
+  "duration-press": {
+   "$type": "duration",
+   "$value": "150ms",
+   "$description": "Déprécié : utiliser `duration-fast`. Ancienne valeur 0.16s. Enfoncement .16 → .15s."
+  },
+  "duration-quick": {
+   "$type": "duration",
+   "$value": "200ms",
+   "$description": "Entrée des cartes de la barre latérale (dl-in), toast d’Easel."
+  },
+  "duration-base": {
+   "$type": "duration",
+   "$value": "250ms",
+   "$description": "Toasts, interrupteur, segments."
+  },
+  "duration-spring": {
+   "$type": "duration",
+   "$value": "300ms",
+   "$description": "Curseur de l’interrupteur, puce d’espace qui s’élargit."
+  },
+  "duration-panel": {
+   "$type": "duration",
+   "$value": "400ms",
+   "$description": "Ouverture de la palette, glissement entre espaces."
+  },
+  "duration-switch-space": {
+   "$type": "duration",
+   "$value": "400ms",
+   "$description": "Déprécié : utiliser `duration-panel`. Ancienne valeur 0.42s. Glissement entre espaces .42 → .4s."
+  },
+  "duration-tint": {
+   "$type": "duration",
+   "$value": "450ms",
+   "$description": "Transition de --accent, --glow, --tint1/2 entre espaces."
+  },
+  "duration-lit": {
+   "$type": "duration",
+   "$value": "600ms",
+   "$description": "Déprécié : utiliser `duration-bloom`. Ancienne valeur 0.55s. Onglet qui s’allume .55 → .6s."
+  },
+  "duration-bloom": {
+   "$type": "duration",
+   "$value": "600ms",
+   "$description": "Trou noir derrière la palette."
+  },
+  "duration-splash": {
+   "$type": "duration",
+   "$value": "1900ms",
+   "$description": "Splash de lancement."
+  },
+  "duration-breathe": {
+   "$type": "duration",
+   "$value": "5000ms",
+   "$description": "Respiration du logo de l’accueil."
+  }
+ },
+ "cubicBezier": {
+  "ease-press": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.3,
+    1.4,
+    0.5,
+    1.0
+   ],
+   "$description": "Ressort léger de toute pression et de tout soulèvement (rangées, tuiles, boutons, pastilles). Remplace aussi (.3,1.5,.5,1) et (.3,1.6,.5,1)."
+  },
+  "ease-grow": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.3,
+    1.2,
+    0.4,
+    1.0
+   ],
+   "$description": "Puce d’espace qui s’élargit (flex-grow)."
+  },
+  "ease-glide": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    0.85,
+    0.25,
+    1.0
+   ],
+   "$description": "Entrées et glissements sans rebond : changement d’espace, rangées, palette, onglet allumé, segments."
+  },
+  "ease-settle": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    0.85,
+    0.25,
+    1.0
+   ],
+   "$description": "Déprécié : utiliser `ease-glide`. Ancienne valeur cubic-bezier(.2,.8,.2,1). Onglet allumé, segments : (.2,.8,.2,1) → (.2,.85,.25,1)."
+  },
+  "ease-pop": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    1.3,
+    0.4,
+    1.0
+   ],
+   "$description": "Tout ce qui apparaît : toast, menu, zoom, extensions."
+  },
+  "ease-toast": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    1.3,
+    0.4,
+    1.0
+   ],
+   "$description": "Déprécié : utiliser `ease-pop`. Ancienne valeur cubic-bezier(.2,1.3,.4,1). Même courbe."
+  },
+  "ease-menu": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    1.3,
+    0.4,
+    1.0
+   ],
+   "$description": "Déprécié : utiliser `ease-pop`. Ancienne valeur cubic-bezier(.2,1.2,.35,1). Même courbe."
+  },
+  "ease-switch": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    0.9,
+    0.3,
+    1.35
+   ],
+   "$description": "Curseur de l’interrupteur (dépassement)."
+  },
+  "ease-panel": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.2,
+    0.85,
+    0.25,
+    1.0
+   ],
+   "$description": "Déprécié : utiliser `ease-glide`. Ancienne valeur cubic-bezier(.22,.9,.28,1). Palette : (.22,.9,.28,1) → (.2,.85,.25,1)."
+  },
+  "ease-standard": {
+   "$type": "cubicBezier",
+   "$value": [
+    0.25,
+    0.1,
+    0.25,
+    1
+   ],
+   "$description": "Teinte, fondus, couleurs."
+  }
+ },
+ "fontFamily": {
+  "sans": {
+   "$value": "-apple-system, \"Segoe UI\", system-ui, sans-serif",
+   "$type": "fontFamily"
+  },
+  "mono": {
+   "$value": "ui-monospace, Menlo, Consolas, monospace",
+   "$type": "fontFamily"
+  }
+ },
+ "typography": {
+  "title-home": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "30px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "-0.02em"
+   },
+   "$description": "Titre de l’accueil."
+  },
+  "title-error": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "26px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "-0.01em"
+   },
+   "$description": "Titre des pages d’erreur."
+  },
+  "title-settings": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "22px",
+    "fontWeight": 600,
+    "lineHeight": 1.45,
+    "letterSpacing": "0"
+   },
+   "$description": "Titre de section de Réglages."
+  },
+  "splash-word": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "22px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "0.6em"
+   },
+   "$description": "Mot du splash, en capitales espacées .6em."
+  },
+  "title-library": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "22px",
+    "fontWeight": 600,
+    "lineHeight": 1.45,
+    "letterSpacing": "0"
+   },
+   "$description": "Déprécié : utiliser `title-settings` (22/600). Était 20px/700."
+  },
+  "title-easel": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "18px",
+    "fontWeight": 600,
+    "lineHeight": 1.45,
+    "letterSpacing": "0"
+   },
+   "$description": "Titre éditable d’un tableau Easel."
+  },
+  "palette-query": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "18px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Champ de la palette de commandes."
+  },
+  "title-dialog": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "16px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Titre des vues de la palette (Boost, Auth, Emoji, Compare), Nouveautés."
+  },
+  "title-wait": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "15px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Nom du site sur l’écran d’attente ; nom d’Easel."
+  },
+  "body-page": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "14px",
+    "fontWeight": 400,
+    "lineHeight": 1.45,
+    "letterSpacing": "0"
+   },
+   "$description": "Corps de toutes les pages internes : Réglages, Easel, accueil, palette, erreurs (14/1.45)."
+  },
+  "body-shell": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "13px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Corps de la barre latérale et de la barre du haut ; boutons .btn."
+  },
+  "body-strong": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "13px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Noms de dossiers, de cartes, boutons primaires."
+  },
+  "body-small": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "12.5px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Sous-titres de Réglages, barre de partage, indices."
+  },
+  "caption": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "12px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Cartes de la barre latérale, toasts, pied de palette."
+  },
+  "section-label": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "11px",
+    "fontWeight": 600,
+    "lineHeight": 1.4,
+    "letterSpacing": "0.08em"
+   },
+   "$description": "Titres de section en capitales, partout à .08em (Réglages, accueil et cartes Easel compris)."
+  },
+  "micro": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "10.5px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Pied des cartes Easel."
+  },
+  "badge": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.sans}",
+    "fontSize": "9px",
+    "fontWeight": 700,
+    "lineHeight": "14px",
+    "letterSpacing": "0"
+   },
+   "$description": "Badge de compteur des extensions."
+  },
+  "pairing-code": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.mono}",
+    "fontSize": "26px",
+    "fontWeight": 600,
+    "lineHeight": 1.2,
+    "letterSpacing": "0.12em"
+   },
+   "$description": "Code d’appairage de la synchronisation."
+  },
+  "host": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.mono}",
+    "fontSize": "13px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Hôtes de la liste des bloqueurs."
+  },
+  "code": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.mono}",
+    "fontSize": "12.5px",
+    "fontWeight": 400,
+    "lineHeight": 1.5,
+    "letterSpacing": "0"
+   },
+   "$description": "Éditeur CSS de Boost."
+  },
+  "kbd": {
+   "$type": "typography",
+   "$value": {
+    "fontFamily": "{fontFamily.mono}",
+    "fontSize": "12px",
+    "fontWeight": 400,
+    "lineHeight": 1.4,
+    "letterSpacing": "0"
+   },
+   "$description": "Touches dans Réglages (kbd, code)."
+  }
+ }
+}
