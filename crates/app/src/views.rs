@@ -1,6 +1,7 @@
 //! Construction of the native web views (WKWebView on macOS, WebView2 on Windows).
 
 use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
+use blackhole_domain::popup::{self, NewWindow};
 use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -463,16 +464,20 @@ fn build_tab(
             }
         })
         .with_new_window_req_handler(move |raw, features| {
-            // Script popups (OAuth/SSO logins) need `window.opener` and `window.close()`; a plain
-            // tab would lose the link with the page and the login would never finish.
-            #[cfg(windows)]
-            if raw == "about:blank" || features.size.is_some() || features.position.is_some() {
-                return NewWindowResponse::Allow;
-            }
-            #[cfg(not(windows))]
-            let _ = features;
-            if let Ok(url) = Url::parse(&raw) {
-                popups.push(Msg::OpenTab(url));
+            // Script popups (OAuth/SSO logins, Google Identity Services) need `window.opener` and
+            // `window.close()`; a plain tab would lose the link with the page and the login would
+            // never come back. `Allow` opens an engine popup on the opener's configuration: same
+            // profile (`Store`, cookies), closed by the page's `window.close()` (wry's
+            // `webViewDidClose:` on macOS, WebView2's own popup window on Windows).
+            let sized = features.size.is_some() || features.position.is_some();
+            match popup::new_window(&raw, sized) {
+                NewWindow::Popup => return NewWindowResponse::Allow,
+                NewWindow::Tab => {
+                    if let Ok(url) = Url::parse(&raw) {
+                        popups.push(Msg::OpenTab(url));
+                    }
+                }
+                NewWindow::Deny => {}
             }
             NewWindowResponse::Deny
         })

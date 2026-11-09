@@ -40,6 +40,10 @@ unsafe impl Send for NewWindow {}
 #[cfg(target_os = "macos")]
 impl Drop for NewWindow {
   fn drop(&mut self) {
+    // BlackHole: the popup dies with its opener (or after it closed). Detach the delegate first so
+    // closing an already closed window does not call back into a dropped `new_windows`.
+    self.ns_window.setDelegate(None);
+    self.ns_window.close();
     self.webview.removeFromSuperview();
   }
 }
@@ -82,6 +86,11 @@ pub struct WryWebViewUIDelegateIvars {
   new_window_req_handler: Option<Box<dyn Fn(String, NewWindowFeatures) -> NewWindowResponse>>,
   #[cfg(target_os = "macos")]
   new_windows: Rc<RefCell<Vec<NewWindow>>>,
+  /// BlackHole: popups closed by the user or by `window.close()`. They are dropped later (next
+  /// popup or with the opener), never inside AppKit's `windowWillClose:` callback, which would
+  /// free the window delegate while AppKit is still calling it.
+  #[cfg(target_os = "macos")]
+  closed_windows: Rc<RefCell<Vec<NewWindow>>>,
   permission_handler: Option<Box<dyn Fn(PermissionKind) -> PermissionResponse + Send + Sync>>,
 }
 
@@ -175,16 +184,29 @@ define_class!(
       action: &objc2_web_kit::WKNavigationAction,
       window_features: &objc2_web_kit::WKWindowFeatures,
     ) -> Option<Retained<objc2_web_kit::WKWebView>> {
+      // An inner closure so `return None` works inside `define_class!`.
+      (|| {
       if let Some(new_window_req_handler) = &self.ivars().new_window_req_handler {
+        // BlackHole: `panic = "abort"`, so no `unwrap()` on what AppKit/WebKit may leave empty
+        // (a `window.open()` without URL, an opener view outside any window or screen).
+        if let Ok(mut closed) = self.ivars().closed_windows.try_borrow_mut() {
+          closed.clear();
+        }
         let request = unsafe { action.request() };
-        let url = request.URL().unwrap().absoluteString().unwrap();
+        let url = request
+          .URL()
+          .and_then(|url| url.absoluteString())
+          .map_or_else(|| "about:blank".to_owned(), |url| url.to_string());
 
-        let current_window = webview.window().unwrap();
-        let screen = current_window.screen().unwrap();
-        let screen_frame = screen.frame();
+        let Some(current_window) = webview.window() else {
+          return None;
+        };
+        let screen_frame = current_window
+          .screen()
+          .map_or_else(|| current_window.frame(), |screen| screen.frame());
 
         match new_window_req_handler(
-          url.to_string(),
+          url,
           NewWindowFeatures {
             size: if let (Some(width), Some(height)) =
               unsafe { (window_features.width(), window_features.height()) }
@@ -210,7 +232,9 @@ define_class!(
           },
         ) {
           NewWindowResponse::Allow => {
-            let mtm = MainThreadMarker::new().unwrap();
+            let Some(mtm) = MainThreadMarker::new() else {
+              return None;
+            };
 
             let defaults = current_window.frame();
             let size = objc2_foundation::NSSize::new(
@@ -260,16 +284,34 @@ define_class!(
             };
 
             let new_windows = self.ivars().new_windows.clone();
+            let closed_windows = self.ivars().closed_windows.clone();
             let window_id = Retained::as_ptr(&window) as usize;
             let delegate = WryNSWindowDelegate::new(
               mtm,
               Box::new(move || {
-                new_windows
-                  .borrow_mut()
-                  .retain(|window| Retained::as_ptr(&window.ns_window) as usize != window_id);
+                let Ok(mut open) = new_windows.try_borrow_mut() else {
+                  return;
+                };
+                if let Some(at) = open
+                  .iter()
+                  .position(|window| Retained::as_ptr(&window.ns_window) as usize == window_id)
+                {
+                  let window = open.remove(at);
+                  drop(open);
+                  if let Ok(mut closed) = closed_windows.try_borrow_mut() {
+                    closed.push(window);
+                  } else {
+                    // Never dropped here (see `closed_windows`): leaked, which is harmless.
+                    std::mem::forget(window);
+                  }
+                }
               }),
             );
             window.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*delegate)));
+
+            // BlackHole: the popup's own `window.close()` (OAuth/SSO popups close themselves once
+            // they have posted the result to `window.opener`) reaches `webViewDidClose:` below.
+            unsafe { webview.setUIDelegate(Some(objc2::runtime::ProtocolObject::from_ref(self))) };
 
             window.setContentView(Some(&webview));
             window.makeKeyAndOrderFront(None);
@@ -287,6 +329,30 @@ define_class!(
         }
       } else {
         None
+      }
+      })()
+    }
+
+    /// BlackHole: `window.close()` in a popup opened above closes its window. The page of an
+    /// ordinary view (not one of our popups) cannot close it: nothing happens.
+    #[cfg(target_os = "macos")]
+    #[unsafe(method(webViewDidClose:))]
+    fn web_view_did_close(&self, webview: &objc2_web_kit::WKWebView) {
+      let target = webview as *const objc2_web_kit::WKWebView;
+      let window = self
+        .ivars()
+        .new_windows
+        .try_borrow()
+        .ok()
+        .and_then(|open| {
+          open
+            .iter()
+            .find(|window| Retained::as_ptr(&window.webview) == target)
+            .map(|window| window.ns_window.clone())
+        });
+      // Closing calls `windowWillClose:`, which moves the entry to `closed_windows`.
+      if let Some(window) = window {
+        window.close();
       }
     }
   }
@@ -308,6 +374,8 @@ impl WryWebViewUIDelegate {
         new_window_req_handler,
         #[cfg(target_os = "macos")]
         new_windows: Rc::new(RefCell::new(vec![])),
+        #[cfg(target_os = "macos")]
+        closed_windows: Rc::new(RefCell::new(vec![])),
         permission_handler,
       });
     unsafe { msg_send![super(delegate), init] }

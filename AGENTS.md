@@ -109,7 +109,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
 `devtools` (`crates/app/src/devtools.rs`) et inspecter les captures :
 
 - macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`,
-  `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau).
+  `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
+  `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`.
 
@@ -157,7 +158,15 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   (onglet en arrière-plan, `open_in_background`) ; clic droit sur un lien → `link_menu` (notre
   menu : nouvel onglet, nouvelle fenêtre, fenêtre privée, Peek, copier). Maj+clic droit, un champ
   de saisie et les iframes gardent le menu du moteur. Une page ne peut pas ouvrir de fenêtre
-  elle-même : seule la commande d'interface `open_link` a un `target`.
+  BlackHole elle-même : seule la commande d'interface `open_link` a un `target`.
+- Popups de connexion (OAuth, Google GSI) : `domain::popup::new_window` décide d'un `window.open`
+  (`Popup` si `about:blank`, taille/position demandées ou page de connexion connue ; `Tab` sinon ;
+  `Deny` pour `javascript:`/`data:`/`blob:`/`file:`). `Popup` → `NewWindowResponse::Allow` : fenêtre
+  du moteur sur la configuration de l'onglet (même `Store`), `window.opener` gardé, fermée par
+  `window.close()` (macOS : `webViewDidClose:` dans vendor/wry ; WebView2 : sa fenêtre popup). macOS :
+  la popup partage les scripts de l'onglet, mais wry ignore ses messages IPC (`owner`). Scripts
+  injectés dans les pages : jamais `innerHTML` (Trusted Types de accounts.google.com), nœuds et
+  `adoptedStyleSheets`. Test : `scripts/test-popup.sh`.
 - Recherche sur la sélection (0.7.19) : clic droit sur du texte sélectionné → `link_menu` avec
   `text` (non fiable) ; `domain::selection` (`clean_selection` : 500 caractères, espaces
   normalisés, caractères invisibles retirés ; `selection_action` : adresse http(s) via

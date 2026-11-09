@@ -102,17 +102,40 @@
     host = document.createElement('div');
     host.style.cssText = 'all:initial;position:fixed;top:12px;right:16px;z-index:2147483647';
     const root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `<style>
-      .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(32,32,40,.96);
+    // No `innerHTML`: pages under Trusted Types reject it (see autofill.js).
+    const CSS_TEXT = `      .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(32,32,40,.96);
         box-shadow:0 6px 24px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.12);font:13px -apple-system,Segoe UI,sans-serif;color:#eee}
       input{width:190px;background:rgba(255,255,255,.1);border:0;border-radius:6px;padding:5px 8px;color:#fff;font:inherit;outline:none}
       button{background:none;border:0;color:#ddd;font-size:15px;cursor:pointer;border-radius:5px;padding:2px 7px}
       button:hover{background:rgba(255,255,255,.14)}
       .n{min-width:52px;font-size:12px;text-align:right}
-    </style><div class="bar"><input placeholder="Find in page" spellcheck="false"><span class="n"></span>
-      <button data-d="1" title="Previous">↑</button><button data-d="0" title="Next">↓</button><button data-x title="Close">✕</button></div>`;
-    input = root.querySelector('input');
-    info = root.querySelector('.n');
+    `;
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(CSS_TEXT);
+      root.adoptedStyleSheets = [sheet];
+    } catch (e) {
+      const style = document.createElement('style');
+      style.textContent = CSS_TEXT;
+      root.appendChild(style);
+    }
+    const node = (tag, attrs, text) => {
+      const el = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      if (text) el.textContent = text;
+      return el;
+    };
+    const bar = node('div', { class: 'bar' });
+    input = node('input', { placeholder: 'Find in page', spellcheck: 'false' });
+    info = node('span', { class: 'n' });
+    bar.append(
+      input,
+      info,
+      node('button', { 'data-d': '1', title: 'Previous' }, '\u2191'),
+      node('button', { 'data-d': '0', title: 'Next' }, '\u2193'),
+      node('button', { 'data-x': '', title: 'Close' }, '\u2715'),
+    );
+    root.appendChild(bar);
     input.addEventListener('input', () => {
       if (!HL) getSelection().removeAllRanges();
       last = '';

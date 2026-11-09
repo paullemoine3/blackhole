@@ -56,14 +56,26 @@
   const host = document.createElement('div');
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;';
   const root = host.attachShadow({ mode: 'closed' });
-  root.innerHTML = `<style>
-    .m{position:fixed;min-width:220px;max-width:340px;background:#1c1b26;color:#eee;border:1px solid #3a3950;
+  // Built node by node: pages under Trusted Types (`require-trusted-types-for 'script'`, e.g.
+  // accounts.google.com) reject any string assigned to `innerHTML`, even our own.
+  const CSS_TEXT = `    .m{position:fixed;min-width:220px;max-width:340px;background:#1c1b26;color:#eee;border:1px solid #3a3950;
        border-radius:10px;box-shadow:0 8px 28px #0008;font:13px -apple-system,system-ui,sans-serif;padding:4px;display:none}
     .h{padding:4px 8px;font-size:11px;color:#9b99b5}
     .i{padding:7px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .i:hover{background:#34325a}
-  </style><div class="m"></div>`;
-  const menu = root.querySelector('.m');
+  `;
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(CSS_TEXT);
+    root.adoptedStyleSheets = [sheet];
+  } catch (_) {
+    const style = document.createElement('style');
+    style.textContent = CSS_TEXT;
+    root.appendChild(style);
+  }
+  const menu = document.createElement('div');
+  menu.className = 'm';
+  root.appendChild(menu);
   let target = null;
 
   const place = () => {

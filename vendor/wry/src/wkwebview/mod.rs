@@ -604,7 +604,8 @@ impl InnerWebView {
       let ipc_handler_delegate = if shares_controller {
         None
       } else if let Some(ipc_handler) = attributes.ipc_handler {
-        let delegate = WryWebViewDelegate::new(manager.clone(), ipc_handler, mtm);
+        let owner = Retained::as_ptr(&webview) as *const objc2::runtime::AnyObject as usize;
+        let delegate = WryWebViewDelegate::new(manager.clone(), ipc_handler, owner, mtm);
         Some(delegate)
       } else {
         None

@@ -11,6 +11,7 @@ pub mod http_auth;
 pub mod meetings;
 pub mod omnibox;
 pub mod passwords;
+pub mod popup;
 pub mod privacy;
 pub mod selection;
 pub mod settings;

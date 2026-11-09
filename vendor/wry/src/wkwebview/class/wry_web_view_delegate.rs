@@ -18,6 +18,11 @@ pub const IPC_MESSAGE_HANDLER_NAME: &str = "ipc";
 pub struct WryWebViewDelegateIvars {
   pub controller: Retained<WKUserContentController>,
   pub ipc_handler: Box<dyn Fn(Request<String>)>,
+  /// BlackHole: address of the webview this handler serves. A script popup (`window.open` with
+  /// `NewWindowResponse::Allow`) shares its opener's user content controller, hence these
+  /// scripts and this handler: its messages are dropped so the shell never takes the popup's
+  /// page (say, an identity provider's login form) for the tab's.
+  pub owner: usize,
 }
 
 define_class!(
@@ -42,6 +47,13 @@ define_class!(
         let _span = tracing::info_span!(parent: None, "wry::ipc::handle").entered();
 
         let ipc_handler = &this.ivars().ipc_handler;
+        if this.ivars().owner != 0
+          && msg
+            .webView()
+            .is_some_and(|from| Retained::as_ptr(&from) as usize != this.ivars().owner)
+        {
+          return;
+        }
         let body = msg.body();
         if let Ok(body) = body.downcast::<NSString>() {
           let js_utf8 = body.UTF8String();
@@ -77,6 +89,7 @@ impl WryWebViewDelegate {
   pub fn new(
     controller: Retained<WKUserContentController>,
     ipc_handler: Box<dyn Fn(Request<String>)>,
+    owner: usize,
     mtm: MainThreadMarker,
   ) -> Retained<Self> {
     let delegate = mtm
@@ -84,6 +97,7 @@ impl WryWebViewDelegate {
       .set_ivars(WryWebViewDelegateIvars {
         ipc_handler,
         controller,
+        owner,
       });
 
     let delegate: Retained<Self> = unsafe { msg_send![super(delegate), init] };
