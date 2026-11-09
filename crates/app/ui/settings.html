@@ -472,7 +472,7 @@ function renderCalendar(c) {
   $('calopts').replaceChildren(
     option('Remind me when a meeting starts (with a Join button)', c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true),
     option('Show the next meeting in the sidebar', c.card, () => send({ cmd: 'set_meeting_option', name: 'card', on: !c.card }), true),
-    option('Open the meeting notes in an Easel when I join (agenda and attendees filled in)', c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true),
+    option('Offer to take the meeting notes in an Easel beside the call when I join (agenda and attendees filled in)', c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true),
   );
   $('calnext').replaceChildren(...(c.upcoming.length ? c.upcoming.map(m => {
     const row = el('div', 'row');

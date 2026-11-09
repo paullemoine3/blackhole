@@ -135,8 +135,10 @@ pub fn fetch(raw: &str) -> Result<String, String> {
 
 /// The Google Meet meetings of an iCal file that are not over at `from` and start before `to`
 /// (Unix seconds). Handles time zones, recurring events (RRULE, EXDATE), moved or cancelled
-/// occurrences (RECURRENCE-ID) and skips all-day events and events without a Meet room.
-pub fn parse(ics: &str, from: i64, to: i64) -> Vec<Meeting> {
+/// occurrences (RECURRENCE-ID) and skips all-day events, events without a Meet room and events
+/// no longer on the calendar of `owner` (its address, see [`source_label`]): cancelled, or
+/// declined by the owner, which is what removing an invitation does.
+pub fn parse(ics: &str, owner: &str, from: i64, to: i64) -> Vec<Meeting> {
     let events = events(ics);
     // Occurrences of a series that were moved or cancelled, by series.
     let mut moved: HashMap<&str, Vec<i64>> = HashMap::new();
@@ -147,7 +149,19 @@ pub fn parse(ics: &str, from: i64, to: i64) -> Vec<Meeting> {
     }
     let mut out = Vec::new();
     for e in &events {
-        if e.get("STATUS") == Some("CANCELLED") {
+        let guests: Vec<(&str, meetings::Reply)> = e
+            .all("ATTENDEE")
+            .filter_map(|line| {
+                let (params, value) = line.split_once(':')?;
+                let reply = params
+                    .split(';')
+                    .find_map(|p| p.strip_prefix("PARTSTAT="))
+                    .map_or(meetings::Reply::NeedsAction, meetings::Reply::from_partstat);
+                Some((value, reply))
+            })
+            .collect();
+        let cancelled = e.get("STATUS").is_some_and(|s| s.eq_ignore_ascii_case("CANCELLED"));
+        if !meetings::is_on_calendar(cancelled, owner, &guests) {
             continue;
         }
         let (Some(start_line), Some(url)) = (e.line("DTSTART"), find_meet_link(&e.raw)) else {
@@ -355,6 +369,7 @@ mod tests {
     use super::*;
 
     const ROOM: &str = "https://meet.google.com/abc-defg-hij";
+    const OWNER: &str = "paul@example.com";
 
     fn cal(events: &str) -> String {
         format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{events}END:VCALENDAR\r\n")
@@ -402,7 +417,7 @@ mod tests {
             "BEGIN:VEVENT\r\nUID:1\r\nSUMMARY:Weekly sync\\, team\r\nDTSTART:20261109T090000Z\r\nDTEND:20261109T093000Z\r\nDESCRIPTION:Join with Google Meet: {}\r\n -defg-hij\\nMore\r\nEND:VEVENT\r\n",
             "https://meet.google.com/abc"
         ));
-        let list = parse(&ics, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
+        let list = parse(&ics, OWNER, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].title, "Weekly sync, team");
         assert_eq!(list[0].url, ROOM);
@@ -419,7 +434,7 @@ mod tests {
              ATTENDEE;CN=Room 4;CUTYPE=RESOURCE:mailto:c_123@resource.calendar.google.com\r\n\
              DESCRIPTION:Release notes\\nDemo\\n\\n-::~:~::~:~:~\\nJoin with Google Meet: {ROOM}\r\nEND:VEVENT\r\n"
         ));
-        let list = parse(&ics, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
+        let list = parse(&ics, OWNER, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
         assert_eq!(list[0].agenda, "Release notes\nDemo");
         assert_eq!(list[0].attendees, ["Paul Lemoine", "ana@example.com"]);
     }
@@ -431,7 +446,7 @@ mod tests {
              BEGIN:VEVENT\r\nUID:day\r\nSUMMARY:Holiday\r\nDTSTART;VALUE=DATE:20261110\r\nDESCRIPTION:{ROOM}\r\nEND:VEVENT\r\n\
              BEGIN:VEVENT\r\nUID:none\r\nSUMMARY:Lunch\r\nDTSTART:20261109T120000Z\r\nEND:VEVENT\r\n"
         ));
-        let list = parse(&ics, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
+        let list = parse(&ics, OWNER, ts("2026-11-08T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
         assert_eq!(list.len(), 1);
         // 14:00 in Paris in November is 13:00 UTC.
         assert_eq!(list[0].start, ts("2026-11-09T13:00:00Z"));
@@ -444,7 +459,7 @@ mod tests {
              BEGIN:VEVENT\r\nUID:standup\r\nRECURRENCE-ID;TZID=Europe/Paris:20261113T093000\r\nSUMMARY:Standup (moved)\r\nDTSTART;TZID=Europe/Paris:20261113T110000\r\nDTEND;TZID=Europe/Paris:20261113T111500\r\nDESCRIPTION:{ROOM}\r\nEND:VEVENT\r\n\
              BEGIN:VEVENT\r\nUID:gone\r\nSTATUS:CANCELLED\r\nSUMMARY:Gone\r\nDTSTART:20261109T100000Z\r\nDESCRIPTION:{ROOM}\r\nEND:VEVENT\r\n"
         ));
-        let list = parse(&ics, ts("2026-11-09T00:00:00Z"), ts("2026-11-14T00:00:00Z"));
+        let list = parse(&ics, OWNER, ts("2026-11-09T00:00:00Z"), ts("2026-11-14T00:00:00Z"));
         let starts: Vec<(String, i64)> = list.iter().map(|m| (m.title.clone(), m.start)).collect();
         assert_eq!(
             starts,
@@ -453,5 +468,20 @@ mod tests {
                 ("Standup (moved)".to_owned(), ts("2026-11-13T10:00:00Z")),
             ]
         );
+    }
+
+    #[test]
+    fn a_series_removed_from_the_calendar_long_ago_is_not_offered() {
+        // An invitation removed in 2023: Google keeps it in the export, declined by the owner,
+        // and the weekly series never ends.
+        let ics = cal(&format!(
+            "BEGIN:VEVENT\r\nUID:old\r\nSUMMARY:Old weekly\r\nDTSTART:20230102T090000Z\r\nDTEND:20230102T093000Z\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n\
+             ATTENDEE;CN=Paul;PARTSTAT=DECLINED:mailto:Paul@example.com\r\nDESCRIPTION:{ROOM}\r\nEND:VEVENT\r\n\
+             BEGIN:VEVENT\r\nUID:kept\r\nSUMMARY:Kept weekly\r\nDTSTART:20230103T090000Z\r\nDTEND:20230103T093000Z\r\nRRULE:FREQ=WEEKLY;BYDAY=TU\r\n\
+             ATTENDEE;PARTSTAT=ACCEPTED:mailto:paul@example.com\r\nATTENDEE;PARTSTAT=DECLINED:mailto:ana@example.com\r\nDESCRIPTION:{ROOM}\r\nEND:VEVENT\r\n"
+        ));
+        let list = parse(&ics, OWNER, ts("2026-11-09T00:00:00Z"), ts("2026-11-16T00:00:00Z"));
+        let titles: Vec<&str> = list.iter().map(|m| m.title.as_str()).collect();
+        assert_eq!(titles, ["Kept weekly"]);
     }
 }

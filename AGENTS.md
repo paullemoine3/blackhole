@@ -47,7 +47,13 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   vues de réserve via le réglage `spare_views` (0–2), overlays recréés par `raise_palette`.
 - Ne pas appeler `focus_window()` sur la fenêtre principale depuis un handler
   (panique winit sur macOS). La vue live de l'Easel doit être déclarée/droppée
-  avant la fenêtre qui l'héberge.
+  avant la fenêtre qui l'héberge. Fermer Réglages/Easel passe par `retire_window` : fenêtre
+  masquée tout de suite, détruite au tour de boucle suivant (détruire la fenêtre clé fait planter
+  AppKit au changement de fenêtre clé). Dans vendor/wry (WKWebView), jamais d'`unwrap()` sur
+  `webview.URL()` : une vue qui n'a encore rien chargé n'a pas d'URL (`panic = "abort"`).
+  Page d'une fenêtre secondaire : `views::panel_view` (`build_as_child`, redimensionnée sur
+  `Resized`), jamais `build()` : sur macOS wry remplace la vue de contenu winit et winit panique
+  (abort) quand la fenêtre perd le focus (`windowDidResignKey` → `reset_modifiers`).
 - Onglets façon Arc (logique dans `domain/workspace.rs`, testée) : nouvel onglet en haut
   de la liste non épinglée ; à la fermeture, le partenaire de split puis l'onglet vu juste
   avant (`recent`, non persisté) puis le voisin prend le relais ; ⌘W sur un onglet épinglé
@@ -102,7 +108,8 @@ les couches internes, avec les tests unitaires existants.
 Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
 `devtools` (`crates/app/src/devtools.rs`) et inspecter les captures :
 
-- macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`.
+- macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`,
+  `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`.
 
@@ -179,8 +186,11 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   menu `privacy_report` ancré au bouclier ; pubs et traqueurs distingués par `PrivacyPolicy`.
 - Rangement : `Workspace::tidy_suggestion` / `tidy` / `untidy` (`site_of_host`), carte `#tidy`
   dans la barre latérale (dès `TIDY_FROM` onglets libres), Undo par toast.
-- Copilote de réunion : `Meeting::notes_template`, `agenda_of` ; `meet.rs` crée ou rouvre l'Easel
-  « Notes · titre · jour » et ouvre la fenêtre Easel (réglage `meeting_notes`).
+- Copilote de réunion : `Meeting::notes_template`, `agenda_of` ; Join (`open_meet`) propose par
+  toast (`meeting_notes`) l'Easel « Notes · titre · jour », rouvert sans question s'il existe, et
+  l'affiche en split à droite de l'onglet Meet (`easel_beside`, `open_easel_side` ; fenêtre Easel
+  si aucun onglet n'est dans la salle). Réglage `meeting_notes`. Agenda : `calendar::parse` écarte
+  les événements annulés et ceux refusés par le propriétaire (`meetings::is_on_calendar`).
 - Veille de zone : `domain/watch.rs`, `WatchStore` (`watches.json`), `app/watching.rs` (une vue
   cachée à la fois, lecture à 8 s, abandon à 14 s, toutes les 30 min), section Library « Watched
   Areas ». Démarrée depuis le menu du sélecteur de zone (`WatchArea`).

@@ -126,32 +126,10 @@ pub fn ui_view(
         .build_as_child(window)
 }
 
-/// Content of the settings window: a regular (non-child) web view of its own window, so it has
-/// no shortcut forwarding; the page handles its own keys.
-pub fn settings_view(
-    window: &Window,
-    ctx: &mut WebContext,
-    html: &'static str,
-    mailbox: &Mailbox,
-) -> wry::Result<WebView> {
-    let mailbox = mailbox.clone();
-    builder(ctx)
-        .with_html(html)
-        .with_background_color(SHELL_BG)
-        .with_devtools(cfg!(debug_assertions))
-        .with_initialization_script_for_main_only(KEYS_JS, true)
-        .with_initialization_script_for_main_only(THEME_JS, true)
-        .with_ipc_handler(move |request| {
-            if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
-                mailbox.push(Msg::Ui(command));
-            }
-        })
-        .with_navigation_handler(|url| matches!(url.split(':').next(), Some("about" | "data")))
-        .build(window)
-}
-
-/// Own page filling a window as a child view (so live views can be stacked above it); like the
-/// settings page it has no shortcut forwarding.
+/// Own page filling a secondary window (Settings, Easel) as a child view, so live views can be
+/// stacked above it; no shortcut forwarding, the page handles its own keys. Never `build()`:
+/// on macOS it replaces the window's content view, and winit then panics (abort) when that
+/// window loses the focus (`windowDidResignKey` reads the content view as its own `WinitView`).
 pub fn panel_view(
     window: &Window,
     ctx: &mut WebContext,

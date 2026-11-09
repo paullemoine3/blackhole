@@ -498,6 +498,9 @@ struct Running {
     /// The Easel page shown in the content area, in place of a web page, while `easel_tab`.
     easel_panel: LazyView,
     easel_tab: bool,
+    /// An Easel shown in the right pane beside a tab (a meeting's notes beside its Meet call),
+    /// as `(tab, easel)`: on screen while that tab is the one shown and that easel the current.
+    easel_beside: Option<(TabId, u64)>,
     /// The Library page, over the whole window below the bar, while `library`.
     library_panel: LazyView,
     library: bool,
@@ -510,6 +513,10 @@ struct Running {
     thumbs: std::cell::RefCell<HashMap<u64, Option<String>>>,
     easel: Option<EaselWindow>,
     easel_wanted: bool,
+    /// Settings / Easel windows just closed: hidden at once, dropped on the next pass of the
+    /// loop. Dropping a winit window while AppKit still treats it as the key window crashes on
+    /// the next change of key window (macOS, `resignKeyWindow` on a freed delegate).
+    closed_windows: Vec<Window>,
     capture_tx: std::sync::mpsc::Sender<Capture>,
     capture_rx: std::sync::mpsc::Receiver<Capture>,
     #[cfg(target_os = "macos")]
@@ -864,11 +871,13 @@ impl Running {
             live_pick: None,
             easel_panel: LazyView::new(),
             easel_tab: false,
+            easel_beside: None,
             library_panel: LazyView::new(),
             library: false,
             thumbs: std::cell::RefCell::default(),
             easel: None,
             easel_wanted: false,
+            closed_windows: Vec::new(),
             capture_tx,
             capture_rx,
             #[cfg(target_os = "macos")]
@@ -918,7 +927,7 @@ impl Running {
     fn content_rects(&self) -> (wry::Rect, Option<wry::Rect>) {
         let size = self.window_size();
         let (offset, _, width, height) = card_rect(&self.sidebar, &size);
-        if self.split_tab().is_none() {
+        if self.split_tab().is_none() && !self.easel_side() {
             return (views::rect(offset, BAR_HEIGHT, width, height), None);
         }
         let half = ((width - SPLIT_GAP) / 2.0).max(1.0);
@@ -946,10 +955,30 @@ impl Running {
 
     /// The tab shown beside the active one, if the split view is valid right now.
     fn split_tab(&self) -> Option<TabId> {
-        if self.home_shown() {
+        if self.home_shown() || self.easel_side() {
             return None;
         }
         self.svc.workspace().split_tab()
+    }
+
+    /// Whether an Easel fills the right pane beside the tab shown (`easel_beside`).
+    fn easel_side(&self) -> bool {
+        !self.home_shown()
+            && self.easel_beside.is_some_and(|(tab, easel)| {
+                self.easel_current == Some(easel)
+                    && self.svc.workspace().active_tab().is_some_and(|t| t.id == tab)
+            })
+    }
+
+    /// Where the embedded Easel page starts in the window (live views are placed from there).
+    fn easel_origin(&self) -> (f64, f64) {
+        let (x, y, width, _) = card_rect(&self.sidebar, &self.window_size());
+        if self.easel_side() {
+            let half = ((width - SPLIT_GAP) / 2.0).max(1.0);
+            (x + half + SPLIT_GAP, y + SPLIT_HEADER)
+        } else {
+            (x, y)
+        }
     }
 
     fn view_of(&self, tab: TabId) -> Option<&WebView> {
@@ -1001,9 +1030,7 @@ impl Running {
         };
         let _ = self.active_view().set_bounds(main);
         self.place_panels();
-        for item in self.live.keys().copied().collect::<Vec<_>>() {
-            self.apply_slot(item);
-        }
+        self.apply_slots();
         if let (Some(id), Some(rect)) = (self.split_tab(), side) {
             if let Some(view) = self.tabs.get(&id) {
                 let _ = view.set_bounds(rect);
@@ -1018,7 +1045,11 @@ impl Running {
     /// under it (e.g. moving a Jira ticket), like the command bar did.
     fn place_panels(&self) {
         if let Some(panel) = &self.easel_panel.view {
-            let rect = if self.easel_tab { self.content_rects().0 } else { parked() };
+            let rect = match self.content_rects() {
+                (main, _) if self.easel_tab => main,
+                (_, Some(side)) if self.easel_side() => side,
+                _ => parked(),
+            };
             let _ = panel.set_bounds(rect);
         }
         if let Some(panel) = &self.library_panel.view {
@@ -1233,10 +1264,17 @@ impl Running {
         let Some(splitbar) = &self.splitbar.view else {
             return;
         };
-        let _ = splitbar.set_visible(active.is_some() && other.is_some());
-        if let (Some(left), Some(right)) = (active, other) {
+        // The Easel beside the tab is the right pane.
+        let easel = self
+            .easel_beside
+            .filter(|_| self.easel_side())
+            .and_then(|(_, id)| self.easels.get(id))
+            .map(|e| json!({"id": e.id, "title": e.name, "url": "", "easel": true}));
+        let right = other.map(pane).or(easel);
+        let _ = splitbar.set_visible(active.is_some() && right.is_some());
+        if let (Some(left), Some(right)) = (active, right) {
             let state =
-                json!({"left": pane(left), "right": pane(right), "color": ws.active_space().color});
+                json!({"left": pane(left), "right": right, "color": ws.active_space().color});
             let _ = splitbar.evaluate_script(&format!("window.bh&&bh.render({state})"));
         }
     }
@@ -1559,14 +1597,24 @@ impl Running {
             return;
         };
         window.focus_window();
-        match views::settings_view(&window, &mut self.web_context, SETTINGS_HTML, &self.mailbox) {
+        match views::panel_view(&window, &mut self.web_context, SETTINGS_HTML, &self.mailbox) {
             Ok(view) => self.settings = Some(SettingsWindow { view, window }),
             Err(err) => tracing::error!("cannot create settings window: {err}"),
         }
     }
 
     fn close_settings(&mut self) {
-        self.settings = None;
+        if let Some(SettingsWindow { view, window }) = self.settings.take() {
+            drop(view);
+            self.retire_window(window);
+        }
+    }
+
+    /// Hides a secondary window now (AppKit hands the key window over while it is still alive)
+    /// and drops it on the next pass of the event loop.
+    fn retire_window(&mut self, window: Window) {
+        window.set_visible(false);
+        self.closed_windows.push(window);
     }
 
     /// A secondary window (Settings, Easel) dressed like the main one: its page draws the top
@@ -1663,7 +1711,10 @@ impl Running {
             self.live.clear();
             self.live_slots.clear();
         }
-        self.easel = None;
+        if let Some(EaselWindow { view, window }) = self.easel.take() {
+            drop(view);
+            self.retire_window(window);
+        }
         self.ui_state();
     }
 
@@ -1695,7 +1746,53 @@ impl Running {
         self.sync();
     }
 
+    /// Shows a tab with an easel in the right pane beside it (a meeting's notes beside the
+    /// call). It replaces the tab's split view; going back to that tab shows the easel again.
+    pub(crate) fn open_easel_side(&mut self, tab: TabId, id: u64) {
+        let known = self.svc.workspace().active_space().tabs.iter().any(|t| t.id == tab);
+        if self.easels.get(id).is_none() || !known {
+            return;
+        }
+        self.close_palette();
+        self.close_peek();
+        if self.easel_tab || self.easel_current != Some(id) {
+            self.live.clear();
+            self.live_slots.clear();
+        }
+        self.easel_current = Some(id);
+        self.easel_tab = false;
+        self.library = false;
+        self.home_visible = false;
+        self.svc.activate_tab(tab);
+        self.svc.clear_split();
+        self.easel_beside = Some((tab, id));
+        self.sync();
+    }
+
+    fn close_easel_side(&mut self) {
+        if self.easel_beside.take().is_none() {
+            return;
+        }
+        if !self.easel_tab {
+            self.live.clear();
+            self.live_slots.clear();
+        }
+        self.sync();
+    }
+
     /// Keeps the easel page filling its window; live views follow `EaselLayout`.
+    fn settings_resized(&self) {
+        if let Some(win) = &self.settings {
+            let size = win
+                .window
+                .inner_size()
+                .to_logical::<f64>(win.window.scale_factor());
+            let _ = win
+                .view
+                .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
+        }
+    }
+
     fn easel_resized(&self) {
         if let Some(win) = &self.easel {
             let size = win
@@ -1735,7 +1832,7 @@ impl Running {
             .and_then(|e| e.items.iter().find(|i| i.id == item))
             .filter(|i| i.kind == blackhole_domain::EaselItemKind::Live)
             .and_then(|i| Some((Url::parse(i.url.as_deref()?).ok()?, i.selector.clone())));
-        let host = if self.easel_tab {
+        let host = if self.easel_tab || self.easel_side() {
             Some(&*self.window)
         } else {
             self.easel.as_ref().map(|w| &w.window)
@@ -1767,16 +1864,26 @@ impl Running {
         let (Some(view), Some(slot)) = (self.live.get(&item), self.live_slots.get(&item)) else {
             return;
         };
-        // Slots are relative to the Easel page: the content area when it is a tab.
-        let (ox, oy) = if self.easel_tab {
-            let (x, y, _, _) = card_rect(&self.sidebar, &self.window_size());
-            (x, y)
+        // Slots are relative to the Easel page: the content area when it is a tab, the right
+        // pane when it is beside a tab.
+        let (ox, oy) = if self.easel_tab || self.easel_side() {
+            self.easel_origin()
         } else {
             (0.0, 0.0)
         };
         let _ = view.set_bounds(views::rect(ox + slot.x, oy + slot.y, slot.w, slot.h));
-        let covered = self.palette_open || self.peek.is_some();
+        // The palette and the peek only cover the main window: an Easel window of its own keeps
+        // its live views.
+        let embedded = self.easel_tab || self.easel_side();
+        let covered = embedded && (self.palette_open || self.peek.is_some());
         let _ = view.set_visible(slot.visible && !covered && slot.w >= 2.0 && slot.h >= 2.0);
+    }
+
+    /// Re-applies every live view's place and visibility (an overlay opened or closed).
+    fn apply_slots(&self) {
+        for item in self.live.keys() {
+            self.apply_slot(*item);
+        }
     }
 
     /// Arms the picker on the page in front.
@@ -2153,7 +2260,7 @@ impl Running {
                 .view
                 .evaluate_script(&format!("window.bh&&bh.render({})", state(false)));
         }
-        if self.easel_tab {
+        if self.easel_tab || self.easel_side() {
             if let Some(panel) = &self.easel_panel.view {
                 let _ = panel.evaluate_script(&format!("window.bh&&bh.render({})", state(true)));
             }
@@ -2167,6 +2274,9 @@ impl Running {
             self.sync_live();
             if self.easel_tab && self.current_easel().is_none() {
                 self.close_easel_tab();
+            }
+            if self.easel_beside.is_some_and(|(_, id)| self.easels.get(id).is_none()) {
+                self.close_easel_side();
             }
             self.ui_state();
         }
@@ -2247,6 +2357,8 @@ impl Running {
             }
             UiCommand::CloseEasel => self.close_easel(),
             UiCommand::OpenEaselTab { id } => self.open_easel_tab(id),
+            // The easel beside a tab closes its pane; the tab stays.
+            UiCommand::CloseEaselTab if self.easel_side() => self.close_easel_side(),
             UiCommand::CloseEaselTab => self.close_easel_tab(),
             UiCommand::OpenLibrary => self.open_library(),
             UiCommand::CloseLibrary => self.close_library(),
@@ -2380,11 +2492,11 @@ impl Running {
                 self.live.remove(&item);
                 self.ui_easel();
             }
-            UiCommand::EaselLayout { slots, embedded } if embedded == self.easel_tab => {
+            UiCommand::EaselLayout { slots, embedded }
+                if embedded == (self.easel_tab || self.easel_side()) =>
+            {
                 self.live_slots = slots.into_iter().map(|s| (s.item, s)).collect();
-                for item in self.live.keys().copied().collect::<Vec<_>>() {
-                    self.apply_slot(item);
-                }
+                self.apply_slots();
             }
             UiCommand::EaselLayout { .. } => {}
             UiCommand::EaselAddNote { x, y } => {
@@ -2659,6 +2771,7 @@ impl Running {
             self.splash.insert(tab.id, Instant::now());
             self.awaiting.insert(tab.id, (Instant::now(), url.clone()));
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
+            self.refuse_restricted_port(tab.id, url);
             return;
         }
         match views::tab_view(
@@ -2678,6 +2791,7 @@ impl Running {
                 self.awaiting.insert(tab.id, (Instant::now(), url.clone()));
                 self.raise_palette();
                 self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                self.refuse_restricted_port(tab.id, url);
             }
             Err(error) => tracing::error!("cannot create web view: {error}"),
         }
@@ -3080,11 +3194,12 @@ impl Running {
     /// Creates the shell pages that are about to be needed and releases the ones left unused.
     fn ensure_panels(&mut self) {
         let now = Instant::now();
-        let split = self.split_tab().is_some();
+        let side = self.easel_side();
+        let split = self.split_tab().is_some() || side;
         let size = self.window_size();
         let (cx, cy, cw, ch) = card_rect(&self.sidebar, &size);
         let mut created = false;
-        for (needed, which) in [(self.library, 0), (self.easel_tab, 1), (split, 2)] {
+        for (needed, which) in [(self.library, 0), (self.easel_tab || side, 1), (split, 2)] {
             let (panel, html, bounds) = match which {
                 0 => (
                     &mut self.library_panel,
@@ -3147,9 +3262,22 @@ impl Running {
         if let Some(id) = active {
             self.last_active.insert(id, Instant::now());
         }
+        // Back on the tab with an easel beside it: that easel again, unless the Easel window
+        // shows another one.
+        if let Some((tab, easel)) = self.easel_beside {
+            if active == Some(tab) && !self.easel_tab && self.easel.is_none() {
+                self.easel_current = Some(easel);
+            }
+        }
         self.ensure_panels();
         if let Some(panel) = &self.easel_panel.view {
-            let _ = panel.set_visible(self.easel_tab);
+            let _ = panel.set_visible(self.easel_tab || self.easel_side());
+        }
+        // The easel beside a tab went off screen (another tab, the start page): its live views
+        // were on the main window and have no page under them any more.
+        if self.easel_beside.is_some() && !self.easel_side() && !self.easel_tab && self.easel.is_none() {
+            self.live.clear();
+            self.live_slots.clear();
         }
         if self.shown != active {
             // The other pane of a split stays on screen: its video keeps playing in place.
@@ -3365,7 +3493,9 @@ impl Running {
                 if typed.scheme() == "http" && url.scheme() == "https" {
                     self.on_upgraded(id, typed);
                 }
-                if let Some(view) = self.tabs.get(&id) {
+                if self.refuse_restricted_port(id, &url) {
+                    // Nothing to load: WebKit would refuse it without a word.
+                } else if let Some(view) = self.tabs.get(&id) {
                     let _ = view.load_url(url.as_str());
                 }
                 self.focus_content();
@@ -3476,6 +3606,7 @@ impl Running {
         self.flush_raise(true);
         self.palette_mode = mode.to_owned();
         self.palette_open = true;
+        self.apply_slots();
         let _ = self
             .palette
             .set_bounds(palette_rect(true, &self.window_size()));
@@ -3498,6 +3629,7 @@ impl Running {
             return;
         }
         self.palette_open = false;
+        self.apply_slots();
         let _ = self.palette.evaluate_script("window.bh&&bh.hide()");
         let _ = self.palette.set_visible(false);
         let _ = self
@@ -3928,6 +4060,7 @@ impl Running {
                 let _ = page.set_visible(true);
                 let _ = page.focus();
                 self.peek = Some(Peek { scrim, page });
+                self.apply_slots();
             }
             (scrim, page) => {
                 tracing::error!("cannot create peek: {:?} {:?}", scrim.err(), page.err());
@@ -3937,6 +4070,7 @@ impl Running {
 
     fn close_peek(&mut self) {
         if self.peek.take().is_some() {
+            self.apply_slots();
             self.apply_focus();
         }
     }
@@ -4326,6 +4460,7 @@ impl Running {
                 self.ui_state();
             }
             command @ (UiCommand::OpenMeet { .. }
+            | UiCommand::MeetingNotes { .. }
             | UiCommand::CalendarAdd { .. }
             | UiCommand::CalendarRemove { .. }
             | UiCommand::CalendarSync
@@ -4424,6 +4559,14 @@ impl Running {
                     "{n} tab{} closed (in Library > Archived Tabs)",
                     if n == 1 { "" } else { "s" }
                 ));
+            }
+            UiCommand::ClosePane { side } if self.easel_side() => {
+                // Closing the tab's pane leaves the easel alone, in the content area.
+                let easel = self.easel_beside.map(|(_, id)| id);
+                self.close_easel_side();
+                if let Some(id) = easel.filter(|_| side == "left") {
+                    self.open_easel_tab(id);
+                }
             }
             UiCommand::ClosePane { side } => {
                 if side == "left" {
@@ -5066,7 +5209,9 @@ impl Running {
                 self.open(url.as_str());
             }
             Msg::Redirect(tab, url) => {
-                if let Some(view) = self.view_of(tab) {
+                if self.refuse_restricted_port(tab, &url) {
+                    // Nothing to load: WebKit would refuse it without a word.
+                } else if let Some(view) = self.view_of(tab) {
                     let _ = view.load_url(url.as_str());
                 }
             }
@@ -5278,6 +5423,8 @@ impl ApplicationHandler<Wake> for App {
         let mut wake = PEERS_EVERY;
         let mut animating = false;
         if let Self::Running(app) = self {
+            // Closed last pass: no longer the key window, safe to destroy.
+            app.closed_windows.clear();
             app.service_windows(event_loop);
             if std::mem::take(&mut app.ui_stale) {
                 app.ui_state();
@@ -5365,8 +5512,10 @@ impl ApplicationHandler<Wake> for App {
         if app.settings_window_id() == Some(id) {
             match event {
                 WindowEvent::CloseRequested => app.close_settings(),
-                // The top bar's maximize button follows the window.
-                WindowEvent::Resized(_) => {
+                // The page is a child view: it follows the window's size by hand. The top bar's
+                // maximize button follows the window too.
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    app.settings_resized();
                     let maxed = app.settings.as_ref().is_some_and(|w| w.window.is_maximized());
                     if maxed != app.panels_maxed.0 {
                         app.panels_maxed.0 = maxed;
@@ -5390,6 +5539,11 @@ impl ApplicationHandler<Wake> for App {
                 }
                 _ => {}
             }
+            return;
+        }
+        // A Settings / Easel window being retired (or already gone): its last events (focus
+        // lost, close, destroyed) must not be read as the main window's.
+        if id != app.window.id() {
             return;
         }
         match event {

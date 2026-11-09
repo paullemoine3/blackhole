@@ -98,6 +98,7 @@ impl Running {
                     },
                     "etab" => self.easel_panel.view.as_ref().unwrap_or(&self.home),
                     "library" => self.library_panel.view.as_ref().unwrap_or(&self.home),
+                    "splitbar" => self.splitbar.view.as_ref().unwrap_or(&self.home),
                     "live" => match self.live.values().next() {
                         Some(view) => view,
                         None => return delay,
@@ -132,6 +133,26 @@ impl Running {
                 if let (Some(tab), Ok(url)) = (tab, url::Url::parse("https://example.test/")) {
                     self.show_error(tab, url, page);
                 }
+            }
+            // `meeting ROOM_URL TITLE`: a calendar meeting going on now (no calendar needed).
+            "meeting" => {
+                let (url, title) = rest.trim().split_once(' ').unwrap_or((rest.trim(), "Meeting"));
+                self.dev_add_meeting(url, title);
+            }
+            // Where the easel and the split view are, as `[dev] state -> {…}`.
+            "state" => {
+                let ws = self.svc.workspace();
+                let state = serde_json::json!({
+                    "active": ws.active_tab().map(|t| t.url.as_str()),
+                    "easelSide": self.easel_side(),
+                    "easelTab": self.easel_tab,
+                    "easelWindow": self.easel.is_some(),
+                    "current": self.easel_current.and_then(|id| self.easels.get(id)).map(|e| &e.name),
+                    "split": self.split_tab().is_some(),
+                    "panel": self.easel_panel.view.as_ref().and_then(|v| v.bounds().ok()).map(|b| format!("{:?} {:?}", b.position, b.size)),
+                    "main": format!("{:?}", self.content_rects().0.size),
+                });
+                eprintln!("[dev] state -> {state}");
             }
             "quit" => event_loop.exit(),
             _ => eprintln!("[dev] unknown step: {line}"),

@@ -84,7 +84,10 @@ impl Running {
             let (mut all, mut errors) = (Vec::new(), Vec::new());
             for source in sources {
                 match calendar::fetch(&source) {
-                    Ok(text) => all.extend(calendar::parse(&text, at - KEEP_BEFORE, at + KEEP_AFTER)),
+                    Ok(text) => {
+                        let owner = calendar::source_label(&source);
+                        all.extend(calendar::parse(&text, &owner, at - KEEP_BEFORE, at + KEEP_AFTER));
+                    }
                     Err(why) => errors.push(format!("{}: {why}", calendar::source_label(&source))),
                 }
             }
@@ -140,17 +143,36 @@ impl Running {
         }
     }
 
-    /// Opens Google Meet on `url` (a room) or on a new meeting. The Meet tab of quick access
-    /// or of a folder is reused, unless it is in a call: then a tab of its own opens.
+    /// Opens Google Meet on `url` (a room) or on a new meeting, then, for a meeting of the
+    /// calendar, its notes beside the call: offered by a toast the first time, shown again
+    /// when they already exist (setting `meeting_notes`).
     pub(crate) fn open_meet(&mut self, url: Option<String>) {
-        if self.svc.settings().meeting_notes {
-            if let Some(meeting) = url.as_deref().and_then(|u| self.meeting_at(u)) {
-                self.open_meeting_notes(&meeting);
-            }
+        let meeting = url.as_deref().and_then(|u| self.meeting_at(u));
+        self.go_to_meet(url);
+        let Some(meeting) = meeting.filter(|_| self.svc.settings().meeting_notes) else {
+            return;
+        };
+        if self.notes_easel(&meeting).is_some() {
+            self.open_meeting_notes(&meeting);
+        } else {
+            self.toast_action(
+                &format!("Take notes for {}?", meeting.title),
+                "Take notes",
+                json!({"cmd": "meeting_notes", "url": meeting.url, "start": meeting.start}),
+            );
         }
+    }
+
+    /// The Meet tab: a tab already in that room, else the one of quick access or of a folder,
+    /// unless it is in a call.
+    fn go_to_meet(&mut self, url: Option<String>) {
         let target = url
             .filter(|u| meetings::is_meet_room(u))
             .unwrap_or_else(|| meetings::NEW_MEET_URL.to_owned());
+        if let Some(id) = self.meet_tab(&target) {
+            self.handle_ui(UiCommand::Activate { id: id.0 });
+            return;
+        }
         let kept = self
             .svc
             .workspace()
@@ -169,12 +191,37 @@ impl Running {
             return;
         }
         self.handle_ui(UiCommand::Activate { id: id.0 });
-        let same_room = meetings::room_code(&current).is_some()
-            && meetings::room_code(&current) == meetings::room_code(&target);
-        if !same_room {
+        if !meetings::in_room(&current, &target) {
             if let Some(view) = self.tabs.get(&id) {
                 let _ = view.load_url(&target);
             }
+        }
+    }
+
+    /// devtools: a calendar meeting going on now, without a calendar.
+    #[cfg(feature = "devtools")]
+    pub(crate) fn dev_add_meeting(&mut self, url: &str, title: &str) {
+        let at = now();
+        self.calendar.meetings.push(Meeting {
+            title: title.to_owned(),
+            start: at - 60,
+            end: at + 1800,
+            url: url.to_owned(),
+            agenda: "Release\nDemo".to_owned(),
+            attendees: vec!["Ana".to_owned()],
+        });
+    }
+
+    /// The toast's "Take notes": the notes of that meeting beside its call.
+    pub(crate) fn take_meeting_notes(&mut self, url: &str, start: i64) {
+        let meeting = self
+            .calendar
+            .meetings
+            .iter()
+            .find(|m| m.url == url && m.start == start)
+            .cloned();
+        if let Some(meeting) = meeting {
+            self.open_meeting_notes(&meeting);
         }
     }
 
@@ -189,13 +236,22 @@ impl Running {
             .cloned()
     }
 
+    fn notes_name(meeting: &Meeting) -> String {
+        format!("Notes · {} · {}", meeting.title, calendar::local_day(meeting.start))
+    }
+
+    /// The Easel already holding a meeting's notes.
+    fn notes_easel(&self, meeting: &Meeting) -> Option<u64> {
+        let name = Self::notes_name(meeting);
+        self.easels.all().iter().find(|e| e.name == name).map(|e| e.id)
+    }
+
     /// The meeting copilot: the meeting's notes in an Easel of their own ("Notes · title ·
-    /// day"), made from its agenda and attendees the first time, shown in the Easel window
-    /// beside the call.
+    /// day"), made from its agenda and attendees the first time, shown beside the call (split
+    /// view) in the main window, or in the Easel window when no tab is in that room.
     fn open_meeting_notes(&mut self, meeting: &Meeting) {
-        let name = format!("Notes · {} · {}", meeting.title, calendar::local_day(meeting.start));
-        let existing = self.easels.all().iter().find(|e| e.name == name).map(|e| e.id);
-        let id = match existing {
+        let name = Self::notes_name(meeting);
+        let id = match self.notes_easel(meeting) {
             Some(id) => id,
             None => {
                 let Some(id) = self.easels.create(&name) else {
@@ -218,7 +274,20 @@ impl Running {
         self.easel_current = Some(id);
         self.tag_easel_space();
         self.easel_changed(true);
-        self.easel_wanted = true;
+        match self.meet_tab(&meeting.url) {
+            Some(tab) => self.open_easel_side(tab, id),
+            None => self.easel_wanted = true,
+        }
+    }
+
+    /// The tab of the active space in a Meet room: the one shown first.
+    fn meet_tab(&self, url: &str) -> Option<TabId> {
+        let ws = self.svc.workspace();
+        let in_room = |t: &&blackhole_domain::Tab| meetings::in_room(t.url.as_str(), url);
+        ws.active_tab()
+            .filter(in_room)
+            .or_else(|| ws.active_space().tabs.iter().find(in_room))
+            .map(|t| t.id)
     }
 
     fn in_call(&self, tab: TabId) -> bool {
@@ -268,6 +337,7 @@ impl Running {
     pub(crate) fn handle_calendar(&mut self, command: UiCommand) {
         match command {
             UiCommand::OpenMeet { url } => self.open_meet(url),
+            UiCommand::MeetingNotes { url, start } => self.take_meeting_notes(&url, start),
             UiCommand::CalendarAdd { url } => {
                 match self.calendar.sources.add(&url) {
                     Ok(()) => {

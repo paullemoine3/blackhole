@@ -137,6 +137,20 @@ const CLOCK_FLOOR: i64 = 1_767_225_600;
 /// 2100-01-01T00:00:00Z.
 const CLOCK_CEILING: i64 = 4_102_444_800;
 
+/// Ports a browser never connects to (the Fetch standard's "bad ports", which WebKit applies).
+/// WebKit refuses them without calling the navigation delegate, so the tab would stay blank:
+/// the shell shows its own page instead.
+pub fn is_restricted_port(port: u16) -> bool {
+    const BAD: [u16; 81] = [
+        0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+        101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179,
+        389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601,
+        636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566,
+        6665, 6666, 6667, 6668, 6669, 10080,
+    ];
+    BAD.binary_search(&port).is_ok()
+}
+
 pub fn clock_plausible(now_unix: i64) -> bool {
     (CLOCK_FLOOR..CLOCK_CEILING).contains(&now_unix)
 }
@@ -170,8 +184,9 @@ pub fn classify(failure: Failure) -> Option<ErrorPage> {
             _ => Some(Unreachable),
         },
         // 101 cannot show the URL, 102 load interrupted by a policy change (a download, a
-        // navigation the shell redirected), 103 cannot show the type, 204 handed to a plug-in.
-        Failure::NsError("WebKitErrorDomain", 101..=103 | 204) => None,
+        // navigation the shell redirected), 204 handed to a plug-in. 103 is a restricted port
+        // (e.g. 9, 25): WebKit shows nothing, so the tab gets our page.
+        Failure::NsError("WebKitErrorDomain", 101 | 102 | 204) => None,
         Failure::NsError(..) => Some(Unreachable),
         // -2 host lookup, -3/-4/-5 authentication (the server's own page follows), -9 redirect
         // loop, -10 unsupported scheme (handed to another app), -11 TLS handshake, -12 bad URL,
@@ -286,6 +301,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn restricted_ports_are_the_fetch_bad_ports() {
+        for port in [9, 25, 6000, 10080] {
+            assert!(is_restricted_port(port), "{port}");
+        }
+        for port in [80, 443, 8080, 3000, 47999] {
+            assert!(!is_restricted_port(port), "{port}");
+        }
+    }
+
+    #[test]
     fn android_errors() {
         assert_eq!(classify(Failure::Android(-2)), Some(ErrorPage::NotFound));
         assert_eq!(classify(Failure::Android(-9)), Some(ErrorPage::TooManyRedirects));
@@ -344,6 +369,11 @@ mod tests {
         assert_eq!(ns(-1201), Some(ErrorPage::Certificate(CertProblem::Expired)));
         assert_eq!(ns(-1204), Some(ErrorPage::Certificate(CertProblem::NotYetValid)));
         assert_eq!(classify(Failure::NsError("WebKitErrorDomain", 102)), None);
+        assert_eq!(
+            classify(Failure::NsError("WebKitErrorDomain", 103)),
+            Some(ErrorPage::Unreachable),
+            "restricted port: the tab would stay blank"
+        );
         assert_eq!(
             classify(Failure::NsError("WebKitErrorDomain", 300)),
             Some(ErrorPage::Unreachable)

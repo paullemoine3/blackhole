@@ -264,6 +264,16 @@ impl Running {
         self.show_error_with(tab, url, ErrorPage::Blocked, json!({ "why": why }));
     }
 
+    /// A restricted port (e.g. 9, 25): WebKit refuses it without telling the delegate, so the
+    /// tab would stay blank. Shows "Site injoignable" at once; true when it did.
+    pub(crate) fn refuse_restricted_port(&mut self, tab: TabId, url: &Url) -> bool {
+        if !url.port().is_some_and(error_page::is_restricted_port) {
+            return false;
+        }
+        self.show_error(tab, url.clone(), ErrorPage::Unreachable);
+        true
+    }
+
     pub(crate) fn show_error(&mut self, tab: TabId, url: Url, page: ErrorPage) {
         self.show_error_with(tab, url, page, json!({}));
     }

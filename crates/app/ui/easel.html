@@ -206,12 +206,14 @@ function card(item) {
 }
 
 // Native live views float above this page: tell the shell where each card's slot is, and hide
-// the view of a card that is not fully inside the board.
+// the view of a card that is not fully inside the board. A timer backs up the animation frame:
+// WebKit pauses frames while the window is covered, and the live view would stay 1×1 till then.
 let framed = false, last = '';
 function layout() {
   if (framed) return;
   framed = true;
-  requestAnimationFrame(() => {
+  const run = () => {
+    if (!framed) return;
     framed = false;
     const b = $('board').getBoundingClientRect();
     const slots = [...document.querySelectorAll('.card.live .slot')].map((s) => {
@@ -221,7 +223,9 @@ function layout() {
     });
     const key = JSON.stringify(slots);
     if (key !== last) { last = key; send({ cmd: 'easel_layout', slots, embedded: !!state.embedded }); }
-  });
+  };
+  requestAnimationFrame(run);
+  setTimeout(run, 100);
 }
 $('board').addEventListener('scroll', layout);
 addEventListener('resize', layout);

@@ -39,6 +39,44 @@ impl Meeting {
     }
 }
 
+/// A guest's answer to an invitation (iCal `PARTSTAT`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reply {
+    NeedsAction,
+    Accepted,
+    Tentative,
+    Declined,
+    Delegated,
+}
+
+impl Reply {
+    pub fn from_partstat(value: &str) -> Self {
+        match value.trim().to_ascii_uppercase().as_str() {
+            "ACCEPTED" => Self::Accepted,
+            "TENTATIVE" => Self::Tentative,
+            "DECLINED" => Self::Declined,
+            "DELEGATED" => Self::Delegated,
+            _ => Self::NeedsAction,
+        }
+    }
+}
+
+/// Whether a calendar event is still on its owner's calendar. Google's iCal export keeps the
+/// events the owner removed: removing an invitation only declines it, so a series removed years
+/// ago keeps repeating in the export. Cancelled events and those the owner (the calendar's
+/// address) declined are gone; `guests` are the event's (address, reply) pairs.
+pub fn is_on_calendar(cancelled: bool, owner: &str, guests: &[(&str, Reply)]) -> bool {
+    let declined = guests.iter().any(|(address, reply)| {
+        *reply == Reply::Declined
+            && address
+                .trim()
+                .trim_start_matches("mailto:")
+                .trim_start_matches("MAILTO:")
+                .eq_ignore_ascii_case(owner.trim())
+    });
+    !cancelled && !declined
+}
+
 /// Google adds the joining instructions to an event's description between `-::~:~::~` lines:
 /// they are not the agenda.
 pub fn agenda_of(description: &str) -> String {
@@ -62,6 +100,20 @@ pub fn room_code(url: &str) -> Option<&str> {
             .zip(&parts)
             .all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_lowercase()));
     ok.then_some(code)
+}
+
+/// Whether a tab's address is in the Meet room `room` (a room address). Meet may rewrite the
+/// address it was opened on (`/meet/abc-defg-hij`, `?authuser=…`): the room code is its last
+/// path segment.
+pub fn in_room(tab_url: &str, room: &str) -> bool {
+    let Some(code) = room_code(room) else {
+        return false;
+    };
+    let Some(rest) = tab_url.strip_prefix("https://meet.google.com/") else {
+        return false;
+    };
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    path.trim_end_matches('/').rsplit('/').next() == Some(code)
 }
 
 /// The first Meet room address found in a text (an event's description, location…).
@@ -138,12 +190,43 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_and_declined_events_are_not_on_the_calendar() {
+        let me = "paul@example.com";
+        let accepted = [
+            ("mailto:Paul@Example.com", Reply::Accepted),
+            ("mailto:ana@example.com", Reply::Declined),
+        ];
+        assert!(is_on_calendar(false, me, &accepted));
+        assert!(is_on_calendar(false, me, &[]));
+        assert!(!is_on_calendar(true, me, &accepted));
+        let removed = [
+            ("mailto:PAUL@example.com", Reply::Declined),
+            ("mailto:ana@example.com", Reply::Accepted),
+        ];
+        assert!(!is_on_calendar(false, me, &removed));
+        assert_eq!(Reply::from_partstat("declined"), Reply::Declined);
+        assert_eq!(Reply::from_partstat("X-OTHER"), Reply::NeedsAction);
+    }
+
+    #[test]
     fn only_real_meet_rooms_are_recognised() {
         assert_eq!(room_code("https://meet.google.com/abc-defg-hij?authuser=0"), Some("abc-defg-hij"));
         assert!(!is_meet_room("https://meet.google.com/new"));
         assert!(!is_meet_room("https://meet.google.com.evil.test/abc-defg-hij"));
         assert!(!is_meet_room("http://meet.google.com/abc-defg-hij"));
         assert!(!is_meet_room("https://meet.google.com/ABC-defg-hij"));
+    }
+
+    #[test]
+    fn a_tab_is_in_a_room_even_when_meet_rewrote_its_address() {
+        let room = "https://meet.google.com/abc-defg-hij";
+        assert!(in_room(room, room));
+        assert!(in_room("https://meet.google.com/meet/abc-defg-hij?authuser=0", room));
+        assert!(in_room("https://meet.google.com/abc-defg-hij/", room));
+        assert!(!in_room("https://meet.google.com/xyz-abcd-efg", room));
+        assert!(!in_room("https://meet.google.com/", room));
+        assert!(!in_room("https://evil.test/abc-defg-hij", room));
+        assert!(!in_room(room, "https://meet.google.com/new"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use objc2::DeclaredClass;
 use objc2_foundation::{
-  NSError, NSHTTPURLResponse, NSObjectProtocol, NSString, NSURLAuthenticationChallenge,
+  NSError, NSHTTPURLResponse, NSObjectProtocol, NSString, NSURL, NSURLAuthenticationChallenge,
   NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest,
   NSURLAuthenticationMethodServerTrust, NSURLCredential, NSURLCredentialPersistence,
   NSURLSessionAuthChallengeDisposition,
@@ -178,11 +178,20 @@ pub(crate) fn did_fail_navigation(
   _navigation: &WKNavigation,
   error: &NSError,
 ) {
-  let url = error
-    .userInfo()
+  // The failing address: some errors (a navigation cancelled by the app's policy) only carry
+  // it as an NSURL, and a view that never loaded a page has no URL of its own to fall back on.
+  let info = error.userInfo();
+  let url = info
     .objectForKey(&NSString::from_str("NSErrorFailingURLStringKey"))
     .and_then(|v| v.downcast::<NSString>().ok())
-    .map(|s| s.to_string());
+    .map(|s| s.to_string())
+    .or_else(|| {
+      info
+        .objectForKey(&NSString::from_str("NSErrorFailingURLKey"))
+        .and_then(|v| v.downcast::<NSURL>().ok())
+        .and_then(|u| u.absoluteString())
+        .map(|s| s.to_string())
+    });
   if let Some(report) = &this.ivars().load_failure_handler {
     report(LoadFailure {
       url: url.clone().unwrap_or_default(),

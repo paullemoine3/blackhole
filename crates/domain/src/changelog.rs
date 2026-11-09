@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.1",
+        &[
+            "Fixed a crash on macOS when the Settings window lost the focus (switching app, clicking the browser window)",
+            "Fixed a crash on macOS when a new tab failed to load its first page",
+            "An address on a port browsers never use (9, 25, 6000…) shows \"Site injoignable\" instead of a blank tab",
+            "Live areas of an Easel in its own window stay visible while a menu or the command bar is open in the browser window, and come back as soon as one closes when the Easel is a tab",
+            "A live area appears at once in its card even when the Easel window is behind the browser",
+            "Calendar: events you removed from Google Calendar (an old invitation declined or a cancelled event) are no longer offered as your next meeting",
+            "Joining a calendar meeting offers to take its notes in an Easel beside the call; the Meet tab already in that room is reused",
+        ],
+    ),
+    (
         "0.8.0",
         &[
             "BlackHole for Android: a lighter version for phones with tabs in a grid (swipe to close, Undo), the address bar at the bottom within reach of your thumb (swipe it to change tab), the sidebar as a drawer, the command bar as a sheet, quick access, history, private tabs, spaces with their color, Shields with the privacy report, downloads and the animated error pages",

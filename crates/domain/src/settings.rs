@@ -43,7 +43,8 @@ pub struct Settings {
     /// Calendar sync: a toast when a meeting starts, and the next meeting in the sidebar.
     pub meeting_reminders: bool,
     pub meeting_card: bool,
-    /// Joining a calendar meeting opens its notes in an Easel (the meeting copilot).
+    /// Joining a calendar meeting offers its notes in an Easel beside the call (the meeting
+    /// copilot).
     pub meeting_notes: bool,
     /// Minutes without use before a wallet with a master password locks again (0: at quit).
     pub password_lock_minutes: u32,

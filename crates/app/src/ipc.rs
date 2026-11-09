@@ -156,6 +156,11 @@ pub enum UiCommand {
         #[serde(default)]
         url: Option<String>,
     },
+    /// The toast offered on joining a calendar meeting: its notes in an Easel beside the call.
+    MeetingNotes {
+        url: String,
+        start: i64,
+    },
     /// Settings > Calendar: a secret iCal address of Google Calendar.
     CalendarAdd {
         url: String,
@@ -797,6 +802,12 @@ mod tests {
             UiCommand::OpenEaselTab { id: 4 }
         ));
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"open_easel_tab","id":4}"#).is_err());
+        let notes = r#"{"cmd":"meeting_notes","url":"https://meet.google.com/abc-defg-hij","start":1700000000}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(notes).unwrap(),
+            UiCommand::MeetingNotes { start: 1_700_000_000, .. }
+        ));
+        assert!(serde_json::from_str::<PageEvent>(notes).is_err());
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()

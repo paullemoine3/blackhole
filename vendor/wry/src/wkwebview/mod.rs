@@ -1441,9 +1441,12 @@ impl InnerWebView {
   }
 }
 
+/// The address of the view, or an empty string when it has none yet (a view that never
+/// loaded a page, e.g. its first navigation failed): a panic here aborts the app on macOS.
 pub fn url_from_webview(webview: &WKWebView) -> Result<String> {
-  let url_obj = unsafe { webview.URL().unwrap() };
-  let absolute_url = url_obj.absoluteString().unwrap();
+  let Some(absolute_url) = (unsafe { webview.URL() }).and_then(|u| u.absoluteString()) else {
+    return Ok(String::new());
+  };
 
   let bytes = {
     let bytes: *const c_char = absolute_url.UTF8String();

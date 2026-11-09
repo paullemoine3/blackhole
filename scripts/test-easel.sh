@@ -54,6 +54,8 @@ cmd {"cmd":"live_pick"}
 wait 500
 eval content String(window.__bhPick === true)
 eval content (() => { const h = document.querySelector('p').getBoundingClientRect(); const x = h.left + h.width / 2, y = h.top + h.height / 2; for (const t of ['mousemove', 'click']) document.elementFromPoint(x, y).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })); return 'picked'; })()
+wait 1000
+cmd {"cmd":"live_capture_to","easel":1}
 wait 1500
 eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
 cmd {"cmd":"easel_live_play","item":2}
@@ -64,6 +66,9 @@ shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
 eval easel document.querySelector('.card.live .play').textContent
+# The Easel window is closed (through retire_window) so the tab below is what shows next.
+cmd {"cmd":"close_easel"}
+wait 800
 cmd {"cmd":"new_folder"}
 wait 600
 eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
@@ -165,7 +170,7 @@ check 24 'before\":\"section secrow\"' "pinned: header sits right above the fold
 check 24 'bms\":false' "imports: no separate bookmark list, they are folders and tabs"
 check 25 'Imp One' "import: bookmarks become tabs filed in a real folder"
 check 25 'Imp Two' "import: every link is a regular tab"
-check 26 'rail\":5' "library: five sections in the rail"
+check 26 'rail\":7' "library: seven sections in the rail"
 check 26 'archived\":true' "library: cleared tab is archived"
 check 27 'home' "library: closes back to the browser"
 check 28 'card\":true' "media: a card appears for a tab playing in the background"
