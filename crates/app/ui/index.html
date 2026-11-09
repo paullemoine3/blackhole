@@ -88,48 +88,67 @@
   #dls:empty, #media:empty { display: none; }
   #media { display: flex; flex-direction: column; gap: 6px; }
   #tidy:empty { display: none; }
-  #tidy .td { margin: 2px 4px 6px; padding: 9px 10px; border-radius: 10px; font-size: 12px; background: rgba(255,255,255,.07); box-shadow: 0 0 0 1px rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 6px; animation: dl-in .2s ease-out; }
+  /* Sidebar cards (tidy-up, meeting, player, downloads): the design system's card, entrance and
+     press; the space's color for what is live. */
+  #tidy .td, #meet .mt, .mc, .dl { border-radius: var(--bh-radius-card); font: var(--bh-text-body-small);
+    animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards; }
+  @keyframes card-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  #tidy .td { margin: 2px 4px 6px; padding: var(--bh-space-10); background: var(--bh-fill-card); box-shadow: inset 0 0 0 1px var(--bh-border-card); display: flex; flex-direction: column; gap: var(--bh-space-6); }
   #tidy .q { font-weight: 600; }
-  #tidy .gs { display: flex; flex-wrap: wrap; gap: 4px; }
-  #tidy .gs span { padding: 1px 7px; border-radius: 6px; background: rgba(255,255,255,.1); opacity: .85; }
-  #tidy .bt { display: flex; justify-content: flex-end; gap: 6px; }
-  #tidy button { border: 0; border-radius: 7px; padding: 4px 10px; font: inherit; cursor: pointer; color: inherit; background: rgba(255,255,255,.1); }
-  #tidy button.go { background: var(--accent); color: #fff; font-weight: 600; }
-  body.noanim #tidy .td { animation: none; }
+  #tidy .gs { display: flex; flex-wrap: wrap; gap: var(--bh-space-4); }
+  #tidy .gs span { padding: 1px 7px; border-radius: var(--bh-radius-chip); background: var(--bh-fill-control); opacity: var(--bh-opacity-soft); font: var(--bh-text-caption); }
+  #tidy .bt { display: flex; justify-content: flex-end; gap: var(--bh-space-6); }
+  #tidy button, #meet button { border: 0; border-radius: var(--bh-radius-control); padding: 0 var(--bh-space-10); height: 26px; font: var(--bh-text-caption); font-weight: 600; cursor: pointer; color: inherit;
+    background: var(--bh-fill-control); transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  #tidy button:hover { background: var(--bh-fill-control-hover); }
+  #tidy button:active, #meet button:active { transform: scale(.95); }
+  #tidy button.go, #meet button { background: var(--bh-accent); color: var(--bh-text-on-accent); }
+  #tidy button.go:hover, #meet button:hover { background: color-mix(in srgb, var(--bh-accent) 82%, white); }
   #meet:empty { display: none; }
-  #meet .mt { display: flex; align-items: center; gap: 9px; padding: 8px 8px 8px 10px; border-radius: 10px; font-size: 12px; background: color-mix(in srgb, var(--accent) 22%, rgba(255,255,255,.06)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); animation: dl-in .2s ease-out; }
-  #meet .mt.on { box-shadow: 0 0 0 1px var(--accent), 0 0 14px -4px var(--glow); }
-  #meet .mt svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+  #meet .mt { display: flex; align-items: center; gap: var(--bh-space-9); padding: var(--bh-space-8) var(--bh-space-8) var(--bh-space-8) var(--bh-space-10);
+    background: color-mix(in srgb, var(--bh-accent) 22%, var(--bh-fill-card)); box-shadow: inset 0 0 0 1px var(--bh-accent-border); }
+  #meet .mt.on { box-shadow: var(--bh-shadow-meet-live); animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards, meet-live var(--bh-duration-breathe) ease-in-out infinite; }
+  @keyframes meet-live { 50% { box-shadow: 0 0 0 1px var(--bh-accent), 0 0 20px -2px var(--bh-accent-glow); } }
+  #meet .mt svg { flex: none; width: var(--bh-icon-md); height: var(--bh-icon-md); fill: none; stroke: currentColor; stroke-width: var(--bh-icon-stroke); stroke-linecap: round; stroke-linejoin: round; opacity: var(--bh-opacity-soft); }
   #meet .tx { flex: 1; min-width: 0; }
   #meet .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #meet .wh { opacity: .7; font-size: 11px; }
-  #meet button { flex: none; border: 0; border-radius: 8px; padding: 5px 10px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-  body.noanim #meet .mt { animation: none; }
-  .mc { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; animation: dl-in .2s ease-out; }
-  .mc .top { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+  #meet .wh { opacity: var(--bh-opacity-secondary); font: var(--bh-text-caption); }
+  .mc { display: flex; flex-direction: column; gap: var(--bh-space-6); padding: var(--bh-space-8) var(--bh-space-10); background: var(--bh-fill-card); box-shadow: inset 0 0 0 1px var(--bh-border-card); }
+  .mc .top { display: flex; align-items: center; gap: var(--bh-space-8); min-width: 0; cursor: pointer; border-radius: var(--bh-radius-row); }
+  .mc .top:hover .nm { text-decoration: underline; text-underline-offset: 2px; }
   .mc .top .dot { flex: none; }
   .mc .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: 4px; }
-  .mc button { border: 0; background: rgba(255,255,255,.1); color: inherit; border-radius: 8px; width: 28px; height: 26px; cursor: pointer; display: grid; place-items: center; padding: 0; }
-  .mc button.off { background: rgba(255,92,92,.4); }
-  .mc button:hover { background: rgba(255,255,255,.2); }
-  .mc .cl { background: none; width: 24px; height: 24px; opacity: .6; }
-  .snd { flex: none; width: 24px; height: 24px; margin: -2px 0; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: inherit; padding: 0; cursor: pointer; opacity: .85; }
+  .mc .ctl { display: flex; align-items: center; justify-content: center; gap: var(--bh-space-4); }
+  .mc button { border: 0; background: var(--bh-fill-control); color: inherit; border-radius: var(--bh-radius-control); width: 30px; height: 26px; cursor: pointer; display: grid; place-items: center; padding: 0;
+    transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  .mc button:hover { background: var(--bh-fill-control-hover); }
+  .mc button:active { transform: scale(.9); }
+  .mc button.off { background: var(--bh-media-off); }
+  .mc .cl { background: none; width: 26px; opacity: var(--bh-opacity-secondary); }
+  .mc .cl:hover { opacity: 1; }
+  .snd { flex: none; width: 24px; height: 24px; margin: -2px 0; display: grid; place-items: center; border: 0; border-radius: var(--bh-radius-chip); background: none; color: inherit; padding: 0; cursor: pointer; opacity: var(--bh-opacity-soft); }
   #pinned .tab { position: relative; }
   body.noanim .mc, body.noanim .mc * { animation: none !important; transition: none !important; }
-  .dl { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.09); box-shadow: 0 0 0 1px rgba(255,255,255,.1); font-size: 12px; cursor: pointer; animation: dl-in .2s ease-out; }
-  .dl:hover { background: rgba(255,255,255,.14); }
-  .dl .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .dl { display: flex; flex-direction: column; gap: var(--bh-space-6); padding: var(--bh-space-8) var(--bh-space-10); background: var(--bh-fill-card); box-shadow: inset 0 0 0 1px var(--bh-border-card); cursor: pointer;
+    transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), box-shadow var(--bh-duration-base) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  .dl:hover { background: var(--bh-fill-hover-strong); }
+  .dl:active { transform: scale(.97); }
+  .dl .top { display: flex; align-items: center; gap: var(--bh-space-8); min-width: 0; }
   .dl .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-  .dl .pc { flex: none; opacity: .7; font-variant-numeric: tabular-nums; }
-  .dl .bar { height: 4px; border-radius: 4px; overflow: hidden; background: rgba(255,255,255,.14); }
-  .dl .fill { height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width .4s ease; }
+  .dl .pc { flex: none; opacity: var(--bh-opacity-secondary); font: var(--bh-text-caption); font-variant-numeric: tabular-nums; }
+  .dl .bar { height: var(--bh-size-progress); border-radius: var(--bh-radius-pill); overflow: hidden; background: var(--bh-fill-control); }
+  .dl .fill { height: 100%; width: 0; border-radius: var(--bh-radius-pill); background: var(--bh-accent); box-shadow: var(--bh-shadow-progress); transition: width var(--bh-duration-panel) var(--bh-ease-glide); }
   .dl.unk .fill { width: 35%; animation: dl-slide 1.1s ease-in-out infinite; }
-  .dl.ok .fill { width: 100%; }
-  .dl.bad .fill { width: 100%; background: #e5534b; }
-  @keyframes dl-in { from { opacity: 0; transform: translateY(6px); } }
+  /* Done: the bar fills in green and the card flashes once; a click opens Library > Downloads. */
+  .dl.ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-success) 45%, transparent); animation: dl-done var(--bh-duration-lit) var(--bh-ease-standard); }
+  .dl.ok .pc { color: var(--bh-success-text); opacity: 1; font-weight: 600; }
+  .dl.ok .fill { width: 100%; background: var(--bh-success); box-shadow: none; }
+  .dl.bad { box-shadow: inset 0 0 0 1px var(--bh-insecure-border); }
+  .dl.bad .pc { color: var(--bh-danger-text); opacity: 1; }
+  .dl.bad .fill { width: 100%; background: var(--bh-danger-solid); box-shadow: none; }
+  @keyframes dl-done { 30% { background: color-mix(in srgb, var(--bh-success) 22%, var(--bh-fill-card)); } }
   @keyframes dl-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-  body.noanim .dl, body.noanim .dl * { animation: none !important; transition: none !important; }
+  body.noanim .dl, body.noanim .dl *, body.noanim #tidy .td, body.noanim #meet .mt { animation: none !important; transition: none !important; }
   .newrow { display: flex; align-items: center; margin: 4px 0; } .newrow .new { flex: 1; }
   .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 13px; border-radius: 9px; cursor: pointer; min-width: 0; }
   .tab:hover { background: rgba(255,255,255,.08); }
@@ -982,7 +1001,8 @@ function renderDownloads(list) {
       c.append(el('div', 'top'), el('div', 'bar'));
       c.firstChild.append(el('span', 'nm'), el('span', 'pc'));
       c.lastChild.append(el('div', 'fill'));
-      c.onclick = () => send({ cmd: 'open_library' });
+      // A download (finished or not) opens the Library on its Downloads section.
+      c.onclick = () => send({ cmd: 'open_library', section: 'downloads' });
       dlNodes.set(d.id, c);
     }
     const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk');

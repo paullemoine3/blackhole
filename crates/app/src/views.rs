@@ -389,7 +389,7 @@ fn build_tab(
         mailbox.clone(),
         mailbox.clone(),
     );
-    let (dl_start, dl_done) = (mailbox.clone(), mailbox.clone());
+    let (dl_start, dl_done, s_dl) = (mailbox.clone(), mailbox.clone(), slot.clone());
     let policy = policy.clone();
     let builder = builder(ctx);
     // Each page view gets its own configuration carrying the extension controller.
@@ -535,6 +535,7 @@ fn build_tab(
             let _ = std::fs::create_dir_all(&dir);
             *dest = blackhole_infrastructure::unique_path(&dir, &name);
             dl_start.push(Msg::DownloadStarted {
+                tab: id(&s_dl),
                 url,
                 path: dest.clone(),
             });
@@ -766,8 +767,9 @@ pub fn rtc_toggle_js(kind: &str) -> String {
     format!("window.__bhRtc&&window.__bhRtc.toggle('{kind}')")
 }
 
-pub const MEDIA_PAUSE_JS: &str =
-    "[...document.querySelectorAll('video,audio')].forEach(v=>v.pause())";
+/// Closes the player of the sidebar card: pauses everything and brings a floating video back
+/// into its page.
+pub const MEDIA_CLOSE_JS: &str = "(()=>{for(const v of document.querySelectorAll('video,audio')){v.pause();if(v.webkitPresentationMode==='picture-in-picture')v.webkitSetPresentationMode('inline')}if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{})})()";
 
 #[cfg(all(test, target_os = "macos"))]
 mod user_agent_tests {

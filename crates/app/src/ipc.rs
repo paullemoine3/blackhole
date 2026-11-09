@@ -431,8 +431,12 @@ pub enum UiCommand {
         id: u64,
         action: String,
     },
-    /// Shows the Library (media, downloads, easels, spaces, archived tabs) over the window.
-    OpenLibrary,
+    /// Shows the Library (media, downloads, easels, spaces, archived tabs) over the window, on
+    /// `section` when given (a known section only, e.g. "downloads").
+    OpenLibrary {
+        #[serde(default)]
+        section: Option<String>,
+    },
     CloseLibrary,
     LibraryOpenFile {
         id: u64,
@@ -626,8 +630,12 @@ pub enum PageEvent {
         x: f64,
         y: f64,
     },
-    /// A video left Picture in Picture (untrusted: only acted on for a tab the shell floated).
-    PipLeft {},
+    /// A video left Picture in Picture, paused or not (untrusted: only acted on for a tab the
+    /// shell floated).
+    PipLeft {
+        #[serde(default)]
+        paused: bool,
+    },
     /// The user clicked an area while the picker was armed (honoured only then; untrusted).
     LivePick {
         selector: String,
@@ -665,6 +673,8 @@ pub enum Msg {
     External(Url),
     Redirect(TabId, Url),
     DownloadStarted {
+        /// The tab whose navigation became this download (0: none known).
+        tab: TabId,
         url: String,
         path: std::path::PathBuf,
     },
@@ -891,9 +901,21 @@ mod tests {
     }
 
     #[test]
+    fn open_library_takes_an_optional_section() {
+        let plain: UiCommand = serde_json::from_str(r#"{"cmd":"open_library"}"#).unwrap();
+        assert!(matches!(plain, UiCommand::OpenLibrary { section: None }));
+        let dl: UiCommand =
+            serde_json::from_str(r#"{"cmd":"open_library","section":"downloads"}"#).unwrap();
+        assert!(matches!(dl, UiCommand::OpenLibrary { section: Some(s) } if s == "downloads"));
+    }
+
+    #[test]
     fn pip_left_parses_with_or_without_extra_fields() {
-        for raw in [r#"{"cmd":"pip_left"}"#, r#"{"cmd":"pip_left","paused":true}"#] {
-            assert!(matches!(serde_json::from_str::<PageEvent>(raw), Ok(PageEvent::PipLeft {})), "{raw}");
+        for (raw, want) in [(r#"{"cmd":"pip_left"}"#, false), (r#"{"cmd":"pip_left","paused":true}"#, true)] {
+            assert!(
+                matches!(serde_json::from_str::<PageEvent>(raw), Ok(PageEvent::PipLeft { paused }) if paused == want),
+                "{raw}"
+            );
         }
     }
 

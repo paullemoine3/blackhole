@@ -114,6 +114,9 @@ const BUSY_GRACE: Duration = Duration::from_secs(90);
 const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
 const LIBRARY_HTML: &str = include_str!("../ui/library.html");
+/// The sections of the Library page, in its rail's order.
+const LIBRARY_SECTIONS: [&str; 7] =
+    ["media", "downloads", "easels", "spaces", "history", "watches", "archive"];
 /// Gap between the two panes of a split view.
 const SPLIT_GAP: f64 = 8.0;
 /// Height of the strip above a split view that carries each pane's title and close button.
@@ -221,6 +224,11 @@ const TIDY_FROM: usize = 6;
 const UNDO_FOR: Duration = Duration::from_secs(15);
 /// How often an unfocused but still visible window is checked for being covered.
 const PIP_RECHECK: Duration = Duration::from_millis(1000);
+/// A closed media card stays closed this long whatever the probes say (one may have left before
+/// the pause): longer than the probe interval.
+const DISMISS_GRACE: Duration = Duration::from_millis(2000);
+/// How long after the shell brings a floating video back its "left PiP" is taken as an echo.
+const PIP_SHELL_EXIT: Duration = Duration::from_millis(1500);
 /// Share of the browser window another window must hide before a video floats.
 const COVERED_SHARE: f64 = 0.5;
 
@@ -333,7 +341,7 @@ struct DownloadLive {
 }
 
 /// How long a finished download stays in the sidebar.
-const DOWNLOAD_LINGER: Duration = Duration::from_secs(4);
+const DOWNLOAD_LINGER: Duration = Duration::from_secs(8);
 const DOWNLOAD_POLL: Duration = Duration::from_millis(500);
 
 /// Size of the file a download is writing: browsers use a temporary name until it completes.
@@ -430,8 +438,11 @@ struct Running {
     /// The last tidy-up, for its Undo; whether the suggestion was dismissed this session.
     tidied: Option<blackhole_domain::Tidied>,
     tidy_dismissed: bool,
-    /// Tabs whose media card was closed; they come back when the tab plays again.
-    media_dismissed: HashSet<u64>,
+    /// Tabs whose media card was closed, and when; they come back when the tab plays again.
+    media_dismissed: HashMap<u64, Instant>,
+    /// Tabs whose floating video the shell itself just brought back (their "left PiP" is no
+    /// request from the user).
+    pip_shell_exits: HashMap<u64, Instant>,
     svc: BrowserService<JsonWorkspaceRepository>,
     mailbox: Mailbox,
     sidebar: Sidebar,
@@ -517,6 +528,9 @@ struct Running {
     library: bool,
     downloads: Vec<blackhole_infrastructure::store::DownloadRec>,
     dl_live: HashMap<u64, DownloadLive>,
+    /// Tabs opened for a file alone (no page shown), by download URL: closed once it is done
+    /// (closing the view earlier would cancel the download).
+    dl_only_tabs: HashMap<String, TabId>,
     dl_polled: Instant,
     dl_size_tx: std::sync::mpsc::Sender<(u64, u64)>,
     dl_size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
@@ -826,7 +840,8 @@ impl Running {
             comparing: compare::Comparing::new(),
             tidied: None,
             tidy_dismissed: false,
-            media_dismissed: HashSet::new(),
+            media_dismissed: HashMap::new(),
+            pip_shell_exits: HashMap::new(),
             svc,
             mailbox,
             sidebar,
@@ -877,6 +892,7 @@ impl Running {
             webext_sig: String::new(),
             downloads: blackhole_infrastructure::store::DownloadStore::new(&data).load(),
             dl_live: HashMap::new(),
+            dl_only_tabs: HashMap::new(),
             dl_polled: Instant::now(),
             dl_size_tx,
             dl_size_rx,
@@ -2272,6 +2288,7 @@ impl Running {
             "now": now_secs(),
             // A section to show, applied once per request (the page keeps its own choice after).
             "jump": json!([self.library_jump.0, self.library_jump.1]),
+            "animations": self.svc.settings().animations,
             "watches": self.watches_json(),
         });
         if let Some(panel) = &self.library_panel.view {
@@ -2279,7 +2296,11 @@ impl Running {
         }
     }
 
-    fn open_library(&mut self) {
+    fn open_library(&mut self, section: Option<&str>) {
+        // Only the Library's own sections: the page is told which one to show.
+        if let Some(name) = section.and_then(|s| LIBRARY_SECTIONS.iter().find(|n| **n == s)) {
+            self.library_jump = (self.library_jump.0 + 1, name);
+        }
         self.close_palette();
         self.close_peek();
         self.close_easel_tab();
@@ -2468,7 +2489,7 @@ impl Running {
             // The easel beside a tab closes its pane; the tab stays.
             UiCommand::CloseEaselTab if self.easel_side() => self.close_easel_side(),
             UiCommand::CloseEaselTab => self.close_easel_tab(),
-            UiCommand::OpenLibrary => self.open_library(),
+            UiCommand::OpenLibrary { section } => self.open_library(section.as_deref()),
             UiCommand::CloseLibrary => self.close_library(),
             UiCommand::LibraryOpenFile { id } => {
                 if let Some(d) = self.downloads.iter().find(|d| d.id == id) {
@@ -3091,7 +3112,7 @@ impl Running {
         let tabs = &self.svc.workspace().active_space().tabs;
         let list: Vec<_> = tabs
             .iter()
-            .filter(|t| !self.media_dismissed.contains(&t.id.0))
+            .filter(|t| !self.media_dismissed.contains_key(&t.id.0))
             .filter_map(|t| {
                 let p = self.media_hold.shown(t.id.0, now)?;
                 Some(json!({
@@ -3129,8 +3150,11 @@ impl Running {
         }
         let now = Instant::now();
         if let Ok(probes) = self.media.lock() {
-            self.media_dismissed
-                .retain(|id| !probes.get(id).is_some_and(|p| p.playing));
+            // A probe sent before the card was closed still says "playing": only a later one
+            // can bring the card back.
+            self.media_dismissed.retain(|id, at| {
+                at.elapsed() < DISMISS_GRACE || !probes.get(id).is_some_and(|p| p.playing)
+            });
             for (id, p) in probes.iter() {
                 let shown = p.playing || p.has || p.cam || p.mic;
                 self.media_hold.note(*id, now, shown.then_some(*p));
@@ -3169,13 +3193,25 @@ impl Running {
             "toggle" => views::MEDIA_TOGGLE_JS,
             "mute" => views::MEDIA_MUTE_JS,
             "pip" => views::PIP_TOGGLE_JS,
+            // Closing the player also closes its floating window.
             "close" => {
-                self.media_dismissed.insert(id.0);
-                views::MEDIA_PAUSE_JS
+                self.media_dismissed.insert(id.0, Instant::now());
+                if self.pip_tab == Some(id) {
+                    self.pip_tab = None;
+                    self.pip_seen = false;
+                }
+                views::MEDIA_CLOSE_JS
             }
             _ => return,
         };
         let _ = view.evaluate_script(js);
+        match action {
+            "pip" => self.pip_toggled(id),
+            "close" => {
+                self.pip_shell_exits.insert(id.0, Instant::now());
+            }
+            _ => {}
+        }
         self.media_due = Instant::now() + Duration::from_millis(250);
         if action == "close" {
             self.ui_state();
@@ -3445,6 +3481,9 @@ impl Running {
             }
             if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
                 let _ = back.evaluate_script(views::PIP_EXIT_JS);
+                if let Some(id) = active {
+                    self.pip_shell_exits.insert(id.0, Instant::now());
+                }
                 if self.pip_tab == active {
                     self.pip_tab = None;
                     self.pip_seen = false;
@@ -3511,9 +3550,48 @@ impl Running {
         }
     }
 
-    /// The video left its floating window. The page cannot tell the window's close button from
-    /// its "back to tab" one (and closing does not pause it), so nothing is switched: the video
-    /// goes on in its tab and the sidebar's player card (its title opens the tab) stays.
+    /// A video left its floating window. On macOS the window's close button pauses it: nothing
+    /// changes; its "back to tab" button leaves it playing: its tab is shown, as in Safari.
+    /// WebView2 does not pause on close, so on Windows nothing is switched. Only a video the
+    /// shell floated counts, and not when the shell itself brought it back.
+    fn pip_left(&mut self, tab: TabId, paused: bool) {
+        let now = Instant::now();
+        self.pip_shell_exits.retain(|_, at| now.duration_since(*at) < PIP_SHELL_EXIT);
+        let left = blackhole_domain::pip::PipLeft {
+            floated_by_shell: self.pip_tab == Some(tab) || self.pip_on_blur == Some(tab),
+            left_by_shell: self.pip_shell_exits.contains_key(&tab.0),
+            paused,
+            tab_shown: self.shown == Some(tab) && !self.home_shown(),
+            close_pauses: cfg!(target_os = "macos"),
+        };
+        self.pip_returned(tab);
+        if self.pip_on_blur == Some(tab) {
+            self.pip_on_blur = None;
+        }
+        if blackhole_domain::pip::back_to_tab(left) && self.tabs.contains_key(&tab) {
+            self.window.set_minimized(false);
+            self.window.focus_window();
+            self.handle_ui(UiCommand::Activate { id: tab.0 });
+        }
+    }
+
+    /// The shell's PiP button (card, command bar) toggled the video of `tab`: floating, it comes
+    /// back by the shell's hand (no request to show the tab); in its page, the shell floats it.
+    fn pip_toggled(&mut self, tab: TabId) {
+        let floating = self
+            .media
+            .lock()
+            .is_ok_and(|probes| probes.get(&tab.0).is_some_and(|p| p.pip));
+        if floating {
+            self.pip_shell_exits.insert(tab.0, Instant::now());
+        } else {
+            self.pip_tab = Some(tab);
+            self.pip_seen = false;
+        }
+    }
+
+    /// The floating video of `tab` is gone (left, or no longer seen by the probe): the shell
+    /// stops tracking it.
     fn pip_returned(&mut self, tab: TabId) {
         if self.pip_tab == Some(tab) {
             self.pip_tab = None;
@@ -3582,8 +3660,11 @@ impl Running {
     /// Focus is back: the video floated by `pip_on_blur` returns into its page.
     fn pip_back_on_focus(&mut self) {
         self.blur_due = None;
-        if let Some(view) = self.pip_on_blur.take().and_then(|id| self.tabs.get(&id)) {
-            let _ = view.evaluate_script(views::PIP_EXIT_JS);
+        if let Some(id) = self.pip_on_blur.take() {
+            if let Some(view) = self.tabs.get(&id) {
+                let _ = view.evaluate_script(views::PIP_EXIT_JS);
+                self.pip_shell_exits.insert(id.0, Instant::now());
+            }
         }
     }
 
@@ -4050,6 +4131,9 @@ impl Running {
             "new_folder" => self.handle_ui(UiCommand::NewFolder { parent: None }),
             "pip" => {
                 let _ = self.active_view().evaluate_script(views::PIP_TOGGLE_JS);
+                if let Some(id) = self.shown {
+                    self.pip_toggled(id);
+                }
             }
             "toggle_sidebar" => self.handle_ui(UiCommand::Lock),
             "settings" => self.settings_wanted = true,
@@ -4062,7 +4146,7 @@ impl Running {
                 }
             }
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
-            "open_library" => self.handle_ui(UiCommand::OpenLibrary),
+            "open_library" => self.handle_ui(UiCommand::OpenLibrary { section: None }),
             "new_meet" => self.open_meet(None),
             "tidy" => self.handle_ui(UiCommand::Tidy),
             "compare" => self.compare_start(),
@@ -4074,12 +4158,10 @@ impl Running {
                 }
             }
             "open_history" => {
-                self.library_jump = (self.library_jump.0 + 1, "history");
-                self.handle_ui(UiCommand::OpenLibrary);
+                self.handle_ui(UiCommand::OpenLibrary { section: Some("history".into()) });
             }
             "open_watches" => {
-                self.library_jump = (self.library_jump.0 + 1, "watches");
-                self.handle_ui(UiCommand::OpenLibrary);
+                self.handle_ui(UiCommand::OpenLibrary { section: Some("watches".into()) });
             }
             // The commands that have a shortcut run exactly as the shortcut does.
             other if other.starts_with("key:") => self.shortcut(&other["key:".len()..]),
@@ -4951,7 +5033,7 @@ impl Running {
             | UiCommand::EaselColor { .. }
             | UiCommand::EaselRemove { .. }
             | UiCommand::EaselOpenLink { .. }
-            | UiCommand::OpenLibrary
+            | UiCommand::OpenLibrary { .. }
             | UiCommand::CloseLibrary
             | UiCommand::LibraryOpenFile { .. }
             | UiCommand::LibraryDeleteDownload { .. }
@@ -5274,7 +5356,7 @@ impl Running {
                     eprintln!("[page {}] {}", tab.0, msg.chars().take(600).collect::<String>());
                 }
             }
-            Msg::Page(tab, PageEvent::PipLeft { .. }) => self.pip_returned(tab),
+            Msg::Page(tab, PageEvent::PipLeft { paused }) => self.pip_left(tab, paused),
             Msg::Page(tab, PageEvent::AutofillQuery { fresh }) => self.autofill_query(tab, fresh),
             Msg::Page(tab, PageEvent::AutofillFill { index, token }) => {
                 self.autofill_fill(tab, index, &token)
@@ -5366,7 +5448,13 @@ impl Running {
                     let _ = view.load_url(url.as_str());
                 }
             }
-            Msg::DownloadStarted { url, path } => {
+            Msg::DownloadStarted { tab, url, path } => {
+                // The navigation became a download: the tab is not waiting for a page any more
+                // (else "Site injoignable" after CONNECT_MAX). A tab opened for the file alone,
+                // that never showed a page, closes once the file is done, as in other browsers.
+                if self.awaiting.remove(&tab).is_some() && self.splash.contains_key(&tab) {
+                    self.dl_only_tabs.insert(url.clone(), tab);
+                }
                 let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
                 let name = path
                     .file_name()
@@ -5410,6 +5498,11 @@ impl Running {
                 self.ui_library();
             }
             Msg::DownloadDone { url, path, ok } => {
+                if let Some(tab) = self.dl_only_tabs.remove(&url) {
+                    if self.tabs.contains_key(&tab) {
+                        self.handle_ui(UiCommand::Close { id: tab.0 });
+                    }
+                }
                 if let Some(d) = self
                     .downloads
                     .iter_mut()
