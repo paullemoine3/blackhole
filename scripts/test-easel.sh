@@ -60,12 +60,12 @@ wait 1500
 eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
-eval easel document.querySelector('.card.live .play').textContent
+eval easel document.querySelector('.card.live .play svg').dataset.i
 eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
 shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
-eval easel document.querySelector('.card.live .play').textContent
+eval easel document.querySelector('.card.live .play svg').dataset.i
 # The Easel window is closed (through retire_window) so the tab below is what shows next.
 cmd {"cmd":"close_easel"}
 wait 800
@@ -100,7 +100,7 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
-eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button svg')].map(i => i.dataset.i) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
 eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
 eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
 eval chrome (() => { const i = document.querySelector('.sedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return 'esc'; })()
@@ -153,9 +153,9 @@ check 9 '1' "remove: note deleted, one card left"
 check 10 'true' "live: picker armed on the page"
 check 11 'picked' "live: area clicked"
 check 12 'Paused' "live: card added, paused until played"
-check 13 '⏸' "live: playing"
+check 13 'pause' "live: playing"
 check 14 'crop true' "live: view shows the picked area, scaled to fill the card"
-check 15 '▶' "live: paused again"
+check 15 'play' "live: paused again"
 check 16 'x' "folder: created"
 check 17 'dragged' "sidebar: easel dragged onto a folder"
 check 18 'inFolder\":1' "sidebar: easel now lives in the folder"
@@ -174,8 +174,8 @@ check 26 'rail\":7' "library: seven sections in the rail"
 check 26 'archived\":true' "library: cleared tab is archived"
 check 27 'home' "library: closes back to the browser"
 check 28 'card\":true' "media: a card appears for a tab playing in the background"
-check 28 '⏸' "media: the card offers pause"
-check 28 '⧉' "media: the card offers Picture in Picture"
+check 28 'pause' "media: the card offers pause"
+check 28 'pip' "media: the card offers Picture in Picture"
 check 28 'snd\":true' "media: the playing tab shows a speaker icon"
 check 28 'hiddenWhenActive\":true' "media: no card for the tab being viewed"
 check 29 'input\":true' "space: right-click rename turns the name into an input"

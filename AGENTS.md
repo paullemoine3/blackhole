@@ -110,7 +110,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
 
 - macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`,
   `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
-  `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local).
+  `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
+  `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`.
 
@@ -141,7 +142,15 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 
 - Raccourcis affichés : toujours via `bhKeys('mod+shift+e')` / `bhKeyParts` (`ui/keys.js`, injecté
   dans les pages d'interface), jamais `⌘` ou `Ctrl` en dur ; la palette lit le champ `keys` des actions.
-- Icônes de menu : noms (`icon: 'trash'`) dessinés en SVG par `palette.html` (`ICONS`), pas d'emoji.
+- Icônes : une seule table SVG, `ui/icons.js` (injecté avec `theme.js` dans toutes les pages d'interface) :
+  `bhIcon('trash', 'sm')`, `bhIconHTML(…)` pour le HTML en texte, `<i data-icon="gear" data-size="xs">` dans le
+  balisage. Échelle xs 12 / sm 16 (défaut) / md 20 / lg 24, trait 1,5 px non mis à l'échelle ; zone de clic ≥ 24 px.
+  Ni emoji ni glyphe de police pour une icône d'interface (seuls les emoji choisis pour un espace ou un dossier
+  restent). Exception : boutons de fenêtre Windows en 10 px. Menus : `icon: 'trash'` = un nom de cette table.
+- Tokens du design system (artifact « BlackHole Design System ») : variables `--bh-*` dans `ui/theme.js`
+  (sous `:where()`, la page garde la main) ; les `--bh-*` d'espace suivent `--accent`/`--glow`/`--tint` posés par
+  la page. Réglages (`settings.html`) : rendu sur place (`put`/`morph`, pas de `replaceChildren` qui casse les
+  animations et le focus), `body.noanim` et `prefers-reduced-motion` respectés.
 - Mots : « quick access » (tuiles épinglées), « put to sleep » (l'onglet garde sa place), « close »
   (archive), « delete » (un conteneur et son contenu). Casse de phrase, sauf noms propres (Easel, Library).
 - Action irréversible : `confirm: '…'` sur l'élément de menu ou l'action de palette, ou deux clics en

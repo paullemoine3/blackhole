@@ -24,9 +24,9 @@ const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } 
 function pane(side, p, focus) {
   const n = document.createElement('div'); n.className = 'pane' + (focus ? ' focus' : '');
   // The right pane may be an Easel (a meeting's notes beside the call), not a tab.
-  const d = document.createElement('span'); d.className = 'dot'; d.textContent = p.easel ? '✎' : (host(p.url)[0] || '•').toUpperCase(); d.style.background = p.easel ? 'var(--accent)' : hue(host(p.url));
+  const d = document.createElement('span'); d.className = 'dot'; if (p.easel) d.append(bhIcon('edit', 'xs')); else d.textContent = (host(p.url)[0] || '•').toUpperCase(); d.style.background = p.easel ? 'var(--accent)' : hue(host(p.url));
   const t = document.createElement('span'); t.className = 't'; t.textContent = p.title || host(p.url);
-  const x = document.createElement('button'); x.textContent = '✕'; x.title = p.easel ? 'Close this pane (the Easel stays in the sidebar)' : 'Close this pane (the tab stays in the sidebar)';
+  const x = document.createElement('button'); x.append(bhIcon('close', 'xs')); x.title = p.easel ? 'Close this pane (the Easel stays in the sidebar)' : 'Close this pane (the tab stays in the sidebar)';
   x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close_pane', side }); };
   n.onclick = () => { if (side === 'right' && !p.easel) send({ cmd: 'activate', id: p.id }); };
   n.append(d, t, x);

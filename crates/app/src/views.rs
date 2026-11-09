@@ -20,8 +20,10 @@ const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
 /// Shortcut notation shared by BlackHole's own pages (`bhKeys`).
 const KEYS_JS: &str = include_str!("../ui/keys.js");
-/// Look shared by BlackHole's own pages (scroll bars in the theme).
+/// Look shared by BlackHole's own pages: design tokens (`--bh-*`), icon scale, scroll bars.
 const THEME_JS: &str = include_str!("../ui/theme.js");
+/// Icons of BlackHole's own pages (`bhIcon`), drawn at the scale set by `THEME_JS`.
+const ICONS_JS: &str = include_str!("../ui/icons.js");
 const SHIELDS_JS: &str = include_str!("../ui/shields.js");
 /// What a page says about the product it shows, for the tab comparator.
 pub const COMPARE_JS: &str = include_str!("../ui/compare.js");
@@ -117,6 +119,7 @@ pub fn ui_view(
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_initialization_script_for_main_only(THEME_JS, true)
+        .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
@@ -146,6 +149,7 @@ pub fn panel_view(
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_initialization_script_for_main_only(THEME_JS, true)
+        .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {
                 mailbox.push(Msg::Ui(command));
