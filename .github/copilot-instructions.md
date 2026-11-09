@@ -76,6 +76,7 @@ cargo test --workspace --locked
 - Test : `test-ui.ps1`, `eval` « pwN: » lus par `PwEval`, hors indices ; mots de passe de test générés par le script.
 
 ## Menus et vocabulaire
+- Apparence : `docs/design-system/` décrit les tokens (couleurs par teinte d’espace, typo, espacements, rayons, ombres, mouvement, icônes), les composants et les règles visuelles de `ui/`. Pour une nouvelle valeur, prendre le token retenu (voir `unification.md`) plutôt qu’une valeur en dur.
 - Raccourcis affichés : `bhKeys('mod+shift+e')` → « ⌘⇧E » sur macOS, « Ctrl+Shift+E » ailleurs ; `bhKeyParts` pour des `<kbd>` (`ui/keys.js`, injecté par `views::ui_view`, `panel_view`). Jamais de `⌘`/`Ctrl` en dur. Les actions de palette passent `keys` (spécification) plutôt que `hint`.
 - Menus (`cmd: 'menu'`, rendus par `palette.html`) : `icon` est un nom de la table `ICONS` (SVG en traits) ; `confirm: '…'` arme l'élément au premier clic. Actions de palette : `confirm` demande une seconde Entrée.
 - Vocabulaire : « quick access » (tuiles épinglées), « put to sleep » (`close_instance`, l'onglet garde sa place ; c'est aussi le bouton « − » d'un onglet de dossier), « close » (`close`, archive), « delete » (conteneur + contenu, avec confirmation). Casse de phrase.
