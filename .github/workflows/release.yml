@@ -148,6 +148,10 @@ jobs:
           targets: aarch64-linux-android,x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
       - uses: android-actions/setup-android@v3
+        with:
+          # The default list ("tools platform-tools") fails: the legacy "tools" package is gone
+          # from recent command-line tools (16.0), so sdkmanager exits with code 1.
+          packages: platform-tools
 
       - name: NDK, SDK packages and cargo-ndk
         run: |
