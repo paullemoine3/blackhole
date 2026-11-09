@@ -62,12 +62,12 @@ wait 1200
 eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map(c => c.textContent))
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
-eval easel document.querySelector('.card.live .play').textContent
+eval easel document.querySelector('.card.live .play svg').dataset.i
 eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
 shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
-eval easel document.querySelector('.card.live .play').textContent
+eval easel document.querySelector('.card.live .play svg').dataset.i
 cmd {"cmd":"new_folder"}
 wait 600
 eval chrome (() => { const i = document.querySelector('.fedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); return 'x'; })()
@@ -99,7 +99,7 @@ shot 05-library
 cmd {"cmd":"close_library"}
 wait 500
 eval chrome JSON.stringify({ home: state.home })
-eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button')].map(b => b.textContent) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
+eval chrome (() => { const t = state.tabs[0]; if (!t) return 'notab'; window.bh.render({ ...state, activeTab: null, media: [{ id: t.id, playing: true, muted: false }] }); const card = document.querySelector('#media .mc'); const btns = card ? [...card.querySelectorAll('button svg')].map(i => i.dataset.i) : []; const snd = !!document.querySelector('.tab .snd'); window.bh.render({ ...state, activeTab: t.id, media: [{ id: t.id, playing: true, muted: false }] }); return 'media ' + JSON.stringify({ card: !!card, btns, snd, hiddenWhenActive: !document.querySelector('#media .mc') }); })()
 eval chrome (() => { window.bh.render(state); const sp = state.spaces[0]; const switchable = state.spaces.length > 1; editSpace(sp.id); const input = document.querySelector('.space input'); return 'rename ' + JSON.stringify({ input: !!input, value: input ? input.value === sp.name : false }); })()
 eval chrome (() => { renderUpdate({ state: 'ready', version: '9.9.9' }, '0.7.4'); const ready = !!document.querySelector('#update .ico svg'); renderUpdate({ state: 'downloading', version: '9.9.9' }, '0.7.4'); const busy = document.querySelector('#update .ico').dataset.k; renderUpdate(null, '0.7.4'); return 'upd ' + JSON.stringify({ ready, busy, text: document.querySelector('#update .ico').textContent }); })()
 eval chrome (() => { const i = document.querySelector('.sedit'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return 'esc'; })()
@@ -161,9 +161,9 @@ Check ($evals[9] -match '1') 'remove: note deleted, one card left'
 Check ($evals[10] -match 'true') 'live: picker armed on the page'
 Check ($evals[11] -match 'picked') 'live: area clicked'
 Check ($evals[12] -match 'Paused') 'live: card added, paused until played'
-Check ($evals[13] -match ([string][char]0x23F8)) 'live: playing'
+Check ($evals[13] -match 'pause') 'live: playing'
 Check ($evals[14] -match 'crop true') 'live: view shows the picked area, scaled to fill the card'
-Check ($evals[15] -match ([string][char]0x25B6)) 'live: paused again'
+Check ($evals[15] -match 'play') 'live: paused again'
 Check ($evals[17] -match 'dragged') 'sidebar: easel dragged onto a folder'
 Check ($evals[18] -match 'inFolder.:1') 'sidebar: easel now lives in the folder'
 Check ($evals[19] -match 'clicked') 'tab: easel opened from the sidebar'
@@ -181,8 +181,8 @@ Check ($evals[26] -match 'rail":7') 'library: seven sections in the rail (Histor
 Check ($evals[26] -match 'archived":true') 'library: cleared tab is archived'
 Check ($evals[27] -match 'home') 'library: closes back to the browser'
 Check ($evals[28] -match 'card.:true') 'media: a card appears for a tab playing in the background'
-Check ($evals[28] -match ([string][char]0x23F8)) 'media: the card offers pause'
-Check ($evals[28] -match ([string][char]0x29C9)) 'media: the card offers Picture in Picture'
+Check ($evals[28] -match 'pause') 'media: the card offers pause'
+Check ($evals[28] -match 'pip') 'media: the card offers Picture in Picture'
 Check ($evals[28] -match 'snd.:true') 'media: the playing tab shows a speaker icon'
 Check ($evals[28] -match 'hiddenWhenActive.:true') 'media: no card for the tab being viewed'
 Check ($evals[29] -match 'input.:true') 'space: right-click rename turns the name into an input'

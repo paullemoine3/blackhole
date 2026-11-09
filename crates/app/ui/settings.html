@@ -2,251 +2,422 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>BlackHole Settings</title>
 <style>
-  :root { --accent: #7c5cff; }
+  /* Built on the design system's tokens (`--bh-*`, ui/theme.js) and icons (ui/icons.js). The
+     space's color comes in as --accent / --glow / --tint (see bh.render). */
+  :root { --accent: #7c5cff; color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; overflow: hidden; background: #100f17; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
-  body { display: grid; grid-template-columns: 210px 1fr; grid-template-rows: 38px minmax(0, 1fr); background: #100f17; }
+  html, body { height: 100%; overflow: hidden; }
+  body { display: grid; grid-template-columns: var(--bh-size-settings-nav) minmax(0, 1fr); grid-template-rows: var(--bh-size-topbar) minmax(0, 1fr);
+    background: var(--bh-bg-shell); color: var(--bh-text-primary); font: var(--bh-text-body-page); user-select: none; -webkit-user-select: none; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus { outline: none; }
+  :focus-visible { outline: 2px solid var(--bh-accent); outline-offset: 2px; }
+
   /* Top bar: the same height, tint and window buttons as the main window's (bar.html). */
-  #top { grid-column: 1 / -1; display: flex; align-items: center; padding-left: 14px; background: radial-gradient(700px 500px at 0% 0%, var(--glow, rgba(124,92,255,.35)), transparent 70%), var(--tint, #100f17); }
-  body.macos #top { padding-left: 84px; }
-  .brand { flex: 1; display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 13px; }
+  #top { grid-column: 1 / -1; display: flex; align-items: center; padding-left: var(--bh-space-14);
+    background: radial-gradient(700px 500px at 0% 0%, var(--glow, rgba(124,92,255,.35)), transparent 70%), var(--tint, var(--bh-bg-shell)); }
+  body.macos #top { padding-left: var(--bh-size-traffic-lights); }
+  .brand { flex: 1; display: flex; align-items: center; gap: var(--bh-space-9); font: var(--bh-text-body-strong); }
+  .brand .where { font-weight: 400; opacity: var(--bh-opacity-muted); }
   .logo { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
+  /* Windows caption buttons keep the system's 10 px glyphs (an exception to the icon scale). */
   .win { display: none; align-self: stretch; }
   body.windows .win { display: flex; }
-  .win button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; width: 46px; height: 100%; display: grid; place-items: center; opacity: .8; }
-  .win button:hover { background: rgba(255,255,255,.12); opacity: 1; }
+  .win button { border: 0; background: transparent; width: var(--bh-size-window-button); height: 100%; display: grid; place-items: center; opacity: .8; }
+  .win button:hover { background: var(--bh-fill-selected); opacity: 1; }
   .win button.close:hover { background: #e81123; color: #fff; }
+  .win button:focus-visible { outline-offset: -2px; }
   .win svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
   #wmax .restore, body.maxed #wmax .square { display: none; }
   body.maxed #wmax .restore { display: block; }
-  nav { padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); }
-  nav button { font: inherit; color: inherit; text-align: left; border: 0; background: transparent; border-radius: 9px; padding: 8px 10px; cursor: pointer; opacity: .75; display: flex; gap: 10px; align-items: center; }
-  nav button svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  nav button:hover { background: rgba(255,255,255,.07); opacity: 1; }
-  nav button.on { background: color-mix(in srgb, var(--accent) 28%, transparent); opacity: 1; }
-  main { overflow-y: auto; padding: 28px 36px 40px; }
-  section { display: none; max-width: 640px; }
-  section.on { display: block; animation: in .18s ease-out both; }
-  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
-  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-  .lead { opacity: .55; margin-bottom: 22px; }
-  .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); border-radius: 14px; padding: 6px; margin-bottom: 18px; }
-  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; padding: 12px 10px 6px; }
-  .opt { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-  .opt:hover { background: rgba(255,255,255,.07); }
-  .radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); flex: none; }
-  .opt.sel .radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px #1b1a26; }
-  /* Switches spring over and glow when on, like the Android settings. */
-  .check { width: 30px; height: 18px; border-radius: 9px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .25s, box-shadow .25s; }
-  .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .3s cubic-bezier(.2,.9,.3,1.35); }
-  .opt.sel .check { background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
-  @media (prefers-reduced-motion: reduce) { .check, .check::after { transition: none; } }
-  .opt.sel .check::after { transform: translateX(12px); }
+
+  /* Sections */
+  nav { display: flex; flex-direction: column; gap: var(--bh-space-2); padding: var(--bh-space-14) var(--bh-space-10); overflow-y: auto;
+    border-right: 1px solid var(--bh-border-hairline); background: var(--bh-fill-sunken); }
+  nav .group { font: var(--bh-text-section-label); letter-spacing: .09em; text-transform: uppercase; opacity: var(--bh-opacity-section); padding: var(--bh-space-14) var(--bh-space-10) var(--bh-space-6); }
+  nav .group:first-child { padding-top: var(--bh-space-4); }
+  nav button { display: flex; align-items: center; gap: var(--bh-space-10); width: 100%; min-height: 34px; padding: 0 var(--bh-space-10); border: 0; border-radius: var(--bh-radius-row);
+    background: transparent; text-align: left; opacity: var(--bh-opacity-idle); transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), opacity var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  nav button:hover { background: var(--bh-fill-hover); opacity: 1; }
+  nav button:active { transform: scale(.975); }
+  nav button.on { background: var(--bh-accent-wash); opacity: 1; }
+  nav button.on .bh-i { color: var(--bh-accent); filter: brightness(1.35); }
+  nav .foot { margin-top: auto; padding: var(--bh-space-12) var(--bh-space-10) var(--bh-space-2); font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); user-select: text; -webkit-user-select: text; }
+
+  main { overflow-y: auto; padding: var(--bh-space-28) var(--bh-space-36) var(--bh-space-56); scroll-padding: var(--bh-space-24); }
+  section { display: none; max-width: 680px; margin: 0 auto; }
+  section.on { display: block; animation: rise var(--bh-duration-quick) var(--bh-ease-settle) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .sh { display: flex; align-items: flex-start; gap: var(--bh-space-14); margin-bottom: var(--bh-space-22); }
+  .sh .badge { flex: none; width: 40px; height: 40px; border-radius: var(--bh-radius-card); display: grid; place-items: center;
+    background: var(--bh-accent-wash); color: var(--bh-text-primary); box-shadow: inset 0 0 0 1px var(--bh-accent-border); }
+  h1 { font: var(--bh-text-title-settings); }
+  .lead { font: var(--bh-text-body-small); opacity: var(--bh-opacity-muted); margin-top: var(--bh-space-2); max-width: 560px; }
+
+  /* Cards and rows */
+  .card { background: var(--bh-fill-card); border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card); margin-bottom: var(--bh-space-16); overflow: hidden; }
+  .card > h2 { font: var(--bh-text-section-label); letter-spacing: .09em; text-transform: uppercase; opacity: var(--bh-opacity-section); padding: var(--bh-space-14) var(--bh-space-16) var(--bh-space-6); }
+  .card .rows > * + *, .card > .rows + .rows { border-top: 1px solid var(--bh-border-hairline); }
+  .opt { display: flex; align-items: center; gap: var(--bh-space-12); width: 100%; min-height: 48px; padding: var(--bh-space-10) var(--bh-space-16); border: 0; background: transparent;
+    text-align: left; transition: background-color var(--bh-duration-hover) var(--bh-ease-standard); }
+  button.opt:hover { background: var(--bh-fill-hover); }
+  button.opt:focus-visible { outline-offset: -2px; border-radius: var(--bh-radius-control); }
+  div.opt { cursor: default; }
   .grow { flex: 1; min-width: 0; }
-  .sub { font-size: 12.5px; opacity: .55; }
-  .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.1); }
-  .btn:hover { background: rgba(255,255,255,.18); }
-  .btn:disabled { opacity: .4; cursor: default; }
-  .btn.primary { background: var(--accent); color: #fff; }
-  .btn.armed, .btn.armed:hover { background: rgba(255,90,90,.85); color: #fff; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; }
-  .field { flex: 1 1 260px; min-width: 0; font: inherit; font-size: 13px; color: inherit; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; outline: none; user-select: text; -webkit-user-select: text; }
-  .field:focus { border-color: var(--accent); }
-  .row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
-  .row:hover { background: rgba(255,255,255,.05); }
-  .row .when { font-variant-numeric: tabular-nums; opacity: .7; font-size: 12.5px; min-width: 42px; }
-  .ext { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 9px; }
-  .ext .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
-  .ext .name { font-weight: 600; }
-  .empty { padding: 16px 12px; opacity: .55; }
-  code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,255,255,.09); padding: 1px 6px; border-radius: 5px; user-select: text; -webkit-user-select: text; }
-  .keys { display: grid; grid-template-columns: 1fr auto; gap: 2px 18px; padding: 4px 10px 10px; }
-  .keys > div { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .label { display: block; }
+  .sub { display: block; font: var(--bh-text-body-small); opacity: var(--bh-opacity-muted); margin-top: 1px; }
+  .radio { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--bh-border-radio); flex: none; transition: border-color var(--bh-duration-hover), box-shadow var(--bh-duration-spring) var(--bh-ease-switch); }
+  .opt.sel .radio { border-color: var(--bh-accent); background: var(--bh-accent); box-shadow: inset 0 0 0 3px var(--bh-surface-toast); }
+  /* Switch: the knob springs across and the track glows when on. */
+  .switch { position: relative; flex: none; width: var(--bh-size-switch-w); height: var(--bh-size-switch-h); border-radius: var(--bh-radius-pill); background: var(--bh-fill-glint);
+    transition: background-color var(--bh-duration-base) var(--bh-ease-standard), box-shadow var(--bh-duration-base) var(--bh-ease-standard); }
+  .switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--bh-white); box-shadow: var(--bh-shadow-switch-knob);
+    transition: transform var(--bh-duration-spring) var(--bh-ease-switch); }
+  .opt.sel .switch { background: var(--bh-accent); box-shadow: var(--bh-shadow-switch-on); }
+  .opt.sel .switch i { transform: translateX(12px); }
+  .opt[aria-disabled="true"] { opacity: var(--bh-opacity-tertiary); cursor: default; }
+
+  /* Segmented choice (a few short values): the selected one takes the space's color. */
+  .seg { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: var(--bh-radius-row); background: var(--bh-fill-control); }
+  .seg button { min-width: 44px; height: 28px; padding: 0 var(--bh-space-10); border: 0; border-radius: var(--bh-radius-chip-button); background: transparent; font: var(--bh-text-body-shell);
+    font-variant-numeric: tabular-nums; opacity: var(--bh-opacity-secondary); transition: background-color var(--bh-duration-base) var(--bh-ease-settle), opacity var(--bh-duration-quick), color var(--bh-duration-quick); }
+  .seg button:hover { opacity: 1; }
+  .seg button.on { background: var(--bh-accent); color: var(--bh-text-on-accent); opacity: 1; box-shadow: var(--bh-shadow-switch-knob); }
+
+  /* Buttons and fields */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--bh-space-6); height: 32px; padding: 0 var(--bh-space-14); border: 0; border-radius: var(--bh-radius-control);
+    background: var(--bh-fill-control); font: var(--bh-text-body-shell); white-space: nowrap;
+    transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  .btn:hover { background: var(--bh-fill-control-hover); }
+  .btn:active:not(:disabled) { transform: scale(.96); }
+  .btn:disabled { opacity: var(--bh-opacity-disabled); cursor: default; }
+  .btn.primary { background: var(--bh-accent); color: var(--bh-text-on-accent); font-weight: 600; }
+  .btn.primary:hover { background: color-mix(in srgb, var(--bh-accent) 82%, white); }
+  .btn.small { height: 28px; padding: 0 var(--bh-space-10); font: var(--bh-text-caption); }
+  .btn.armed, .btn.armed:hover { background: var(--bh-danger-fill); color: var(--bh-white); }
+  .btn.danger { color: var(--bh-danger-text); }
+  .actions { display: flex; align-items: center; gap: var(--bh-space-8); flex-wrap: wrap; padding: var(--bh-space-12) var(--bh-space-16); }
+  .rows + .actions, .list + .actions { border-top: 1px solid var(--bh-border-hairline); }
+  .field { flex: 1 1 260px; min-width: 0; height: 32px; padding: 0 var(--bh-space-10); border: 1px solid var(--bh-border-field); border-radius: var(--bh-radius-row);
+    background: var(--bh-fill-field); font: var(--bh-text-body-shell); user-select: text; -webkit-user-select: text;
+    transition: border-color var(--bh-duration-hover), box-shadow var(--bh-duration-hover); }
+  textarea.field { height: auto; padding: var(--bh-space-8) var(--bh-space-10); resize: vertical; }
+  .field::placeholder { color: var(--bh-text-placeholder); }
+  .field:focus, .field:focus-visible { outline: none; border-color: var(--bh-accent); box-shadow: 0 0 0 3px var(--bh-accent-wash); }
+  .search { position: relative; flex: 1 1 260px; display: flex; }
+  .search .bh-i { position: absolute; left: 10px; top: 8px; opacity: var(--bh-opacity-muted); }
+  .search .field { padding-left: 32px; }
+
+  .note { font: var(--bh-text-body-small); opacity: var(--bh-opacity-tertiary); padding: var(--bh-space-10) var(--bh-space-16) var(--bh-space-14); }
+  .card > .note + .note { padding-top: 0; }
+  .status:empty { display: none; }
+  .status { font: var(--bh-text-body-small); padding: var(--bh-space-10) var(--bh-space-16); background: var(--bh-fill-faint); border-top: 1px solid var(--bh-border-hairline); }
+  section > .status { border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card-sm); margin-bottom: var(--bh-space-16); }
+  b, strong { font-weight: 600; }
+  code { font: var(--bh-text-kbd); background: var(--bh-fill-control); padding: 1px 6px; border-radius: var(--bh-radius-key); user-select: text; -webkit-user-select: text; }
+
+  /* Lists */
+  .row { display: flex; align-items: center; gap: var(--bh-space-12); min-height: 48px; padding: var(--bh-space-8) var(--bh-space-16); }
+  .row:hover { background: var(--bh-fill-sunken); }
+  .row .when { font: var(--bh-text-body-shell); font-variant-numeric: tabular-nums; opacity: var(--bh-opacity-secondary); min-width: 44px; }
+  .ico { width: 32px; height: 32px; border-radius: var(--bh-radius-row); display: grid; place-items: center; flex: none; font-weight: 700; color: var(--bh-white); }
+  .ico.neutral { background: var(--bh-fill-control); color: var(--bh-text-primary); }
+  .name { font-weight: 500; }
+  .name .ver { font-weight: 400; opacity: var(--bh-opacity-muted); margin-left: var(--bh-space-6); font-variant-numeric: tabular-nums; }
+  .host { font: var(--bh-text-host); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { min-width: 34px; padding: 2px 8px; border-radius: var(--bh-radius-pill); background: var(--bh-fill-control); text-align: center; font: var(--bh-text-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bh-fill-glint); flex: none; }
+  .dot.on { background: var(--bh-success); box-shadow: 0 0 8px color-mix(in srgb, var(--bh-success) 60%, transparent); }
+  .rowactions { display: flex; gap: var(--bh-space-6); flex-wrap: wrap; justify-content: flex-end; }
+  .devrow, .pwrow { flex-wrap: wrap; }
+  .devrow .syncline { flex-basis: 100%; display: flex; align-items: center; gap: var(--bh-space-10); padding-left: 20px; }
+  .pwrow code { display: inline-block; margin-top: var(--bh-space-4); }
+  /* Empty state: an icon in a soft circle and one sentence. */
+  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--bh-space-10); padding: var(--bh-space-24) var(--bh-space-16); text-align: center;
+    font: var(--bh-text-body-small); color: var(--bh-text-secondary); }
+  .empty .halo { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--bh-fill-faint); box-shadow: inset 0 0 0 1px var(--bh-border-hairline); }
+  .stat { display: flex; align-items: baseline; gap: var(--bh-space-10); padding: var(--bh-space-6) var(--bh-space-16) var(--bh-space-16); }
+  .stat b { font: var(--bh-text-title-settings); font-variant-numeric: tabular-nums; }
+  .stat span { opacity: var(--bh-opacity-muted); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; }
+  .stats > div + div { border-left: 1px solid var(--bh-border-hairline); }
+  .code { font: var(--bh-text-pairing-code); letter-spacing: .12em; text-align: center; margin: var(--bh-space-14) var(--bh-space-16) var(--bh-space-4); padding: var(--bh-space-14);
+    border: 1px dashed var(--bh-border-dashed); border-radius: var(--bh-radius-card); user-select: text; -webkit-user-select: text; }
+
+  /* Shortcuts */
+  .keys { display: grid; grid-template-columns: 1fr auto; padding: 0 var(--bh-space-16) var(--bh-space-6); }
+  .keys > div { display: flex; align-items: center; min-height: 40px; padding: var(--bh-space-6) 0; border-bottom: 1px solid var(--bh-border-hairline); }
   .keys > div:nth-last-child(-n+2) { border-bottom: 0; }
-  .keys .k { text-align: right; white-space: nowrap; }
-  kbd { font: 12px ui-monospace, Menlo, Consolas, monospace; padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.1); margin-left: 3px; }
-  .bl { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
-  .bl:hover { background: rgba(255,255,255,.05); }
-  .bl .host { font: 13px ui-monospace, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bl .n { min-width: 34px; text-align: center; font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.12); }
-  .note { font-size: 12.5px; opacity: .6; padding: 8px 10px 10px; }
-  .code { font: 600 26px/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .12em; text-align: center; padding: 14px 10px 4px; user-select: text; -webkit-user-select: text; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.25); flex: none; }
-  .dot.on { background: #2fd4a0; }
-  .seg { display: inline-flex; background: rgba(255,255,255,.08); border-radius: 9px; padding: 2px; flex: none; }
-  .seg button { font: inherit; font-size: 12px; color: inherit; border: 0; background: transparent; border-radius: 7px; padding: 4px 10px; cursor: pointer; opacity: .7;
-    transition: background .25s cubic-bezier(.2,.8,.2,1), opacity .2s; }
-  .seg button.on { background: var(--accent); color: #fff; opacity: 1; }
-  .devrow { flex-wrap: wrap; }
-  .devrow .syncline { flex-basis: 100%; display: flex; align-items: center; gap: 10px; padding-left: 18px; font-size: 12.5px; }
-  .pwrow { flex-wrap: wrap; }
-  .pwrow .btn { padding: 5px 9px; font-size: 12px; }
-  .pwrow code { display: inline-block; margin-top: 4px; }
+  .keys .k { justify-content: flex-end; gap: var(--bh-space-4); white-space: nowrap; padding-left: var(--bh-space-16); }
+  kbd { font: var(--bh-text-kbd); min-width: 24px; height: 24px; padding: 0 var(--bh-space-7); display: inline-grid; place-items: center; border-radius: var(--bh-radius-chip);
+    background: var(--bh-fill-control); box-shadow: inset 0 -1px 0 var(--bh-border-strong), 0 0 0 1px var(--bh-border-default); }
+  kbd.words { font: var(--bh-text-caption); }
+
+  /* Animations off (setting) or reduced by the system: nothing moves. */
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <header id="top">
-  <div class="brand"><span class="logo"></span>Settings</div>
+  <div class="brand"><span class="logo"></span>Settings<span class="where" id="where"></span></div>
   <div class="win">
-    <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
-    <button id="wmax" title="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
-    <button id="wclose" class="close" title="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    <button id="wmin" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+    <button id="wmax" title="Maximize" aria-label="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+    <button id="wclose" class="close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
   </div>
 </header>
-<nav>
-  <button data-tab="general" class="on"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/></svg>General</button>
-  <button data-tab="shortcuts"><svg viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8.5" rx="1.8"/><path d="M4 7h.1M6.5 7h.1M9 7h.1M11.5 7h.1M5 9.8h6"/></svg>Shortcuts</button>
-  <button data-tab="extensions"><svg viewBox="0 0 16 16"><path d="M6 2.5h2.5v2a1.3 1.3 0 0 0 2.6 0v-2h2.4V6h-2a1.3 1.3 0 0 0 0 2.6h2v4.9H9.6v-2a1.3 1.3 0 0 0-2.6 0v2H2.5V9h2a1.3 1.3 0 0 0 0-2.6h-2V2.5z"/></svg>Extensions</button>
-  <button data-tab="calendar"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.8v2.4M10.5 1.8v2.4"/></svg>Calendar</button>
-  <button data-tab="devices"><svg viewBox="0 0 16 16"><rect x="1.5" y="3" width="9" height="7" rx="1.2"/><path d="M4 12.5h4"/><rect x="11" y="5.5" width="3.5" height="7.5" rx="1"/></svg>Devices</button>
-  <button data-tab="passwords"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.6"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2M8 10v1.2"/></svg>Passwords</button>
-  <button data-tab="import"><svg viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M2.5 13.5h11"/></svg>Import</button>
-  <button data-tab="privacy"><svg viewBox="0 0 16 16"><path d="M8 1.8l5 2v3.7c0 3.2-2.1 5.6-5 6.7-2.9-1.1-5-3.5-5-6.7V3.8z"/></svg>Privacy</button>
+<nav role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+  <div class="group">Browser</div>
+  <button role="tab" data-tab="general" class="on"><i data-icon="gear"></i>General</button>
+  <button role="tab" data-tab="privacy"><i data-icon="shield"></i>Privacy</button>
+  <button role="tab" data-tab="passwords"><i data-icon="key"></i>Passwords</button>
+  <button role="tab" data-tab="extensions"><i data-icon="puzzle"></i>Extensions</button>
+  <div class="group">Connected</div>
+  <button role="tab" data-tab="calendar"><i data-icon="calendar"></i>Calendar</button>
+  <button role="tab" data-tab="devices"><i data-icon="devices"></i>Devices</button>
+  <button role="tab" data-tab="import"><i data-icon="import"></i>Import</button>
+  <div class="group">Help</div>
+  <button role="tab" data-tab="shortcuts"><i data-icon="keyboard"></i>Shortcuts</button>
+  <div class="foot">BlackHole <span id="version"></span></div>
 </nav>
 <main>
-  <section id="general" class="on">
-    <h1>General</h1><p class="lead">How BlackHole looks, searches and saves memory.</p>
-    <div class="card"><h2>Default search engine</h2><div id="engines"></div></div>
-    <div class="card"><h2>Animations</h2><div id="anim"></div></div>
-    <div class="card" id="hwcard" hidden><h2>Performance</h2><div id="hw"></div><p class="note">Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.</p></div>
-    <div class="card"><h2>Sidebar width</h2><div id="sbw"></div></div>
-    <div class="card"><h2>Put unused tabs to sleep after</h2><div id="sleep"></div></div>
-    <div class="card"><h2>Tabs kept ready in memory</h2><div id="live"></div><p class="note">The tab you are on plus the ones you opened recently. Beyond this number the least recently used tabs are released and reload when opened. Lower it to save memory.</p></div>
-    <div class="card"><h2>Blank tabs kept ready</h2><div id="spares"></div><p class="note">Empty hidden views prepared in advance so a new tab opens instantly. Each one uses about 50 MB; set 0 to save memory.</p></div>
-    <div class="card"><h2>System</h2><div class="actions"><button class="btn primary" id="default">Make BlackHole the default browser</button></div><p class="note" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</p></div>
+  <section id="general" role="tabpanel" class="on">
+    <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1>General</h1><p class="lead">How BlackHole looks, searches and saves memory.</p></div></header>
+    <div class="card"><h2>Default search engine</h2><div class="rows" id="engines" role="radiogroup" aria-label="Default search engine"></div></div>
+    <div class="card"><h2>Appearance</h2><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
+    <div class="card"><h2>Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
+    <div class="card" id="hwcard" hidden><h2>Performance</h2><div class="rows" id="hw"></div></div>
+    <div class="card"><h2>System</h2>
+      <div class="opt"><span class="grow"><span class="label">Default browser</span><span class="sub" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</span></span><button class="btn primary" id="default">Make default</button></div>
+    </div>
   </section>
 
-  <section id="shortcuts">
-    <h1>Keyboard shortcuts</h1><p class="lead">Everything works from the keyboard. <span id="modname"></span></p>
-    <div class="card"><h2>Navigation</h2><div class="keys" id="k-nav"></div></div>
-    <div class="card"><h2>Windows and layout</h2><div class="keys" id="k-layout"></div></div>
-    <div class="card"><h2>Gestures and mouse</h2><div class="keys" id="k-mouse"></div></div>
+  <section id="privacy" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1>Privacy</h1><p class="lead">No telemetry, trackers blocked, history stays on this machine.</p></div></header>
+    <div class="card"><h2>Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
+      <p class="note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). The https upgrade and the removal of tracking parameters stay on. Pages already open keep their behaviour until reloaded.</p></div>
+    <div class="card"><h2>This session</h2><div class="stat"><b id="blocked">0</b><span>requests blocked</span></div></div>
+    <div class="card"><h2>Blocked hosts</h2><div class="list rows" id="blocklist"></div>
+      <div class="actions"><button class="btn" id="clearblocked"><i data-icon="reload"></i>Reset list</button></div></div>
+    <div class="card"><h2>Data</h2>
+      <div class="opt"><span class="grow"><span class="label">Browsing history</span><span class="sub">Kept on this device only. Erasing it cannot be undone.</span></span><button class="btn danger" id="clear"><i data-icon="trash"></i>Clear history</button></div>
+    </div>
   </section>
 
-  <section id="extensions">
-    <h1>Extensions</h1><p class="lead">Real WebExtensions run on the system's native extension host, plus simple content-script extensions.</p>
-    <div class="card"><h2>Private windows</h2><div id="extpriv"></div><p class="note">Installed extensions can read every page they run on. They stay off in private windows unless you allow them here; applies to windows opened afterwards.</p></div>
+  <section id="passwords" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="key" data-size="md"></i></span><div><h1>Passwords</h1><p class="lead">Logins saved on this device, encrypted. BlackHole offers them on the login fields of the exact site (https only) and only fills one when you pick it.</p></div></header>
+    <p class="status" id="pwstatus" aria-live="polite"></p>
+    <div class="card" id="pwlock" hidden><h2>Locked</h2>
+      <div class="empty"><span class="halo"><i data-icon="lock" data-size="lg"></i></span>Type the master password to open your saved passwords.</div>
+      <div class="actions"><input class="field" id="pwunlock" type="password" placeholder="Master password" autocomplete="off" spellcheck="false"><button class="btn primary" id="pwunlockbtn">Unlock</button></div>
+    </div>
+    <div id="pwopen" hidden>
+      <div class="card"><h2>Saved passwords</h2>
+        <div class="actions"><label class="search"><i data-icon="search"></i><input class="field" id="pwq" placeholder="Search sites and usernames" autocomplete="off" spellcheck="false" aria-label="Search passwords"></label><button class="btn primary" id="pwadd"><i data-icon="plus"></i>Add password</button></div>
+        <div class="list rows" id="pwlist"></div>
+      </div>
+      <div class="card" id="pwedit" hidden><h2 id="pwedittitle">New password</h2>
+        <div class="actions"><input class="field" id="pworigin" placeholder="Website (example.com)" autocomplete="off" spellcheck="false" aria-label="Website"></div>
+        <div class="actions"><input class="field" id="pwuser" placeholder="Username or email" autocomplete="off" spellcheck="false" aria-label="Username"></div>
+        <div class="actions"><input class="field" id="pwpass" type="password" placeholder="Password" autocomplete="off" spellcheck="false" aria-label="Password"><button class="btn" id="pwshowpass">Show</button><button class="btn" id="pwgen">Generate</button></div>
+        <div class="actions"><textarea class="field" id="pwnotes" rows="3" placeholder="Notes" spellcheck="false" aria-label="Notes"></textarea></div>
+        <div class="actions"><button class="btn primary" id="pwsave">Save</button><button class="btn" id="pwcancel">Cancel</button></div>
+      </div>
+      <div class="card"><h2>Protection</h2><div class="rows" id="pwprotect"></div>
+        <div class="actions" id="pwsetmaster"><input class="field" id="pwm1" type="password" placeholder="New master password (8 characters or more)" autocomplete="off" aria-label="New master password"><input class="field" id="pwm2" type="password" placeholder="Repeat it" autocomplete="off" aria-label="Repeat the master password"><button class="btn" id="pwmset">Set master password</button></div>
+        <div class="actions" id="pwmasteron"><button class="btn" id="pwlocknow"><i data-icon="lock"></i>Lock now</button><button class="btn danger" id="pwmremove">Remove master password</button></div>
+        <div class="rows" id="pwlockafter"></div>
+        <p class="note">Without a master password, the key is kept in the system keychain (Windows Credential Manager, macOS Keychain) and the passwords open with your session. With one, they stay locked until you type it, and lock again after the delay above. A forgotten master password cannot be recovered: the passwords are lost.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="extensions" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="puzzle" data-size="md"></i></span><div><h1>Extensions</h1><p class="lead">Real WebExtensions run on the system's native extension host, plus simple content-script extensions.</p></div></header>
     <div class="card"><h2>Catalog</h2>
       <div class="actions">
-        <button class="btn" id="chk-ext">Check for updates</button>
+        <button class="btn" id="chk-ext"><i data-icon="reload"></i>Check for updates</button>
         <button class="btn primary" id="upd-all" hidden>Update all</button>
-        <span class="note" id="chk-msg"></span>
+        <span class="sub" id="chk-msg" aria-live="polite"></span>
       </div>
-      <div id="catalog"></div>
+      <div class="list rows" id="catalog"></div>
       <p class="note" id="catnote">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</p>
     </div>
-    <div class="card" id="appcard"><h2>Found in your apps</h2><div id="appexts"></div>
+    <div class="card" id="appcard"><h2>Found in your apps</h2><div class="list rows" id="appexts"></div>
       <p class="note">Safari web extensions shipped by apps installed on this Mac (for example Bitwarden). They run on the same native host, with their toolbar button and popup. Features that rely on the app itself (Touch ID unlock, native messaging) are not available.</p>
     </div>
-    <div class="card"><h2>Installed</h2><div id="exts"></div>
+    <div class="card"><h2>Installed</h2><div class="list rows" id="exts"></div>
       <div class="actions">
-        <button class="btn primary" id="sample">Add the example extension</button>
-        <button class="btn" id="folder">Open extensions folder</button>
-        <button class="btn" id="reload">Reload</button>
+        <button class="btn primary" id="sample"><i data-icon="plus"></i>Add the example extension</button>
+        <button class="btn" id="folder"><i data-icon="folder"></i>Open extensions folder</button>
+        <button class="btn" id="reload"><i data-icon="reload"></i>Reload</button>
       </div>
       <p class="note">Drop an extension folder (with its <code>manifest.json</code>) in <code id="extdir"></code>, then press Reload. Turning an extension off removes its styles at once; reload the page to stop its scripts.</p>
     </div>
+    <div class="card"><h2>Private windows</h2><div class="rows" id="extpriv"></div></div>
   </section>
 
-  <section id="calendar">
-    <h1>Calendar</h1><p class="lead">Your Google Calendar meetings with Google Meet: join them from the sidebar, the command bar or a reminder.</p>
-    <div class="card"><h2>Google calendars</h2><div id="calsrc"></div>
-      <div class="actions"><input class="field" id="calurl" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" spellcheck="false" autocomplete="off"><button class="btn primary" id="caladd">Add</button><button class="btn" id="calsync">Sync now</button></div>
-      <p class="note" id="calstatus"></p>
+  <section id="calendar" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="calendar" data-size="md"></i></span><div><h1>Calendar</h1><p class="lead">Your Google Calendar meetings with Google Meet: join them from the sidebar, the command bar or a reminder.</p></div></header>
+    <div class="card"><h2>Next meetings with Google Meet</h2><div class="list rows" id="calnext"></div></div>
+    <div class="card"><h2>Google calendars</h2><div class="list rows" id="calsrc"></div>
+      <div class="actions"><input class="field" id="calurl" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" spellcheck="false" autocomplete="off" aria-label="Secret address in iCal format"><button class="btn primary" id="caladd">Add</button><button class="btn" id="calsync"><i data-icon="reload"></i>Sync now</button></div>
+      <p class="status" id="calstatus" aria-live="polite"></p>
       <p class="note">In Google Calendar: Settings › your calendar › Integrate calendar › <b>Secret address in iCal format</b>. No sign-in is needed: this address is the only thing used. It is stored encrypted on this machine and only sent to calendar.google.com. Anyone with it can read the calendar, so keep it private (Google can reset it).</p>
     </div>
-    <div class="card"><h2>Meetings</h2><div id="calopts"></div></div>
-    <div class="card"><h2>Next meetings with Google Meet</h2><div id="calnext"></div></div>
+    <div class="card"><h2>Meetings</h2><div class="rows" id="calopts"></div></div>
   </section>
 
-  <section id="devices">
-    <h1>Devices</h1><p class="lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</p>
-    <div class="card"><h2>Paired devices</h2><div id="devlist"></div></div>
+  <section id="devices" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1>Devices</h1><p class="lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</p></div></header>
+    <div class="card"><h2>Paired devices</h2><div class="list rows" id="devlist"></div></div>
     <div class="card" id="devpair"><h2>Pair a device</h2>
       <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</p><div class="actions"><button class="btn" id="devcancel">Cancel</button></div></div>
       <div class="actions" id="devask"><button class="btn primary" id="devshow">Show a pairing code</button></div>
-      <div class="actions"><input class="field" id="devinput" placeholder="Or type the code shown on the other device (ABCD-EFGH-JKMN)" spellcheck="false" autocomplete="off" maxlength="20"><button class="btn" id="devjoin">Pair</button></div>
-      <p class="note" id="devstatus"></p>
+      <div class="actions"><input class="field" id="devinput" placeholder="Or type the code shown on the other device (ABCD-EFGH-JKMN)" spellcheck="false" autocomplete="off" maxlength="20" aria-label="Pairing code"><button class="btn" id="devjoin">Pair</button></div>
+      <p class="status" id="devstatus" aria-live="polite"></p>
     </div>
     <div class="card"><h2>How it works</h2><p class="note">Both devices must be on the same local network; there is no server and no account. Only the address of the tab travels (and where a YouTube or Twitch video was), encrypted with a key known to the two paired devices: no cookies, no session, so you may have to sign in again on the other device. Nothing listens on the network until a device is paired: the first time, Windows or macOS asks to allow BlackHole on the local network.</p>
       <p class="note">Tab sync keeps quick access, open tabs and spaces (name and color) the same on both devices; private windows, folders and history stay on each device. <b>Ask</b> proposes to merge when the device comes back on the network, <b>Always</b> merges on its own, <b>Off</b> never syncs. A tab closed on one device closes on the other.</p></div>
   </section>
 
-  <section id="passwords">
-    <h1>Passwords</h1><p class="lead">Logins saved on this device, encrypted. BlackHole offers them on the login fields of the exact site (https only) and only fills one when you pick it.</p>
-    <p class="note" id="pwstatus"></p>
-    <div class="card" id="pwlock" hidden><h2>Locked</h2>
-      <div class="actions"><input class="field" id="pwunlock" type="password" placeholder="Master password" autocomplete="off" spellcheck="false"><button class="btn primary" id="pwunlockbtn">Unlock</button></div>
-    </div>
-    <div id="pwopen" hidden>
-      <div class="card"><h2>Saved passwords</h2>
-        <div class="actions"><input class="field" id="pwq" placeholder="Search sites and usernames" autocomplete="off" spellcheck="false"><button class="btn primary" id="pwadd">Add password</button></div>
-        <div id="pwlist"></div>
-      </div>
-      <div class="card" id="pwedit" hidden><h2 id="pwedittitle">New password</h2>
-        <div class="actions"><input class="field" id="pworigin" placeholder="Website (example.com)" autocomplete="off" spellcheck="false"></div>
-        <div class="actions"><input class="field" id="pwuser" placeholder="Username or email" autocomplete="off" spellcheck="false"></div>
-        <div class="actions"><input class="field" id="pwpass" type="password" placeholder="Password" autocomplete="off" spellcheck="false"><button class="btn" id="pwshowpass">Show</button><button class="btn" id="pwgen">Generate</button></div>
-        <div class="actions"><textarea class="field" id="pwnotes" rows="3" placeholder="Notes" spellcheck="false"></textarea></div>
-        <div class="actions"><button class="btn primary" id="pwsave">Save</button><button class="btn" id="pwcancel">Cancel</button></div>
-      </div>
-      <div class="card"><h2>Protection</h2><div id="pwprotect"></div>
-        <div class="actions" id="pwsetmaster"><input class="field" id="pwm1" type="password" placeholder="New master password (8 characters or more)" autocomplete="off"><input class="field" id="pwm2" type="password" placeholder="Repeat it" autocomplete="off"><button class="btn" id="pwmset">Set master password</button></div>
-        <div class="actions" id="pwmasteron"><button class="btn" id="pwlocknow">Lock now</button><button class="btn" id="pwmremove">Remove master password</button></div>
-        <div id="pwlockafter"></div>
-        <p class="note">Without a master password, the key is kept in the system keychain (Windows Credential Manager, macOS Keychain) and the passwords open with your session. With one, they stay locked until you type it, and lock again after the delay below. A forgotten master password cannot be recovered: the passwords are lost.</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="import">
-    <h1>Import</h1><p class="lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</p>
-    <div class="card"><h2>Detected browsers</h2><div id="sources"></div>
+  <section id="import" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="import" data-size="md"></i></span><div><h1>Import</h1><p class="lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</p></div></header>
+    <div class="card"><h2>Detected browsers</h2><div class="list rows" id="sources"></div>
       <p class="note">Bookmarks are read straight from the browser's profile (read-only). Imported bookmarks appear in the command bar search.</p></div>
     <div class="card"><h2>From a file</h2>
       <div class="actions">
-        <button class="btn" id="imp-html">Bookmarks (HTML export)…</button>
-        <button class="btn" id="imp-csv">Passwords (CSV export)…</button>
+        <button class="btn" id="imp-html"><i data-icon="link"></i>Bookmarks (HTML export)…</button>
+        <button class="btn" id="imp-csv"><i data-icon="key"></i>Passwords (CSV export)…</button>
       </div>
+      <p class="status" id="impmsg" aria-live="polite"></p>
       <p class="note">Passwords: export them from the other browser's password manager (Chrome, Edge, Brave, Firefox, Waterfox, Safari, Bitwarden…) to a CSV file. They are added to Settings › Passwords (encrypted on this device). Delete the CSV afterwards, it is not encrypted.</p>
-      <p class="note" id="impmsg"></p>
     </div>
     <div class="card"><h2>Stored</h2>
-      <div class="opt"><span class="grow">Bookmarks</span><b id="nbm">0</b></div>
-      <div class="opt"><span class="grow">Saved passwords</span><b id="nlog">0</b></div>
+      <div class="stats"><div class="stat"><b id="nbm">0</b><span>bookmarks</span></div><div class="stat"><b id="nlog">0</b><span>saved passwords</span></div></div>
     </div>
   </section>
 
-  <section id="privacy">
-    <h1>Privacy</h1><p class="lead">No telemetry, trackers blocked, history stays on this machine.</p>
-    <div class="card"><h2>Shields</h2><div id="trackers"></div><div id="shields"></div><p class="note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). The https upgrade and the removal of tracking parameters stay on. Pages already open keep their current behaviour until reloaded.</p></div>
-    <div class="card"><h2>This session</h2><div class="opt"><span class="grow">Requests blocked</span><b id="blocked">0</b></div></div>
-    <div class="card"><h2>Blocked hosts</h2><div id="blocklist"></div>
-      <div class="actions"><button class="btn" id="clearblocked">Reset list</button></div></div>
-    <div class="card"><h2>Data</h2><div class="actions"><button class="btn" id="clear">Clear browsing history</button></div></div>
-    <div class="card"><h2>About</h2><div class="opt"><span class="grow">BlackHole</span><span class="sub" id="version"></span></div></div>
+  <section id="shortcuts" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="keyboard" data-size="md"></i></span><div><h1>Keyboard shortcuts</h1><p class="lead">Everything works from the keyboard. <span id="modname"></span></p></div></header>
+    <div class="card"><h2>Navigation</h2><div class="keys" id="k-nav"></div></div>
+    <div class="card"><h2>Windows and layout</h2><div class="keys" id="k-layout"></div></div>
+    <div class="card"><h2>Gestures and mouse</h2><div class="keys" id="k-mouse"></div></div>
   </section>
 </main>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const $ = (id) => document.getElementById(id);
+// Text is always set with textContent: names, hosts and statuses come from outside.
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function hue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',55%,48%)'; }
-function option(label, selected, onclick, toggle) {
+// Renders update the page in place (same elements, new attributes and text), so a switch slides
+// to its new side, a segment glides, and keyboard focus stays where it was.
+function morph(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { a.replaceWith(b); return; }
+  if (a.nodeType === 3) { if (a.data !== b.data) a.data = b.data; return; }
+  if (a.nodeType !== 1) return;
+  for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  if ('onclick' in b) a.onclick = b.onclick;
+  put(a, ...b.childNodes);
+}
+function put(box, ...nodes) {
+  const old = [...box.childNodes];
+  nodes.forEach((n, i) => { if (old[i]) morph(old[i], n); else box.append(n); });
+  old.slice(nodes.length).forEach(n => n.remove());
+}
+// One line of a card: a radio (one of a list) or a switch (toggle), a label and an optional hint.
+function option(label, selected, onclick, toggle, sub) {
   const b = el('button', 'opt' + (selected ? ' sel' : ''));
-  b.append(el('span', toggle ? 'check' : 'radio'), el('span', 'grow', label));
+  b.type = 'button';
+  b.setAttribute('role', toggle ? 'switch' : 'radio');
+  b.setAttribute('aria-checked', String(!!selected));
+  const mark = el('span', toggle ? 'switch' : 'radio');
+  if (toggle) mark.append(el('i'));
+  const text = el('span', 'grow');
+  if (label) text.append(el('span', 'label', label));
+  if (sub) text.append(el('span', 'sub', sub));
+  if (toggle) b.append(text, mark); else b.append(mark, text);
+  if (!label && !sub) b.setAttribute('aria-label', 'Turn on or off');
   b.onclick = onclick;
   return b;
 }
-
-function show(tab) {
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === tab));
+// A row with a few short values side by side (segmented control).
+function choice(label, sub, values, current, format, pick) {
+  const row = el('div', 'opt');
+  const text = el('span', 'grow');
+  text.append(el('span', 'label', label));
+  if (sub) text.append(el('span', 'sub', sub));
+  const seg = el('span', 'seg');
+  seg.setAttribute('role', 'radiogroup');
+  seg.setAttribute('aria-label', label);
+  for (const v of values) {
+    const b = el('button', v === current ? 'on' : null, format(v));
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(v === current));
+    b.onclick = () => { if (v !== current) pick(v); };
+    seg.append(b);
+  }
+  row.append(text, seg);
+  return row;
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { show(b.dataset.tab); if (b.dataset.tab === 'import') send({ cmd: 'import_scan' }); });
+function empty(icon, text) {
+  const e = el('div', 'empty');
+  const halo = el('span', 'halo');
+  halo.append(bhIcon(icon, 'lg'));
+  e.append(halo, el('span', null, text));
+  return e;
+}
+function tile(name) {
+  const ico = el('div', 'ico', (name[0] || '•').toUpperCase());
+  ico.style.background = hue(name);
+  return ico;
+}
+function nameLine(name, version) {
+  const n = el('div', 'name', name);
+  if (version) n.append(el('span', 'ver', version));
+  return n;
+}
+function iconBtn(cls, icon, label) {
+  const b = el('button', cls);
+  b.type = 'button';
+  if (icon) b.append(bhIcon(icon));
+  b.append(label);
+  return b;
+}
+
+// Sections: a vertical tab list (arrow keys, Home and End move between them).
+const tabs = [...document.querySelectorAll('nav button[data-tab]')];
+tabs.forEach((b) => { b.id = 'tab-' + b.dataset.tab; b.setAttribute('aria-controls', b.dataset.tab); $(b.dataset.tab).setAttribute('aria-labelledby', b.id); });
+function show(tab) {
+  const prev = document.querySelector('section.on');
+  tabs.forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === tab));
+  if (!prev || prev.id !== tab) document.querySelector('main').scrollTop = 0;
+  const current = tabs.find(b => b.dataset.tab === tab);
+  $('where').textContent = current ? ' · ' + current.textContent.trim() : '';
+}
+function pickTab(tab) { show(tab); if (tab === 'import') send({ cmd: 'import_scan' }); }
+tabs.forEach(b => b.onclick = () => pickTab(b.dataset.tab));
+document.querySelector('nav').addEventListener('keydown', (e) => {
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to == null) return;
+  e.preventDefault();
+  const t = tabs[(to + tabs.length) % tabs.length];
+  pickTab(t.dataset.tab);
+  t.focus();
+});
+show('general');
+
 $('chk-ext').onclick = () => send({ cmd: 'check_catalog_updates' });
 $('upd-all').onclick = () => send({ cmd: 'update_all_catalog' });
 $('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
@@ -270,8 +441,9 @@ $('top').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) 
 function keyRows(target, rows) {
   target.replaceChildren(...rows.flatMap(([label, keys]) => {
     const k = el('div', 'k');
-    const parts = Array.isArray(keys) ? keys : keys.split(' ').flatMap(bhKeyParts);
-    k.append(...parts.map(x => el('kbd', null, x)));
+    const words = Array.isArray(keys);
+    const parts = words ? keys : keys.split(' ').flatMap(bhKeyParts);
+    k.append(...parts.map(x => el('kbd', words && x.length > 2 ? 'words' : null, x)));
     return [el('div', null, label), k];
   }));
 }
@@ -308,8 +480,8 @@ function renderShortcuts() {
     ['Back / forward', ['two-finger swipe']],
     ['Switch space', ['two-finger swipe on the sidebar']],
     ['Reorder spaces', ['drag a space']],
-    ['Preview a link without leaving the page (Peek)', ['⇧', 'click']],
-    ['Split view from a tab', ['◧ on the tab']],
+    ['Preview a link without leaving the page (Peek)', [bhKeyParts('shift')[0], 'click']],
+    ['Split view from a tab', ['split button on the tab']],
     ['Set an emoji for a space', ['right-click it']],
     ['Set an emoji for a folder', ['click its icon']],
     ['Add a tab to / remove it from quick access', ['right-click it']],
@@ -326,128 +498,134 @@ window.bh = {
       const root = document.documentElement.style;
       root.setProperty('--accent', s.color);
       root.setProperty('--glow', rgba(s.color, .5));
+      root.setProperty('--glow2', rgba(s.color, .22));
       root.setProperty('--tint', mix(s.color, .3));
     }
     document.body.classList.toggle('macos', mac);
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
+    document.body.classList.toggle('noanim', s.animations === false);
     renderShortcuts();
-    $('engines').replaceChildren(...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
-    $('anim').replaceChildren(option('Black hole animations (launch and new tab)', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true));
+    put($('engines'), ...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
+    put($('anim'), option('Black hole animations', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true, 'Launch, new tab and the motion of these pages.'));
+    put($('sbw'), choice('Sidebar width', null, s.sidebarWidths, s.sidebarWidth, w => w + ' px', w => send({ cmd: 'set_sidebar_width', width: w })));
+    put($('sleep'), choice('Put unused tabs to sleep after', null, s.tabSleepChoices, s.tabSleep, m => m + ' min', m => send({ cmd: 'set_tab_sleep', minutes: m })));
+    put($('live'), choice('Tabs kept ready in memory', 'The tab you are on plus the ones opened recently; beyond this, the least recently used are released and reload when opened.',
+      s.maxLiveTabsChoices, s.maxLiveTabs, String, n => send({ cmd: 'set_max_live_tabs', tabs: n })));
+    put($('spares'), choice('Blank tabs kept ready', 'Empty hidden views so a new tab opens instantly, about 50 MB each.',
+      s.spareChoices, s.spareViews, String, n => send({ cmd: 'set_spare_views', count: n })));
     $('hwcard').hidden = mac;
-    $('hw').replaceChildren(option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true));
-    $('trackers').replaceChildren(option('Block trackers', s.trackerBlocking, () => send({ cmd: 'set_tracker_blocking', on: !s.trackerBlocking }), true));
+    put($('hw'), option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true,
+      'Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.'));
+    $('defnote').textContent = mac ? 'macOS asks you to confirm. This works from the installed BlackHole.app.' : 'Windows opens its Default apps settings to confirm.';
+    put($('trackers'), option('Block trackers', s.trackerBlocking, () => send({ cmd: 'set_tracker_blocking', on: !s.trackerBlocking }), true));
     renderCalendar(s.calendar);
     renderDevices(s.devices);
     renderPasswords(s.passwords);
-    const shield =(label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
-    $('shields').replaceChildren(
+    const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
+    put($('shields'), 
       shield('Block ads', 'ads', s.adBlocking),
       shield('Hide ad slots on pages', 'hide_ads', s.shields.hideAds),
       shield('Skip video ads (YouTube)', 'video_ads', s.shields.videoAds),
       shield('Hide cookie banners', 'cookie_banners', s.shields.cookieBanners),
     );
-    $('extpriv').replaceChildren(option('Run installed extensions in private windows', s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true));
-    $('sbw').replaceChildren(...s.sidebarWidths.map(w => option(w + ' px', w === s.sidebarWidth, () => send({ cmd: 'set_sidebar_width', width: w }))));
-    $('sleep').replaceChildren(...s.tabSleepChoices.map(m => option(m + ' minutes', m === s.tabSleep, () => send({ cmd: 'set_tab_sleep', minutes: m }))));
-    $('live').replaceChildren(...s.maxLiveTabsChoices.map(n => option(n + ' tabs', n === s.maxLiveTabs, () => send({ cmd: 'set_max_live_tabs', tabs: n }))));
-    $('spares').replaceChildren(...s.spareChoices.map(n => option(String(n), n === s.spareViews, () => send({ cmd: 'set_spare_views', count: n }))));
+    put($('extpriv'), option('Run installed extensions in private windows', s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
+      'Extensions can read every page they run on. Applies to windows opened afterwards.'));
     $('blocked').textContent = s.blocked;
-    $('blocklist').replaceChildren(...(s.blockedLog.length ? s.blockedLog.map(b => {
-      const row = el('div', 'bl');
+    put($('blocklist'), ...(s.blockedLog.length ? s.blockedLog.map(b => {
+      const row = el('div', 'row');
       const text = el('div', 'grow');
       text.append(el('div', 'host', b.host), el('div', 'sub', b.site ? 'on ' + b.site : 'navigation'));
-      row.append(text, el('span', 'n', b.count));
+      row.append(text, el('span', 'count', b.count));
       return row;
-    }) : [el('div', 'empty', 'Nothing blocked yet in this session.')]));
+    }) : [empty('shield', 'Nothing blocked yet in this session.')]));
     if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
-    $('version').textContent = 'Version ' + s.version;
+    $('version').textContent = s.version;
     const outdated = s.catalog.filter(c => c.outdated && c.supported);
     $('upd-all').hidden = !outdated.length;
     $('chk-msg').textContent = s.catalogChecked == null ? '' : outdated.length
       ? outdated.length + (outdated.length > 1 ? ' updates available' : ' update available') : 'All extensions are up to date.';
-    $('catalog').replaceChildren(...s.catalog.map(c => {
-      const row = el('div', 'ext');
-      const ico = el('div', 'ico', c.name[0].toUpperCase());
-      ico.style.background = hue(c.name);
+    put($('catalog'), ...s.catalog.map(c => {
+      const row = el('div', 'row');
       const text = el('div', 'grow');
       const labels = { installing: 'Downloading…', loading: 'Starting…', active: 'Active', disabled: 'Turned off', failed: 'Error', available: '' };
       const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+ or Windows with WebView2).'
         : c.error ? c.error : [labels[c.status], c.description].filter(Boolean).join(' · ');
-      text.append(el('div', 'name', c.name + '  ' + (c.installed && c.installedVersion ? c.installedVersion : c.version)), el('div', 'sub', sub));
-      row.append(ico, text);
+      text.append(nameLine(c.name, c.installed && c.installedVersion ? c.installedVersion : c.version), el('div', 'sub', sub));
+      row.append(tile(c.name), text);
+      const acts = el('div', 'rowactions');
       if (c.supported && !c.installed) {
-        const b = el('button', 'btn primary', c.status === 'installing' ? 'Installing…' : 'Install');
+        const b = iconBtn('btn primary small', 'download', c.status === 'installing' ? 'Installing…' : 'Install');
         b.disabled = c.status === 'installing';
         b.onclick = () => send({ cmd: 'install_catalog', id: c.id });
-        row.append(b);
+        acts.append(b);
+        row.append(acts);
       } else if (c.supported) {
-        const tog = option('', c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled }), true);
-        tog.style.width = 'auto';
-        const rm = el('button', 'btn', 'Remove');
-        rm.onclick = () => send({ cmd: 'remove_catalog', id: c.id });
         if (c.outdated) {
-          const up = el('button', 'btn primary', c.status === 'installing' ? 'Updating…' : 'Update to ' + c.version);
+          const up = el('button', 'btn primary small', c.status === 'installing' ? 'Updating…' : 'Update to ' + c.version);
           up.disabled = c.status === 'installing';
           up.onclick = () => send({ cmd: 'install_catalog', id: c.id });
-          row.append(up);
+          acts.append(up);
         }
-        row.append(tog, rm);
+        const rm = el('button', 'btn small', 'Remove');
+        confirmClick(rm, 'Click again to remove', () => send({ cmd: 'remove_catalog', id: c.id }));
+        acts.append(rm);
+        row.append(acts, toggleOnly(c.name, c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled })));
       }
       return row;
     }));
-    $('sources').replaceChildren(...(s.import.sources.length ? s.import.sources.map(src => {
-      const row = el('div', 'ext');
-      const ico = el('div', 'ico', src.browser[0]);
-      ico.style.background = hue(src.browser);
+    put($('sources'), ...(s.import.sources.length ? s.import.sources.map(src => {
+      const row = el('div', 'row');
       const text = el('div', 'grow');
       text.append(el('div', 'name', src.browser), el('div', 'sub', src.profile));
-      const b = el('button', 'btn primary', 'Import bookmarks');
+      const b = el('button', 'btn primary small', 'Import bookmarks');
       b.onclick = () => send({ cmd: 'import_bookmarks', source: src.id });
-      row.append(ico, text, b);
+      row.append(tile(src.browser), text, b);
       return row;
-    }) : [el('div', 'empty', 'No other browser detected. Use a file export below.')]));
-    $('impmsg').textContent = s.import.message;
+    }) : [empty('globe', 'No other browser detected. Use a file export below.')]));
+    $('impmsg').textContent = s.import.message || '';
     $('nbm').textContent = s.import.bookmarks;
     $('nlog').textContent = s.import.logins;
     $('appcard').style.display = s.appExtensions.length ? '' : 'none';
-    $('appexts').replaceChildren(...s.appExtensions.map(a => {
-      const row = el('div', 'ext');
-      const ico = el('div', 'ico', a.name[0].toUpperCase());
-      ico.style.background = hue(a.name);
+    put($('appexts'), ...s.appExtensions.map(a => {
+      const row = el('div', 'row');
       const text = el('div', 'grow');
       const labels = { loading: 'Starting…', active: 'Active', failed: 'Error', off: '' };
       text.append(el('div', 'name', a.name), el('div', 'sub', a.error || labels[a.status] || 'Not enabled'));
-      const b = el('button', a.enabled ? 'btn' : 'btn primary', a.enabled ? 'Turn off' : 'Enable');
+      const b = el('button', a.enabled ? 'btn small' : 'btn primary small', a.enabled ? 'Turn off' : 'Enable');
       b.disabled = !a.supported;
       b.onclick = () => send({ cmd: 'set_app_extension', id: a.id, on: !a.enabled });
-      row.append(ico, text, b);
+      row.append(tile(a.name), text, b);
       return row;
     }));
     $('extdir').textContent = s.extensionsDir;
     $('sample').style.display = s.extensions.some(e => e.id === 'cookie-banner-hider') ? 'none' : '';
-    $('exts').replaceChildren(...(s.extensions.length ? s.extensions.map(e => {
-      const row = el('div', 'ext');
-      const ico = el('div', 'ico', (e.name[0] || '•').toUpperCase());
-      ico.style.background = hue(e.name);
+    put($('exts'), ...(s.extensions.length ? s.extensions.map(e => {
+      const row = el('div', 'row');
       const text = el('div', 'grow');
-      text.append(el('div', 'name', e.name + (e.version ? '  ' + e.version : '')),
-        el('div', 'sub', e.description || e.sites.join(', ') || 'No content scripts'));
-      const tog = option('', e.enabled, () => send({ cmd: 'set_extension_enabled', id: e.id, enabled: !e.enabled }), true);
-      tog.style.width = 'auto';
-      row.append(ico, text, tog);
+      text.append(nameLine(e.name, e.version), el('div', 'sub', e.description || e.sites.join(', ') || 'No content scripts'));
+      row.append(tile(e.name), text, toggleOnly(e.name, e.enabled, () => send({ cmd: 'set_extension_enabled', id: e.id, enabled: !e.enabled })));
       return row;
-    }) : [el('div', 'empty', 'No extension installed yet.')]));
+    }) : [empty('puzzle', 'No extension installed yet.')]));
   },
 };
+// A bare switch at the end of a row (extensions): its label says what it turns on.
+function toggleOnly(name, on, run) {
+  const tog = option('', on, run, true);
+  tog.style.width = 'auto';
+  tog.style.minHeight = '0';
+  tog.style.padding = '6px';
+  tog.setAttribute('aria-label', name);
+  return tog;
+}
 
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
 // Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
 function confirmClick(btn, question, run) {
-  const label = btn.textContent;
+  const label = [...btn.childNodes];
   let timer = null;
-  const reset = () => { timer = null; btn.textContent = label; btn.classList.remove('armed'); };
+  const reset = () => { timer = null; btn.replaceChildren(...label); btn.classList.remove('armed'); };
   btn.onclick = () => {
     if (timer) { clearTimeout(timer); reset(); run(); return; }
     btn.textContent = question;
@@ -460,28 +638,32 @@ confirmClick($('clear'), 'Click again to erase all history', () => send({ cmd: '
 // Calendar: the secret addresses are never sent back to this page, only their calendar's name.
 function renderCalendar(c) {
   if (!c) return;
-  $('calsrc').replaceChildren(...(c.sources.length ? c.sources.map((label, index) => {
+  put($('calsrc'), ...(c.sources.length ? c.sources.map((label, index) => {
     const row = el('div', 'row');
-    const rm = el('button', 'btn', 'Remove');
+    const ico = el('div', 'ico neutral');
+    ico.append(bhIcon('calendar'));
+    const rm = el('button', 'btn small', 'Remove');
     confirmClick(rm, 'Click again to remove', () => send({ cmd: 'calendar_remove', index }));
-    row.append(el('span', 'grow', label), rm);
+    row.append(ico, el('span', 'grow', label), rm);
     return row;
-  }) : [el('div', 'empty', 'No calendar yet.')]));
+  }) : [empty('calendar', 'No calendar yet.')]));
   $('calstatus').textContent = c.status || '';
   $('calsync').disabled = c.busy || !c.sources.length;
-  $('calopts').replaceChildren(
-    option('Remind me when a meeting starts (with a Join button)', c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true),
+  put($('calopts'), 
+    option('Remind me when a meeting starts', c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true, 'With a Join button.'),
     option('Show the next meeting in the sidebar', c.card, () => send({ cmd: 'set_meeting_option', name: 'card', on: !c.card }), true),
-    option('Offer to take the meeting notes in an Easel beside the call when I join (agenda and attendees filled in)', c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true),
+    option('Offer to take the meeting notes in an Easel', c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true, 'Beside the call when I join, agenda and attendees filled in.'),
   );
-  $('calnext').replaceChildren(...(c.upcoming.length ? c.upcoming.map(m => {
+  put($('calnext'), ...(c.upcoming.length ? c.upcoming.map(m => {
     const row = el('div', 'row');
-    const join = el('button', 'btn', 'Join');
+    const join = iconBtn('btn primary small', 'video', 'Join');
     join.onclick = () => send({ cmd: 'open_meet', url: m.url });
     const day = new Date(m.start * 1000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-    row.append(el('span', 'when', m.at), el('span', 'grow', m.title), el('span', 'sub', day), join);
+    const text = el('div', 'grow');
+    text.append(el('div', 'name', m.title), el('div', 'sub', day));
+    row.append(el('span', 'when', m.at), text, join);
     return row;
-  }) : [el('div', 'empty', c.sources.length ? 'No meeting with Google Meet this week.' : 'Add a calendar to see your meetings here.')]));
+  }) : [empty('calendar', c.sources.length ? 'No meeting with Google Meet this week.' : 'Add a calendar to see your meetings here.')]));
 }
 $('caladd').onclick = () => {
   const url = $('calurl').value.trim();
@@ -494,26 +676,32 @@ $('calsync').onclick = () => send({ cmd: 'calendar_sync' });
 // Devices: pairing codes and the paired devices (their keys never reach this page).
 function renderDevices(d) {
   if (!d) return;
-  $('devlist').replaceChildren(...(d.list.length ? d.list.map(dev => {
+  put($('devlist'), ...(d.list.length ? d.list.map(dev => {
     const row = el('div', 'row devrow');
-    const forget = el('button', 'btn', 'Forget');
+    const forget = el('button', 'btn small', 'Forget');
     confirmClick(forget, 'Click again to forget', () => send({ cmd: 'device_forget', id: dev.id }));
-    row.append(el('span', 'dot' + (dev.online ? ' on' : '')), el('span', 'grow', dev.name), el('span', 'sub', dev.online ? 'On this network' : 'Not seen lately'), forget);
+    const text = el('div', 'grow');
+    text.append(el('div', 'name', dev.name), el('div', 'sub', dev.online ? 'On this network' : 'Not seen lately'));
+    row.append(el('span', 'dot' + (dev.online ? ' on' : '')), text, forget);
     // Tab sync with this device: Ask / Always / Off, and a manual sync.
     const line = el('div', 'syncline');
     const seg = el('span', 'seg');
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Tab sync with ' + dev.name);
     for (const [mode, label] of [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']]) {
       const b = el('button', dev.sync === mode ? 'on' : null, label);
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(dev.sync === mode));
       b.onclick = () => send({ cmd: 'device_sync', id: dev.id, mode });
       seg.append(b);
     }
-    const now = el('button', 'btn', 'Sync now');
+    const now = iconBtn('btn small', 'reload', 'Sync now');
     now.disabled = !dev.online || dev.sync === 'off';
     now.onclick = () => send({ cmd: 'device_sync_now', id: dev.id });
     line.append(el('span', 'sub', 'Tab sync'), seg, now);
     row.append(line);
     return row;
-  }) : [el('div', 'empty', d.available ? 'No device paired yet.' : 'Not available in private windows.')]));
+  }) : [empty('devices', d.available ? 'No device paired yet.' : 'Not available in private windows.')]));
   $('devpair').hidden = !d.available;
   $('devcode').hidden = !d.code;
   $('devask').hidden = !!d.code;
@@ -568,39 +756,47 @@ function renderPasswords(p) {
   $('pwsetmaster').hidden = p.master || p.readOnly;
   $('pwmasteron').hidden = !p.master;
   $('pwmremove').hidden = !!p.readOnly;
-  $('pwprotect').replaceChildren(el('div', 'opt', p.master ? 'Protected by a master password' : 'Protected by the system keychain'));
-  const label = (m) => m ? `Lock after ${m} minutes without use` : 'Lock only when BlackHole quits';
-  $('pwlockafter').replaceChildren(...(p.master ? (p.lockChoices || []).map((m) => option(label(m), m === p.lockMinutes, () => pwSend({ op: 'lock_after', minutes: m }))) : []));
+  const prot = el('div', 'opt');
+  const ico = el('div', 'ico neutral');
+  ico.append(bhIcon(p.master ? 'key' : 'lock'));
+  const text = el('span', 'grow');
+  text.append(el('span', 'label', p.master ? 'Protected by a master password' : 'Protected by the system keychain'));
+  prot.append(ico, text);
+  const label = (m) => m ? m + ' min' : 'On quit';
+  put($('pwprotect'), prot);
+  put($('pwlockafter'), ...(p.master ? [choice('Lock again after', 'Without use, or only when BlackHole quits.', p.lockChoices || [], p.lockMinutes, label, (m) => pwSend({ op: 'lock_after', minutes: m }))] : []));
   drawPasswords();
 }
 function drawPasswords() {
   const q = $('pwq').value.trim().toLowerCase();
   const list = (PW.entries || []).filter((e) => !q || e.host.toLowerCase().includes(q) || e.username.toLowerCase().includes(q));
-  $('pwlist').replaceChildren(...(list.length ? list.map((e) => {
+  put($('pwlist'), ...(list.length ? list.map((e) => {
     const row = el('div', 'row pwrow');
     const text = el('div', 'grow');
-    text.append(el('div', null, e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), el('div', 'sub', e.username || '(no username)'));
+    text.append(el('div', 'name', e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), el('div', 'sub', e.username || '(no username)'));
     const shown = pwShown.get(e.id);
     if (shown) text.append(el('code', null, shown.password));
-    const copyUser = el('button', 'btn', 'Copy username');
+    const acts = el('div', 'rowactions');
+    const copyUser = el('button', 'btn small', 'Copy username');
     copyUser.onclick = () => pwSend({ op: 'copy', id: e.id, field: 'username' });
     copyUser.hidden = !e.username;
-    const copyPass = el('button', 'btn', 'Copy password');
+    const copyPass = el('button', 'btn small', 'Copy password');
     copyPass.onclick = () => pwSend({ op: 'copy', id: e.id, field: 'password' });
-    const show = el('button', 'btn', shown ? 'Hide' : 'Show');
+    const show = el('button', 'btn small', shown ? 'Hide' : 'Show');
     show.onclick = () => {
       if (pwShown.delete(e.id)) return drawPasswords();
       pwWantEdit = null;
       pwSend({ op: 'reveal', id: e.id });
     };
-    const edit = el('button', 'btn', 'Edit');
+    const edit = el('button', 'btn small', 'Edit');
     edit.onclick = () => { pwWantEdit = e.id; pwSend({ op: 'reveal', id: e.id }); };
-    const del = el('button', 'btn', 'Delete');
+    const del = el('button', 'btn small danger', 'Delete');
     confirmClick(del, 'Click again to delete', () => pwSend({ op: 'delete', id: e.id }));
     edit.hidden = del.hidden = !!PW.readOnly;
-    row.append(text, copyUser, copyPass, show, edit, del);
+    acts.append(copyUser, copyPass, show, edit, del);
+    row.append(tile(e.host), text, acts);
     return row;
-  }) : [el('div', 'empty', q ? 'No saved password matches.' : 'No saved password yet. BlackHole offers to save one when you sign in to a site.')]));
+  }) : [empty(q ? 'search' : 'key', q ? 'No saved password matches.' : 'No saved password yet. BlackHole offers to save one when you sign in to a site.')]));
 }
 bh.passwordSecret = (s) => {
   if (pwWantEdit === s.id) {

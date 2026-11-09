@@ -27,7 +27,8 @@
   nav { padding: 18px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.02); overflow-y: auto; user-select: none; -webkit-user-select: none; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 14px; font-weight: 600; font-size: 15px; }
   .logo { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%); }
-  .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 12px; background: rgba(255,255,255,.1); }
+  .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 12px; background: rgba(255,255,255,.1); display: inline-flex; align-items: center; gap: 7px; }
+  .btn.icon { padding: 7px; }
   .btn:hover { background: rgba(255,255,255,.18); }
   .btn.primary { background: var(--accent); color: #fff; }
   .btn.danger:hover { background: #c2455b; }
@@ -47,7 +48,7 @@
   .card .bar { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; background: rgba(0,0,0,.25); cursor: grab; user-select: none; -webkit-user-select: none; }
   .card.drag .bar { cursor: grabbing; }
   .card .kind { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .07em; flex: 1; }
-  .card .tool { font: inherit; font-size: 12px; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; padding: 1px 6px; opacity: .7; }
+  .card .tool { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; width: 24px; height: 22px; padding: 0; display: grid; place-items: center; opacity: .7; }
   .card .tool:hover { background: rgba(255,255,255,.18); opacity: 1; }
   .card .link { display: block; padding: 8px 10px 0; font-weight: 600; color: #fff; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .link:hover { text-decoration: underline; }
@@ -80,11 +81,11 @@
 <section>
   <header>
     <input id="title" aria-label="Easel name" maxlength="80" spellcheck="false">
-    <button class="btn" id="note">＋ Note</button>
-    <button class="btn" id="capture" title="Clip the page open in the browser">📷 Capture page</button>
+    <button class="btn" id="note"><i data-icon="plus"></i>Note</button>
+    <button class="btn" id="capture" title="Clip the page open in the browser"><i data-icon="camera"></i>Capture page</button>
     <button class="btn danger" id="delete">Delete</button>
-    <button class="btn only-tab" id="all" title="All your Easels, in their own window">🗂 All Easels</button>
-    <button class="btn only-tab" id="close" title="Close this Easel tab">✕</button>
+    <button class="btn only-tab" id="all" title="All your Easels, in their own window"><i data-icon="window"></i>All Easels</button>
+    <button class="btn only-tab icon" id="close" title="Close this Easel tab" aria-label="Close this Easel tab"><i data-icon="close"></i></button>
   </header>
   <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (<span id="capkeys"></span>).</div></div></div>
 </section>
@@ -162,14 +163,17 @@ function card(item) {
     d.onclick = () => send({ cmd: 'easel_color', item: item.id, color: col });
     colors.append(d);
   }
-  const paint = el('button', 'tool', '🎨');
+  const paint = el('button', 'tool');
+  paint.append(bhIcon('paint', 'xs'));
   paint.title = 'Color';
   paint.onclick = () => c.classList.toggle('pick');
-  const remove = el('button', 'tool remove', '✕');
+  const remove = el('button', 'tool remove');
+  remove.append(bhIcon('close', 'xs'));
   remove.title = 'Remove';
   remove.onclick = () => { pending.delete(item.id); send({ cmd: 'easel_remove', item: item.id }); };
   const label = { clip: 'Clip', live: 'Live', note: 'Note' }[item.kind] || 'Note';
-  const play = el('button', 'tool play', item.playing ? '⏸' : '▶');
+  const play = el('button', 'tool play');
+  play.append(bhIcon(item.playing ? 'pause' : 'play', 'xs'));
   play.title = item.playing ? 'Pause' : 'Play live';
   play.onclick = () => send({ cmd: item.playing ? 'easel_live_stop' : 'easel_live_play', item: item.id });
   bar.append(el('span', 'kind', label), ...(item.kind === 'live' ? [play] : []), colors, paint, remove);
@@ -182,7 +186,7 @@ function card(item) {
     c.append(link, el('div', 'host', host(item.url)));
   }
   if (item.kind === 'live') {
-    const slot = el('div', 'slot', item.playing ? 'Loading…' : 'Paused — press ▶ to show this area live');
+    const slot = el('div', 'slot', item.playing ? 'Loading…' : 'Paused — press Play to show this area live');
     const foot = el('div', 'foot', item.title + ' · ' + host(item.url));
     foot.title = item.url;
     foot.style.cursor = 'pointer';

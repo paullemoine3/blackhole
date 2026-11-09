@@ -71,8 +71,9 @@
   details { max-width: min(520px, 90vw); width: 100%; font-size: 12.5px; text-align: left; background: rgba(255,255,255,.04);
     border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 12px; }
   summary { cursor: pointer; opacity: .75; list-style: none; text-align: center; }
-  summary::before { content: "▸ "; display: inline-block; transition: transform .2s; }
-  details[open] summary::before { transform: rotate(90deg); }
+  /* A drawn chevron (12 px box, 1.5 px stroke), not a font glyph: the same on every system. */
+  summary::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 9px 2px 3px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .2s; }
+  details[open] summary::before { transform: rotate(45deg); }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 10px 0 4px; }
   dt { opacity: .55; }
   dd { overflow-wrap: anywhere; }
