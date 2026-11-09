@@ -11,7 +11,7 @@
 </style>
 </head>
 <body>
-<div class="hint"><kbd>Esc</kbd> close · <span id="open"></span> open in tab</div>
+<div class="hint"><kbd>Esc</kbd> <span data-i18n="peek.close">close</span> · <span id="open"></span> <span data-i18n="peek.open_in_tab">open in tab</span></div>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 document.getElementById('open').replaceChildren(...bhKeyParts('mod+enter').map(k => Object.assign(document.createElement('kbd'), { textContent: k })));

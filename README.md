@@ -109,7 +109,7 @@ cargo clippy --workspace --all-targets
 cargo test --workspace
 ```
 
-**Tests d'interface** (feature `devtools`) : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`, `scripts\test-easel.ps1` (Windows) ; `scripts/test-webext.sh`, `scripts/test-easel.sh`, `scripts/test-errors.sh` (macOS). Les captures de ce README se régénèrent avec `scripts/readme-shots.sh`.
+**Tests d'interface** (feature `devtools`) : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`, `scripts\test-easel.ps1` (Windows) ; `scripts/test-webext.sh`, `scripts/test-easel.sh`, `scripts/test-errors.sh`, `scripts/test-popup.sh`, `scripts/test-settings.sh`, `scripts/test-i18n.sh` (macOS). Les captures de ce README se régénèrent avec `scripts/readme-shots.sh`.
 
 **Android** (version allégée, coque Kotlin + cœur Rust `crates/android`) : `cd android; .\gradlew.bat assembleDebug`, puis `scripts\test-android.ps1` (émulateur ou appareil USB). Outils et détails : [docs/android.md](docs/android.md).
 

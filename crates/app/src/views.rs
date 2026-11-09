@@ -24,6 +24,20 @@ const KEYS_JS: &str = include_str!("../ui/keys.js");
 const THEME_JS: &str = include_str!("../ui/theme.js");
 /// Icons of BlackHole's own pages (`bhIcon`), drawn at the scale set by `THEME_JS`.
 const ICONS_JS: &str = include_str!("../ui/icons.js");
+/// `bhT`/`bhTn` and the catalog of the current language (see `crate::i18n`).
+const I18N_JS: &str = include_str!("../ui/i18n.js");
+
+fn i18n_script() -> String {
+    I18N_JS.replace("__BH_I18N__", crate::i18n::page_json())
+}
+
+/// Sends the catalog of the current language to an open page of BlackHole (live switch).
+pub fn send_language(view: &WebView) {
+    let _ = view.evaluate_script(&format!(
+        "window.bhI18n&&bhI18n.set({})",
+        crate::i18n::page_json()
+    ));
+}
 const SHIELDS_JS: &str = include_str!("../ui/shields.js");
 /// What a page says about the product it shows, for the tab comparator.
 pub const COMPARE_JS: &str = include_str!("../ui/compare.js");
@@ -39,7 +53,23 @@ fn shields_script(policy: &PrivacyPolicy) -> String {
 }
 const DEBUG_LOG_JS: &str = include_str!("../ui/debug_log.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
-pub const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
+const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
+
+/// A script injected in web pages with the texts it shows (`__BH_TEXT__`: the catalog keys it
+/// uses, in the current language). Set when the view is created: a change of language reaches
+/// the tabs opened afterwards.
+fn page_script(js: &str, keys: &[&str]) -> String {
+    let cat = crate::i18n::catalog();
+    let texts: serde_json::Map<String, serde_json::Value> =
+        keys.iter().map(|k| ((*k).to_owned(), cat.get(k).into())).collect();
+    let literal = serde_json::Value::Object(texts).to_string().replace('<', "\\u003c");
+    js.replace("__BH_TEXT__", &literal)
+}
+
+/// The live area picker, injected on demand in the page in front.
+pub fn live_picker_js() -> String {
+    page_script(LIVE_PICKER_JS, &["page.pick_area"])
+}
 
 static HARDWARE_ACCELERATION: AtomicBool = AtomicBool::new(true);
 
@@ -118,6 +148,7 @@ pub fn ui_view(
         .with_background_color(if overlay { CLEAR } else { SHELL_BG })
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
+        .with_initialization_script_for_main_only(i18n_script(), true)
         .with_initialization_script_for_main_only(THEME_JS, true)
         .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
@@ -148,6 +179,7 @@ pub fn panel_view(
         .with_background_color(SHELL_BG)
         .with_devtools(cfg!(debug_assertions))
         .with_initialization_script_for_main_only(KEYS_JS, true)
+        .with_initialization_script_for_main_only(i18n_script(), true)
         .with_initialization_script_for_main_only(THEME_JS, true)
         .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_ipc_handler(move |request| {
@@ -419,10 +451,19 @@ fn build_tab(
         .with_initialization_script(guard)
         .with_initialization_script(shields)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
-        .with_initialization_script_for_main_only(AUTOFILL_JS, true)
+        .with_initialization_script_for_main_only(
+            page_script(
+                AUTOFILL_JS,
+                &["page.saved_passwords", "page.unlock_passwords", "page.strong_password", "settings.no_username"],
+            ),
+            true,
+        )
         .with_initialization_script_for_main_only(FAVICON_JS, true)
         .with_initialization_script_for_main_only(MEDIA_DEVICES_JS, true)
-        .with_initialization_script_for_main_only(FIND_JS, true)
+        .with_initialization_script_for_main_only(
+            page_script(FIND_JS, &["page.no_match", "palette.find", "page.previous", "page.next", "window.close"]),
+            true,
+        )
         .with_initialization_script_for_main_only(
             if cfg!(debug_assertions) { DEBUG_LOG_JS } else { "" },
             false,
@@ -658,6 +699,8 @@ pub fn go_forward(view: &WebView) {
 /// `kind`). The error page exposes `__bhRetry`, since reloading its own (blank-origin)
 /// document would not retry the failed URL.
 pub fn error_page(config: &serde_json::Value) -> String {
+    let mut config = config.clone();
+    config["i18n"] = crate::i18n::error_strings();
     // `<` is escaped so no text of the site can close the script block.
     let literal = config.to_string().replace('<', "\\u003c");
     include_str!("../ui/error.html").replace("__BH_ERROR__", &literal)

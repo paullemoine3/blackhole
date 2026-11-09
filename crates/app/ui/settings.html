@@ -164,150 +164,151 @@
 </head>
 <body>
 <header id="top">
-  <div class="brand"><span class="logo"></span>Settings<span class="where" id="where"></span></div>
+  <div class="brand"><span class="logo"></span><span data-i18n="settings.title">Settings</span><span class="where" id="where"></span></div>
   <div class="win">
-    <button id="wmin" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
-    <button id="wmax" title="Maximize" aria-label="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
-    <button id="wclose" class="close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    <button id="wmin" data-i18n-title="window.minimize" data-i18n-aria="window.minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+    <button id="wmax" data-i18n-title="window.maximize" data-i18n-aria="window.maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+    <button id="wclose" class="close" data-i18n-title="window.close" data-i18n-aria="window.close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
   </div>
 </header>
-<nav role="tablist" aria-orientation="vertical" aria-label="Settings sections">
-  <div class="group">Browser</div>
-  <button role="tab" data-tab="general" class="on"><i data-icon="gear"></i>General</button>
-  <button role="tab" data-tab="privacy"><i data-icon="shield"></i>Privacy</button>
-  <button role="tab" data-tab="passwords"><i data-icon="key"></i>Passwords</button>
-  <button role="tab" data-tab="extensions"><i data-icon="puzzle"></i>Extensions</button>
-  <div class="group">Connected</div>
-  <button role="tab" data-tab="calendar"><i data-icon="calendar"></i>Calendar</button>
-  <button role="tab" data-tab="devices"><i data-icon="devices"></i>Devices</button>
-  <button role="tab" data-tab="import"><i data-icon="import"></i>Import</button>
-  <div class="group">Help</div>
-  <button role="tab" data-tab="shortcuts"><i data-icon="keyboard"></i>Shortcuts</button>
+<nav role="tablist" aria-orientation="vertical" data-i18n-aria="settings.sections">
+  <div class="group" data-i18n="settings.group_browser">Browser</div>
+  <button role="tab" data-tab="general" class="on"><i data-icon="gear"></i><span data-i18n="settings.general">General</span></button>
+  <button role="tab" data-tab="privacy"><i data-icon="shield"></i><span data-i18n="settings.privacy">Privacy</span></button>
+  <button role="tab" data-tab="passwords"><i data-icon="key"></i><span data-i18n="settings.passwords">Passwords</span></button>
+  <button role="tab" data-tab="extensions"><i data-icon="puzzle"></i><span data-i18n="settings.extensions">Extensions</span></button>
+  <div class="group" data-i18n="settings.group_connected">Connected</div>
+  <button role="tab" data-tab="calendar"><i data-icon="calendar"></i><span data-i18n="settings.calendar">Calendar</span></button>
+  <button role="tab" data-tab="devices"><i data-icon="devices"></i><span data-i18n="settings.devices">Devices</span></button>
+  <button role="tab" data-tab="import"><i data-icon="import"></i><span data-i18n="settings.import">Import</span></button>
+  <div class="group" data-i18n="settings.group_help">Help</div>
+  <button role="tab" data-tab="shortcuts"><i data-icon="keyboard"></i><span data-i18n="settings.shortcuts">Shortcuts</span></button>
   <div class="foot">BlackHole <span id="version"></span></div>
 </nav>
 <main>
   <section id="general" role="tabpanel" class="on">
-    <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1>General</h1><p class="lead">How BlackHole looks, searches and saves memory.</p></div></header>
-    <div class="card"><h2>Default search engine</h2><div class="rows" id="engines" role="radiogroup" aria-label="Default search engine"></div></div>
-    <div class="card"><h2>Appearance</h2><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
-    <div class="card"><h2>Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
-    <div class="card" id="hwcard" hidden><h2>Performance</h2><div class="rows" id="hw"></div></div>
-    <div class="card"><h2>System</h2>
-      <div class="opt"><span class="grow"><span class="label">Default browser</span><span class="sub" id="defnote">macOS asks you to confirm. This works from the installed BlackHole.app (see scripts/package-macos.sh).</span></span><button class="btn primary" id="default">Make default</button></div>
+    <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1 data-i18n="settings.general">General</h1><p class="lead"><span data-i18n="settings.general_lead">How BlackHole looks, searches and saves memory.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.language">Language</h2><div class="rows" id="langs" role="radiogroup" data-i18n-aria="settings.language"></div></div>
+    <div class="card"><h2 data-i18n="settings.search_engine">Default search engine</h2><div class="rows" id="engines" role="radiogroup" data-i18n-aria="settings.search_engine"></div></div>
+    <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
+    <div class="card"><h2 data-i18n="settings.tabs_memory">Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
+    <div class="card" id="hwcard" hidden><h2 data-i18n="settings.performance">Performance</h2><div class="rows" id="hw"></div></div>
+    <div class="card"><h2 data-i18n="settings.system">System</h2>
+      <div class="opt"><span class="grow"><span class="label" data-i18n="settings.default_browser">Default browser</span><span class="sub" id="defnote"></span></span><button class="btn primary" id="default"><span data-i18n="settings.make_default">Make default</span></button></div>
     </div>
   </section>
 
   <section id="privacy" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1>Privacy</h1><p class="lead">No telemetry, trackers blocked, history stays on this machine.</p></div></header>
-    <div class="card"><h2>Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
-      <p class="note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). The https upgrade and the removal of tracking parameters stay on. Pages already open keep their behaviour until reloaded.</p></div>
-    <div class="card"><h2>This session</h2><div class="stat"><b id="blocked">0</b><span>requests blocked</span></div></div>
-    <div class="card"><h2>Blocked hosts</h2><div class="list rows" id="blocklist"></div>
-      <div class="actions"><button class="btn" id="clearblocked"><i data-icon="reload"></i>Reset list</button></div></div>
-    <div class="card"><h2>Data</h2>
-      <div class="opt"><span class="grow"><span class="label">Browsing history</span><span class="sub">Kept on this device only. Erasing it cannot be undone.</span></span><button class="btn danger" id="clear"><i data-icon="trash"></i>Clear history</button></div>
+    <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1 data-i18n="settings.privacy">Privacy</h1><p class="lead"><span data-i18n="settings.privacy_lead">No telemetry, trackers blocked, history stays on this machine.</span></p></div></header>
+    <div class="card"><h2 data-i18n="menu.shields">Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
+      <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). The https upgrade and the removal of tracking parameters stay on. Pages already open keep their behaviour until reloaded.</span></p></div>
+    <div class="card"><h2 data-i18n="menu.this_session">This session</h2><div class="stat"><b id="blocked">0</b><span data-i18n="settings.requests_blocked">requests blocked</span></div></div>
+    <div class="card"><h2 data-i18n="menu.blocked_hosts">Blocked hosts</h2><div class="list rows" id="blocklist"></div>
+      <div class="actions"><button class="btn" id="clearblocked"><i data-icon="reload"></i><span data-i18n="settings.reset_list">Reset list</span></button></div></div>
+    <div class="card"><h2 data-i18n="settings.data">Data</h2>
+      <div class="opt"><span class="grow"><span class="label" data-i18n="settings.history_label">Browsing history</span><span class="sub" data-i18n="settings.history_sub">Kept on this device only. Erasing it cannot be undone.</span></span><button class="btn danger" id="clear"><i data-icon="trash"></i><span data-i18n="settings.clear_history">Clear history</span></button></div>
     </div>
   </section>
 
   <section id="passwords" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="key" data-size="md"></i></span><div><h1>Passwords</h1><p class="lead">Logins saved on this device, encrypted. BlackHole offers them on the login fields of the exact site (https only) and only fills one when you pick it.</p></div></header>
+    <header class="sh"><span class="badge"><i data-icon="key" data-size="md"></i></span><div><h1 data-i18n="settings.passwords">Passwords</h1><p class="lead"><span data-i18n="settings.passwords_lead">Logins saved on this device, encrypted. BlackHole offers them on the login fields of the exact site (https only) and only fills one when you pick it.</span></p></div></header>
     <p class="status" id="pwstatus" aria-live="polite"></p>
-    <div class="card" id="pwlock" hidden><h2>Locked</h2>
-      <div class="empty"><span class="halo"><i data-icon="lock" data-size="lg"></i></span>Type the master password to open your saved passwords.</div>
-      <div class="actions"><input class="field" id="pwunlock" type="password" placeholder="Master password" autocomplete="off" spellcheck="false"><button class="btn primary" id="pwunlockbtn">Unlock</button></div>
+    <div class="card" id="pwlock" hidden><h2 data-i18n="settings.pw_locked">Locked</h2>
+      <div class="empty"><span class="halo"><i data-icon="lock" data-size="lg"></i></span><span data-i18n="settings.pw_type_master">Type the master password to open your saved passwords.</span></div>
+      <div class="actions"><input class="field" id="pwunlock" type="password" data-i18n-placeholder="settings.pw_master" autocomplete="off" spellcheck="false"><button class="btn primary" id="pwunlockbtn"><span data-i18n="settings.pw_unlock">Unlock</span></button></div>
     </div>
     <div id="pwopen" hidden>
-      <div class="card"><h2>Saved passwords</h2>
-        <div class="actions"><label class="search"><i data-icon="search"></i><input class="field" id="pwq" placeholder="Search sites and usernames" autocomplete="off" spellcheck="false" aria-label="Search passwords"></label><button class="btn primary" id="pwadd"><i data-icon="plus"></i>Add password</button></div>
+      <div class="card"><h2 data-i18n="settings.pw_saved_list">Saved passwords</h2>
+        <div class="actions"><label class="search"><i data-icon="search"></i><input class="field" id="pwq" data-i18n-placeholder="settings.pw_search" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_search_aria"></label><button class="btn primary" id="pwadd"><i data-icon="plus"></i><span data-i18n="settings.pw_add">Add password</span></button></div>
         <div class="list rows" id="pwlist"></div>
       </div>
-      <div class="card" id="pwedit" hidden><h2 id="pwedittitle">New password</h2>
-        <div class="actions"><input class="field" id="pworigin" placeholder="Website (example.com)" autocomplete="off" spellcheck="false" aria-label="Website"></div>
-        <div class="actions"><input class="field" id="pwuser" placeholder="Username or email" autocomplete="off" spellcheck="false" aria-label="Username"></div>
-        <div class="actions"><input class="field" id="pwpass" type="password" placeholder="Password" autocomplete="off" spellcheck="false" aria-label="Password"><button class="btn" id="pwshowpass">Show</button><button class="btn" id="pwgen">Generate</button></div>
-        <div class="actions"><textarea class="field" id="pwnotes" rows="3" placeholder="Notes" spellcheck="false" aria-label="Notes"></textarea></div>
-        <div class="actions"><button class="btn primary" id="pwsave">Save</button><button class="btn" id="pwcancel">Cancel</button></div>
+      <div class="card" id="pwedit" hidden><h2 id="pwedittitle"></h2>
+        <div class="actions"><input class="field" id="pworigin" data-i18n-placeholder="settings.pw_website_ph" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_website"></div>
+        <div class="actions"><input class="field" id="pwuser" data-i18n-placeholder="settings.pw_user_ph" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_user"></div>
+        <div class="actions"><input class="field" id="pwpass" type="password" data-i18n-placeholder="palette.password" autocomplete="off" spellcheck="false" data-i18n-aria="palette.password"><button class="btn" id="pwshowpass"></button><button class="btn" id="pwgen"><span data-i18n="settings.pw_generate">Generate</span></button></div>
+        <div class="actions"><textarea class="field" id="pwnotes" rows="3" data-i18n-placeholder="settings.pw_notes" spellcheck="false" data-i18n-aria="settings.pw_notes"></textarea></div>
+        <div class="actions"><button class="btn primary" id="pwsave"><span data-i18n="toast.pw_save_button">Save</span></button><button class="btn" id="pwcancel"><span data-i18n="common.cancel">Cancel</span></button></div>
       </div>
-      <div class="card"><h2>Protection</h2><div class="rows" id="pwprotect"></div>
-        <div class="actions" id="pwsetmaster"><input class="field" id="pwm1" type="password" placeholder="New master password (8 characters or more)" autocomplete="off" aria-label="New master password"><input class="field" id="pwm2" type="password" placeholder="Repeat it" autocomplete="off" aria-label="Repeat the master password"><button class="btn" id="pwmset">Set master password</button></div>
-        <div class="actions" id="pwmasteron"><button class="btn" id="pwlocknow"><i data-icon="lock"></i>Lock now</button><button class="btn danger" id="pwmremove">Remove master password</button></div>
+      <div class="card"><h2 data-i18n="settings.pw_protection">Protection</h2><div class="rows" id="pwprotect"></div>
+        <div class="actions" id="pwsetmaster"><input class="field" id="pwm1" type="password" data-i18n-placeholder="settings.pw_new_master_ph" autocomplete="off" data-i18n-aria="settings.pw_new_master"><input class="field" id="pwm2" type="password" data-i18n-placeholder="settings.pw_repeat_ph" autocomplete="off" data-i18n-aria="settings.pw_repeat"><button class="btn" id="pwmset"><span data-i18n="settings.pw_set_master">Set master password</span></button></div>
+        <div class="actions" id="pwmasteron"><button class="btn" id="pwlocknow"><i data-icon="lock"></i><span data-i18n="settings.pw_lock_now">Lock now</span></button><button class="btn danger" id="pwmremove"><span data-i18n="settings.pw_remove_master">Remove master password</span></button></div>
         <div class="rows" id="pwlockafter"></div>
-        <p class="note">Without a master password, the key is kept in the system keychain (Windows Credential Manager, macOS Keychain) and the passwords open with your session. With one, they stay locked until you type it, and lock again after the delay above. A forgotten master password cannot be recovered: the passwords are lost.</p>
+        <p class="note"><span data-i18n="settings.pw_note">Without a master password, the key is kept in the system keychain (Windows Credential Manager, macOS Keychain) and the passwords open with your session. With one, they stay locked until you type it, and lock again after the delay above. A forgotten master password cannot be recovered: the passwords are lost.</span></p>
       </div>
     </div>
   </section>
 
   <section id="extensions" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="puzzle" data-size="md"></i></span><div><h1>Extensions</h1><p class="lead">Real WebExtensions run on the system's native extension host, plus simple content-script extensions.</p></div></header>
-    <div class="card"><h2>Catalog</h2>
+    <header class="sh"><span class="badge"><i data-icon="puzzle" data-size="md"></i></span><div><h1 data-i18n="settings.extensions">Extensions</h1><p class="lead"><span data-i18n="settings.extensions_lead">Real WebExtensions run on the system’s native extension host, plus simple content-script extensions.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.catalog">Catalog</h2>
       <div class="actions">
-        <button class="btn" id="chk-ext"><i data-icon="reload"></i>Check for updates</button>
-        <button class="btn primary" id="upd-all" hidden>Update all</button>
+        <button class="btn" id="chk-ext"><i data-icon="reload"></i><span data-i18n="settings.check_updates">Check for updates</span></button>
+        <button class="btn primary" id="upd-all" hidden data-i18n="settings.update_all">Update all</button>
         <span class="sub" id="chk-msg" aria-live="polite"></span>
       </div>
       <div class="list rows" id="catalog"></div>
-      <p class="note" id="catnote">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</p>
+      <p class="note" id="catnote"><span data-i18n="settings.catalog_note">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</span></p>
     </div>
-    <div class="card" id="appcard"><h2>Found in your apps</h2><div class="list rows" id="appexts"></div>
-      <p class="note">Safari web extensions shipped by apps installed on this Mac (for example Bitwarden). They run on the same native host, with their toolbar button and popup. Features that rely on the app itself (Touch ID unlock, native messaging) are not available.</p>
+    <div class="card" id="appcard"><h2 data-i18n="settings.found_in_apps">Found in your apps</h2><div class="list rows" id="appexts"></div>
+      <p class="note"><span data-i18n="settings.apps_note">Safari web extensions shipped by apps installed on this Mac (for example Bitwarden). They run on the same native host, with their toolbar button and popup. Features that rely on the app itself (Touch ID unlock, native messaging) are not available.</span></p>
     </div>
-    <div class="card"><h2>Installed</h2><div class="list rows" id="exts"></div>
+    <div class="card"><h2 data-i18n="settings.installed">Installed</h2><div class="list rows" id="exts"></div>
       <div class="actions">
-        <button class="btn primary" id="sample"><i data-icon="plus"></i>Add the example extension</button>
-        <button class="btn" id="folder"><i data-icon="folder"></i>Open extensions folder</button>
-        <button class="btn" id="reload"><i data-icon="reload"></i>Reload</button>
+        <button class="btn primary" id="sample"><i data-icon="plus"></i><span data-i18n="settings.add_sample">Add the example extension</span></button>
+        <button class="btn" id="folder"><i data-icon="folder"></i><span data-i18n="settings.open_ext_folder">Open extensions folder</span></button>
+        <button class="btn" id="reload"><i data-icon="reload"></i><span data-i18n="bar.reload">Reload</span></button>
       </div>
-      <p class="note">Drop an extension folder (with its <code>manifest.json</code>) in <code id="extdir"></code>, then press Reload. Turning an extension off removes its styles at once; reload the page to stop its scripts.</p>
+      <p class="note"><span data-i18n="settings.ext_note_1">Drop an extension folder (with its</span> <code>manifest.json</code>) <span data-i18n="settings.ext_note_2">in</span> <code id="extdir"></code><span data-i18n="settings.ext_note_3">, then press Reload. Turning an extension off removes its styles at once; reload the page to stop its scripts.</span></p>
     </div>
-    <div class="card"><h2>Private windows</h2><div class="rows" id="extpriv"></div></div>
+    <div class="card"><h2 data-i18n="settings.private_windows">Private windows</h2><div class="rows" id="extpriv"></div></div>
   </section>
 
   <section id="calendar" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="calendar" data-size="md"></i></span><div><h1>Calendar</h1><p class="lead">Your Google Calendar meetings with Google Meet: join them from the sidebar, the command bar or a reminder.</p></div></header>
-    <div class="card"><h2>Next meetings with Google Meet</h2><div class="list rows" id="calnext"></div></div>
-    <div class="card"><h2>Google calendars</h2><div class="list rows" id="calsrc"></div>
-      <div class="actions"><input class="field" id="calurl" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" spellcheck="false" autocomplete="off" aria-label="Secret address in iCal format"><button class="btn primary" id="caladd">Add</button><button class="btn" id="calsync"><i data-icon="reload"></i>Sync now</button></div>
+    <header class="sh"><span class="badge"><i data-icon="calendar" data-size="md"></i></span><div><h1 data-i18n="settings.calendar">Calendar</h1><p class="lead"><span data-i18n="settings.calendar_lead">Your Google Calendar meetings with Google Meet: join them from the sidebar, the command bar or a reminder.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.next_meetings">Next meetings with Google Meet</h2><div class="list rows" id="calnext"></div></div>
+    <div class="card"><h2 data-i18n="settings.google_calendars">Google calendars</h2><div class="list rows" id="calsrc"></div>
+      <div class="actions"><input class="field" id="calurl" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" spellcheck="false" autocomplete="off" data-i18n-aria="settings.cal_secret"><button class="btn primary" id="caladd"><span data-i18n="settings.add">Add</span></button><button class="btn" id="calsync"><i data-icon="reload"></i><span data-i18n="settings.sync_now">Sync now</span></button></div>
       <p class="status" id="calstatus" aria-live="polite"></p>
-      <p class="note">In Google Calendar: Settings › your calendar › Integrate calendar › <b>Secret address in iCal format</b>. No sign-in is needed: this address is the only thing used. It is stored encrypted on this machine and only sent to calendar.google.com. Anyone with it can read the calendar, so keep it private (Google can reset it).</p>
+      <p class="note"><span data-i18n="settings.cal_note_1">In Google Calendar: Settings › your calendar › Integrate calendar ›</span> <b data-i18n="settings.cal_secret"></b><span data-i18n="settings.cal_note_2">. No sign-in is needed: this address is the only thing used. It is stored encrypted on this machine and only sent to calendar.google.com. Anyone with it can read the calendar, so keep it private (Google can reset it).</span></p>
     </div>
-    <div class="card"><h2>Meetings</h2><div class="rows" id="calopts"></div></div>
+    <div class="card"><h2 data-i18n="settings.meetings">Meetings</h2><div class="rows" id="calopts"></div></div>
   </section>
 
   <section id="devices" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1>Devices</h1><p class="lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</p></div></header>
-    <div class="card"><h2>Paired devices</h2><div class="list rows" id="devlist"></div></div>
-    <div class="card" id="devpair"><h2>Pair a device</h2>
-      <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</p><div class="actions"><button class="btn" id="devcancel">Cancel</button></div></div>
-      <div class="actions" id="devask"><button class="btn primary" id="devshow">Show a pairing code</button></div>
-      <div class="actions"><input class="field" id="devinput" placeholder="Or type the code shown on the other device (ABCD-EFGH-JKMN)" spellcheck="false" autocomplete="off" maxlength="20" aria-label="Pairing code"><button class="btn" id="devjoin">Pair</button></div>
+    <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1 data-i18n="settings.devices">Devices</h1><p class="lead"><span data-i18n="settings.devices_lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.paired_devices">Paired devices</h2><div class="list rows" id="devlist"></div></div>
+    <div class="card" id="devpair"><h2 data-i18n="settings.pair_device">Pair a device</h2>
+      <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note"><span data-i18n="settings.code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</span></p><div class="actions"><button class="btn" id="devcancel"><span data-i18n="common.cancel">Cancel</span></button></div></div>
+      <div class="actions" id="devask"><button class="btn primary" id="devshow"><span data-i18n="settings.show_code">Show a pairing code</span></button></div>
+      <div class="actions"><input class="field" id="devinput" data-i18n-placeholder="settings.code_input_ph" spellcheck="false" autocomplete="off" maxlength="20" data-i18n-aria="settings.code_aria"><button class="btn" id="devjoin"><span data-i18n="settings.pair">Pair</span></button></div>
       <p class="status" id="devstatus" aria-live="polite"></p>
     </div>
-    <div class="card"><h2>How it works</h2><p class="note">Both devices must be on the same local network; there is no server and no account. Only the address of the tab travels (and where a YouTube or Twitch video was), encrypted with a key known to the two paired devices: no cookies, no session, so you may have to sign in again on the other device. Nothing listens on the network until a device is paired: the first time, Windows or macOS asks to allow BlackHole on the local network.</p>
-      <p class="note">Tab sync keeps quick access, open tabs and spaces (name and color) the same on both devices; private windows, folders and history stay on each device. <b>Ask</b> proposes to merge when the device comes back on the network, <b>Always</b> merges on its own, <b>Off</b> never syncs. A tab closed on one device closes on the other.</p></div>
+    <div class="card"><h2 data-i18n="settings.how_it_works">How it works</h2><p class="note"><span data-i18n="settings.devices_note">Both devices must be on the same local network; there is no server and no account. Only the address of the tab travels (and where a YouTube or Twitch video was), encrypted with a key known to the two paired devices: no cookies, no session, so you may have to sign in again on the other device. Nothing listens on the network until a device is paired: the first time, Windows or macOS asks to allow BlackHole on the local network.</span></p>
+      <p class="note"><span data-i18n="settings.sync_note_1">Tab sync keeps quick access, open tabs and spaces (name and color) the same on both devices; private windows, folders and history stay on each device.</span> <b data-i18n="settings.sync_ask">Ask</b> <span data-i18n="settings.sync_note_ask">proposes to merge when the device comes back on the network,</span> <b data-i18n="toast.sync_always">Always</b> <span data-i18n="settings.sync_note_always">merges on its own,</span> <b data-i18n="settings.sync_off">Off</b> <span data-i18n="settings.sync_note_off">never syncs. A tab closed on one device closes on the other.</span></p></div>
   </section>
 
   <section id="import" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="import" data-size="md"></i></span><div><h1>Import</h1><p class="lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</p></div></header>
-    <div class="card"><h2>Detected browsers</h2><div class="list rows" id="sources"></div>
-      <p class="note">Bookmarks are read straight from the browser's profile (read-only). Imported bookmarks appear in the command bar search.</p></div>
-    <div class="card"><h2>From a file</h2>
+    <header class="sh"><span class="badge"><i data-icon="import" data-size="md"></i></span><div><h1 data-i18n="settings.import">Import</h1><p class="lead"><span data-i18n="settings.import_lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.detected">Detected browsers</h2><div class="list rows" id="sources"></div>
+      <p class="note"><span data-i18n="settings.detected_note">Bookmarks are read straight from the browser’s profile (read-only). Imported bookmarks appear in the command bar search.</span></p></div>
+    <div class="card"><h2 data-i18n="settings.from_file">From a file</h2>
       <div class="actions">
-        <button class="btn" id="imp-html"><i data-icon="link"></i>Bookmarks (HTML export)…</button>
-        <button class="btn" id="imp-csv"><i data-icon="key"></i>Passwords (CSV export)…</button>
+        <button class="btn" id="imp-html"><i data-icon="link"></i><span data-i18n="settings.imp_html">Bookmarks (HTML export)…</span></button>
+        <button class="btn" id="imp-csv"><i data-icon="key"></i><span data-i18n="settings.imp_csv">Passwords (CSV export)…</span></button>
       </div>
       <p class="status" id="impmsg" aria-live="polite"></p>
-      <p class="note">Passwords: export them from the other browser's password manager (Chrome, Edge, Brave, Firefox, Waterfox, Safari, Bitwarden…) to a CSV file. They are added to Settings › Passwords (encrypted on this device). Delete the CSV afterwards, it is not encrypted.</p>
+      <p class="note"><span data-i18n="settings.csv_note">Passwords: export them from the other browser’s password manager (Chrome, Edge, Brave, Firefox, Waterfox, Safari, Bitwarden…) to a CSV file. They are added to Settings › Passwords (encrypted on this device). Delete the CSV afterwards, it is not encrypted.</span></p>
     </div>
-    <div class="card"><h2>Stored</h2>
-      <div class="stats"><div class="stat"><b id="nbm">0</b><span>bookmarks</span></div><div class="stat"><b id="nlog">0</b><span>saved passwords</span></div></div>
+    <div class="card"><h2 data-i18n="settings.stored">Stored</h2>
+      <div class="stats"><div class="stat"><b id="nbm">0</b><span data-i18n="settings.n_bookmarks">bookmarks</span></div><div class="stat"><b id="nlog">0</b><span data-i18n="settings.n_passwords">saved passwords</span></div></div>
     </div>
   </section>
 
   <section id="shortcuts" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="keyboard" data-size="md"></i></span><div><h1>Keyboard shortcuts</h1><p class="lead">Everything works from the keyboard. <span id="modname"></span></p></div></header>
-    <div class="card"><h2>Navigation</h2><div class="keys" id="k-nav"></div></div>
-    <div class="card"><h2>Windows and layout</h2><div class="keys" id="k-layout"></div></div>
-    <div class="card"><h2>Gestures and mouse</h2><div class="keys" id="k-mouse"></div></div>
+    <header class="sh"><span class="badge"><i data-icon="keyboard" data-size="md"></i></span><div><h1 data-i18n="settings.keyboard">Keyboard shortcuts</h1><p class="lead"><span data-i18n="settings.keyboard_lead">Everything works from the keyboard.</span> <span id="modname"></span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.k_nav">Navigation</h2><div class="keys" id="k-nav"></div></div>
+    <div class="card"><h2 data-i18n="settings.k_layout">Windows and layout</h2><div class="keys" id="k-layout"></div></div>
+    <div class="card"><h2 data-i18n="settings.k_mouse">Gestures and mouse</h2><div class="keys" id="k-mouse"></div></div>
   </section>
 </main>
 <script>
@@ -344,7 +345,7 @@ function option(label, selected, onclick, toggle, sub) {
   if (label) text.append(el('span', 'label', label));
   if (sub) text.append(el('span', 'sub', sub));
   if (toggle) b.append(text, mark); else b.append(mark, text);
-  if (!label && !sub) b.setAttribute('aria-label', 'Turn on or off');
+  if (!label && !sub) b.setAttribute('aria-label', bhT('settings.on_off'));
   b.onclick = onclick;
   return b;
 }
@@ -448,44 +449,45 @@ function keyRows(target, rows) {
   }));
 }
 function renderShortcuts() {
-  $('modname').textContent = mac ? '⌘ is the Command key.' : '';
+  $('modname').textContent = mac ? bhT('keys.command_key') : '';
+  const T = bhT;
   keyRows($('k-nav'), [
-    ['Search or enter an address (command bar)', 'mod+l'],
-    ['New tab and command bar', 'mod+t'],
-    ['New window', 'mod+n'],
-    ['New private window (nothing is kept)', 'mod+shift+n'],
-    ['Close the current tab (a quick access or folder tab only goes to sleep)', 'mod+w'],
-    ['Reopen the tab closed last', 'mod+shift+t'],
-    ['Back to the previous tab', 'ctrl+tab'],
-    ['Next / previous tab in the sidebar', 'mod+alt+down up'],
-    ['Reload the page (without its cache)', 'mod+r'],
-    ['Back / forward', 'mod+[ ]'],
-    ...(mac ? [] : [['Reload the page', 'F5'], ['Back / forward', 'alt+left right']]),
-    ['Find in page (then next / previous match)', 'mod+f mod+g mod+shift+g'],
-    ['Zoom in / out / reset', 'mod+plus mod+minus mod+0'],
-    ['Print', 'mod+p'],
-    ['Developer tools of the page (elements, console, network)', mac ? 'mod+alt+i' : 'F12 ctrl+shift+i'],
-    ['Close the command bar or a preview', 'esc'],
+    [T('keys.address'), 'mod+l'],
+    [T('keys.new_tab'), 'mod+t'],
+    [T('palette.new_window'), 'mod+n'],
+    [T('keys.private_window'), 'mod+shift+n'],
+    [T('keys.close_tab'), 'mod+w'],
+    [T('palette.reopen_closed'), 'mod+shift+t'],
+    [T('keys.previous_tab'), 'ctrl+tab'],
+    [T('keys.next_tab'), 'mod+alt+down up'],
+    [T('keys.hard_reload'), 'mod+r'],
+    [T('keys.back_forward'), 'mod+[ ]'],
+    ...(mac ? [] : [[T('keys.reload'), 'F5'], [T('keys.back_forward'), 'alt+left right']]),
+    [T('keys.find'), 'mod+f mod+g mod+shift+g'],
+    [T('keys.zoom'), 'mod+plus mod+minus mod+0'],
+    [T('palette.print'), 'mod+p'],
+    [T('keys.devtools'), mac ? 'mod+alt+i' : 'F12 ctrl+shift+i'],
+    [T('keys.close_bar'), 'esc'],
   ]);
   keyRows($('k-layout'), [
-    ['Split view with another tab (press again to close)', 'mod+\\'],
-    ['Show / hide the sidebar', 'mod+b'],
-    ['Open Settings', 'mod+,'],
-    ['Open Easel', 'mod+shift+e'],
-    ['Capture this page to the Easel', 'mod+shift+s'],
-    ['Live capture: pick an area for the Easel', 'mod+shift+l'],
-    ['Open the previewed link as a tab (Peek)', 'mod+enter'],
+    [T('keys.split'), 'mod+\\'],
+    [T('palette.toggle_sidebar'), 'mod+b'],
+    [T('palette.open_settings'), 'mod+,'],
+    [T('palette.open_easel'), 'mod+shift+e'],
+    [T('palette.capture_easel'), 'mod+shift+s'],
+    [T('palette.capture_live'), 'mod+shift+l'],
+    [T('keys.peek_open'), 'mod+enter'],
   ]);
   keyRows($('k-mouse'), [
-    ['Back / forward', ['two-finger swipe']],
-    ['Switch space', ['two-finger swipe on the sidebar']],
-    ['Reorder spaces', ['drag a space']],
-    ['Preview a link without leaving the page (Peek)', [bhKeyParts('shift')[0], 'click']],
-    ['Split view from a tab', ['split button on the tab']],
-    ['Set an emoji for a space', ['right-click it']],
-    ['Set an emoji for a folder', ['click its icon']],
-    ['Add a tab to / remove it from quick access', ['right-click it']],
-    ['Boost, always open a site in a space…', ['command bar actions']],
+    [T('keys.back_forward'), [T('keys.m_swipe')]],
+    [T('keys.switch_space'), [T('keys.m_swipe_sidebar')]],
+    [T('keys.reorder_spaces'), [T('keys.m_drag_space')]],
+    [T('keys.peek'), [bhKeyParts('shift')[0], T('keys.m_click')]],
+    [T('keys.split_from_tab'), [T('keys.m_split_button')]],
+    [T('keys.space_emoji'), [T('keys.m_right_click')]],
+    [T('keys.folder_emoji'), [T('keys.m_click_icon')]],
+    [T('keys.quick_access'), [T('keys.m_right_click')]],
+    [T('keys.boost'), [T('keys.m_command_bar')]],
   ]);
 }
 
@@ -506,69 +508,73 @@ window.bh = {
     document.body.classList.toggle('maxed', !!s.maximized);
     document.body.classList.toggle('noanim', s.animations === false);
     renderShortcuts();
+    // Languages are named in their own words; "System" says which one it gives.
+    const own = (code) => (s.languages.find(l => l.id === code) || {}).label || code;
+    put($('langs'), ...[{ id: 'system', label: bhT('settings.lang_system', { name: own(s.systemLanguage) }) }, ...s.languages].map(l =>
+      option(l.label, l.id === s.language, () => { if (l.id !== s.language) send({ cmd: 'set_language', language: l.id }); })));
     put($('engines'), ...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
-    put($('anim'), option('Black hole animations', s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true, 'Launch, new tab and the motion of these pages.'));
-    put($('sbw'), choice('Sidebar width', null, s.sidebarWidths, s.sidebarWidth, w => w + ' px', w => send({ cmd: 'set_sidebar_width', width: w })));
-    put($('sleep'), choice('Put unused tabs to sleep after', null, s.tabSleepChoices, s.tabSleep, m => m + ' min', m => send({ cmd: 'set_tab_sleep', minutes: m })));
-    put($('live'), choice('Tabs kept ready in memory', 'The tab you are on plus the ones opened recently; beyond this, the least recently used are released and reload when opened.',
+    put($('anim'), option(bhT('settings.animations'), s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true, bhT('settings.animations_sub')));
+    put($('sbw'), choice(bhT('settings.sidebar_width'), null, s.sidebarWidths, s.sidebarWidth, w => bhT('unit.px', { n: w }), w => send({ cmd: 'set_sidebar_width', width: w })));
+    put($('sleep'), choice(bhT('settings.sleep_after'), null, s.tabSleepChoices, s.tabSleep, m => bhT('unit.min', { n: m }), m => send({ cmd: 'set_tab_sleep', minutes: m })));
+    put($('live'), choice(bhT('settings.live_tabs'), bhT('settings.live_tabs_sub'),
       s.maxLiveTabsChoices, s.maxLiveTabs, String, n => send({ cmd: 'set_max_live_tabs', tabs: n })));
-    put($('spares'), choice('Blank tabs kept ready', 'Empty hidden views so a new tab opens instantly, about 50 MB each.',
+    put($('spares'), choice(bhT('settings.spares'), bhT('settings.spares_sub'),
       s.spareChoices, s.spareViews, String, n => send({ cmd: 'set_spare_views', count: n })));
     $('hwcard').hidden = mac;
-    put($('hw'), option('Hardware acceleration (GPU)', s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true,
-      'Takes effect after restarting BlackHole. Turn it off only if video or pages glitch on your graphics card.'));
-    $('defnote').textContent = mac ? 'macOS asks you to confirm. This works from the installed BlackHole.app.' : 'Windows opens its Default apps settings to confirm.';
-    put($('trackers'), option('Block trackers', s.trackerBlocking, () => send({ cmd: 'set_tracker_blocking', on: !s.trackerBlocking }), true));
+    put($('hw'), option(bhT('settings.hw'), s.hardwareAcceleration, () => send({ cmd: 'set_hardware_acceleration', on: !s.hardwareAcceleration }), true,
+      bhT('settings.hw_sub')));
+    $('defnote').textContent = bhT(mac ? 'settings.default_note_mac' : 'settings.default_note_win');
+    put($('trackers'), option(bhT('settings.block_trackers'), s.trackerBlocking, () => send({ cmd: 'set_tracker_blocking', on: !s.trackerBlocking }), true));
     renderCalendar(s.calendar);
     renderDevices(s.devices);
     renderPasswords(s.passwords);
     const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
     put($('shields'), 
-      shield('Block ads', 'ads', s.adBlocking),
-      shield('Hide ad slots on pages', 'hide_ads', s.shields.hideAds),
-      shield('Skip video ads (YouTube)', 'video_ads', s.shields.videoAds),
-      shield('Hide cookie banners', 'cookie_banners', s.shields.cookieBanners),
+      shield(bhT('settings.block_ads'), 'ads', s.adBlocking),
+      shield(bhT('settings.hide_ads'), 'hide_ads', s.shields.hideAds),
+      shield(bhT('settings.video_ads'), 'video_ads', s.shields.videoAds),
+      shield(bhT('settings.cookie_banners'), 'cookie_banners', s.shields.cookieBanners),
     );
-    put($('extpriv'), option('Run installed extensions in private windows', s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
-      'Extensions can read every page they run on. Applies to windows opened afterwards.'));
+    put($('extpriv'), option(bhT('settings.ext_private'), s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
+      bhT('settings.ext_private_sub')));
     $('blocked').textContent = s.blocked;
     put($('blocklist'), ...(s.blockedLog.length ? s.blockedLog.map(b => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
-      text.append(el('div', 'host', b.host), el('div', 'sub', b.site ? 'on ' + b.site : 'navigation'));
+      text.append(el('div', 'host', b.host), el('div', 'sub', b.site ? bhT('settings.blocked_on', { site: b.site }) : bhT('settings.blocked_navigation')));
       row.append(text, el('span', 'count', b.count));
       return row;
-    }) : [empty('shield', 'Nothing blocked yet in this session.')]));
+    }) : [empty('shield', bhT('settings.nothing_blocked'))]));
     if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
     $('version').textContent = s.version;
     const outdated = s.catalog.filter(c => c.outdated && c.supported);
     $('upd-all').hidden = !outdated.length;
     $('chk-msg').textContent = s.catalogChecked == null ? '' : outdated.length
-      ? outdated.length + (outdated.length > 1 ? ' updates available' : ' update available') : 'All extensions are up to date.';
+      ? bhTn('settings.updates_available', outdated.length) : bhT('settings.up_to_date');
     put($('catalog'), ...s.catalog.map(c => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
-      const labels = { installing: 'Downloading…', loading: 'Starting…', active: 'Active', disabled: 'Turned off', failed: 'Error', available: '' };
-      const sub = !c.supported ? 'Not available on this system yet (needs macOS 15.4+ or Windows with WebView2).'
-        : c.error ? c.error : [labels[c.status], c.description].filter(Boolean).join(' · ');
+      const labels = { installing: 'library.downloading', loading: 'settings.starting', active: 'settings.active', disabled: 'settings.turned_off', failed: 'settings.error' };
+      const sub = !c.supported ? bhT('settings.unsupported')
+        : c.error ? c.error : [labels[c.status] && bhT(labels[c.status]), c.description].filter(Boolean).join(' · ');
       text.append(nameLine(c.name, c.installed && c.installedVersion ? c.installedVersion : c.version), el('div', 'sub', sub));
       row.append(tile(c.name), text);
       const acts = el('div', 'rowactions');
       if (c.supported && !c.installed) {
-        const b = iconBtn('btn primary small', 'download', c.status === 'installing' ? 'Installing…' : 'Install');
+        const b = iconBtn('btn primary small', 'download', bhT(c.status === 'installing' ? 'settings.installing' : 'settings.install'));
         b.disabled = c.status === 'installing';
         b.onclick = () => send({ cmd: 'install_catalog', id: c.id });
         acts.append(b);
         row.append(acts);
       } else if (c.supported) {
         if (c.outdated) {
-          const up = el('button', 'btn primary small', c.status === 'installing' ? 'Updating…' : 'Update to ' + c.version);
+          const up = el('button', 'btn primary small', c.status === 'installing' ? bhT('settings.updating') : bhT('settings.update_to', { version: c.version }));
           up.disabled = c.status === 'installing';
           up.onclick = () => send({ cmd: 'install_catalog', id: c.id });
           acts.append(up);
         }
-        const rm = el('button', 'btn small', 'Remove');
-        confirmClick(rm, 'Click again to remove', () => send({ cmd: 'remove_catalog', id: c.id }));
+        const rm = el('button', 'btn small', bhT('easel.remove'));
+        confirmClick(rm, 'settings.remove_confirm', () => send({ cmd: 'remove_catalog', id: c.id }));
         acts.append(rm);
         row.append(acts, toggleOnly(c.name, c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled })));
       }
@@ -578,11 +584,11 @@ window.bh = {
       const row = el('div', 'row');
       const text = el('div', 'grow');
       text.append(el('div', 'name', src.browser), el('div', 'sub', src.profile));
-      const b = el('button', 'btn primary small', 'Import bookmarks');
+      const b = el('button', 'btn primary small', bhT('settings.import_bookmarks'));
       b.onclick = () => send({ cmd: 'import_bookmarks', source: src.id });
       row.append(tile(src.browser), text, b);
       return row;
-    }) : [empty('globe', 'No other browser detected. Use a file export below.')]));
+    }) : [empty('globe', bhT('settings.no_browser'))]));
     $('impmsg').textContent = s.import.message || '';
     $('nbm').textContent = s.import.bookmarks;
     $('nlog').textContent = s.import.logins;
@@ -590,9 +596,9 @@ window.bh = {
     put($('appexts'), ...s.appExtensions.map(a => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
-      const labels = { loading: 'Starting…', active: 'Active', failed: 'Error', off: '' };
-      text.append(el('div', 'name', a.name), el('div', 'sub', a.error || labels[a.status] || 'Not enabled'));
-      const b = el('button', a.enabled ? 'btn small' : 'btn primary small', a.enabled ? 'Turn off' : 'Enable');
+      const labels = { loading: 'settings.starting', active: 'settings.active', failed: 'settings.error' };
+      text.append(el('div', 'name', a.name), el('div', 'sub', a.error || bhT(labels[a.status] || 'settings.not_enabled')));
+      const b = el('button', a.enabled ? 'btn small' : 'btn primary small', bhT(a.enabled ? 'settings.turn_off' : 'settings.enable'));
       b.disabled = !a.supported;
       b.onclick = () => send({ cmd: 'set_app_extension', id: a.id, on: !a.enabled });
       row.append(tile(a.name), text, b);
@@ -603,12 +609,25 @@ window.bh = {
     put($('exts'), ...(s.extensions.length ? s.extensions.map(e => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
-      text.append(nameLine(e.name, e.version), el('div', 'sub', e.description || e.sites.join(', ') || 'No content scripts'));
+      text.append(nameLine(e.name, e.version), el('div', 'sub', e.description || e.sites.join(', ') || bhT('settings.no_scripts')));
       row.append(tile(e.name), text, toggleOnly(e.name, e.enabled, () => send({ cmd: 'set_extension_enabled', id: e.id, enabled: !e.enabled })));
       return row;
-    }) : [empty('puzzle', 'No extension installed yet.')]));
+    }) : [empty('puzzle', bhT('settings.no_extension'))]));
   },
 };
+// Language changed: the markup is translated by ui/i18n.js; what renders draws itself again.
+let lastState = null;
+{
+  const render = bh.render;
+  bh.render = (s) => { lastState = s; render(s); };
+}
+addEventListener('bhlang', () => {
+  const on = document.querySelector('section.on');
+  if (on) show(on.id);
+  if (lastState) bh.render(lastState);
+  if (pwEditing != null) $('pwedittitle').textContent = bhT(pwEditing ? 'settings.pw_edit' : 'settings.pw_new');
+  pwShowLabel();
+});
 // A bare switch at the end of a row (extensions): its label says what it turns on.
 function toggleOnly(name, on, run) {
   const tog = option('', on, run, true);
@@ -622,18 +641,19 @@ function toggleOnly(name, on, run) {
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
 // Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
+// `question` is a catalog key.
 function confirmClick(btn, question, run) {
   const label = [...btn.childNodes];
   let timer = null;
   const reset = () => { timer = null; btn.replaceChildren(...label); btn.classList.remove('armed'); };
   btn.onclick = () => {
     if (timer) { clearTimeout(timer); reset(); run(); return; }
-    btn.textContent = question;
+    btn.textContent = bhT(question);
     btn.classList.add('armed');
     timer = setTimeout(reset, 3000);
   };
 }
-confirmClick($('clear'), 'Click again to erase all history', () => send({ cmd: 'clear_history' }));
+confirmClick($('clear'), 'home.clear_confirm', () => send({ cmd: 'clear_history' }));
 
 // Calendar: the secret addresses are never sent back to this page, only their calendar's name.
 function renderCalendar(c) {
@@ -642,28 +662,28 @@ function renderCalendar(c) {
     const row = el('div', 'row');
     const ico = el('div', 'ico neutral');
     ico.append(bhIcon('calendar'));
-    const rm = el('button', 'btn small', 'Remove');
-    confirmClick(rm, 'Click again to remove', () => send({ cmd: 'calendar_remove', index }));
+    const rm = el('button', 'btn small', bhT('easel.remove'));
+    confirmClick(rm, 'settings.remove_confirm', () => send({ cmd: 'calendar_remove', index }));
     row.append(ico, el('span', 'grow', label), rm);
     return row;
-  }) : [empty('calendar', 'No calendar yet.')]));
+  }) : [empty('calendar', bhT('settings.no_calendar'))]));
   $('calstatus').textContent = c.status || '';
   $('calsync').disabled = c.busy || !c.sources.length;
   put($('calopts'), 
-    option('Remind me when a meeting starts', c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true, 'With a Join button.'),
-    option('Show the next meeting in the sidebar', c.card, () => send({ cmd: 'set_meeting_option', name: 'card', on: !c.card }), true),
-    option('Offer to take the meeting notes in an Easel', c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true, 'Beside the call when I join, agenda and attendees filled in.'),
+    option(bhT('settings.cal_remind'), c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true, bhT('settings.cal_remind_sub')),
+    option(bhT('settings.cal_card'), c.card, () => send({ cmd: 'set_meeting_option', name: 'card', on: !c.card }), true),
+    option(bhT('settings.cal_notes'), c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true, bhT('settings.cal_notes_sub')),
   );
   put($('calnext'), ...(c.upcoming.length ? c.upcoming.map(m => {
     const row = el('div', 'row');
-    const join = iconBtn('btn primary small', 'video', 'Join');
+    const join = iconBtn('btn primary small', 'video', bhT('toast.join'));
     join.onclick = () => send({ cmd: 'open_meet', url: m.url });
-    const day = new Date(m.start * 1000).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    const day = new Date(m.start * 1000).toLocaleDateString(bhI18n.lang, { weekday: 'short', day: 'numeric', month: 'short' });
     const text = el('div', 'grow');
     text.append(el('div', 'name', m.title), el('div', 'sub', day));
     row.append(el('span', 'when', m.at), text, join);
     return row;
-  }) : [empty('calendar', c.sources.length ? 'No meeting with Google Meet this week.' : 'Add a calendar to see your meetings here.')]));
+  }) : [empty('calendar', bhT(c.sources.length ? 'settings.no_meeting' : 'settings.add_calendar'))]));
 }
 $('caladd').onclick = () => {
   const url = $('calurl').value.trim();
@@ -678,30 +698,30 @@ function renderDevices(d) {
   if (!d) return;
   put($('devlist'), ...(d.list.length ? d.list.map(dev => {
     const row = el('div', 'row devrow');
-    const forget = el('button', 'btn small', 'Forget');
-    confirmClick(forget, 'Click again to forget', () => send({ cmd: 'device_forget', id: dev.id }));
+    const forget = el('button', 'btn small', bhT('settings.forget'));
+    confirmClick(forget, 'settings.forget_confirm', () => send({ cmd: 'device_forget', id: dev.id }));
     const text = el('div', 'grow');
-    text.append(el('div', 'name', dev.name), el('div', 'sub', dev.online ? 'On this network' : 'Not seen lately'));
+    text.append(el('div', 'name', dev.name), el('div', 'sub', bhT(dev.online ? 'settings.dev_online' : 'settings.dev_offline')));
     row.append(el('span', 'dot' + (dev.online ? ' on' : '')), text, forget);
     // Tab sync with this device: Ask / Always / Off, and a manual sync.
     const line = el('div', 'syncline');
     const seg = el('span', 'seg');
     seg.setAttribute('role', 'radiogroup');
-    seg.setAttribute('aria-label', 'Tab sync with ' + dev.name);
-    for (const [mode, label] of [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']]) {
-      const b = el('button', dev.sync === mode ? 'on' : null, label);
+    seg.setAttribute('aria-label', bhT('settings.sync_with', { name: dev.name }));
+    for (const [mode, label] of [['ask', 'settings.sync_ask'], ['auto', 'toast.sync_always'], ['off', 'settings.sync_off']]) {
+      const b = el('button', dev.sync === mode ? 'on' : null, bhT(label));
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(dev.sync === mode));
       b.onclick = () => send({ cmd: 'device_sync', id: dev.id, mode });
       seg.append(b);
     }
-    const now = iconBtn('btn small', 'reload', 'Sync now');
+    const now = iconBtn('btn small', 'reload', bhT('settings.sync_now'));
     now.disabled = !dev.online || dev.sync === 'off';
     now.onclick = () => send({ cmd: 'device_sync_now', id: dev.id });
-    line.append(el('span', 'sub', 'Tab sync'), seg, now);
+    line.append(el('span', 'sub', bhT('settings.tab_sync')), seg, now);
     row.append(line);
     return row;
-  }) : [empty('devices', d.available ? 'No device paired yet.' : 'Not available in private windows.')]));
+  }) : [empty('devices', bhT(d.available ? 'settings.no_device' : 'settings.not_in_private'))]));
   $('devpair').hidden = !d.available;
   $('devcode').hidden = !d.code;
   $('devask').hidden = !!d.code;
@@ -732,11 +752,12 @@ function pwCloseEditor() {
   $('pwedit').hidden = true;
   ['pworigin', 'pwuser', 'pwpass', 'pwnotes'].forEach((id) => { $(id).value = ''; });
   $('pwpass').type = 'password';
-  $('pwshowpass').textContent = 'Show';
+  pwShowLabel();
 }
+const pwShowLabel = () => { $('pwshowpass').textContent = bhT($('pwpass').type === 'password' ? 'settings.show' : 'settings.hide'); };
 function pwOpenEditor(entry, password, notes) {
   pwEditing = entry ? entry.id : '';
-  $('pwedittitle').textContent = entry ? 'Edit password' : 'New password';
+  $('pwedittitle').textContent = bhT(entry ? 'settings.pw_edit' : 'settings.pw_new');
   $('pworigin').value = entry ? entry.host : '';
   $('pwuser').value = entry ? entry.username : '';
   $('pwpass').value = password || '';
@@ -750,8 +771,8 @@ function renderPasswords(p) {
   if (p.state !== 'open') { pwShown.clear(); pwCloseEditor(); }
   $('pwlock').hidden = p.state !== 'locked';
   $('pwopen').hidden = p.state !== 'open';
-  const fallback = p.state === 'busy' ? 'Working…' : p.state === 'error' ? 'Passwords are unavailable on this device.' : '';
-  $('pwstatus').textContent = [p.readOnly ? 'Private window: saved passwords are filled but not changed here.' : '', p.status || fallback].filter(Boolean).join(' ');
+  const fallback = p.state === 'busy' ? bhT('settings.pw_working') : p.state === 'error' ? bhT('settings.pw_error') : '';
+  $('pwstatus').textContent = [p.readOnly ? bhT('settings.pw_read_only') : '', p.status || fallback].filter(Boolean).join(' ');
   $('pwadd').hidden = !!p.readOnly;
   $('pwsetmaster').hidden = p.master || p.readOnly;
   $('pwmasteron').hidden = !p.master;
@@ -760,11 +781,11 @@ function renderPasswords(p) {
   const ico = el('div', 'ico neutral');
   ico.append(bhIcon(p.master ? 'key' : 'lock'));
   const text = el('span', 'grow');
-  text.append(el('span', 'label', p.master ? 'Protected by a master password' : 'Protected by the system keychain'));
+  text.append(el('span', 'label', bhT(p.master ? 'settings.pw_by_master' : 'settings.pw_by_keychain')));
   prot.append(ico, text);
-  const label = (m) => m ? m + ' min' : 'On quit';
+  const label = (m) => m ? bhT('unit.min', { n: m }) : bhT('settings.on_quit');
   put($('pwprotect'), prot);
-  put($('pwlockafter'), ...(p.master ? [choice('Lock again after', 'Without use, or only when BlackHole quits.', p.lockChoices || [], p.lockMinutes, label, (m) => pwSend({ op: 'lock_after', minutes: m }))] : []));
+  put($('pwlockafter'), ...(p.master ? [choice(bhT('settings.lock_after'), bhT('settings.lock_after_sub'), p.lockChoices || [], p.lockMinutes, label, (m) => pwSend({ op: 'lock_after', minutes: m }))] : []));
   drawPasswords();
 }
 function drawPasswords() {
@@ -773,30 +794,30 @@ function drawPasswords() {
   put($('pwlist'), ...(list.length ? list.map((e) => {
     const row = el('div', 'row pwrow');
     const text = el('div', 'grow');
-    text.append(el('div', 'name', e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), el('div', 'sub', e.username || '(no username)'));
+    text.append(el('div', 'name', e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), el('div', 'sub', e.username || bhT('settings.no_username')));
     const shown = pwShown.get(e.id);
     if (shown) text.append(el('code', null, shown.password));
     const acts = el('div', 'rowactions');
-    const copyUser = el('button', 'btn small', 'Copy username');
+    const copyUser = el('button', 'btn small', bhT('settings.copy_user'));
     copyUser.onclick = () => pwSend({ op: 'copy', id: e.id, field: 'username' });
     copyUser.hidden = !e.username;
-    const copyPass = el('button', 'btn small', 'Copy password');
+    const copyPass = el('button', 'btn small', bhT('settings.copy_password'));
     copyPass.onclick = () => pwSend({ op: 'copy', id: e.id, field: 'password' });
-    const show = el('button', 'btn small', shown ? 'Hide' : 'Show');
+    const show = el('button', 'btn small', bhT(shown ? 'settings.hide' : 'settings.show'));
     show.onclick = () => {
       if (pwShown.delete(e.id)) return drawPasswords();
       pwWantEdit = null;
       pwSend({ op: 'reveal', id: e.id });
     };
-    const edit = el('button', 'btn small', 'Edit');
+    const edit = el('button', 'btn small', bhT('settings.edit'));
     edit.onclick = () => { pwWantEdit = e.id; pwSend({ op: 'reveal', id: e.id }); };
-    const del = el('button', 'btn small danger', 'Delete');
-    confirmClick(del, 'Click again to delete', () => pwSend({ op: 'delete', id: e.id }));
+    const del = el('button', 'btn small danger', bhT('easel.delete'));
+    confirmClick(del, 'easel.delete_confirm', () => pwSend({ op: 'delete', id: e.id }));
     edit.hidden = del.hidden = !!PW.readOnly;
     acts.append(copyUser, copyPass, show, edit, del);
     row.append(tile(e.host), text, acts);
     return row;
-  }) : [empty(q ? 'search' : 'key', q ? 'No saved password matches.' : 'No saved password yet. BlackHole offers to save one when you sign in to a site.')]));
+  }) : [empty(q ? 'search' : 'key', bhT(q ? 'settings.pw_no_match' : 'settings.pw_none'))]));
 }
 bh.passwordSecret = (s) => {
   if (pwWantEdit === s.id) {
@@ -812,7 +833,7 @@ bh.passwordSecret = (s) => {
 bh.passwordGenerated = (password) => {
   $('pwpass').value = password;
   $('pwpass').type = 'text';
-  $('pwshowpass').textContent = 'Hide';
+  pwShowLabel();
 };
 $('pwq').addEventListener('input', drawPasswords);
 $('pwadd').onclick = () => pwOpenEditor(null);
@@ -820,7 +841,7 @@ $('pwcancel').onclick = pwCloseEditor;
 $('pwshowpass').onclick = () => {
   const hidden = $('pwpass').type === 'password';
   $('pwpass').type = hidden ? 'text' : 'password';
-  $('pwshowpass').textContent = hidden ? 'Hide' : 'Show';
+  pwShowLabel();
 };
 $('pwgen').onclick = () => pwSend({ op: 'generate', length: 20, digits: true, symbols: true });
 $('pwsave').onclick = () => {
@@ -837,17 +858,18 @@ $('pwunlockbtn').onclick = () => {
 $('pwunlock').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('pwunlockbtn').click(); });
 $('pwmset').onclick = () => {
   const [a, b] = [$('pwm1').value, $('pwm2').value];
-  if (a.length < 8) { $('pwstatus').textContent = 'The master password needs at least 8 characters.'; return; }
-  if (a !== b) { $('pwstatus').textContent = 'The two master passwords differ.'; return; }
+  if (a.length < 8) { $('pwstatus').textContent = bhT('msg.master_too_short'); return; }
+  if (a !== b) { $('pwstatus').textContent = bhT('settings.pw_differ'); return; }
   $('pwm1').value = $('pwm2').value = '';
   pwSend({ op: 'set_master', password: a });
 };
 $('pwlocknow').onclick = () => pwSend({ op: 'lock' });
-confirmClick($('pwmremove'), 'Click again to remove it', () => pwSend({ op: 'remove_master' }));
+confirmClick($('pwmremove'), 'settings.remove_it_confirm', () => pwSend({ op: 'remove_master' }));
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); send({ cmd: 'close_settings' }); }
 });
 renderShortcuts();
+pwShowLabel();
 send({ cmd: 'ready' });
 </script>
 </body>

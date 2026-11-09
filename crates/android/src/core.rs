@@ -136,7 +136,11 @@ fn web_url(raw: &str) -> Option<Url> {
 }
 
 /// The shell's error page for `config` (`<` escaped so no text of the site closes the script).
+/// Its texts come from the catalog (`error.*`), in English like the rest of the mobile interface.
 pub fn error_page(config: &Value) -> String {
+    let mut config = config.clone();
+    let strings = blackhole_domain::i18n::catalog("en").with_prefix("error.");
+    config["i18n"] = serde_json::json!({"lang": "en", "s": strings});
     let literal = config.to_string().replace('<', "\\u003c");
     ERROR_HTML.replace("__BH_ERROR__", &literal)
 }

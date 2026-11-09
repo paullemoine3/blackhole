@@ -54,15 +54,15 @@ main.enter :is(.row,.tile,.card,.col){animation:rise .32s cubic-bezier(.2,.85,.2
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style></head><body>
 <div id="app" style="opacity:0"><div id="rail">
-<button class="nav" data-s="media"><i data-icon="image"></i>Media</button>
-<button class="nav" data-s="downloads"><i data-icon="download"></i>Downloads</button>
-<button class="nav" data-s="easels"><i data-icon="easel"></i>Easels &amp; Notes</button>
-<button class="nav" data-s="spaces"><i data-icon="grid"></i>Spaces</button>
-<button class="nav" data-s="history"><i data-icon="history"></i>History</button>
-<button class="nav" data-s="watches"><i data-icon="eye"></i>Watched Areas</button>
-<button class="nav" data-s="archive"><i data-icon="archive"></i>Archived Tabs</button>
+<button class="nav" data-s="media"><i data-icon="image"></i><span data-i18n="library.media">Media</span></button>
+<button class="nav" data-s="downloads"><i data-icon="download"></i><span data-i18n="library.downloads">Downloads</span></button>
+<button class="nav" data-s="easels"><i data-icon="easel"></i><span data-i18n="library.easels">Easels &amp; Notes</span></button>
+<button class="nav" data-s="spaces"><i data-icon="grid"></i><span data-i18n="library.spaces">Spaces</span></button>
+<button class="nav" data-s="history"><i data-icon="history"></i><span data-i18n="library.history">History</span></button>
+<button class="nav" data-s="watches"><i data-icon="eye"></i><span data-i18n="library.watches">Watched Areas</span></button>
+<button class="nav" data-s="archive"><i data-icon="archive"></i><span data-i18n="library.archive">Archived Tabs</span></button>
 <div class="sp"></div>
-<button id="back" title="Back" aria-label="Back"><i data-icon="back"></i></button>
+<button id="back" data-i18n-title="library.back" data-i18n-aria="library.back"><i data-icon="back"></i></button>
 </div>
 <main id="m"></main></div>
 <canvas id="fx"></canvas>
@@ -71,38 +71,42 @@ const send=o=>window.ipc.postMessage(JSON.stringify(o));
 let S=null,sec='media',q='',filter='all',clearArm={};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const host=u=>{try{return new URL(u).host}catch{return u}};
-function ago(at,now){const m=Math.max(0,Math.round((now-at)/60));return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':day(at,now)}
-function day(at,now){const d=Math.floor((now-at)/86400);return d<=0?'Today':d==1?'Yesterday':new Date(at*1000).toLocaleDateString()}
+// Catalog texts are inserted as HTML here, escaped like any other text.
+const T=(k,p)=>esc(bhT(k,p));
+function ago(at,now){const m=Math.max(0,Math.round((now-at)/60));return m<1?bhT('time.just_now'):m<60?bhT('time.min_ago',{n:m}):m<1440?bhT('time.h_ago',{n:Math.round(m/60)}):day(at,now)}
+function day(at,now){const d=Math.floor((now-at)/86400);return d<=0?bhT('time.today'):d==1?bhT('time.yesterday'):new Date(at*1000).toLocaleDateString(bhI18n.lang)}
+const FILTERS={all:'library.filter_all',completed:'library.filter_completed',failed:'library.filter_failed'};
+const NONE=()=>`<div class="empty">${T('library.empty')}</div>`;
 function render(){
  if(!S)return;
  document.documentElement.style.setProperty('--a',S.accent||'#6a8cff');
  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.s==sec));
  const m=document.getElementById('m');const has=t=>!q||t.toLowerCase().includes(q.toLowerCase());
  let h='';
- const tools=(ph,f,clear)=>`<div class="tools"><input id="q" placeholder="${ph}" value="${esc(q)}">${f?`<button class="btn" id="flt">Filter: ${filter}</button>`:''}${clear?(clearArm.kind==clear?`<button class="btn armed" data-clear="${clear}">Click again to clear</button>`:`<button class="btn" data-clear="${clear}">Clear</button>`):''}</div>`;
+ const tools=(ph,f,clear)=>`<div class="tools"><input id="q" placeholder="${ph}" value="${esc(q)}">${f?`<button class="btn" id="flt">${T('library.filter',{filter:bhT(FILTERS[filter])})}</button>`:''}${clear?(clearArm.kind==clear?`<button class="btn armed" data-clear="${clear}">${T('library.clear_confirm')}</button>`:`<button class="btn" data-clear="${clear}">${T('home.clear')}</button>`):''}</div>`;
  if(sec=='media'){
   const l=S.media.filter(x=>has(x.name));
-  h='<h1>Media</h1>'+tools('Search Media…')+(l.length?'<div class="grid">'+l.map(x=>`<div class="tile" data-open="${x.id}">${x.thumb?`<img src="${x.thumb}">`:bhIconHTML(x.kind=='video'?'play':'image','lg')}<span>${esc(x.name)}</span></div>`).join('')+'</div>':'<div class="empty">Nothing here yet!</div>');
+  h=`<h1>${T('library.media')}</h1>`+tools(T('library.search_media'))+(l.length?'<div class="grid">'+l.map(x=>`<div class="tile" data-open="${x.id}">${x.thumb?`<img src="${x.thumb}">`:bhIconHTML(x.kind=='video'?'play':'image','lg')}<span>${esc(x.name)}</span></div>`).join('')+'</div>':NONE());
  }else if(sec=='downloads'){
   const l=S.downloads.filter(d=>has(d.name)&&(filter=='all'||(filter=='completed'?d.done&&d.ok:d.done&&!d.ok)));
-  h='<h1>Downloads</h1>'+tools('Search Downloads…',1,'downloads')+(l.length?l.map(d=>`<div class="row" data-open="${d.id}"><div class="t"><b>${esc(d.name)}</b><i>${d.done?(d.ok?(d.exists?esc(host(d.url)):'File moved or deleted'):'Failed'):'Downloading…'}</i></div><span class="x" data-del="${d.id}">${bhIconHTML('close','xs')}</span></div>`).join(''):'<div class="empty">Nothing here yet!</div>');
+  h=`<h1>${T('library.downloads')}</h1>`+tools(T('library.search_downloads'),1,'downloads')+(l.length?l.map(d=>`<div class="row" data-open="${d.id}"><div class="t"><b>${esc(d.name)}</b><i>${d.done?(d.ok?(d.exists?esc(host(d.url)):T('library.file_gone')):T('library.failed')):T('library.downloading')}</i></div><span class="x" data-del="${d.id}">${bhIconHTML('close','xs')}</span></div>`).join(''):NONE());
  }else if(sec=='easels'){
-  h='<h1>Easels &amp; Notes</h1>'+(S.easels.length?'<div class="cards">'+S.easels.map(e=>`<div class="card" data-easel="${e.id}"><b>${esc(e.name)}</b><small>${e.count} item(s)</small><div>${esc(e.preview)}</div></div>`).join('')+'</div>':'<div class="empty">Nothing here yet!</div>');
+  h=`<h1>${T('library.easels')}</h1>`+(S.easels.length?'<div class="cards">'+S.easels.map(e=>`<div class="card" data-easel="${e.id}"><b>${esc(e.name)}</b><small>${esc(bhTn('library.items',e.count))}</small><div>${esc(e.preview)}</div></div>`).join('')+'</div>':NONE());
  }else if(sec=='spaces'){
-  h='<h1>Spaces</h1><div class="cols">'+S.spaces.map(s=>`<div class="col${s.active?' on':''}"><h3>${esc(s.icon)} ${esc(s.name)}</h3>${s.folders.map(f=>`<div class="f">${bhIconHTML('folder','xs')} ${esc(f.name)}</div>`+s.tabs.filter(t=>t.folder==f.id).map(t=>tabRow(s,t)).join('')).join('')}${s.tabs.filter(t=>t.folder==null).map(t=>tabRow(s,t)).join('')}</div>`).join('')+'</div>';
+  h=`<h1>${T('library.spaces')}</h1><div class="cols">`+S.spaces.map(s=>`<div class="col${s.active?' on':''}"><h3>${esc(s.icon)} ${esc(s.name)}</h3>${s.folders.map(f=>`<div class="f">${bhIconHTML('folder','xs')} ${esc(f.name)}</div>`+s.tabs.filter(t=>t.folder==f.id).map(t=>tabRow(s,t)).join('')).join('')}${s.tabs.filter(t=>t.folder==null).map(t=>tabRow(s,t)).join('')}</div>`).join('')+'</div>';
  }else if(sec=='history'){
   const l=(S.history||[]).filter(a=>has(a.title+a.url));
-  h='<h1>History</h1>'+tools('Search History…',0,'history')+(l.length?'':'<div class="empty">Nothing here yet!</div>');
+  h=`<h1>${T('library.history')}</h1>`+tools(T('library.search_history'),0,'history')+(l.length?'':NONE());
   let last='';for(const a of l.slice(0,400)){const d=day(a.at,S.now);if(d!=last){h+=`<div class="day">${esc(d)}</div>`;last=d}
    h+=`<div class="row" data-visit="${esc(a.url)}"><div class="t"><b>${esc(a.title||a.url)}</b><i>${esc(a.url)}</i></div><span class="x" data-forget="${esc(a.url)}">${bhIconHTML('close','xs')}</span></div>`}
  }else if(sec=='watches'){
   // Areas of pages read again every half hour; a change shows the value before and after.
   const l=(S.watches||[]).filter(w=>has(w.title+w.url+w.value));
-  h='<h1>Watched Areas</h1>'+tools('Search Watched Areas…')+(l.length?l.map(w=>`<div class="row" data-visit="${esc(w.url)}"><div class="t"><b>${esc(w.title||host(w.url))}${w.unread?' <span class="new">changed</span>':''}</b><i>${w.previous?`<s>${esc(w.previous)}</s> → `:''}${esc(w.value||'Reading…')} · ${esc(host(w.url))}${w.checked>0?' · checked '+esc(ago(w.checked,S.now)):''}</i></div><span class="x" data-wcheck="${w.id}" title="Check now">⟳</span><span class="x" data-wdel="${w.id}" title="Stop watching">${bhIconHTML('close','xs')}</span></div>`).join(''):'<div class="empty">Pick an area of a page (Live capture) and choose "Watch this area for changes".</div>');
+  h=`<h1>${T('library.watches')}</h1>`+tools(T('library.search_watches'))+(l.length?l.map(w=>`<div class="row" data-visit="${esc(w.url)}"><div class="t"><b>${esc(w.title||host(w.url))}${w.unread?` <span class="new">${T('library.changed')}</span>`:''}</b><i>${w.previous?`<s>${esc(w.previous)}</s> → `:''}${w.value?esc(w.value):T('library.reading')} · ${esc(host(w.url))}${w.checked>0?' · '+T('library.checked',{when:ago(w.checked,S.now)}):''}</i></div><span class="x" data-wcheck="${w.id}" title="${T('library.check_now')}">⟳</span><span class="x" data-wdel="${w.id}" title="${T('library.stop_watching')}">${bhIconHTML('close','xs')}</span></div>`).join(''):`<div class="empty">${T('library.watches_empty')}</div>`);
   if(l.some(w=>w.unread))setTimeout(()=>send({cmd:'watches_seen'}),1500);
  }else{
   const l=S.archive.filter(a=>has(a.title+a.url));
-  h='<h1>Archived Tabs</h1>'+tools('Search Archive…',0,'archive')+(l.length?'':'<div class="empty">Nothing here yet!</div>');
+  h=`<h1>${T('library.archive')}</h1>`+tools(T('library.search_archive'),0,'archive')+(l.length?'':NONE());
   let last='';for(const a of l){const d=day(a.at,S.now);if(d!=last){h+=`<div class="day">${esc(d)}</div>`;last=d}
    h+=`<div class="row" data-reopen="${a.index}"><div class="t"><b>${esc(a.title||a.url)}</b><i>${esc(a.url)}</i></div><span class="x" data-delarch="${a.index}">${bhIconHTML('close','xs')}</span></div>`}
  }
@@ -156,6 +160,7 @@ function go(s){if(s==sec)return;const m=document.getElementById('m');m.classList
 function stagger(){if(calm)return;const m=document.getElementById('m');m.querySelectorAll('.row,.tile,.card,.col').forEach((n,i)=>n.style.setProperty('--i',Math.min(i,24)));m.classList.remove('enter');void m.offsetWidth;m.classList.add('enter');clearTimeout(stagger.t);stagger.t=setTimeout(()=>m.classList.remove('enter'),900)}
 document.getElementById('rail').onclick=e=>{const b=e.target.closest('.nav');if(b)go(b.dataset.s)};
 document.getElementById('back').onclick=()=>send({cmd:'close_library'});
+addEventListener('bhlang',()=>render());
 document.addEventListener('keydown',e=>{if(e.key=='Escape')send({cmd:'close_library'})});
 document.getElementById('m').addEventListener('input',e=>{if(e.target.id=='q'){q=e.target.value;render()}});
 document.getElementById('m').addEventListener('click',e=>{

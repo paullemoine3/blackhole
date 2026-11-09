@@ -275,10 +275,10 @@ impl Easels {
         title: &str,
         snippet: &str,
     ) -> Result<u64, &'static str> {
-        let url = clip_url(url).ok_or("Only web pages can be captured")?;
-        let e = self.get_mut(easel).ok_or("Unknown easel")?;
+        let url = clip_url(url).ok_or("msg.easel_only_web")?;
+        let e = self.get_mut(easel).ok_or("msg.easel_unknown")?;
         if e.items.len() >= MAX_ITEMS {
-            return Err("This easel is full");
+            return Err("msg.easel_full");
         }
         let (x, y) = e.free_slot();
         let id = e.next_item_id();
@@ -309,14 +309,14 @@ impl Easels {
         selector: &str,
         (width, height): (f64, f64),
     ) -> Result<u64, &'static str> {
-        let url = clip_url(url).ok_or("Only web pages can be captured")?;
+        let url = clip_url(url).ok_or("msg.easel_only_web")?;
         let selector = clean_selector(selector);
         if selector.is_empty() {
-            return Err("Nothing was selected");
+            return Err("msg.easel_nothing_selected");
         }
-        let e = self.get_mut(easel).ok_or("Unknown easel")?;
+        let e = self.get_mut(easel).ok_or("msg.easel_unknown")?;
         if e.items.len() >= MAX_ITEMS {
-            return Err("This easel is full");
+            return Err("msg.easel_full");
         }
         let ratio = if width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0 {
             height / width

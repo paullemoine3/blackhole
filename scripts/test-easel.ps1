@@ -10,6 +10,7 @@ Remove-Item -Recurse -Force (Join-Path $tmp 'bh_data'), (Join-Path $tmp 'bh_shot
 
 $script = @'
 wait 3000
+cmd {"cmd":"set_language","language":"en"}
 cmd {"cmd":"open","input":"https://example.com"}
 wait 5000
 cmd {"cmd":"new_easel","name":"Ideas"}

@@ -26,14 +26,17 @@ function pane(side, p, focus) {
   // The right pane may be an Easel (a meeting's notes beside the call), not a tab.
   const d = document.createElement('span'); d.className = 'dot'; if (p.easel) d.append(bhIcon('edit', 'xs')); else d.textContent = (host(p.url)[0] || '•').toUpperCase(); d.style.background = p.easel ? 'var(--accent)' : hue(host(p.url));
   const t = document.createElement('span'); t.className = 't'; t.textContent = p.title || host(p.url);
-  const x = document.createElement('button'); x.append(bhIcon('close', 'xs')); x.title = p.easel ? 'Close this pane (the Easel stays in the sidebar)' : 'Close this pane (the tab stays in the sidebar)';
+  const x = document.createElement('button'); x.append(bhIcon('close', 'xs')); x.title = bhT(p.easel ? 'split.close_easel_pane' : 'split.close_pane');
   x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close_pane', side }); };
   n.onclick = () => { if (side === 'right' && !p.easel) send({ cmd: 'activate', id: p.id }); };
   n.append(d, t, x);
   return n;
 }
+let last = null;
+addEventListener('bhlang', () => last && bh.render(last));
 window.bh = {
   render(s) {
+    last = s;
     document.documentElement.style.setProperty('--accent', s.color);
     document.getElementById('m').replaceChildren(pane('left', s.left, true), pane('right', s.right, false));
   },

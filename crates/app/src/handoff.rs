@@ -8,6 +8,7 @@
 //! sync`. A device coming online gets this device's ledger; an `auto` device also gets it a few
 //! seconds after each change; a received ledger is merged at once (`auto`) or proposed (`ask`).
 
+use crate::i18n::{message, t, tf, tn};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::handoff::{can_continue, has_position, resume_url};
 use blackhole_infrastructure::handoff::{self, DeviceInfo, Event, Handle, Request};
@@ -135,7 +136,7 @@ impl Running {
         self.nearby
             .devices
             .iter()
-            .map(|d| json!({"id": format!("continue:{}", d.id), "label": format!("Continue on {}", d.name), "hint": "Devices"}))
+            .map(|d| json!({"id": format!("continue:{}", d.id), "label": tf("palette.continue_on", &[("name", &d.name)]), "hint": t("palette.hint_devices")}))
             .collect()
     }
 
@@ -150,7 +151,7 @@ impl Running {
             .find(|t| t.id.0 == tab)
             .map(|t| (t.url.clone(), t.title.clone()));
         let Some((url, title)) = found.filter(|(u, _)| can_continue(u)) else {
-            self.toast("Only web pages can continue on another device");
+            self.toast(&t("msg.only_web_continue"));
             return;
         };
         match self.tabs.get(&TabId(tab)).filter(|_| has_position(&url)) {
@@ -212,8 +213,8 @@ impl Running {
                     self.ui_settings();
                 }
                 Event::Paired(name) => {
-                    self.nearby.status = format!("Paired with {name}");
-                    self.toast(&format!("Paired with {name}: tabs can now continue on it"));
+                    self.nearby.status = message("settings.devices_paired_with", &[("name", &name)]);
+                    self.toast(&tf("toast.paired", &[("name", &name)]));
                     self.ui_settings();
                 }
                 Event::Received {
@@ -224,10 +225,10 @@ impl Running {
                 } => {
                     if let Ok(url) = Url::parse(&url) {
                         self.open(resume_url(&url, position).as_str());
-                        self.toast(&format!("Continued from {from}"));
+                        self.toast(&tf("toast.continued_from", &[("name", &from)]));
                     }
                 }
-                Event::Delivered(name) => self.toast(&format!("Opened on {name}")),
+                Event::Delivered(name) => self.toast(&tf("toast.opened_on", &[("name", &name)])),
                 Event::Status(status) => {
                     if self.settings.is_none() {
                         self.toast(&status);
@@ -296,7 +297,7 @@ impl Running {
                 let quiet = received.reply;
                 self.apply_ledger(&device, &received);
                 if !quiet {
-                    self.toast(&format!("Tabs synchronized with {name}"));
+                    self.toast(&tf("toast.synced_with", &[("name", &name)]));
                 }
             }
             Decision::Ask { opens, closes, changes } => {
@@ -305,21 +306,21 @@ impl Running {
                 }
                 let mut what = Vec::new();
                 if opens > 0 {
-                    what.push(format!("{opens} tab{} to open", if opens == 1 { "" } else { "s" }));
+                    what.push(tn("toast.sync_opens", opens, &[]));
                 }
                 if closes > 0 {
-                    what.push(format!("{closes} to close"));
+                    what.push(tn("toast.sync_closes", closes, &[]));
                 }
                 if changes > 0 {
-                    what.push(format!("{changes} change{}", if changes == 1 { "" } else { "s" }));
+                    what.push(tn("toast.sync_changes", changes, &[]));
                 }
-                let message = format!("Synchronize tabs with {name}? {}", what.join(", "));
+                let message = tf("toast.sync_ask", &[("name", &name), ("what", &what.join(", "))]);
                 self.nearby.proposals.insert(device.clone(), (name, received));
                 let run = |answer: &str| json!({"cmd": "sync_answer", "id": device, "answer": answer});
                 let actions = json!([
-                    {"label": "Merge", "run": run("merge")},
-                    {"label": "Always", "run": run("always")},
-                    {"label": "Later", "run": run("later")},
+                    {"label": t("toast.sync_merge"), "run": run("merge")},
+                    {"label": t("toast.sync_always"), "run": run("always")},
+                    {"label": t("toast.sync_later"), "run": run("later")},
                 ]);
                 self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
             }
@@ -343,7 +344,7 @@ impl Running {
             "available": self.nearby.handle.is_some(),
             "list": self.nearby.menu_json(),
             "code": self.nearby.code,
-            "status": self.nearby.status,
+            "status": crate::i18n::render(&self.nearby.status),
         })
     }
 
@@ -364,7 +365,7 @@ impl Running {
             UiCommand::DeviceSyncNow { id } => {
                 self.nearby.later.remove(&id);
                 self.send_ledger(&id, false, true);
-                self.toast("Synchronizing…");
+                self.toast(&t("toast.synchronizing"));
             }
             UiCommand::SyncAnswer { id, answer } => {
                 let Some((name, received)) = self.nearby.proposals.remove(&id) else {
@@ -379,7 +380,7 @@ impl Running {
                             });
                         }
                         self.apply_ledger(&id, &received);
-                        self.toast(&format!("Tabs synchronized with {name}"));
+                        self.toast(&tf("toast.synced_with", &[("name", &name)]));
                     }
                     _ => {
                         self.nearby.later.insert(id);

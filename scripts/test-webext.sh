@@ -14,6 +14,7 @@ probe() { echo "(async()=>{const W=$1;let o;for(let i=0;i<10;i++){o={};for(const
 STATUS="eval settings JSON.stringify(document.querySelector('#catalog .sub').textContent)"
 cat > /tmp/bh_script.txt <<S
 wait 2000
+cmd {"cmd":"set_language","language":"en"}
 cmd {"cmd":"set_tracker_blocking","on":false}
 cmd {"cmd":"set_shield","name":"ads","on":false}
 cmd {"cmd":"open_settings","tab":"extensions"}
@@ -45,7 +46,7 @@ out=$(timeout 240 cargo run -q -p blackhole --features devtools 2>&1 | grep 'dev
 mapfile -t L <<<"$out"
 fail=0
 check() { if [[ "${L[$1]:-}" == *"$2"* ]]; then echo "ok   $3"; else echo "FAIL $3 (got: ${L[$1]:-none})"; fail=1; fi; }
-check 0 "Bloqueur" "catalog lists the extension (available)"
+check 0 "tracker blocker" "catalog lists the extension (available)"
 check 1 "Active" "install: downloaded, verified, loaded"
 check 3 'amazon-adsystem.com\/aax2\/apstag.js\":\"NETERR' "enabled: ad host blocked by DNR"
 check 3 'newrelic.com\/nr-loader-spa-current.min.js\":\"NETERR' "enabled: second tracker blocked by DNR"
@@ -53,5 +54,5 @@ check 3 'example.org\/\":\"ok' "enabled: control URL loads"
 check 4 "Turned off" "disable: status off"
 check 6 'amazon-adsystem.com\/aax2\/apstag.js\":\"ok' "disabled: ad host reachable again"
 check 7 "Active" "re-enable: active again"
-check 8 "Bloqueur" "remove: back to available"
+check 8 "tracker blocker" "remove: back to available"
 exit $fail

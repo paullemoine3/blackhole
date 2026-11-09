@@ -237,13 +237,13 @@
 <div id="cardshadow"></div>
 <aside>
 <div id="scroll">
-  <div class="section secrow" id="pinhead" hidden><span class="fold" id="pinfold" title="Show or hide quick access"></span></div>
+  <div class="section secrow" id="pinhead" hidden><span class="fold" id="pinfold" data-i18n-title="sidebar.toggle_quick"></span></div>
   <div id="pinned"></div>
   <div id="pinsep"></div>
-  <div class="section secrow"><span class="fold" id="foldfold" title="Show or hide folders"></span><button class="mini" id="newfolder" title="New folder"><i data-icon="plus" data-size="xs"></i>Folder</button></div>
+  <div class="section secrow"><span class="fold" id="foldfold" data-i18n-title="sidebar.toggle_folders"></span><button class="mini" id="newfolder" data-i18n-title="palette.new_folder"><i data-icon="plus" data-size="xs"></i><span data-i18n="sidebar.folder">Folder</span></button></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
-  <div class="newrow"><button class="new" id="new" title="New tab"><i data-icon="plus"></i><span class="full-only">New tab</span></button></div>
+  <div class="newrow"><button class="new" id="new"><i data-icon="plus"></i><span class="full-only" data-i18n="sidebar.new_tab">New tab</span></button></div>
   <div id="tidy"></div>
   <div id="tabs"></div>
 </div>
@@ -252,13 +252,13 @@
   <div id="media"></div>
   <div id="dls"></div>
   <button class="update" id="update" hidden><span class="ico"></span><span class="full-only" id="updtxt"></span></button>
-  <div id="stats" title="Active tabs · memory and CPU used by BlackHole and its web engine"></div>
+  <div id="stats" data-i18n-title="sidebar.stats_hint"></div>
   <footer>
-    <button class="icon" id="library" title="Library" aria-label="Library"><i data-icon="library"></i></button>
-    <button class="icon" id="gear" title="Settings" aria-label="Settings"><i data-icon="gear"></i></button>
-    <button class="shield" id="shield" title="What was blocked this session"><i data-icon="shield"></i><span class="full-only" id="blockedn"> 0</span></button>
+    <button class="icon" id="library" data-i18n-title="palette.hint_library" data-i18n-aria="palette.hint_library"><i data-icon="library"></i></button>
+    <button class="icon" id="gear" data-i18n-aria="settings.title"><i data-icon="gear"></i></button>
+    <button class="shield" id="shield" data-i18n-title="sidebar.privacy_report"><i data-icon="shield"></i><span class="full-only" id="blockedn"> 0</span></button>
     <span class="grow"></span>
-    <button class="icon" id="addspace" title="New space" aria-label="New space"><i data-icon="plus"></i></button>
+    <button class="icon" id="addspace" data-i18n-title="palette.new_space" data-i18n-aria="palette.new_space"><i data-icon="plus"></i></button>
   </footer>
 </aside>
 <div id="toast"></div>
@@ -293,7 +293,7 @@ function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (
 
 function tabNode(t) {
   const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : ''));
-  n.title = t.asleep ? t.title + ' (sleeping — reloads when opened)' : t.title;
+  n.title = t.asleep ? bhT('sidebar.asleep', { title: t.title }) : t.title;
   n.dataset.tab = t.id;
   n.dataset.pinned = t.pinned ? '1' : '';
   n.dataset.folder = t.folder == null ? '' : t.folder;
@@ -304,7 +304,7 @@ function tabNode(t) {
   if (!t.pinned && (t.split || t.id !== state.activeTab)) {
     const sp = el('button', 'sp');
     sp.append(bhIcon('split'));
-    sp.title = t.split ? 'Close split view' : 'Open in split view';
+    sp.title = bhT(t.split ? 'palette.close_split' : 'menu.split_open');
     sp.onmousedown = (e) => e.stopPropagation();
     sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
     n.append(d, el('span', 'title', t.title), sp);
@@ -314,7 +314,7 @@ function tabNode(t) {
   if (md && (md.playing || md.muted)) {
     const sn = el('button', 'snd');
     sn.append(bhIcon(md.muted ? 'mute' : 'sound', 'xs'));
-    sn.title = md.muted ? 'Unmute this tab' : 'Playing — click to mute';
+    sn.title = bhT(md.muted ? 'sidebar.unmute_this' : 'sidebar.playing_mute');
     sn.onmousedown = (e) => e.stopPropagation();
     sn.onclick = (e) => { e.stopPropagation(); send({ cmd: 'media_ctl', id: t.id, action: 'mute' }); };
     n.insertBefore(sn, n.querySelector('.sp, .title').nextSibling);
@@ -322,7 +322,7 @@ function tabNode(t) {
   if (!t.pinned) {
     const mo = el('button', 'mo');
     mo.append(bhIcon('more'));
-    mo.title = 'Tab options';
+    mo.title = bhT('sidebar.tab_options');
     mo.onmousedown = (e) => e.stopPropagation();
     mo.onclick = (e) => { e.stopPropagation(); const r = mo.getBoundingClientRect(); tabMenu(t, r.left, r.bottom + 4); };
     n.append(mo);
@@ -333,7 +333,7 @@ function tabNode(t) {
   if (!keep || !t.asleep) {
     const x = el('button', 'x');
     x.append(bhIcon(keep ? 'minus' : 'close', 'xs'));
-    x.title = keep ? 'Put to sleep (stays in the sidebar)' : 'Close tab';
+    x.title = bhT(keep ? 'sidebar.sleep_hint' : 'menu.close_tab');
     x.onmousedown = (e) => e.stopPropagation();
     x.onclick = (e) => { e.stopPropagation(); send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id }); };
     n.append(x);
@@ -358,61 +358,60 @@ function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, it
 // Menus share one vocabulary: "quick access" (pinned tiles), "put to sleep" (the tab keeps its
 // place), "close" (it goes to the archive), "delete" (a container and what is inside). Icons are
 // names drawn by the command bar (palette.html); `confirm` asks for a second click.
-const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
 function tabMenu(t, x, y) {
   const keep = t.pinned || t.folder != null;
-  const items = [{ icon: 'pin', label: t.pinned ? 'Remove from quick access' : 'Add to quick access', run: { cmd: 'pin', id: t.id } }];
-  items.push({ icon: 'edit', label: 'Rename tab', run: { cmd: 'edit_tab', id: t.id } });
+  const items = [{ icon: 'pin', label: bhT(t.pinned ? 'menu.quick_remove' : 'menu.quick_add'), run: { cmd: 'pin', id: t.id } }];
+  items.push({ icon: 'edit', label: bhT('menu.rename_tab'), run: { cmd: 'edit_tab', id: t.id } });
   if (!t.pinned) {
-    if (t.split) items.push({ icon: 'split', label: 'Close split view', run: { cmd: 'close_split' } });
-    else if (t.id !== state.activeTab) items.push({ icon: 'split', label: 'Open in split view', run: { cmd: 'split', id: t.id } });
+    if (t.split) items.push({ icon: 'split', label: bhT('palette.close_split'), run: { cmd: 'close_split' } });
+    else if (t.id !== state.activeTab) items.push({ icon: 'split', label: bhT('menu.split_open'), run: { cmd: 'split', id: t.id } });
   }
-  if (t.folder != null) items.push({ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
+  if (t.folder != null) items.push({ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
   items.push({ sep: true });
-  if (!t.asleep) items.push({ icon: 'reload', label: 'Reload', run: { cmd: 'reload_tab', id: t.id } });
-  items.push({ icon: 'copy', label: 'Duplicate', run: { cmd: 'duplicate_tab', id: t.id } });
-  items.push({ icon: 'link', label: 'Copy link', copy: t.url });
-  items.push({ icon: 'compare', label: 'Compare with the other tabs', run: { cmd: 'action', id: 'compare' } });
-  if (/^https?:/.test(t.url)) items.push(...(state.devices || []).map(d => ({ icon: 'devices', label: 'Continue on ' + d.name, run: { cmd: 'continue_on', id: t.id, device: d.id } })));
-  if (t.id === state.activeTab && !t.asleep) items.push({ icon: 'code', label: 'Inspect page (developer tools)', run: { cmd: 'action', id: 'key:devtools' } });
+  if (!t.asleep) items.push({ icon: 'reload', label: bhT('bar.reload'), run: { cmd: 'reload_tab', id: t.id } });
+  items.push({ icon: 'copy', label: bhT('menu.duplicate'), run: { cmd: 'duplicate_tab', id: t.id } });
+  items.push({ icon: 'link', label: bhT('menu.copy_link'), copy: t.url });
+  items.push({ icon: 'compare', label: bhT('menu.compare'), run: { cmd: 'action', id: 'compare' } });
+  if (/^https?:/.test(t.url)) items.push(...(state.devices || []).map(d => ({ icon: 'devices', label: bhT('palette.continue_on', { name: d.name }), run: { cmd: 'continue_on', id: t.id, device: d.id } })));
+  if (t.id === state.activeTab && !t.asleep) items.push({ icon: 'code', label: bhT('menu.inspect'), run: { cmd: 'action', id: 'key:devtools' } });
   const md = (state.media || []).find(m => m.id === t.id);
-  if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: md.muted ? 'Unmute tab' : 'Mute tab', run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
+  if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: bhT(md.muted ? 'menu.unmute_tab' : 'menu.mute_tab'), run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
   const others = state.spaces.filter(sp => sp.id !== state.activeSpace);
   if (others.length) {
-    items.push({ sep: true }, { head: 'Move to space' });
+    items.push({ sep: true }, { head: bhT('menu.move_to_space') });
     items.push(...others.map(sp => ({ icon: sp.icon || 'space', color: sp.icon ? null : sp.color, label: sp.name, run: { cmd: 'move_tab_to_space', id: t.id, space: sp.id } })));
   }
   items.push({ sep: true });
   const loose = state.tabs.filter(o => o.id !== t.id && !o.pinned && o.folder == null).length;
-  if (loose) items.push({ icon: 'close', label: 'Close other tabs', confirm: 'Click again to close ' + plural(loose, 'tab'), run: { cmd: 'close_other_tabs', id: t.id } });
+  if (loose) items.push({ icon: 'close', label: bhT('menu.close_others'), confirm: bhTn('menu.close_others_confirm', loose), run: { cmd: 'close_other_tabs', id: t.id } });
   if (t.pinned) {
     // Closing a quick access tab never takes it off the list (like Cmd/Ctrl+W): it only stops
     // its page. "Remove from quick access" above is the way to take it off.
-    if (!t.asleep) items.push({ icon: 'close', label: 'Close tab', run: { cmd: 'close_instance', id: t.id } });
+    if (!t.asleep) items.push({ icon: 'close', label: bhT('menu.close_tab'), run: { cmd: 'close_instance', id: t.id } });
   } else {
-    if (keep && !t.asleep) items.push({ icon: 'sleep', label: 'Put to sleep', run: { cmd: 'close_instance', id: t.id } });
-    items.push({ icon: 'close', label: 'Close tab', danger: true, run: { cmd: 'close', id: t.id } });
+    if (keep && !t.asleep) items.push({ icon: 'sleep', label: bhT('menu.sleep'), run: { cmd: 'close_instance', id: t.id } });
+    items.push({ icon: 'close', label: bhT('menu.close_tab'), danger: true, run: { cmd: 'close', id: t.id } });
   }
   openMenu(x, y, items);
 }
 
 // Space colors offered in its menu (any #rrggbb is accepted by the host).
-const COLORS = [['Violet', '#7c5cff'], ['Pink', '#ff5c8a'], ['Green', '#2fd4a0'], ['Amber', '#ffb020'], ['Blue', '#3aa0ff'], ['Red', '#e5534b'], ['Teal', '#14b8c4'], ['Grey', '#8b8a99']];
+const COLORS = [['color.violet', '#7c5cff'], ['color.pink', '#ff5c8a'], ['color.green', '#2fd4a0'], ['color.amber', '#ffb020'], ['color.blue', '#3aa0ff'], ['color.red', '#e5534b'], ['color.teal', '#14b8c4'], ['color.grey', '#8b8a99']];
 
 function spaceMenu(sp, x, y) {
   const items = [];
-  if (sp.id !== state.activeSpace) items.push({ icon: 'switch', label: 'Switch to this space', run: { cmd: 'space', id: sp.id } });
+  if (sp.id !== state.activeSpace) items.push({ icon: 'switch', label: bhT('menu.switch_space'), run: { cmd: 'space', id: sp.id } });
   items.push(
-    { icon: 'emoji', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
-    { icon: 'edit', label: 'Rename space', run: { cmd: 'edit_space', id: sp.id } },
-    { sep: true }, { head: 'Color' },
-    ...COLORS.map(([name, hex]) => ({ icon: hex.toLowerCase() === (sp.color || '').toLowerCase() ? 'check' : '', color: hex, label: name, run: { cmd: 'set_space_color', id: sp.id, color: hex } })),
+    { icon: 'emoji', label: bhT('menu.change_emoji'), run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
+    { icon: 'edit', label: bhT('menu.rename_space'), run: { cmd: 'edit_space', id: sp.id } },
+    { sep: true }, { head: bhT('easel.color') },
+    ...COLORS.map(([name, hex]) => ({ icon: hex.toLowerCase() === (sp.color || '').toLowerCase() ? 'check' : '', color: hex, label: bhT(name), run: { cmd: 'set_space_color', id: sp.id, color: hex } })),
   );
   if (state.spaces.length > 1) {
     // Only the active space's tabs are known here; the others say nothing about their count.
     const n = sp.id === state.activeSpace ? state.tabs.length : null;
-    const confirm = n === 0 ? 'Click again to delete' : 'Click again to archive ' + (n == null ? 'its tabs' : plural(n, 'tab'));
-    items.push({ sep: true }, { icon: 'trash', label: 'Delete space', danger: true, confirm, run: { cmd: 'delete_space', id: sp.id } });
+    const confirm = n === 0 ? bhT('easel.delete_confirm') : n == null ? bhT('menu.archive_its_tabs') : bhTn('menu.archive_tabs_confirm', n);
+    items.push({ sep: true }, { icon: 'trash', label: bhT('menu.delete_space'), danger: true, confirm, run: { cmd: 'delete_space', id: sp.id } });
   }
   openMenu(x, y, items);
 }
@@ -426,13 +425,13 @@ function folderMenu(f, x, y) {
   }
   const inside = state.tabs.filter(t => tree.has(t.folder)).length;
   openMenu(x, y, [
-    { icon: 'edit', label: 'Rename folder', run: { cmd: 'edit_folder', id: f.id } },
-    { icon: 'emoji', label: 'Change emoji', run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
-    { icon: 'folder', label: 'New subfolder', run: { cmd: 'new_folder', parent: f.id } },
-    { icon: f.collapsed ? 'expand' : 'collapse', label: f.collapsed ? 'Expand folder' : 'Collapse folder', run: { cmd: 'toggle_folder', id: f.id } },
-    ...(f.parent != null ? [{ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
+    { icon: 'edit', label: bhT('menu.rename_folder'), run: { cmd: 'edit_folder', id: f.id } },
+    { icon: 'emoji', label: bhT('menu.change_emoji'), run: { cmd: 'pick_icon', kind: 'folder', id: f.id } },
+    { icon: 'folder', label: bhT('menu.new_subfolder'), run: { cmd: 'new_folder', parent: f.id } },
+    { icon: f.collapsed ? 'expand' : 'collapse', label: bhT(f.collapsed ? 'menu.expand_folder' : 'menu.collapse_folder'), run: { cmd: 'toggle_folder', id: f.id } },
+    ...(f.parent != null ? [{ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_folder', id: f.id, parent: null, before: null } }] : []),
     { sep: true },
-    { icon: 'trash', label: 'Delete folder', danger: true, confirm: inside ? 'Click again to archive ' + plural(inside, 'tab') : 'Click again to delete', run: { cmd: 'delete_folder', id: f.id } },
+    { icon: 'trash', label: bhT('menu.delete_folder'), danger: true, confirm: inside ? bhTn('menu.archive_tabs_confirm', inside) : bhT('easel.delete_confirm'), run: { cmd: 'delete_folder', id: f.id } },
   ]);
 }
 
@@ -440,11 +439,11 @@ function folderMenu(f, x, y) {
 function createMenu(x, y) {
   const easels = state.easels || [];
   openMenu(x, y, [
-    { icon: 'plus', label: 'New tab', run: { cmd: 'new_tab' } },
-    { icon: 'folder', label: 'New folder', run: { cmd: 'new_folder' } },
-    { icon: 'space', label: 'New space', run: { cmd: 'action', id: 'new_space' } },
-    { icon: 'easel', label: 'New Easel', run: { cmd: 'action', id: 'new_easel' } },
-    { icon: 'video', label: 'New Google Meet', run: { cmd: 'open_meet' } },
+    { icon: 'plus', label: bhT('sidebar.new_tab'), run: { cmd: 'new_tab' } },
+    { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
+    { icon: 'space', label: bhT('palette.new_space'), run: { cmd: 'action', id: 'new_space' } },
+    { icon: 'easel', label: bhT('menu.new_easel'), run: { cmd: 'action', id: 'new_easel' } },
+    { icon: 'video', label: bhT('palette.new_meet'), run: { cmd: 'open_meet' } },
     ...(easels.length ? [{ sep: true }, { head: 'Easels' }] : []),
     ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
@@ -457,18 +456,18 @@ function easelNode(e) {
   const ed = el('span', 'dot glyph');
   ed.append(bhIcon('easel', 'xs'));
   n.append(ed, el('span', 'title', e.name), el('span', 'count', e.count ? String(e.count) : ''));
-  n.title = e.name + ' — Easel (drag it into a folder)';
+  n.title = bhT('sidebar.easel_hint', { name: e.name });
   n.dataset.easel = e.id;
   n.onmousedown = (ev) => { if (ev.button === 0) down = { easel: e.id, node: n, x: ev.clientX, y: ev.clientY }; };
   n.onclick = () => { if (!justDragged) send({ cmd: 'open_easel_tab', id: e.id }); };
   n.oncontextmenu = (ev) => {
     ev.preventDefault();
     openMenu(ev.clientX, ev.clientY, [
-      { icon: 'easel', label: 'Open as tab', run: { cmd: 'open_easel_tab', id: e.id } },
-      { icon: 'window', label: 'Open in Easel window', run: { cmd: 'open_easel', id: e.id } },
-      ...(state.folders.some(f => f.id === e.folder) ? [{ icon: 'out', label: 'Move out of the folder', run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
+      { icon: 'easel', label: bhT('menu.open_as_tab'), run: { cmd: 'open_easel_tab', id: e.id } },
+      { icon: 'window', label: bhT('menu.open_in_easel_window'), run: { cmd: 'open_easel', id: e.id } },
+      ...(state.folders.some(f => f.id === e.folder) ? [{ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
       { sep: true },
-      { icon: 'trash', label: 'Delete Easel', danger: true, confirm: 'Click again to delete its notes and clips', run: { cmd: 'delete_easel', id: e.id } },
+      { icon: 'trash', label: bhT('menu.delete_easel'), danger: true, confirm: bhT('menu.delete_easel_confirm'), run: { cmd: 'delete_easel', id: e.id } },
     ]);
   };
   return n;
@@ -482,11 +481,11 @@ function folderNode(f, tabs, easels = [], subs = []) {
   chev.append(bhIcon(f.collapsed ? 'collapse' : 'expand', 'xs'));
   const ficon = el('span', 'ficon' + (f.icon ? '' : ' def'), f.icon || null);
   if (!f.icon) ficon.append(bhIcon('folder'));
-  ficon.title = 'Change emoji';
+  ficon.title = bhT('menu.change_emoji');
   ficon.onmousedown = (e) => e.stopPropagation();
   ficon.onclick = (e) => { e.stopPropagation(); send({ cmd: 'pick_icon', kind: 'folder', id: f.id }); };
   const name = el('span', 'fname', f.name);
-  h.title = f.name + ' — double-click to rename, right-click for options';
+  h.title = bhT('sidebar.folder_hint', { name: f.name });
   h.append(chev, ficon, name, el('span', 'count', tabs.length + easels.length ? String(tabs.length + easels.length) : ''));
   h.onclick = () => { if (!justDragged) send({ cmd: 'toggle_folder', id: f.id }); };
   h.onmousedown = (e) => { if (e.button === 0 && !editing) down = { folder: f.id, node: box, x: e.clientX, y: e.clientY }; };
@@ -765,7 +764,7 @@ document.addEventListener('drop', async (e) => {
     urls.forEach((u, i) => send({ cmd: 'add_bookmark', title: moz[0] === u ? (moz[1] || u) : u, url: u.trim(), folder }));
     found = urls.length;
   }
-  if (!found) bh.toast('Nothing to import from this drop');
+  if (!found) bh.toast(bhT('toast.nothing_dropped'));
 });
 
 // ---- motion ------------------------------------------------------------------------------
@@ -845,10 +844,11 @@ const motion = {
 
 window.bh = {
   stats(tabs, mb, cpu) {
+    lastStats = [tabs, mb, cpu];
     const box = $('stats');
     box.replaceChildren(
-      el('span', null, `${tabs} tab${tabs === 1 ? '' : 's'}`),
-      el('span', 'full-only', `· ${mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB'} · ${cpu}% CPU`),
+      el('span', null, bhTn('sidebar.tabs', tabs)),
+      el('span', 'full-only', '· ' + bhT('sidebar.usage', { mem: mb >= 1024 ? bhT('unit.gb', { n: (mb / 1024).toFixed(1) }) : bhT('unit.mb', { n: mb }), cpu })),
     );
   },
   render(s) {
@@ -900,7 +900,7 @@ window.bh = {
     }
     $('spaces').replaceChildren(...s.spaces.map(sp => {
       const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
-      b.title = sp.name + ' — right-click for options';
+      b.title = bhT('sidebar.space_hint', { name: sp.name });
       b.style.setProperty('--c', sp.color);
       if (sp.icon) b.classList.add('emoji');
       b.append(el('span', 'gl', sp.icon || (sp.name[0] || '•').toUpperCase()), el('span', 'sname', sp.name));
@@ -948,7 +948,7 @@ window.bh = {
   },
 };
 
-const fmtBytes = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const fmtBytes = (n) => n >= 1073741824 ? bhT('unit.gb', { n: (n / 1073741824).toFixed(1) }) : n >= 1048576 ? bhT('unit.mb', { n: (n / 1048576).toFixed(1) }) : bhT('unit.kb', { n: Math.max(1, Math.round(n / 1024)) });
 // Downloads in progress (and just finished) are cards above the update button. The cards are
 // updated in place: rebuilding them on every progress tick replayed their entrance animation
 // and restarted the bar, which made the sidebar flicker.
@@ -959,7 +959,7 @@ function renderDownloads(list) {
   (list || []).forEach((d, i) => {
     seen.add(d.id);
     const known = d.total > 0, pct = known ? Math.min(100, Math.round(d.received * 100 / d.total)) : 0;
-    const label = d.state === 'ok' ? 'Done' : d.state === 'bad' ? 'Failed' : known ? pct + '%' : fmtBytes(d.received);
+    const label = d.state === 'ok' ? bhT('sidebar.dl_done') : d.state === 'bad' ? bhT('library.failed') : known ? bhT('unit.percent', { n: pct }) : fmtBytes(d.received);
     let c = dlNodes.get(d.id);
     if (!c) {
       c = el('div', 'dl');
@@ -994,13 +994,13 @@ function renderTidy(t) {
   if (!t) { $('tidy').replaceChildren(); return; }
   const card = el('div', 'td');
   const folders = t.groups.length;
-  card.append(el('div', 'q', `Tidy up ${t.tabs} tabs into ${folders} folder${folders === 1 ? '' : 's'}?`));
+  card.append(el('div', 'q', bhTn('sidebar.tidy_ask', folders, { tabs: t.tabs })));
   const gs = el('div', 'gs');
   gs.append(...t.groups.map(g => el('span', null, `${g.name} · ${g.count}`)));
   const bt = el('div', 'bt');
-  const later = el('button', null, 'Not now');
+  const later = el('button', null, bhT('sidebar.not_now'));
   later.onclick = () => send({ cmd: 'dismiss_tidy' });
-  const go = el('button', 'go', 'Tidy up');
+  const go = el('button', 'go', bhT('sidebar.tidy_up'));
   go.onclick = () => send({ cmd: 'tidy' });
   bt.append(later, go);
   card.append(gs, bt);
@@ -1024,7 +1024,7 @@ function renderMeeting(m) {
   ico.innerHTML = '<rect x="1.5" y="4" width="9" height="8" rx="1.8"/><path d="M10.5 7l4-2.2v6.4l-4-2.2"/>';
   const tx = el('div', 'tx');
   tx.append(el('div', 'nm', m.title), el('div', 'wh', m.when));
-  const join = el('button', null, 'Join');
+  const join = el('button', null, bhT('sidebar.join'));
   join.onclick = () => send({ cmd: 'open_meet', url: m.url });
   card.replaceChildren(ico, tx, join);
   if (!card.parentNode) box.replaceChildren(card);
@@ -1048,18 +1048,18 @@ function renderMedia(s) {
   d.style.background = hue(host(t.url));
   withIcon(d, t.url, s.favicons);
   top.append(d, el('span', 'nm', t.title || host(t.url)));
-  top.title = 'Go to ' + host(t.url);
+  top.title = bhT('sidebar.go_to', { host: host(t.url) });
   top.onclick = () => send({ cmd: 'activate', id: t.id });
   const ctl = el('div', 'ctl');
   const btn = (cls, icon, title, action) => { const b = el('button', cls); b.append(bhIcon(icon)); b.title = title; b.setAttribute('aria-label', title); b.onclick = () => send({ cmd: 'media_ctl', id: t.id, action }); return b; };
   ctl.append(
-    btn('', m.playing ? 'pause' : 'play', m.playing ? 'Pause' : 'Play', 'toggle'),
-    btn('', m.muted ? 'mute' : 'sound', m.muted ? 'Unmute' : 'Mute', 'mute'));
-  if (m.mic) ctl.append(btn(m.micOn ? '' : 'off', m.micOn ? 'mic' : 'mic-off', m.micOn ? 'Turn the microphone off' : 'Turn the microphone on', 'mic'));
-  if (m.cam) ctl.append(btn(m.camOn ? '' : 'off', m.camOn ? 'video' : 'video-off', m.camOn ? 'Turn the camera off' : 'Turn the camera on', 'cam'));
+    btn('', m.playing ? 'pause' : 'play', bhT(m.playing ? 'easel.pause' : 'sidebar.play'), 'toggle'),
+    btn('', m.muted ? 'mute' : 'sound', bhT(m.muted ? 'sidebar.unmute' : 'sidebar.mute'), 'mute'));
+  if (m.mic) ctl.append(btn(m.micOn ? '' : 'off', m.micOn ? 'mic' : 'mic-off', bhT(m.micOn ? 'sidebar.mic_off' : 'sidebar.mic_on'), 'mic'));
+  if (m.cam) ctl.append(btn(m.camOn ? '' : 'off', m.camOn ? 'video' : 'video-off', bhT(m.camOn ? 'sidebar.cam_off' : 'sidebar.cam_on'), 'cam'));
   ctl.append(
-    btn('', 'pip', 'Picture in Picture', 'pip'),
-    btn('cl', 'close', 'Close the player', 'close'));
+    btn('', 'pip', bhT('palette.pip'), 'pip'),
+    btn('cl', 'close', bhT('sidebar.close_player'), 'close'));
   card.replaceChildren(top, ctl);
 }
 const UPDATE_ICONS = { ready: 'download', busy: 'spinner', error: 'alert' };
@@ -1073,26 +1073,38 @@ function renderUpdate(u, current) {
   const ico = busy ? 'busy' : u.state === 'error' ? 'error' : 'ready';
   const icon = b.querySelector('.ico');
   if (icon.dataset.k !== ico) { icon.dataset.k = ico; icon.replaceChildren(bhIcon(UPDATE_ICONS[ico])); }
-  $('updtxt').textContent = busy ? 'Updating to v' + u.version + '…'
-    : u.state === 'error' ? 'Update failed — retry' : 'Update to v' + u.version;
-  b.title = busy ? 'Downloading BlackHole ' + u.version + '; the app restarts when ready'
-    : u.state === 'error' ? u.error : 'BlackHole ' + u.version + ' is available (you have ' + current + ')';
+  const version = u.version;
+  $('updtxt').textContent = busy ? bhT('sidebar.updating', { version })
+    : u.state === 'error' ? bhT('sidebar.update_failed') : bhT('sidebar.update_to', { version });
+  b.title = busy ? bhT('sidebar.update_downloading', { version })
+    : u.state === 'error' ? u.error : bhT('sidebar.update_available', { version, current });
 }
 $('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
 // The privacy report of the site shown opens above the shield.
 $('shield').onclick = () => { const r = $('shield').getBoundingClientRect(); send({ cmd: 'privacy_report', x: r.left, y: r.top - 8 }); };
-$('shield').title = 'Privacy report of this site';
 $('new').onclick = () => send({ cmd: 'new_tab' });
-$('new').title = 'New tab (' + bhKeys('mod+t') + ')';
-$('gear').title = 'Settings (' + bhKeys('mod+,') + ')';
+function tooltips() {
+  $('shield').title = bhT('sidebar.privacy_report');
+  $('new').title = bhT('sidebar.new_tab_keys', { keys: bhKeys('mod+t') });
+  $('gear').title = bhT('sidebar.settings_keys', { keys: bhKeys('mod+,') });
+}
+tooltips();
+// Language changed: tooltips, then everything drawn from the state (cards drawn only on change).
+let lastStats = null;
+addEventListener('bhlang', () => {
+  tooltips();
+  tidySig = meetSig = mediaSig = '';
+  if (lastStats) bh.stats(...lastStats);
+  if (state && state.spaces && state.spaces.length) bh.render(state);
+});
 $('library').onclick = () => send({ cmd: 'open_library' });
 function applyFolds(list) {
   const pinned = list.includes('pinned'), folders = list.includes('folders');
   $('pinned').classList.toggle('collapsed', pinned);
   $('folders').classList.toggle('collapsed', folders);
   $('pinhead').hidden = !$('pinned').children.length;
-  $('pinfold').replaceChildren(bhIcon(pinned ? 'collapse' : 'expand', 'xs'), 'Quick access');
-  $('foldfold').replaceChildren(bhIcon(folders ? 'collapse' : 'expand', 'xs'), 'Pinned');
+  $('pinfold').replaceChildren(bhIcon(pinned ? 'collapse' : 'expand', 'xs'), bhT('sidebar.quick_access'));
+  $('foldfold').replaceChildren(bhIcon(folders ? 'collapse' : 'expand', 'xs'), bhT('sidebar.pinned'));
 }
 function toggleFold(section) {
   const list = new Set((state && state.collapsed) || []);
@@ -1110,7 +1122,7 @@ $('newfolder').onclick = () => { newFolderPending = true; send({ cmd: 'new_folde
 $('gear').onclick = () => send({ cmd: 'open_settings' });
 $('addspace').onclick = () => {
   const n = state.spaces.length;
-  send({ cmd: 'new_space', name: 'Space ' + (n + 1), color: PALETTE[n % PALETTE.length] });
+  send({ cmd: 'new_space', name: bhT('sidebar.default_space', { n: n + 1 }), color: PALETTE[n % PALETTE.length] });
 };
 // Hidden sidebar: touching the left edge floats a copy over the page; leaving it slides it back.
 let peeking = false;

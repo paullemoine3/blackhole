@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.2",
+        &[
+            "BlackHole speaks English and French: pick the language in Settings > General (or follow the system), and every open page switches at once, no restart",
+            "Settings redesigned, with one icon size scale across the sidebar, menus and windows, built on the BlackHole design system",
+            "\"Sign in with Google\" popups now return to the page that opened them, without the TrustedHTML error",
+        ],
+    ),
+    (
         "0.8.1",
         &[
             "Fixed a crash on macOS when the Settings window lost the focus (switching app, clicking the browser window)",

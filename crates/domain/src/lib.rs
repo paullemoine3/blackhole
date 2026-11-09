@@ -8,6 +8,7 @@ pub mod extension;
 pub mod handoff;
 pub mod history;
 pub mod http_auth;
+pub mod i18n;
 pub mod meetings;
 pub mod omnibox;
 pub mod passwords;

@@ -106,8 +106,8 @@
 <main>
   <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
-  <section class="card"><h2>Favorites</h2><div id="favs"></div></section>
-  <section class="card"><h2>Recent activity <button id="clear" title="Clear browsing history">Clear</button></h2><div id="recent"></div></section>
+  <section class="card"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
+  <section class="card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
 </main>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
@@ -134,27 +134,27 @@ function tile(url) {
 function menu(x, y, items) { send({ cmd: 'menu', origin: 'home', x, y, items }); }
 function more(open) {
   const b = el('button', 'more');
-  b.append(bhIcon('more')); b.title = 'Options';
+  b.append(bhIcon('more')); b.title = bhT('common.options');
   b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); open(r.left, r.bottom + 4); };
   return b;
 }
 // Same words and icons as the sidebar menus: a pinned site is in "quick access".
 function favMenu(f, x, y) {
-  const items = [{ icon: 'open', label: 'Open', run: { cmd: 'open', input: f.url } }];
-  if (f.tab != null) items.push({ icon: 'pin', label: 'Remove from quick access', run: { cmd: 'pin', id: f.tab } });
-  else items.push({ icon: 'pin', label: 'Add to quick access', run: { cmd: 'pin_site', url: f.url } });
-  items.push({ sep: true }, { icon: 'close', label: 'Remove from favorites', danger: true, run: { cmd: 'hide_favorite', url: f.url } });
+  const items = [{ icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: f.url } }];
+  if (f.tab != null) items.push({ icon: 'pin', label: bhT('menu.quick_remove'), run: { cmd: 'pin', id: f.tab } });
+  else items.push({ icon: 'pin', label: bhT('menu.quick_add'), run: { cmd: 'pin_site', url: f.url } });
+  items.push({ sep: true }, { icon: 'close', label: bhT('home.remove_favorite'), danger: true, run: { cmd: 'hide_favorite', url: f.url } });
   menu(x, y, items);
 }
 function recentMenu(r, x, y) {
-  menu(x, y, [{ icon: 'open', label: 'Open', run: { cmd: 'open', input: r.url } }, { icon: 'pin', label: 'Add to quick access', run: { cmd: 'pin_site', url: r.url } }]);
+  menu(x, y, [{ icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: r.url } }, { icon: 'pin', label: bhT('menu.quick_add'), run: { cmd: 'pin_site', url: r.url } }]);
 }
 function ago(at) {
   const s = Math.max(0, Date.now() / 1000 - at);
-  if (s < 60) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + ' min ago';
-  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
-  return Math.floor(s / 86400) + ' d ago';
+  if (s < 60) return bhT('time.just_now');
+  if (s < 3600) return bhT('time.min_ago', { n: Math.floor(s / 60) });
+  if (s < 86400) return bhT('time.h_ago', { n: Math.floor(s / 3600) });
+  return bhT('time.d_ago', { n: Math.floor(s / 86400) });
 }
 let focused = false;
 let riseAt = 0;
@@ -173,6 +173,8 @@ function splash() {
   setTimeout(end, 2600);
   sp.onclick = end;
 }
+let last = null;
+addEventListener('bhlang', () => last && bh.render(last));
 window.bh = {
   wait(site) {
     document.body.classList.toggle('waiting', !!site);
@@ -181,6 +183,7 @@ window.bh = {
     $('waittile').replaceChildren(tile(site.url));
   },
   render(s) {
+    last = s;
     if (s.favicons) favicons = s.favicons;
     document.body.classList.toggle('noanim', !s.animations);
     const notes = s.releaseNotes || [];
@@ -189,9 +192,9 @@ window.bh = {
       const box = el('div', 'ver');
       const list = el('ul');
       list.append(...r.items.map(i => el('li', null, i)));
-      box.append(el('h3', null, "What's new in BlackHole " + r.version), list);
+      box.append(el('h3', null, bhT('home.whats_new', { version: r.version })), list);
       return box;
-    }), ...(notes.length ? [Object.assign(el('button', null, 'Got it'), { onclick: () => send({ cmd: 'dismiss_release_notes' }) })] : []));
+    }), ...(notes.length ? [Object.assign(el('button', null, bhT('home.got_it')), { onclick: () => send({ cmd: 'dismiss_release_notes' }) })] : []));
     $('favs').replaceChildren(...s.favorites.map(f => {
       const n = el('div', 'fav'); n.title = f.url;
       n.append(tile(f.url), el('div', 'name', f.name));
@@ -210,7 +213,7 @@ window.bh = {
       n.append(more((x, y) => recentMenu(r, x, y)));
       return n;
     });
-    $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', 'Nothing yet — pages you visit will show up here.')]));
+    $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', bhT('home.empty'))]));
     // Tiles rise one after another as the start page emerges from the launch splash. A render
     // that comes in meanwhile (icons arriving) keeps the same schedule.
     if (!focused && s.animations) riseAt = performance.now() + 2050;
@@ -227,10 +230,10 @@ window.bh = {
 {
   const b = $('clear');
   let timer = null;
-  const reset = () => { timer = null; b.textContent = 'Clear'; b.classList.remove('armed'); };
+  const reset = () => { timer = null; b.textContent = bhT('home.clear'); b.classList.remove('armed'); };
   b.onclick = () => {
     if (timer) { clearTimeout(timer); reset(); send({ cmd: 'clear_history' }); return; }
-    b.textContent = 'Click again to erase all history';
+    b.textContent = bhT('home.clear_confirm');
     b.classList.add('armed');
     timer = setTimeout(reset, 3000);
   };

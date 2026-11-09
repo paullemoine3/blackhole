@@ -2,6 +2,7 @@
 //! hour in a hidden view (one at a time, sharing the profile so signed-in pages work), and a
 //! change is told with a toast. The rules live in `domain::watch`.
 
+use crate::i18n::{t, tf};
 use crate::{ipc::UiCommand, views, Running, TabId};
 use blackhole_domain::watch::{Reading, Watches};
 use blackhole_infrastructure::store::WatchStore;
@@ -71,7 +72,7 @@ impl Running {
     pub(crate) fn watch_area(&mut self, tab: TabId, selector: &str) {
         let Some(view) = self.tabs.get(&tab) else { return };
         let Some(url) = view.url().ok().filter(|u| u.starts_with("https://") || u.starts_with("http://")) else {
-            self.toast("This page cannot be watched");
+            self.toast(&t("toast.cannot_watch"));
             return;
         };
         let title = self
@@ -84,14 +85,14 @@ impl Running {
             .map(|t| t.title.clone())
             .unwrap_or_default();
         let Some(id) = self.watching.list.add(&url, selector, &title, now()) else {
-            self.toast("Too many watched areas: remove one in the Library");
+            self.toast(&t("toast.too_many_watches"));
             return;
         };
         read(view, id, selector, &self.watching.tx);
         self.watching.save();
         self.toast_action(
-            "Watching this area: you'll be told when it changes",
-            "See watches",
+            &t("toast.watching"),
+            &t("toast.see_watches"),
             json!({"cmd": "action", "id": "open_watches"}),
         );
     }
@@ -106,9 +107,10 @@ impl Running {
             }
             let reading = self.watching.list.record(id, text.as_deref(), now());
             if let (Reading::Changed { before, after }, Some(w)) = (&reading, self.watching.list.get(id)) {
-                let message = format!("{}: {before} → {after}", if w.title.is_empty() { "Watched area" } else { &w.title });
+                let title = if w.title.is_empty() { t("toast.watched_area") } else { w.title.clone() };
+                let message = tf("toast.watch_changed", &[("title", &title), ("before", before), ("after", after)]);
                 let url = w.url.clone();
-                self.toast_action(&message, "Open", json!({"cmd": "open", "input": url}));
+                self.toast_action(&message, &t("toast.open"), json!({"cmd": "open", "input": url}));
             }
             changed = true;
         }

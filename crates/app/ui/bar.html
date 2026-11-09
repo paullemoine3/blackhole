@@ -73,25 +73,25 @@
 <body>
 <div class="bar" id="bar">
   <div class="side">
-    <button id="sidebar" title="Show / hide the sidebar"><i data-icon="sidebar"></i></button>
-    <button id="back" title="Back"><i data-icon="back"></i></button>
-    <button id="forward" title="Forward"><i data-icon="forward"></i></button>
-    <button id="reload" title="Reload"><i data-icon="reload"></i></button>
-    <button id="home" title="Start page"><i data-icon="home"></i></button>
+    <button id="sidebar"><i data-icon="sidebar"></i></button>
+    <button id="back"><i data-icon="back"></i></button>
+    <button id="forward"><i data-icon="forward"></i></button>
+    <button id="reload"><i data-icon="reload"></i></button>
+    <button id="home" data-i18n-title="bar.start_page"><i data-icon="home"></i></button>
   </div>
   <div class="center">
     <i data-icon="lock" data-size="xs" class="lock"></i>
     <button id="omni" type="button"><span id="url"></span></button>
-    <span id="insecure" hidden title="A certificate error or http was accepted for this site until BlackHole quits">Non sécurisé</span>
-    <button id="zoom" type="button" hidden title="Reset zoom"><i data-icon="search" data-size="xs"></i><span id="zoomn"></span><i data-icon="close" data-size="xs" class="x"></i></button>
+    <span id="insecure" hidden data-i18n-title="bar.insecure_hint" data-i18n="bar.insecure">Not secure</span>
+    <button id="zoom" type="button" hidden><i data-icon="search" data-size="xs"></i><span id="zoomn"></span><i data-icon="close" data-size="xs" class="x"></i></button>
   </div>
   <div class="side right" id="exts"></div>
-  <span class="priv" id="priv" hidden>Private</span>
+  <span class="priv" id="priv" hidden data-i18n="bar.private">Private</span>
   <div id="progress"><i></i></div>
   <div class="win">
-    <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
-    <button id="wmax" title="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
-    <button id="wclose" class="close" title="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    <button id="wmin" data-i18n-title="window.minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+    <button id="wmax" data-i18n-title="window.maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+    <button id="wclose" class="close" data-i18n-title="window.close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
   </div>
 </div>
 <script>
@@ -107,10 +107,17 @@ const pretty = (url) => {
 };
 
 // Tooltips spell their shortcuts the way the system does (see ui/keys.js).
-$('sidebar').title = 'Show / hide the sidebar (' + bhKeys('mod+b') + ')';
-$('back').title = 'Back (' + bhKeys('mod+[') + (bhMac ? '' : ' or ' + bhKeys('alt+left')) + ')';
-$('forward').title = 'Forward (' + bhKeys('mod+]') + (bhMac ? '' : ' or ' + bhKeys('alt+right')) + ')';
-$('reload').title = bhMac ? 'Reload' : 'Reload (F5)';
+const either = (a, b) => bhMac ? bhKeys(a) : bhT('keys.either', { a: bhKeys(a), b: bhKeys(b) });
+function tooltips() {
+  $('sidebar').title = bhT('bar.toggle_sidebar', { keys: bhKeys('mod+b') });
+  $('back').title = bhT('bar.back', { keys: either('mod+[', 'alt+left') });
+  $('forward').title = bhT('bar.forward', { keys: either('mod+]', 'alt+right') });
+  $('reload').title = bhMac ? bhT('bar.reload') : bhT('bar.reload_keys', { keys: 'F5' });
+  $('zoom').title = bhT('bar.reset_zoom', { keys: bhKeys('mod+0') });
+}
+tooltips();
+let last = null;
+addEventListener('bhlang', () => { tooltips(); if (last) { $('url').textContent = ''; bh.render(last); } });
 
 let loadingNow = false;
 function progress(on) {
@@ -130,6 +137,7 @@ function progress(on) {
 
 window.bh = {
   render(s) {
+    last = s;
     progress(!!s.loading);
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);
@@ -144,12 +152,11 @@ window.bh = {
     const zoom = s.zoom || 100;
     $('zoom').hidden = zoom === 100;
     $('zoomn').textContent = zoom + '%';
-    $('zoom').title = 'Reset zoom (' + bhKeys('mod+0') + ')';
     document.body.classList.toggle('secure', s.url.startsWith('https:') && !s.insecure);
     document.body.classList.toggle('insecure', !!s.insecure);
     $('insecure').hidden = !s.insecure;
     document.body.classList.toggle('noanim', s.animations === false);
-    const text = s.url ? pretty(s.url) : 'Search with ' + s.engine + ' or enter address';
+    const text = s.url ? pretty(s.url) : bhT('bar.search_with', { engine: s.engine });
     if ($('url').textContent !== text) {
       $('url').textContent = text;
       if (s.animations !== false && $('url').animate) {

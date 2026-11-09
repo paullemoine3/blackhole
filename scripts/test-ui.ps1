@@ -8,6 +8,7 @@ Remove-Item -Recurse -Force (Join-Path $tmp 'bh_data'), (Join-Path $tmp 'bh_shot
 
 $script = @'
 wait 3000
+cmd {"cmd":"set_language","language":"en"}
 shot 01-home
 eval chrome document.body ? 'ready' : 'empty'
 cmd {"cmd":"open","input":"https://example.com"}
@@ -628,9 +629,9 @@ Check ((AuthEval 1) -match 'auth1:true\|127\.0\.0\.1\|The site says: .{1,3}Black
 Check ((AuthEval 3) -match 'auth3:true\|bh-test-user\|0\|Wrong user name or password') 'http auth: refused credentials ask again, user name kept, password cleared'
 Check ((AuthEval 5) -match 'auth5:bh-auth-ok\|Signed in') 'http auth: the right credentials open the page'
 Check ((AuthEval 6) -match 'auth6:false\|0') 'http auth: the prompt closes and keeps no password'
-Check ((AuthEval 7) -match 'auth7:bh-403') 'http status: a 403 page is the server page, not "Site injoignable"'
+Check ((AuthEval 7) -match 'auth7:bh-403') 'http status: a 403 page is the server page, not "Site unreachable"'
 Check ((AuthEval 8) -match 'auth8:true\|The site says: .{1,3}Other test.{1,3}\|cancelled') 'http auth: another realm asks again'
-Check ((AuthEval 9) -match 'auth9:bh-auth-401') 'http auth: Cancel shows the server 401 page, not "Site injoignable"'
+Check ((AuthEval 9) -match 'auth9:bh-auth-401') 'http auth: Cancel shows the server 401 page, not "Site unreachable"'
 Check ((AuthEval 10) -match 'auth10:false') 'http auth: Cancel closes the prompt'
 Check ((AuthEval 11) -match 'auth11:bh-auth-401') 'http auth: closing the palette (Esc) cancels like Cancel'
 Check ((PwEval 1) -match 'pw1:passwords\|false\|No saved password yet') 'passwords: their own section in Settings, open with the keychain, empty'
@@ -642,22 +643,22 @@ Check ((PwEval 10) -match 'pw10:Update the password for bh-test-user on example\
 Check ((PwEval 13) -match "pw13:1\|$pwTest2") 'passwords: Update kept one entry with the new password, shown on request'
 Check ((PwEval 15) -match 'pw15:No saved password yet') 'passwords: deleted after a second click'
 Check ((PwEval 16) -match 'pw16:Password for example\.com deleted.*Undo') 'passwords: deleting offers Undo'
-Check ((ErrEval 1) -match 'err1:Connexion requise\|Se connecter') 'error page: an empty 401 shows "Connexion requise" with "Se connecter"'
-Check ((ErrEval 2) -match 'err2:Acc.{1,2}s refus.{1,2}\|.*127\.0\.0\.1') 'error page: an empty 403 shows the forbidden page'
-Check ((ErrEval 3) -match 'err3:Le serveur a un probl.{1,2}me \(502\)\|.*502') 'error page: an empty 502 shows the server error page'
-Check ((ErrEval 4) -match 'err4:Trop de redirections') 'error page: a redirect loop shows "Trop de redirections"'
-Check ((ErrEval 5) -match 'err5:Adresse introuvable\|.*bh-missing\.invalid') 'error page: an unknown name shows "Adresse introuvable"'
-Check ((ErrEval 6) -match 'err6:Connexion non s.{1,2}curis.{1,2}e\|H.{1,2}te127\.0\.0\.1Raison.*Continuer quand m.{1,2}me') 'error page: a self-signed certificate shows the details and the risky button'
+Check ((ErrEval 1) -match 'err1:Sign-in required\|Sign in') 'error page: an empty 401 shows "Sign-in required" with "Sign in"'
+Check ((ErrEval 2) -match 'err2:Access denied\|.*127\.0\.0\.1') 'error page: an empty 403 shows the forbidden page'
+Check ((ErrEval 3) -match 'err3:The server has a problem \(502\)\|.*502') 'error page: an empty 502 shows the server error page'
+Check ((ErrEval 4) -match 'err4:Too many redirects') 'error page: a redirect loop shows "Too many redirects"'
+Check ((ErrEval 5) -match 'err5:Address not found\|.*bh-missing\.invalid') 'error page: an unknown name shows "Address not found"'
+Check ((ErrEval 6) -match 'err6:Connection not secure\|Host127\.0\.0\.1Reason.*Continue anyway') 'error page: a self-signed certificate shows the details and the risky button'
 Check ((ErrEval 9) -match 'err9:.*open.*\|.*Continue to 127\.0\.0\.1 \(not secure\)') 'error page: the risky button opens the shell menu (a forged error_proceed from the page did nothing)'
 Check ((ErrEval 11) -match 'err11:bh-tls-ok') 'error page: after the menu, the self-signed site opens'
 Check ((ErrEval 12) -match 'err12:false\|true\|false\|static\|true') 'error page: the bar says "Not secure" after the exception, its layout unchanged'
 Check ((ErrEval 14) -match 'err14:' -and (ErrEval 14) -notmatch 'open')'error page: a web page posting error_menu opens no menu'
 Check ((ErrEval 15) -match 'err15:true') 'error page: no "Not secure" on a normal https page'
-Check ((ErrEval 17) -match 'err17:Bloqu.{1,2} par les Shields\|.*Autoriser ce site') 'error page: a blocked tracker opened as a page shows the Shields page'
-Check ((ErrEval 18) -match 'err18:Hors ligne') 'error page: offline variant'
-Check ((ErrEval 19) -match "err19:L'horloge de l'ordinateur est d.{1,2}r.{1,2}gl.{1,2}e\|Continuer quand m.{1,2}me") 'error page: wrong clock variant'
-Check ((ErrEval 20) -match 'err20:Pas de version s.{1,2}curis.{1,2}e\|Continuer en http') 'error page: http only variant'
-Check ((ErrEval 21) -match 'err21:Site injoignable\|true\|1"') 'error page: one scene per kind (the black hole for "Site injoignable")'
+Check ((ErrEval 17) -match 'err17:Blocked by the Shields\|.*Allow this site') 'error page: a blocked tracker opened as a page shows the Shields page'
+Check ((ErrEval 18) -match 'err18:Offline') 'error page: offline variant'
+Check ((ErrEval 19) -match 'err19:The computer.s clock is wrong\|Continue anyway') 'error page: wrong clock variant'
+Check ((ErrEval 20) -match 'err20:No secure version\|Continue over http') 'error page: http only variant'
+Check ((ErrEval 21) -match 'err21:Site unreachable\|true\|1"') 'error page: one scene per kind (the black hole for "Site unreachable")'
 Check ($saved.Count -eq 37) "screenshots saved ($($saved.Count)/37)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

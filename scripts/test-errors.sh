@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Error pages on macOS, driven by the devtools harness. Each failure must show our page (never a
 # blank tab, never a crash): refused connection, retry, unknown host (DNS), restricted port,
-# restricted port typed in an open tab, connection dropped by the server, HTTP 500 / 403 without a body, self-signed certificate, an
+# restricted port typed in an open tab, connection dropped by the server, HTTP 500 / 403 without
+# a body, self-signed certificate and its "Continue anyway" (through the shell's menu), an
 # invalid address typed in the bar; then a working page still loads. No network needed.
 # Local servers on 127.0.0.1:47996-47998 (47999 stays closed). Scratch profile /tmp/bh_data
-# (wiped first); screenshots in /tmp/bh_shots/err-*.png.
+# (wiped first); screenshots in /tmp/bh_shots/err-*.png. The checks read the French texts: the
+# interface language is set to French first (`set_language`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf /tmp/bh_data /tmp/bh_shots
@@ -24,7 +26,9 @@ while True:
 # 47997: /500 and /403 with an empty body, anything else a small page titled "bh ok".
 cat > "$work/http.py" <<'P'
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+# Threaded: WebKit may keep an idle connection open after a refused TLS handshake, which
+# would block a one-connection server and hang the next load.
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer as HTTPServer
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
         code = {"/500": 500, "/403": 403}.get(self.path, 200)
@@ -56,6 +60,8 @@ H="eval content document.querySelector('h1') ? document.querySelector('h1').text
 U="eval content document.getElementById('url') ? document.getElementById('url').textContent : 'none'"
 cat > /tmp/bh_script.txt <<S
 wait 2000
+cmd {"cmd":"set_language","language":"fr"}
+wait 300
 cmd {"cmd":"open","input":"http://127.0.0.1:47999/"}
 wait 5000
 $H
@@ -93,6 +99,12 @@ cmd {"cmd":"open","input":"https://127.0.0.1:47996/"}
 wait 6000
 $H
 shot err-cert
+eval content (() => { const d = document.getElementById('advanced'); if (d) d.open = true; const b = document.querySelector('#risky button'); if (!b) return 'no button'; b.click(); return 'risky ' + b.textContent; })()
+wait 1500
+eval palette (() => { const b = [...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.includes('127.0.0.1')); if (!b) return 'no item'; b.click(); return 'menu ' + b.textContent.trim(); })()
+wait 5000
+eval content document.title
+shot err-cert-proceed
 cmd {"cmd":"open","input":"http://999.999.999.999/"}
 wait 6000
 eval content 'invalid ' + location.protocol
@@ -119,10 +131,13 @@ check 9 'Site injoignable' "connection dropped by the server: error page"
 check 10 'Le serveur a un probl' "http 500 without a body: server error page"
 check 11 'Accès refusé' "http 403 without a body: forbidden page"
 check 12 'Connexion non sécurisée' "self-signed certificate: certificate page"
-check 13 'invalid ' "invalid address: the tab is still usable"
-check 14 'bh ok' "a working page loads after the errors"
-check 15 'alive' "no crash: the app is still running"
-for s in refused dns restricted dropped 500 403 cert; do
+check 13 'risky Continuer quand même' "certificate: the risky button asks the shell"
+check 14 'menu Continuer vers 127.0.0.1' "certificate: the shell's menu offers to continue"
+check 15 'bh ok' "certificate: continue anyway loads the page"
+check 16 'invalid ' "invalid address: the tab is still usable"
+check 17 'bh ok' "a working page loads after the errors"
+check 18 'alive' "no crash: the app is still running"
+for s in refused dns restricted dropped 500 403 cert cert-proceed; do
   [[ -f /tmp/bh_shots/err-$s.png ]] || { echo "FAIL screenshot err-$s missing"; fail=1; }
 done
 exit $fail

@@ -148,36 +148,36 @@
   <div id="panel">
     <div class="search">
       <i data-icon="search" data-size="md"></i>
-      <input id="q" placeholder="Search or enter URL…" spellcheck="false" autocomplete="off">
+      <input id="q" data-i18n-placeholder="palette.placeholder" spellcheck="false" autocomplete="off">
     </div>
     <div id="list"></div>
-    <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+    <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="palette.foot_navigate">navigate</span></span><span><kbd>↵</kbd> <span data-i18n="palette.foot_open">open</span></span><span><kbd>esc</kbd> <span data-i18n="palette.foot_close">close</span></span></div>
     <div id="emoji">
-      <h2>Icon · <span id="ename"></span></h2>
+      <h2><span data-i18n="palette.icon">Icon</span> · <span id="ename"></span></h2>
       <div id="grid"></div>
-      <div class="actions" style="margin-top:0"><input id="eq" placeholder="Type or paste an emoji" spellcheck="false" autocomplete="off"><button class="btn" id="eclear">Remove</button><button class="btn primary" id="eok">Apply</button></div>
+      <div class="actions" style="margin-top:0"><input id="eq" spellcheck="false" autocomplete="off"><button class="btn" id="eclear" data-i18n="easel.remove">Remove</button><button class="btn primary" id="eok" data-i18n="palette.apply">Apply</button></div>
     </div>
     <div id="compare">
-      <h2>Compare tabs</h2>
+      <h2 data-i18n="palette.compare_title">Compare tabs</h2>
       <div id="cpick"></div>
       <div id="cwrap"><table id="ctable"></table></div>
     </div>
     <form id="auth" autocomplete="off">
-      <h2>Sign in · <span id="ahost"></span></h2>
+      <h2><span data-i18n="error.login">Sign in</span> · <span id="ahost"></span></h2>
       <p id="arealm"></p>
       <p id="awarn" class="warn"></p>
-      <label for="auser">User name</label>
+      <label for="auser" data-i18n="palette.user_name">User name</label>
       <input id="auser" spellcheck="false" autocomplete="off" autocapitalize="off">
-      <label for="apass">Password</label>
+      <label for="apass" data-i18n="palette.password">Password</label>
       <input id="apass" type="password" autocomplete="off">
-      <div class="actions"><button type="button" class="btn" id="acancel">Cancel</button><button type="submit" class="btn primary" id="aok">Sign in</button></div>
+      <div class="actions"><button type="button" class="btn" id="acancel" data-i18n="common.cancel">Cancel</button><button type="submit" class="btn primary" id="aok" data-i18n="error.login">Sign in</button></div>
     </form>
     <div id="boost">
       <h2>Boost · <span id="bhost"></span></h2>
-      <p>CSS applied to every page of this site. Leave empty to remove the Boost.</p>
+      <p data-i18n="palette.boost_hint">CSS applied to every page of this site. Leave empty to remove the Boost.</p>
       <div class="chips" id="presets"></div>
       <textarea id="css" spellcheck="false" placeholder="body { font-size: 18px; }"></textarea>
-      <div class="actions"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">Save</button></div>
+      <div class="actions"><button class="btn" id="cancel" data-i18n="common.cancel">Cancel</button><button class="btn primary" id="save">Save</button></div>
     </div>
   </div>
 </div>
@@ -187,10 +187,10 @@ window.keepCtrlN = true;
 const $ = (id) => document.getElementById(id);
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const PRESETS = {
-  'Dark mode': 'html { filter: invert(1) hue-rotate(180deg); }\nimg, video, picture, canvas, svg { filter: invert(1) hue-rotate(180deg); }',
-  'Bigger text': 'html { zoom: 1.15; }',
-  'Narrow column': 'body { max-width: 860px; margin: 0 auto !important; }',
-  'Hide sticky bars': '[style*="position: fixed"], [style*="position:fixed"] { display: none !important; }',
+  'palette.preset_dark': 'html { filter: invert(1) hue-rotate(180deg); }\nimg, video, picture, canvas, svg { filter: invert(1) hue-rotate(180deg); }',
+  'palette.preset_bigger': 'html { zoom: 1.15; }',
+  'palette.preset_narrow': 'body { max-width: 860px; margin: 0 auto !important; }',
+  'palette.preset_sticky': '[style*="position: fixed"], [style*="position:fixed"] { display: none !important; }',
 };
 let S = { mode: 'new', tabs: [], favorites: [], bookmarks: [], recent: [], actions: [] };
 let items = [], sel = 0, pristine = true, target = null;
@@ -214,15 +214,15 @@ function build() {
   const enter = (input) => send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input });
   if (q) {
     out.push(looksLikeUrl(q)
-      ? { glyph: 'go', title: q, sub: 'Go to site', hint: 'Open', run: () => enter(q) }
-      : { glyph: 'search', title: q, sub: 'Search with ' + S.engine, hint: 'Search', run: () => enter(q) });
+      ? { glyph: 'go', title: q, sub: bhT('palette.go_to_site'), hint: bhT('menu.open'), run: () => enter(q) }
+      : { glyph: 'search', title: q, sub: bhT('palette.search_with', { engine: S.engine }), hint: bhT('palette.search'), run: () => enter(q) });
   }
   const match = (...f) => !q || f.some(v => (v || '').toLowerCase().includes(ql));
   const seen = new Set();
   for (const t of S.tabs) {
     if (!match(t.title, t.url)) continue;
     seen.add(t.url);
-    out.push(site(t.url, t.title || host(t.url), 'Switch to tab', () => send({ cmd: 'activate', id: t.id })));
+    out.push(site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
   }
   const pool = q ? [...S.favorites, ...(S.bookmarks || []), ...S.recent] : S.favorites;
   for (const e of pool) {
@@ -233,7 +233,7 @@ function build() {
   for (const a of S.actions) {
     if (!match(a.label)) continue;
     out.push({
-      glyph: 'bolt', title: a.label, sub: '', hint: a.keys ? bhKeys(a.keys) : a.hint || 'Action',
+      glyph: 'bolt', title: a.label, sub: '', hint: a.keys ? bhKeys(a.keys) : a.hint || bhT('palette.action'),
       confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }),
     });
   }
@@ -265,7 +265,7 @@ function draw() {
     r.onclick = () => run(i);
     return r;
   });
-  if (!rows.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No results'; rows.push(n); }
+  if (!rows.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = bhT('palette.no_results'); rows.push(n); }
   $('list').replaceChildren(...rows);
 }
 
@@ -332,7 +332,7 @@ function showMenu(m) {
     }
     b.onclick = (e) => {
       if (it.copy != null) {
-        label.textContent = copyText(it.copy) ? 'Copied' : 'Could not copy';
+        label.textContent = bhT(copyText(it.copy) ? 'palette.copied' : 'palette.copy_failed');
         setTimeout(close, 450);
         return;
       }
@@ -391,35 +391,36 @@ function drawCompare() {
     const sub = document.createElement('small');
     sub.textContent = host(i.url);
     th.append(sub);
-    th.title = 'Show this tab';
+    th.title = bhT('palette.show_tab');
     th.onclick = () => { send({ cmd: 'activate', id: i.id }); close(); };
     head.append(th);
   }
   const prices = cols.map(i => cmpNum(i.price)), ratings = cols.map(i => cmpNum(i.rating));
   const low = Math.min(...prices.filter(n => n != null)), high = Math.max(...ratings.filter(n => n != null));
+  // Our fields carry a catalog key; the page's own specifications keep their name (`spec`).
   const rows = [
-    ['Price', (i) => i.price ? `${i.price} ${i.currency || ''}`.trim() : '', (i, k) => prices[k] === low && cols.length > 1],
-    ['Rating', (i) => i.rating, (i, k) => ratings[k] === high && cols.length > 1],
-    ['Reviews', (i) => i.reviews],
-    ['Brand', (i) => i.brand],
-    ['Availability', (i) => i.availability],
+    ['palette.cmp_price', (i) => i.price ? `${i.price} ${i.currency || ''}`.trim() : '', (i, k) => prices[k] === low && cols.length > 1],
+    ['palette.cmp_rating', (i) => i.rating, (i, k) => ratings[k] === high && cols.length > 1],
+    ['palette.cmp_reviews', (i) => i.reviews],
+    ['palette.cmp_brand', (i) => i.brand],
+    ['palette.cmp_availability', (i) => i.availability],
   ];
   // Specifications shared by at least two pages (or all of them when only one has some).
   const counts = new Map();
   for (const i of cols) for (const k of Object.keys(i.specs || {})) counts.set(k, (counts.get(k) || 0) + 1);
   const shared = [...counts].filter(([, n]) => n >= Math.min(2, cols.length)).sort((a, b) => b[1] - a[1]).slice(0, 15);
-  for (const [k] of shared) rows.push([k, (i) => (i.specs || {})[k]]);
+  for (const [k] of shared) rows.push([k, (i) => (i.specs || {})[k], null, true]);
   const body = rows
     .filter(([, get]) => cols.some(i => get(i)))
-    .map(([name, get, best]) => {
+    .map(([name, get, best, spec]) => {
       const tr = document.createElement('tr');
-      tr.append(cell('td', name));
+      tr.append(cell('td', spec ? name : bhT(name)));
       cols.forEach((i, k) => tr.append(cell('td', get(i), best && best(i, k) ? 'best' : '')));
       return tr;
     });
   if (!cols.length) {
     const tr = document.createElement('tr');
-    tr.append(cell('td', 'Pick the tabs to compare'));
+    tr.append(cell('td', bhT('palette.cmp_pick')));
     body.push(tr);
   }
   $('ctable').replaceChildren(head, ...body);
@@ -434,10 +435,10 @@ function showAuth(a) {
   const fresh = authId !== a.id;
   authId = a.id;
   $('ahost').textContent = a.host;
-  $('arealm').textContent = a.realm ? 'The site says: “' + a.realm + '”' : '';
+  $('arealm').textContent = a.realm ? bhT('palette.auth_realm', { realm: a.realm }) : '';
   const warn = [];
-  if (a.retry) warn.push('Wrong user name or password. Try again.');
-  if (!a.secure) warn.push('This connection is not secure: the password is sent in clear text.');
+  if (a.retry) warn.push(bhT('palette.auth_retry'));
+  if (!a.secure) warn.push(bhT('palette.auth_insecure'));
   $('awarn').textContent = warn.join(' ');
   $('apass').value = '';
   if (fresh && !a.retry) $('auser').value = '';
@@ -473,7 +474,7 @@ window.bh = {
     document.body.classList.toggle('picking', picking);
     if (picking) {
       target = s.target;
-      $('ename').textContent = (target.kind === 'space' ? 'Space ' : 'Folder ') + target.name;
+      $('ename').textContent = bhT(target.kind === 'space' ? 'palette.icon_space' : 'palette.icon_folder', { name: target.name });
       $('eq').value = target.icon || '';
       [...$('grid').children].forEach(b => b.classList.toggle('cur', b.textContent === target.icon));
       $('eq').focus();
@@ -539,13 +540,17 @@ $('grid').replaceChildren(...EMOJIS.map(em => {
   const b = document.createElement('button'); b.textContent = em; b.onclick = () => applyIcon(em); return b;
 }));
 $('save').onclick = saveBoost;
-$('save').textContent = 'Save  ' + bhKeys('mod+enter');
-$('eq').placeholder = 'Type or paste an emoji (' + (bhMac ? '⌃⌘Space' : 'Win+.') + ')';
-$('presets').replaceChildren(...Object.entries(PRESETS).map(([name, css]) => {
-  const b = document.createElement('button'); b.className = 'btn'; b.textContent = name;
-  b.onclick = () => { const cur = $('css').value.trim(); $('css').value = cur ? cur + '\n' + css : css; };
-  return b;
-}));
+function statics() {
+  $('save').textContent = bhT('palette.save_keys', { keys: bhKeys('mod+enter') });
+  $('eq').placeholder = bhT('palette.emoji_placeholder', { keys: bhMac ? '⌃⌘Space' : 'Win+.' });
+  $('presets').replaceChildren(...Object.entries(PRESETS).map(([name, css]) => {
+    const b = document.createElement('button'); b.className = 'btn'; b.textContent = bhT(name);
+    b.onclick = () => { const cur = $('css').value.trim(); $('css').value = cur ? cur + '\n' + css : css; };
+    return b;
+  }));
+}
+statics();
+addEventListener('bhlang', statics);
 send({ cmd: 'palette_ready' });
 </script>
 </body>

@@ -16,12 +16,14 @@ mod media;
 mod compare;
 mod meet;
 mod handoff;
+mod i18n;
 mod watching;
 mod passwords;
 mod sidebar;
 mod stats;
 mod views;
 
+use i18n::{message, t, tf, tn};
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::http_auth;
 use blackhole_domain::{
@@ -529,29 +531,39 @@ struct Running {
     window: Rc<Window>,
 }
 
+/// The main window's title (shown by the system: taskbar, window list).
+fn main_title() -> String {
+    if private_mode() {
+        i18n::t("window.private")
+    } else {
+        "BlackHole".to_owned()
+    }
+}
+
 /// The Edit menu is what routes Cmd+C/V/X/A/Z to the focused web view on macOS.
 #[cfg(target_os = "macos")]
 fn install_menu() -> muda::Menu {
+    use i18n::t;
     use muda::{Menu, PredefinedMenuItem as Item, Submenu};
     let menu = Menu::new();
     let app = Submenu::new("BlackHole", true);
-    let edit = Submenu::new("Edit", true);
+    let edit = Submenu::new(t("native.edit"), true);
     let _ = app.append_items(&[
-        &Item::about(None, None),
+        &Item::about(Some(&t("native.about")), None),
         &Item::separator(),
-        &Item::hide(None),
-        &Item::hide_others(None),
+        &Item::hide(Some(&t("native.hide"))),
+        &Item::hide_others(Some(&t("native.hide_others"))),
         &Item::separator(),
-        &Item::quit(None),
+        &Item::quit(Some(&t("native.quit"))),
     ]);
     let _ = edit.append_items(&[
-        &Item::undo(None),
-        &Item::redo(None),
+        &Item::undo(Some(&t("native.undo"))),
+        &Item::redo(Some(&t("native.redo"))),
         &Item::separator(),
-        &Item::cut(None),
-        &Item::copy(None),
-        &Item::paste(None),
-        &Item::select_all(None),
+        &Item::cut(Some(&t("native.cut"))),
+        &Item::copy(Some(&t("native.copy"))),
+        &Item::paste(Some(&t("native.paste"))),
+        &Item::select_all(Some(&t("native.select_all"))),
     ]);
     let _ = menu.append_items(&[&app, &edit]);
     menu.init_for_nsapp();
@@ -562,11 +574,7 @@ impl Running {
     fn new(event_loop: &ActiveEventLoop, mailbox: Mailbox) -> Self {
         #[allow(unused_mut)]
         let mut attrs = Window::default_attributes()
-            .with_title(if private_mode() {
-                "BlackHole (Private)"
-            } else {
-                "BlackHole"
-            })
+            .with_title(main_title())
             .with_theme(Some(winit::window::Theme::Dark))
             .with_maximized(true)
             .with_inner_size(LogicalSize::new(1280.0, 820.0))
@@ -647,6 +655,9 @@ impl Running {
             );
         }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
+        // Before any page is created: each one receives the catalog of this language.
+        i18n::apply(&svc.settings().language);
+        window.set_title(&main_title());
         let sidebar = Sidebar::starting(
             f64::from(svc.settings().sidebar_width),
             svc.settings().sidebar_open,
@@ -1282,7 +1293,7 @@ impl Running {
     fn ui_settings(&self) {
         let Some(win) = &self.settings else { return };
         let settings = self.svc.settings();
-        let state = json!({
+        let mut state = json!({
             "os": std::env::consts::OS,
             // The window's own top bar: the space's color and the maximize button's state.
             "color": self.svc.workspace().active_space().color,
@@ -1332,7 +1343,7 @@ impl Running {
             }).collect::<Vec<_>>(),
             "import": json!({
                 "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
-                "message": self.import_msg,
+                "message": i18n::render(&self.import_msg),
                 "bookmarks": self.bookmarks.load().len(),
                 "logins": self.passwords.count(),
             }),
@@ -1344,6 +1355,17 @@ impl Running {
                 "sites": e.scripts.iter().flat_map(|s| s.matches.iter().cloned()).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
         });
+        // General > Language: the setting, the languages in their own words, and what "System"
+        // gives on this computer.
+        state["language"] = json!(settings.language);
+        state["languages"] = json!(blackhole_domain::i18n::LANGUAGES
+            .iter()
+            .map(|(id, label)| json!({"id": id, "label": label}))
+            .collect::<Vec<_>>());
+        state["systemLanguage"] = json!(blackhole_domain::i18n::resolve(
+            blackhole_domain::i18n::SYSTEM,
+            &i18n::system_languages()
+        ));
         let _ = win
             .view
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -1356,11 +1378,11 @@ impl Running {
 
     fn store_dropped(&mut self, list: Vec<import::Bookmark>) -> String {
         let space = self.svc.workspace().active_space().id.0;
-        let (msg, list) = store_bookmarks(&self.bookmarks, list, "Glisser-déposer", space);
+        let (msg, list) = store_bookmarks(&self.bookmarks, list, &message("settings.import_from_drop", &[]), space);
         self.bookmark_list = self.bookmarks.load();
         self.file_bookmarks(list);
         self.ui_state();
-        self.ui(format!("window.bh&&bh.toast({})", json!(msg)));
+        self.toast(&msg);
         msg
     }
 
@@ -1404,8 +1426,11 @@ impl Running {
                     Some(blackhole_macos_webext::LoadState::Failed(why)) => Some(why),
                     _ => self.install_errors.get(e.id).cloned(),
                 };
+                // The catalog's descriptions are translated by extension id (`extdesc.<id>`).
+                let key = format!("extdesc.{}", e.id);
+                let description = Some(t(&key)).filter(|d| *d != key).unwrap_or_else(|| e.description.to_owned());
                 json!({
-                    "id": e.id, "name": e.name, "description": e.description, "version": e.version,
+                    "id": e.id, "name": e.name, "description": description, "version": e.version,
                     "homepage": e.homepage, "installed": installed, "status": status, "error": error,
                     "installedVersion": catalog::installed_version(&self.data, e.id),
                     "outdated": catalog::needs_update(&self.data, e),
@@ -1592,7 +1617,7 @@ impl Running {
             win.window.focus_window();
             return;
         }
-        let attrs = self.panel_window_attributes("BlackHole Settings", (820.0, 600.0));
+        let attrs = self.panel_window_attributes(&i18n::t("window.settings"), (820.0, 600.0));
         let Ok(window) = event_loop.create_window(attrs) else {
             return;
         };
@@ -1695,7 +1720,7 @@ impl Running {
             win.window.focus_window();
             return;
         }
-        let attrs = self.panel_window_attributes("BlackHole Easel", (1100.0, 720.0));
+        let attrs = self.panel_window_attributes(&i18n::t("window.easel"), (1100.0, 720.0));
         let Ok(window) = event_loop.create_window(attrs) else {
             return;
         };
@@ -1854,7 +1879,7 @@ impl Running {
             }
             Err(err) => {
                 tracing::error!("cannot create live view: {err}");
-                self.toast("Could not start the live view");
+                self.toast(&t("toast.live_failed"));
             }
         }
         self.ui_easel();
@@ -1890,13 +1915,13 @@ impl Running {
     fn live_pick_start(&mut self) {
         let tab = self.svc.workspace().active_tab().map(|t| t.id);
         let (Some(tab), false) = (tab, self.home_shown()) else {
-            self.toast("Open a web page to capture an area");
+            self.toast(&t("toast.open_page_for_area"));
             return;
         };
         let Some(view) = self.tabs.get(&tab) else {
             return;
         };
-        if view.evaluate_script(views::LIVE_PICKER_JS).is_ok() {
+        if view.evaluate_script(&views::live_picker_js()).is_ok() {
             self.live_pick = Some(tab);
         }
     }
@@ -1914,7 +1939,7 @@ impl Running {
             .collect();
         self.live_pending = Some((tab, selector, size));
         let current = self.easel_current;
-        let mut items = vec![json!({"head": "Add the live area to"})];
+        let mut items = vec![json!({"head": t("menu.live_add_to")})];
         items.extend(easels.iter().map(|(id, name)| {
             json!({
                 "icon": if Some(*id) == current { "check" } else { "easel" },
@@ -1922,9 +1947,9 @@ impl Running {
             })
         }));
         items.push(json!({"sep": true}));
-        items.push(json!({"icon": "plus", "label": "New Easel", "run": {"cmd": "live_capture_to", "easel": null}}));
+        items.push(json!({"icon": "plus", "label": t("menu.new_easel"), "run": {"cmd": "live_capture_to", "easel": null}}));
         items.push(json!({"sep": true}));
-        items.push(json!({"icon": "watch", "label": "Watch this area for changes", "run": {"cmd": "watch_area"}}));
+        items.push(json!({"icon": "watch", "label": t("menu.watch_area"), "run": {"cmd": "watch_area"}}));
         // In the middle of the page, where the area was just picked.
         let (x, y) = self.view_origin(tab);
         let size = self.window_size();
@@ -1966,15 +1991,15 @@ impl Running {
             let short = excerpt(text, 30);
             let action = selection_action(text, self.svc.settings().search_engine);
             let (icon, label) = match &action {
-                SelectionAction::Open(_) => ("open", format!("Open address “{short}”")),
-                SelectionAction::Search(_) => ("search", format!("Search for “{short}”")),
+                SelectionAction::Open(_) => ("open", tf("menu.open_address", &[("text", &short)])),
+                SelectionAction::Search(_) => ("search", tf("menu.search_for", &[("text", &short)])),
             };
             let url = action.url().as_str();
             // Ctrl/Cmd+click or middle click on the entry: in the background, like a link.
             items.push(json!({"icon": icon, "label": label,
                 "run": {"cmd": "open_link", "url": url, "target": "front"},
                 "background": {"cmd": "open_link", "url": url, "target": "tab"}}));
-            items.push(json!({"icon": "copy", "label": "Copy", "copy": text}));
+            items.push(json!({"icon": "copy", "label": t("menu.copy"), "copy": text}));
         }
         if let Some(url) = &link {
             let link = url.as_str();
@@ -1982,12 +2007,12 @@ impl Running {
                 items.push(json!({"sep": true}));
             }
             items.extend([
-                json!({"icon": "plus", "label": "Open link in new tab", "run": {"cmd": "open_link", "url": link, "target": "tab"}}),
-                json!({"icon": "window", "label": "Open link in new window", "run": {"cmd": "open_link", "url": link, "target": "window"}}),
-                json!({"icon": "sleep", "label": "Open link in private window", "run": {"cmd": "open_link", "url": link, "target": "private"}}),
+                json!({"icon": "plus", "label": t("menu.link_new_tab"), "run": {"cmd": "open_link", "url": link, "target": "tab"}}),
+                json!({"icon": "window", "label": t("menu.link_new_window"), "run": {"cmd": "open_link", "url": link, "target": "window"}}),
+                json!({"icon": "sleep", "label": t("menu.link_private_window"), "run": {"cmd": "open_link", "url": link, "target": "private"}}),
                 json!({"sep": true}),
-                json!({"icon": "open", "label": "Preview link (Peek)", "run": {"cmd": "open_peek", "url": link}}),
-                json!({"icon": "link", "label": "Copy link", "copy": link}),
+                json!({"icon": "open", "label": t("menu.link_peek"), "run": {"cmd": "open_peek", "url": link}}),
+                json!({"icon": "link", "label": t("menu.copy_link"), "copy": link}),
             ]);
         }
         if items.is_empty() {
@@ -2047,13 +2072,13 @@ impl Running {
                 Some(id)
             }
             None => {
-                self.easel_current = self.easels.create("");
+                self.easel_current = self.create_easel("");
                 self.tag_easel_space();
                 self.easel_current
             }
         };
         let (Some(url), Some(easel)) = (page, easel) else {
-            self.toast("This page cannot be captured");
+            self.toast(&t("toast.cannot_capture"));
             return;
         };
         match self
@@ -2062,9 +2087,9 @@ impl Running {
         {
             Ok(_) => {
                 self.easel_changed(true);
-                self.toast("Live area added to Easel");
+                self.toast(&t("toast.live_added"));
             }
-            Err(why) => self.toast(why),
+            Err(why) => self.toast(&t(why)),
         }
     }
 
@@ -2090,10 +2115,20 @@ impl Running {
         }
     }
 
+    /// A new Easel; a blank name becomes "Easel N" in the interface language.
+    fn create_easel(&mut self, name: &str) -> Option<u64> {
+        let name = if name.trim().is_empty() {
+            tf("easel.default_name", &[("n", &(self.easels.all().len() + 1).to_string())])
+        } else {
+            name.to_owned()
+        };
+        self.easels.create(&name)
+    }
+
     /// The current easel, created on first use so a capture never fails for lack of a board.
     fn easel_or_create(&mut self) -> Option<u64> {
         if self.current_easel().is_none() {
-            self.easel_current = self.easels.create("");
+            self.easel_current = self.create_easel("");
             self.tag_easel_space();
         }
         self.easel_current
@@ -2285,7 +2320,7 @@ impl Running {
     fn easel_persist(&mut self) {
         if let Err(e) = self.easel_store.save(&self.easels) {
             tracing::error!("cannot save easels: {e}");
-            self.toast("Could not save your easels");
+            self.toast(&t("toast.easels_not_saved"));
         }
     }
 
@@ -2300,7 +2335,7 @@ impl Running {
                 .active_tab()
                 .and_then(|t| self.tabs.get(&t.id))
         }) else {
-            self.toast("Open a web page to capture it");
+            self.toast(&t("toast.open_page_to_capture"));
             return;
         };
         let Ok(url) = view.url() else { return };
@@ -2315,7 +2350,7 @@ impl Running {
             },
         );
         if result.is_err() {
-            self.toast("This page cannot be captured");
+            self.toast(&t("toast.cannot_capture"));
         }
     }
 
@@ -2324,7 +2359,7 @@ impl Running {
             let page: serde_json::Value = serde_json::from_str(&cap.page).unwrap_or_default();
             let text = |key| page.get(key).and_then(|v| v.as_str()).unwrap_or_default();
             let Some(easel) = self.easel_or_create() else {
-                self.toast("Too many easels");
+                self.toast(&t("toast.too_many_easels"));
                 continue;
             };
             match self
@@ -2338,9 +2373,9 @@ impl Running {
                         .map(|e| e.name.clone())
                         .unwrap_or_default();
                     self.easel_changed(true);
-                    self.toast(&format!("Captured to {name}"));
+                    self.toast(&tf("toast.captured_to", &[("name", &name)]));
                 }
-                Err(why) => self.toast(why),
+                Err(why) => self.toast(&t(why)),
             }
         }
     }
@@ -2440,12 +2475,12 @@ impl Running {
                 self.sync();
             }
             UiCommand::NewEasel { name } => {
-                match self.easels.create(&name) {
+                match self.create_easel(&name) {
                     Some(id) => {
                         self.easel_current = Some(id);
                         self.tag_easel_space();
                     }
-                    None => self.toast("Too many easels"),
+                    None => self.toast(&t("toast.too_many_easels")),
                 }
                 self.easel_changed(true);
             }
@@ -2484,7 +2519,7 @@ impl Running {
                     Some(tab) if !self.home_shown() => {
                         self.live_picked(tab, selector, (w, h));
                     }
-                    _ => self.toast("Open a web page to capture an area"),
+                    _ => self.toast(&t("toast.open_page_for_area")),
                 }
             }
             UiCommand::EaselLivePlay { item } => self.live_play(item),
@@ -2514,7 +2549,7 @@ impl Running {
                     .and_then(|i| i.url.clone());
                 if let Some(url) = url {
                     self.open(&url);
-                    self.toast("Opened in a new tab");
+                    self.toast(&t("toast.opened_in_tab"));
                 }
             }
             other => {
@@ -2691,20 +2726,58 @@ impl Running {
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
     }
 
+    /// The interface language changed: every open page of BlackHole gets the new catalog and
+    /// re-renders, the shell's own texts (menus, titles, state) follow. Error pages already
+    /// shown keep their language until the next error.
+    fn language_changed(&mut self) {
+        i18n::apply(&self.svc.settings().language);
+        self.close_palette();
+        let mut views: Vec<&WebView> = vec![
+            &self.chrome,
+            &self.flyout,
+            &self.hotzone,
+            &self.bar,
+            &self.home,
+            &self.palette,
+        ];
+        views.extend(self.peek.as_ref().map(|p| &p.scrim));
+        views.extend(self.splitbar.view.as_ref());
+        views.extend(self.library_panel.view.as_ref());
+        views.extend(self.easel_panel.view.as_ref());
+        views.extend(self.settings.as_ref().map(|w| &w.view));
+        views.extend(self.easel.as_ref().map(|w| &w.view));
+        for view in views {
+            views::send_language(view);
+        }
+        self.window.set_title(&main_title());
+        if let Some(w) = &self.settings {
+            w.window.set_title(&i18n::t("window.settings"));
+        }
+        if let Some(w) = &self.easel {
+            w.window.set_title(&i18n::t("window.easel"));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            self._menu = install_menu();
+        }
+        self.ui_state();
+    }
+
+    /// A short message; `message` may come from another layer (`i18n::message`).
     pub(crate) fn toast(&self, message: &str) {
-        self.ui(format!("window.bh&&bh.toast({})", json!(message)));
+        self.ui(format!("window.bh&&bh.toast({})", json!(i18n::render(message))));
     }
 
     /// A toast with a button that runs `run` (a `UiCommand`), shown a little longer.
     pub(crate) fn toast_action(&self, message: &str, label: &str, run: serde_json::Value) {
         let action = json!({"label": label, "run": run});
-        self.ui(format!("window.bh&&bh.toast({},{action})", json!(message)));
+        self.ui(format!("window.bh&&bh.toast({},{action})", json!(i18n::render(message))));
     }
 
     /// A toast with an Undo button, for the space or folder just deleted (`removed`).
     fn toast_undo(&mut self, message: &str, removed: Removed) {
         self.undo = Some((Instant::now(), removed));
-        self.toast_action(message, "Undo", json!({"cmd": "undo_removal"}));
+        self.toast_action(message, &t("toast.undo"), json!({"cmd": "undo_removal"}));
     }
 
     /// The toast's Undo: the deleted space or folder comes back with its tabs (asleep), and they
@@ -2726,7 +2799,7 @@ impl Running {
                 .retain(|a| !(a.space == space && urls.contains(&a.url)));
             self.save_archive();
             self.sync();
-            self.toast("Restored");
+            self.toast(&t("toast.restored"));
         }
     }
 
@@ -3554,7 +3627,7 @@ impl Running {
     fn reopen_closed(&mut self) {
         match self.archive.len().checked_sub(1) {
             Some(index) => self.handle_easel(UiCommand::ReopenArchived { index }),
-            None => self.toast("No closed tab to reopen"),
+            None => self.toast(&t("toast.nothing_to_reopen")),
         }
     }
 
@@ -3759,28 +3832,28 @@ impl Running {
             .easels
             .all()
             .iter()
-            .map(|e| json!({"id": format!("easel:{}", e.id), "label": format!("Open Easel {}", e.name), "hint": "Easel"}))
+            .map(|e| json!({"id": format!("easel:{}", e.id), "label": tf("palette.open_easel_named", &[("name", &e.name)]), "hint": "Easel"}))
             .collect();
         // Labels: sentence case, the words of the menus. `keys` is a shortcut the palette spells
         // the way the system does (see ui/keys.js); `confirm` asks for a second Enter.
         let mut actions = vec![
-            json!({"id": "new_space", "label": "New space"}),
-            json!({"id": "new_folder", "label": "New folder"}),
-            json!({"id": "icon_space", "label": format!("Change emoji of space {}", space.name), "hint": "Emoji"}),
-            json!({"id": "toggle_sidebar", "label": "Show / hide the sidebar", "keys": "mod+b"}),
-            json!({"id": "new_easel", "label": "New Easel", "hint": "Easel"}),
-            json!({"id": "open_easel", "label": "Open Easel", "keys": "mod+shift+e"}),
-            json!({"id": "open_library", "label": "Open Library", "hint": "History, downloads, media, archive"}),
-            json!({"id": "settings", "label": "Open Settings", "keys": "mod+,"}),
-            json!({"id": "default_browser", "label": "Make BlackHole the default browser", "hint": "System"}),
-            json!({"id": "clear_history", "label": "Clear browsing history", "confirm": "Press again to erase all history"}),
-            json!({"id": "open_history", "label": "Open History", "hint": "Library"}),
-            json!({"id": "tidy", "label": "Tidy up tabs into folders by site", "hint": "Tabs"}),
-            json!({"id": "open_watches", "label": "Watched areas", "hint": "Library"}),
-            json!({"id": "compare", "label": "Compare open tabs (price, rating, specs)", "hint": "Tabs"}),
-            json!({"id": "key:shift+t", "label": "Reopen the tab closed last", "keys": "mod+shift+t"}),
-            json!({"id": "key:n", "label": "New window", "keys": "mod+n"}),
-            json!({"id": "key:shift+n", "label": "New private window", "keys": "mod+shift+n"}),
+            json!({"id": "new_space", "label": t("palette.new_space")}),
+            json!({"id": "new_folder", "label": t("palette.new_folder")}),
+            json!({"id": "icon_space", "label": tf("palette.space_emoji", &[("name", &space.name)]), "hint": t("palette.hint_emoji")}),
+            json!({"id": "toggle_sidebar", "label": t("palette.toggle_sidebar"), "keys": "mod+b"}),
+            json!({"id": "new_easel", "label": t("menu.new_easel"), "hint": "Easel"}),
+            json!({"id": "open_easel", "label": t("palette.open_easel"), "keys": "mod+shift+e"}),
+            json!({"id": "open_library", "label": t("palette.open_library"), "hint": t("palette.hint_library_all")}),
+            json!({"id": "settings", "label": t("palette.open_settings"), "keys": "mod+,"}),
+            json!({"id": "default_browser", "label": t("palette.default_browser"), "hint": t("palette.hint_system")}),
+            json!({"id": "clear_history", "label": t("palette.clear_history"), "confirm": t("palette.clear_history_confirm")}),
+            json!({"id": "open_history", "label": t("palette.open_history"), "hint": t("palette.hint_library")}),
+            json!({"id": "tidy", "label": t("palette.tidy"), "hint": t("palette.hint_tabs")}),
+            json!({"id": "open_watches", "label": t("palette.watched_areas"), "hint": t("palette.hint_library")}),
+            json!({"id": "compare", "label": t("palette.compare"), "hint": t("palette.hint_tabs")}),
+            json!({"id": "key:shift+t", "label": t("palette.reopen_closed"), "keys": "mod+shift+t"}),
+            json!({"id": "key:n", "label": t("palette.new_window"), "keys": "mod+n"}),
+            json!({"id": "key:shift+n", "label": t("palette.new_private_window"), "keys": "mod+shift+n"}),
         ];
         actions.extend(easel_actions);
         actions.extend(self.meeting_actions());
@@ -3788,13 +3861,13 @@ impl Running {
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
-                "label": format!("Change emoji of folder {}", folder.name),
-                "hint": "Emoji",
+                "label": tf("palette.folder_emoji", &[("name", &folder.name)]),
+                "hint": t("palette.hint_emoji"),
             }));
         }
         if self.split_tab().is_some() {
             actions
-                .push(json!({"id": "close_split", "label": "Close split view", "keys": "mod+\\"}));
+                .push(json!({"id": "close_split", "label": t("palette.close_split"), "keys": "mod+\\"}));
         }
         if let Some(current) = active {
             for tab in space.tabs.iter().filter(|t| t.id != current.id) {
@@ -3805,44 +3878,44 @@ impl Running {
                 };
                 actions.push(json!({
                     "id": format!("split:{}", tab.id.0),
-                    "label": format!("Split view with {name}"),
-                    "hint": "Split",
+                    "label": tf("palette.split_with", &[("name", name)]),
+                    "hint": t("palette.hint_split"),
                 }));
             }
         }
         if active.is_some() {
             actions.extend([
-                json!({"id": "key:f", "label": "Find in page", "keys": "mod+f"}),
-                json!({"id": "key:p", "label": "Print", "keys": "mod+p"}),
-                json!({"id": "key:zoom_in", "label": "Zoom in", "keys": "mod+plus"}),
-                json!({"id": "key:zoom_out", "label": "Zoom out", "keys": "mod+minus"}),
-                json!({"id": "key:zoom_reset", "label": "Reset zoom", "keys": "mod+0"}),
-                json!({"id": "key:r", "label": "Reload without the cache", "keys": "mod+r"}),
+                json!({"id": "key:f", "label": t("palette.find"), "keys": "mod+f"}),
+                json!({"id": "key:p", "label": t("palette.print"), "keys": "mod+p"}),
+                json!({"id": "key:zoom_in", "label": t("palette.zoom_in"), "keys": "mod+plus"}),
+                json!({"id": "key:zoom_out", "label": t("palette.zoom_out"), "keys": "mod+minus"}),
+                json!({"id": "key:zoom_reset", "label": t("palette.zoom_reset"), "keys": "mod+0"}),
+                json!({"id": "key:r", "label": t("palette.hard_reload"), "keys": "mod+r"}),
                 json!({
-                    "id": "key:devtools", "label": "Developer tools (elements, console, network)",
+                    "id": "key:devtools", "label": t("palette.devtools"),
                     "keys": if cfg!(target_os = "macos") { "mod+alt+i" } else { "F12" },
                 }),
             ]);
-            actions.push(json!({"id": "pip", "label": "Picture in Picture", "hint": "Video"}));
+            actions.push(json!({"id": "pip", "label": t("palette.pip"), "hint": t("palette.hint_video")}));
             actions.push(
-                json!({"id": "capture_easel", "label": "Capture this page to the Easel", "keys": "mod+shift+s"}),
+                json!({"id": "capture_easel", "label": t("palette.capture_easel"), "keys": "mod+shift+s"}),
             );
             actions.push(
-                json!({"id": "capture_live", "label": "Live capture: pick an area for the Easel", "keys": "mod+shift+l"}),
+                json!({"id": "capture_live", "label": t("palette.capture_live"), "keys": "mod+shift+l"}),
             );
         }
         if let Some(site) = &site {
-            actions.push(json!({"id": "boost", "label": format!("Boost {site}"), "hint": "Boost"}));
+            actions.push(json!({"id": "boost", "label": tf("palette.boost_site", &[("site", site)]), "hint": "Boost"}));
             let routed = self.svc.route_for(site);
             for other in ws.spaces().iter().filter(|s| Some(s.id) != routed) {
                 actions.push(json!({
                     "id": format!("route:{}", other.id.0),
-                    "label": format!("Always open {site} in {}", other.name),
+                    "label": tf("palette.route_to", &[("site", site), ("space", &other.name)]),
                     "hint": "Air Traffic",
                 }));
             }
             if routed.is_some() {
-                actions.push(json!({"id": "route_clear", "label": format!("Stop routing {site}"), "hint": "Air Traffic"}));
+                actions.push(json!({"id": "route_clear", "label": tf("palette.route_clear", &[("site", site)]), "hint": "Air Traffic"}));
             }
         }
         let url = match (self.palette_mode.as_str(), active) {
@@ -3897,7 +3970,7 @@ impl Running {
             "new_space" => {
                 let n = self.svc.workspace().spaces().len();
                 self.handle_ui(UiCommand::NewSpace {
-                    name: format!("Space {}", n + 1),
+                    name: tf("sidebar.default_space", &[("n", &(n + 1).to_string())]),
                     color: SPACE_COLORS[n % SPACE_COLORS.len()].to_owned(),
                 });
             }
@@ -3946,15 +4019,15 @@ impl Running {
             "capture_live" => self.handle_ui(UiCommand::LivePick),
             "clear_history" => {
                 self.svc.clear_history();
-                self.toast("History cleared");
+                self.toast(&t("toast.history_cleared"));
             }
             "default_browser" => {
                 let message = if blackhole_macos_url::set_default_browser() {
-                    "Confirm in the system dialog to make BlackHole your default browser"
+                    t("toast.default_browser_confirm")
                 } else {
-                    "Install the BlackHole.app bundle first (scripts/package-macos.sh)"
+                    t("toast.default_browser_bundle")
                 };
-                self.toast(message);
+                self.toast(&message);
             }
             "icon_space" => {
                 let id = self.svc.workspace().active_space().id.0;
@@ -3970,7 +4043,7 @@ impl Running {
             "route_clear" => {
                 if let Some(site) = site {
                     self.svc.set_route(&site, None);
-                    self.toast(&format!("{site} is no longer routed"));
+                    self.toast(&tf("toast.route_cleared", &[("site", &site)]));
                 }
             }
             other => {
@@ -3990,7 +4063,7 @@ impl Running {
                     site,
                 ) {
                     self.svc.set_route(&site, Some(SpaceId(n)));
-                    self.toast(&format!("{site} will open in its own space"));
+                    self.toast(&tf("toast.route_set", &[("site", &site)]));
                 }
             }
         }
@@ -4319,6 +4392,11 @@ impl Running {
                 self.svc.set_animations(on);
                 self.ui_state();
             }
+            UiCommand::SetLanguage { language } => {
+                if self.svc.set_language(&language) {
+                    self.language_changed();
+                }
+            }
             UiCommand::ClearHistory => {
                 self.svc.clear_history();
                 self.ui_state();
@@ -4418,7 +4496,7 @@ impl Running {
                             Removed::Space { space, .. } => space.name.clone(),
                             Removed::Folder { .. } => String::new(),
                         };
-                        self.toast_undo(&format!("Space “{name}” deleted"), snapshot);
+                        self.toast_undo(&tf("toast.space_deleted", &[("name", &name)]), snapshot);
                     }
                 }
             }
@@ -4435,19 +4513,18 @@ impl Running {
             UiCommand::Tidy => {
                 let groups = self.svc.workspace().tidy_suggestion(TIDY_MIN);
                 if groups.is_empty() {
-                    self.toast("Nothing to tidy up");
+                    self.toast(&t("toast.nothing_to_tidy"));
                     return;
                 }
                 let done = self.svc.tidy(&groups);
-                let message = format!(
-                    "{} tabs filed into {} folder{}",
-                    done.tabs(),
+                let message = tn(
+                    "toast.tidied",
                     groups.len(),
-                    if groups.len() == 1 { "" } else { "s" }
+                    &[("tabs", &done.tabs().to_string())],
                 );
                 self.tidied = Some(done);
                 self.sync();
-                self.toast_action(&message, "Undo", json!({"cmd": "untidy"}));
+                self.toast_action(&message, &t("toast.undo"), json!({"cmd": "untidy"}));
             }
             UiCommand::Untidy => {
                 if let Some(done) = self.tidied.take() {
@@ -4533,7 +4610,7 @@ impl Running {
                 if self.svc.move_tab_to_space(TabId(id), SpaceId(space)) {
                     self.drop_view(TabId(id));
                     self.sync();
-                    self.toast(&format!("Moved to {}", name.unwrap_or_default()));
+                    self.toast(&tf("toast.moved_to", &[("name", &name.unwrap_or_default())]));
                 }
             }
             UiCommand::CloseOtherTabs { id } => {
@@ -4555,10 +4632,7 @@ impl Running {
                 self.home_visible = false;
                 self.sync();
                 let n = others.len();
-                self.toast(&format!(
-                    "{n} tab{} closed (in Library > Archived Tabs)",
-                    if n == 1 { "" } else { "s" }
-                ));
+                self.toast(&tn("toast.tabs_closed", n, &[]));
             }
             UiCommand::ClosePane { side } if self.easel_side() => {
                 // Closing the tab's pane leaves the easel alone, in the content area.
@@ -4644,7 +4718,7 @@ impl Running {
             UiCommand::NewFolder { parent } => {
                 match parent {
                     Some(p) => {
-                        let made = self.svc.add_subfolder("New folder", FolderId(p));
+                        let made = self.svc.add_subfolder(&t("palette.new_folder"), FolderId(p));
                         // Show the new subfolder: a collapsed parent would hide it.
                         if self
                             .svc
@@ -4663,7 +4737,7 @@ impl Running {
                         return;
                     }
                     None => {
-                        self.svc.add_folder("New folder");
+                        self.svc.add_folder(&t("palette.new_folder"));
                     }
                 }
                 self.ui_state();
@@ -4720,7 +4794,7 @@ impl Running {
                             }
                             Removed::Space { .. } => String::new(),
                         };
-                        self.toast_undo(&format!("Folder “{name}” deleted"), snapshot);
+                        self.toast_undo(&tf("toast.folder_deleted", &[("name", &name)]), snapshot);
                     }
                 }
                 self.sync();
@@ -4738,11 +4812,11 @@ impl Running {
             }
             UiCommand::NewSpace { name, color } => {
                 let name = if name.trim().is_empty() {
-                    "Space"
+                    t("sidebar.space")
                 } else {
-                    name.as_str()
+                    name
                 };
-                self.svc.add_space(name, &color);
+                self.svc.add_space(&name, &color);
                 self.sync();
             }
             UiCommand::SetEngine { id } => {
@@ -4867,9 +4941,9 @@ impl Running {
                     Some(match found {
                         Some(s) => match import::read_bookmarks(&s) {
                             Ok(list) => store_bookmarks(bookmarks, list, &s.browser, space),
-                            Err(e) => (format!("{} : {e}", s.browser), Vec::new()),
+                            Err(e) => (message("settings.import_failed", &[("from", &s.browser), ("why", &e.to_string())]), Vec::new()),
                         },
-                        None => ("Source introuvable".into(), Vec::new()),
+                        None => (message("settings.import_no_source", &[]), Vec::new()),
                     })
                 });
             }
@@ -4955,7 +5029,7 @@ impl Running {
             .map(|t| t.id);
         match other {
             Some(id) => self.handle_ui(UiCommand::Split { id: id.0 }),
-            None => self.toast("Open another tab first to use Split View"),
+            None => self.toast(&t("toast.split_needs_tab")),
         }
     }
 
@@ -5047,7 +5121,7 @@ impl Running {
         }
         self.apply_zoom(tab);
         self.ui_bar();
-        self.toast(&format!("Zoom {}%", (next * 100.0).round()));
+        self.toast(&tf("toast.zoom", &[("n", &(next * 100.0).round().to_string())]));
     }
 
     /// Gives a tab the zoom of the site it shows (100% when the site has none).
@@ -5255,7 +5329,7 @@ impl Running {
                 });
                 let list = self.downloads_json();
                 self.ui(format!("window.bh&&bh.downloads({list})"));
-                self.toast("Download started");
+                self.toast(&t("toast.download_started"));
                 self.ui_library();
             }
             Msg::DownloadDone { url, path, ok } => {
@@ -5283,11 +5357,11 @@ impl Running {
                 self.save_downloads();
                 let list = self.downloads_json();
                 self.ui(format!("window.bh&&bh.downloads({list})"));
-                self.toast(if ok {
-                    "Download complete"
+                self.toast(&t(if ok {
+                    "toast.download_complete"
                 } else {
-                    "Download failed"
-                });
+                    "toast.download_failed"
+                }));
                 self.ui_library();
             }
             Msg::Blocked { why, host } => self.on_blocked(why, &host, ""),
@@ -5334,31 +5408,30 @@ impl Running {
                     }
                 }
                 let grade = blackhole_domain::privacy_grade(trackers, ads);
-                let plural = |n: u32, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
-                items.push(json!({"head": format!("{site} · grade {grade}")}));
+                items.push(json!({"head": tf("menu.privacy_grade", &[("site", &site), ("grade", &grade.to_string())])}));
                 let shown = self.svc.workspace().active_tab().map(|t| t.url.clone());
                 if shown.is_some_and(|u| errors::insecure(&u)) {
-                    items.push(json!({"icon": "close", "label": "Non sécurisé: exception accepted until BlackHole quits"}));
+                    items.push(json!({"icon": "close", "label": t("menu.insecure_exception")}));
                 }
-                items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(trackers, "tracker request"))}));
-                items.push(json!({"icon": "shield", "label": format!("{} blocked", plural(ads, "ad request"))}));
+                items.push(json!({"icon": "shield", "label": tn("menu.trackers_blocked", trackers as usize, &[])}));
+                items.push(json!({"icon": "shield", "label": tn("menu.ads_blocked", ads as usize, &[])}));
                 if hosts.is_empty() {
-                    items.push(json!({"icon": "check", "label": "Nothing tried to follow you here"}));
+                    items.push(json!({"icon": "check", "label": t("menu.nothing_followed")}));
                 } else {
                     items.push(json!({"sep": true}));
-                    items.push(json!({"head": "Blocked hosts"}));
+                    items.push(json!({"head": t("menu.blocked_hosts")}));
                     items.extend(hosts.iter().take(8).map(|(host, n)| {
                         json!({"icon": if is_ad(host) { "close" } else { "eye" }, "label": format!("{host} · {n}")})
                     }));
                 }
             }
             None => {
-                items.push(json!({"head": "This session"}));
-                items.push(json!({"icon": "shield", "label": format!("{} requests blocked", self.blocked.total())}));
+                items.push(json!({"head": t("menu.this_session")}));
+                items.push(json!({"icon": "shield", "label": tn("menu.requests_blocked", self.blocked.total() as usize, &[])}));
             }
         }
         items.push(json!({"sep": true}));
-        items.push(json!({"icon": "settings", "label": "Privacy settings", "run": {"cmd": "open_settings", "tab": "privacy"}}));
+        items.push(json!({"icon": "settings", "label": t("menu.privacy_settings"), "run": {"cmd": "open_settings", "tab": "privacy"}}));
         self.show_menu(at, json!(items));
     }
 
@@ -5377,8 +5450,9 @@ impl Running {
 
     fn on_blocked(&mut self, why: &str, host: &str, site: &str) {
         self.blocked.record(host, site);
+        // `why` is the domain's reason ("tracker blocked"…), shown in the interface language.
         if !why.is_empty() {
-            self.toast(why);
+            self.toast(&t(&format!("blocked.{}", why.replace(' ', "_"))));
         }
         self.ui_state();
     }
@@ -5649,13 +5723,13 @@ fn store_bookmarks(
     let total = list.len();
     match store.merge(list.clone()) {
         Ok(new) => (
-            format!(
-                "{from} : {new} favoris ajoutés ({} déjà présents)",
-                total - new
+            message(
+                "settings.import_done",
+                &[("from", from), ("n", &new.to_string()), ("known", &(total - new).to_string())],
             ),
             list,
         ),
-        Err(e) => (format!("{from} : {e}"), Vec::new()),
+        Err(e) => (message("settings.import_failed", &[("from", from), ("why", &e.to_string())]), Vec::new()),
     }
 }
 
@@ -5674,7 +5748,7 @@ fn import_file(
         return (String::new(), Vec::new());
     };
     let Ok(text) = std::fs::read_to_string(&path) else {
-        return ("Fichier illisible".into(), Vec::new());
+        return (message("settings.import_unreadable", &[]), Vec::new());
     };
     if kind == "logins" {
         // Added to the wallet on the UI thread, which sets the message.
@@ -5687,7 +5761,7 @@ fn import_file(
         };
         return (msg, Vec::new());
     }
-    store_bookmarks(bookmarks, import::parse_html(&text), "Fichier HTML", space)
+    store_bookmarks(bookmarks, import::parse_html(&text), &message("settings.import_from_html", &[]), space)
 }
 
 fn now_secs() -> u64 {

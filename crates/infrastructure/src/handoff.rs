@@ -13,6 +13,7 @@
 //!
 //! The network runs on a thread of its own; the app sends [`Request`]s and reads [`Event`]s.
 
+use blackhole_domain::i18n::message;
 use crate::store::Vault;
 use blackhole_domain::handoff::{self, Seen};
 use chacha20poly1305::{
@@ -543,8 +544,9 @@ impl Worker {
             }
             Err(why) => {
                 if self.bind_retry.is_none() {
-                    self.emit(Event::Status(format!(
-                        "The local network is not available ({why})"
+                    self.emit(Event::Status(message(
+                        "msg.no_local_network",
+                        &[("why", &why.to_string())],
                     )));
                 }
                 self.bind_retry = Some(Instant::now() + HELLO_EVERY);
@@ -648,19 +650,14 @@ impl Worker {
                 }
                 if !self.listening() {
                     self.pairing = None;
-                    self.emit(Event::Status(
-                        "Another BlackHole window handles the devices: show the code from it"
-                            .into(),
-                    ));
+                    self.emit(Event::Status(message("msg.other_window_pairs", &[])));
                     return;
                 }
                 self.emit(Event::Code(Some(handoff::format_code(code))));
             }
             Request::Join(typed) => {
                 let Some(code) = handoff::parse_code(&typed) else {
-                    self.emit(Event::Status(
-                        "Type the 12 characters shown on the other device".into(),
-                    ));
+                    self.emit(Event::Status(message("msg.type_code", &[])));
                     return;
                 };
                 let key = code_key(code);
@@ -678,7 +675,7 @@ impl Worker {
                     until: Instant::now() + JOIN_FOR,
                 });
                 self.emit(Event::Code(None));
-                self.emit(Event::Status("Looking for the other device…".into()));
+                self.emit(Event::Status(message("msg.looking_for_device", &[])));
             }
             Request::CancelPairing => {
                 self.pairing = None;
@@ -692,14 +689,12 @@ impl Worker {
             } => {
                 let Some(target) = self.book.devices.iter().find(|d| d.id == device).cloned()
                 else {
-                    self.emit(Event::Status("This device is no longer paired".into()));
+                    self.emit(Event::Status(message("msg.device_unpaired", &[])));
                     return;
                 };
                 let can = url::Url::parse(&url).is_ok_and(|u| handoff::can_continue(&u));
                 let Some(key) = target.key().filter(|_| can && url.len() <= MAX_URL) else {
-                    self.emit(Event::Status(
-                        "Only web pages can continue on another device".into(),
-                    ));
+                    self.emit(Event::Status(message("msg.only_web_continue", &[])));
                     return;
                 };
                 let id = u64::from_le_bytes(random_bytes());
@@ -741,7 +736,7 @@ impl Worker {
                 };
                 let chunks = split(&json, PART_BYTES);
                 if chunks.len() > MAX_PARTS {
-                    self.emit(Event::Status("Too many tabs to synchronize at once".into()));
+                    self.emit(Event::Status(message("msg.too_many_to_sync", &[])));
                     return;
                 }
                 // A newer ledger replaces the parts of an older one still on their way.
@@ -807,9 +802,7 @@ impl Worker {
             }
             Some(Pairing::Joining { until, .. }) if now >= *until => {
                 self.pairing = None;
-                self.emit(Event::Status(
-                    "No device answered: is the code still shown on the other device, on the same network?".into(),
-                ));
+                self.emit(Event::Status(message("msg.no_device_answered", &[])));
             }
             Some(Pairing::Joining { packet, next, .. }) if now >= *next => {
                 *next = now + JOIN_EVERY;
@@ -837,9 +830,7 @@ impl Worker {
                 continue;
             }
             let name = self.name_of(&gone.device);
-            self.emit(Event::Status(format!(
-                "{name} did not answer: is BlackHole open on it, on the same network?"
-            )));
+            self.emit(Event::Status(message("msg.device_silent", &[("name", &name)])));
         }
         self.incoming.retain(|_, i| i.since.elapsed() < PARTS_FOR);
         self.devices_changed();
@@ -850,7 +841,7 @@ impl Worker {
             .devices
             .iter()
             .find(|d| d.id == id)
-            .map_or_else(|| "The other device".to_owned(), |d| d.name.clone())
+            .map_or_else(|| message("msg.other_device", &[]), |d| d.name.clone())
     }
 
     fn receive(&mut self, packet: &[u8], from: SocketAddr) {
@@ -1182,7 +1173,7 @@ mod tests {
 
         a.request(Request::Join("0000-0000-000".into()));
         assert!(
-            matches!(wait_for(&a, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("12 characters"))
+            matches!(wait_for(&a, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("msg.type_code"))
         );
 
         a.request(Request::ShowCode);
@@ -1251,7 +1242,7 @@ mod tests {
             position: None,
         });
         assert!(
-            matches!(wait_for(&b, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("Only web pages"))
+            matches!(wait_for(&b, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("msg.only_web_continue"))
         );
 
         b.request(Request::Forget(list[0].id.clone()));

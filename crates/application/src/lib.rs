@@ -221,6 +221,16 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         true
     }
 
+    /// Interface language: a supported code or `i18n::SYSTEM`; false (unchanged) otherwise.
+    pub fn set_language(&mut self, code: &str) -> bool {
+        if !blackhole_domain::i18n::is_choice(code) {
+            return false;
+        }
+        self.settings.language = code.to_owned();
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
     /// Minutes before a wallet with a master password locks again; ignored unless one of
     /// `Settings::LOCK_CHOICES`.
     pub fn set_password_lock(&mut self, minutes: u32) {
@@ -732,6 +742,19 @@ mod tests {
         assert!(!again.policy().is_blocking_ads());
         let shields = again.policy().shields();
         assert!(shields.hide_ads && shields.video_ads && !shields.cookie_banners);
+    }
+
+    #[test]
+    fn the_language_is_remembered_and_checked() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert_eq!(svc.settings().language, "system");
+        assert!(svc.set_language("fr"));
+        assert!(!svc.set_language("klingon"));
+        let mut again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert_eq!(again.settings().language, "fr");
+        assert!(again.set_language("system"));
+        assert_eq!(again.settings().language, "system");
     }
 
     #[test]
