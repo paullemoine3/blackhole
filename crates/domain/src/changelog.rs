@@ -10,6 +10,12 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Android: long press an image to open, download or copy it, and a link to download it; full screen videos, file uploads, and the camera, microphone or location for a site only after you allow it",
             "Android: text shared from another app, a web search or \"BlackHole\" in a text selection menu opens its address or searches it",
             "Android fixes: tapping the address bar no longer closes the sheet at once (the keyboard typed into a hidden field), the page no longer stays black when the system recreates the app, a long press on a linked image offers the link instead of the image, and pages without a mobile layout are fitted to the screen",
+            "Picture in Picture on macOS: the floating window's back-to-tab button now shows the video's tab; its close button pauses the video and leaves you where you are",
+            "The sidebar player's close button also closes the floating video, and the card stays closed until the video plays again",
+            "Google can be picked as the search engine in Settings, on every platform; DuckDuckGo stays the default",
+            "A click on a download card in the sidebar opens Library > Downloads, and a finished download stays there 8 seconds",
+            "A tab opened only to download a file closes once the file is saved, instead of showing an error page",
+            "The Library and the sidebar's player, download, meeting and tidy-up cards are redesigned on the BlackHole design system, with the same animations as Settings",
         ],
     ),
     (

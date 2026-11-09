@@ -90,7 +90,7 @@ Sous macOS, les extensions Safari des apps installées peuvent aussi être activ
 
 ## 🔒 Vie privée
 
-- Moteur **DuckDuckGo** par défaut, **aucune télémétrie**.
+- Moteur **DuckDuckGo** par défaut (Brave Search, Startpage, Qwant, Mojeek ou Google au choix dans les Réglages), **aucune télémétrie**.
 - **Shields** : traqueurs et serveurs publicitaires bloqués (liste dans `crates/infrastructure/blocklist.txt`), HTTPS automatique, paramètres de suivi supprimés.
 - Mots de passe importés dans un **coffre chiffré** (ChaCha20-Poly1305), clé dans le trousseau système.
 - `unsafe` interdit hors des crates d'intégration système (`macos-url`, `macos-webext`).

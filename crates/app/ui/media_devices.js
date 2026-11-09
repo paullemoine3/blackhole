@@ -88,7 +88,8 @@
     },
   };
 
-  const left = () => post({ cmd: 'pip_left' });
+  // Paused: the window's close button. Playing: its "back to tab" button.
+  const left = (v) => post({ cmd: 'pip_left', paused: !!v.paused });
   document.addEventListener(
     'leavepictureinpicture',
     (e) => e.target instanceof HTMLVideoElement && left(e.target),

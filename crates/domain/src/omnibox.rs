@@ -9,15 +9,18 @@ pub enum SearchEngine {
     Startpage,
     Qwant,
     Mojeek,
+    /// Offered for those who want it; DuckDuckGo stays the default.
+    Google,
 }
 
 impl SearchEngine {
-    pub const ALL: [SearchEngine; 5] = [
+    pub const ALL: [SearchEngine; 6] = [
         Self::DuckDuckGo,
         Self::Brave,
         Self::Startpage,
         Self::Qwant,
         Self::Mojeek,
+        Self::Google,
     ];
 
     pub fn id(self) -> &'static str {
@@ -27,6 +30,7 @@ impl SearchEngine {
             Self::Startpage => "startpage",
             Self::Qwant => "qwant",
             Self::Mojeek => "mojeek",
+            Self::Google => "google",
         }
     }
 
@@ -37,6 +41,7 @@ impl SearchEngine {
             Self::Startpage => "Startpage",
             Self::Qwant => "Qwant",
             Self::Mojeek => "Mojeek",
+            Self::Google => "Google",
         }
     }
 
@@ -51,6 +56,7 @@ impl SearchEngine {
             Self::Startpage => "https://www.startpage.com/do/search",
             Self::Qwant => "https://www.qwant.com/",
             Self::Mojeek => "https://www.mojeek.com/search",
+            Self::Google => "https://www.google.com/search",
         }
     }
 
@@ -155,6 +161,17 @@ mod tests {
             assert_eq!(SearchEngine::from_id(e.id()), Some(e));
         }
         assert_eq!(SearchEngine::from_id("nope"), None);
+    }
+
+    #[test]
+    fn google_can_be_chosen() {
+        let google = SearchEngine::from_id("google").expect("offered");
+        assert_eq!(google.label(), "Google");
+        assert_eq!(
+            google.search_url("rust tabs").as_str(),
+            "https://www.google.com/search?q=rust+tabs"
+        );
+        assert_ne!(SearchEngine::default(), google, "DuckDuckGo stays the default");
     }
 
     #[test]

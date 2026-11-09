@@ -66,6 +66,12 @@ wait 300
 cmd {"cmd":"check_app_update"}
 wait 8000
 eval settings 'chk:' + document.getElementById('appupd-sub').textContent + '|' + document.getElementById('appupd-check').disabled
+eval settings 'eng:' + [...document.querySelectorAll('#engines .opt')].map(o => o.textContent.trim()).join(',') + '|' + document.querySelector('#engines .opt.sel').textContent.trim()
+cmd {"cmd":"set_engine","id":"google"}
+wait 600
+eval settings 'eng2:' + document.querySelector('#engines .opt.sel').textContent.trim() + '|' + document.querySelectorAll('#engines .opt.sel').length
+cmd {"cmd":"set_engine","id":"duckduckgo"}
+wait 400
 S
   fi
   echo "cmd {\"cmd\":\"close_settings\"}"
@@ -101,6 +107,8 @@ check 16 'ship3:1' "the sidebar launches the same ship"
 check 17 'ship4:0' "animations off: no ship"
 # Network: up to date (or GitHub unreachable), never stuck on "Looking for a new version".
 if [[ "${L[18]:-}" == *"chk:"* && "${L[18]:-}" == *"|false"* && "${L[18]:-}" != *"Looking"* ]]; then echo "ok   manual check answers (${L[18]#*chk:})"; else echo "FAIL manual check (got: ${L[18]:-none})"; fail=1; fi
+check 19 'eng:DuckDuckGo,Brave Search,Startpage,Qwant,Mojeek,Google|DuckDuckGo' "search engines: Google offered, DuckDuckGo by default"
+check 20 'eng2:Google|1' "search engine: Google can be chosen"
 for s in general shortcuts extensions calendar devices passwords import privacy focus launch; do
   [[ -f /tmp/bh_shots/${P}settings-$s.png ]] || { echo "FAIL screenshot settings-$s missing"; fail=1; }
 done
