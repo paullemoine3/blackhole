@@ -1,14 +1,26 @@
 package app.blackhole.browser
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.app.PendingIntent
+import android.app.SearchManager
+import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -16,6 +28,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.provider.Settings
 import android.view.MotionEvent
 import android.view.View
@@ -23,17 +37,28 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.webkit.CookieManager
 import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewAssetLoader
@@ -42,6 +67,11 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.concurrent.Executors
 
 /**
  * The Kotlin shell: tab WebViews under one transparent interface WebView (`mobile.html`).
@@ -53,6 +83,8 @@ class MainActivity : ComponentActivity(), TabView.Host {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var root: FrameLayout
     private lateinit var tabsLayer: FrameLayout
+    /** Pull down at the top of a page to reload it; holds [tabsLayer]. */
+    private lateinit var refresh: SwipeRefreshLayout
     private lateinit var shell: ShellView
     private val tabs = HashMap<Long, TabView>()
     private var current: Long? = null
@@ -69,6 +101,44 @@ class MainActivity : ComponentActivity(), TabView.Host {
     private var insets = JSONObject()
 
     private val downloads = ArrayList<Long>()
+
+    // Settings every tab view follows (`Effect::WebPrefs`).
+    private var textZoom = 100
+    private var pullRefresh = true
+
+    /** A video shown full screen by a page, over everything. */
+    private var fullView: View? = null
+    private var fullCallback: WebChromeClient.CustomViewCallback? = null
+
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        val clip = data?.clipData
+        val uris = when {
+            result.resultCode != RESULT_OK -> null
+            clip != null -> Array(clip.itemCount) { clip.getItemAt(it).uri }
+            data?.data != null -> arrayOf(data.data!!)
+            else -> null
+        }
+        fileCallback?.onReceiveValue(uris)
+        fileCallback = null
+    }
+
+    /** Site permission requests waiting for the core (the user's answer): id → (kinds, answer). */
+    private val permissions = HashMap<Long, Pair<List<String>, (Boolean) -> Unit>>()
+    private var permissionSeq = 0L
+    private var runtimeAnswer: (() -> Unit)? = null
+    private val askRuntime = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        val answer = runtimeAnswer
+        runtimeAnswer = null
+        answer?.invoke()
+    }
+    private val roleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { postUi(envMessage()) }
+
+    /** Network and file work of the updater, one task at a time, off the main thread. */
+    private val io = Executors.newSingleThreadExecutor()
+    /** The APK downloaded for the update, checked by the core before it is installed. */
+    private var updateFile: File? = null
     private val density get() = resources.displayMetrics.density
     private val multiProfile by lazy { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) }
     private val debuggable get() = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -77,8 +147,16 @@ class MainActivity : ComponentActivity(), TabView.Host {
         private const val ORIGIN = "https://appassets.androidplatform.net"
         private const val SHELL_URL = "$ORIGIN/assets/mobile.html"
         /** Interface messages the shell handles itself; every other one goes to the core. */
-        private val LOCAL = setOf("surface", "thumbs", "peek", "peek_end", "copy", "share", "open_downloads")
+        private val LOCAL = setOf(
+            "surface", "thumbs", "peek", "peek_end", "copy", "share", "open_downloads",
+            "find", "find_next", "find_clear", "print", "add_to_home", "default_browser",
+        )
+        private const val INSTALL_STATUS = "app.blackhole.browser.INSTALL_STATUS"
+        /** The APK is a few tens of megabytes; anything far bigger is not ours. */
+        private const val MAX_APK = 200L * 1024 * 1024
     }
+
+    private val agent by lazy { "BlackHole/" + (packageManager.getPackageInfo(packageName, 0).versionName ?: "") }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,7 +167,20 @@ class MainActivity : ComponentActivity(), TabView.Host {
         root = FrameLayout(this)
         root.setBackgroundColor(0xFF0C0B12.toInt())
         tabsLayer = FrameLayout(this)
-        root.addView(tabsLayer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        refresh = SwipeRefreshLayout(this)
+        refresh.addView(tabsLayer, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        refresh.setColorSchemeColors(0xFF7C5CFF.toInt(), 0xFFFFB020.toInt())
+        refresh.setProgressBackgroundColorSchemeColor(0xFF13121B.toInt())
+        // Only at the very top of a page that does not scroll up any more.
+        refresh.setOnChildScrollUpCallback { _, _ ->
+            val v = current?.let { tabs[it] }
+            !pullRefresh || v == null || fullView != null || v.scrollY > 0 || v.canScrollVertically(-1)
+        }
+        refresh.setOnRefreshListener {
+            apply(Native.command("""{"cmd":"reload"}"""))
+            main.postDelayed({ refresh.isRefreshing = false }, 1500)
+        }
+        root.addView(refresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         shell = ShellView(this)
         root.addView(shell, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
@@ -104,12 +195,13 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 .put("left", bars.left / density)
                 .put("right", bars.right / density)
                 .put("keyboard", ime.bottom > 0)
-            (tabsLayer.layoutParams as FrameLayout.LayoutParams).topMargin = bars.top
-            tabsLayer.requestLayout()
+            (refresh.layoutParams as FrameLayout.LayoutParams).topMargin = bars.top
+            refresh.requestLayout()
             postUi(insets.toString())
             all
         }
 
+        ContextCompat.registerReceiver(this, installStatus, IntentFilter(INSTALL_STATUS), ContextCompat.RECEIVER_NOT_EXPORTED)
         setUpShell()
         // Debug builds only: `--es bh_peer ip:port` points the devices service at one address
         // (the emulator reaching BlackHole on its host, see scripts/test-android.ps1).
@@ -173,7 +265,13 @@ class MainActivity : ComponentActivity(), TabView.Host {
             .put("reduced", scale == 0f)
             .put("profiles", multiProfile)
             .put("debug", debuggable)
+            .put("default_browser", isDefaultBrowser())
             .toString()
+    }
+
+    private fun isDefaultBrowser(): Boolean {
+        val roles = getSystemService(RoleManager::class.java) ?: return false
+        return roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && roles.isRoleHeld(RoleManager.ROLE_BROWSER)
     }
 
     private fun postUi(json: String) {
@@ -204,8 +302,8 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 overlay = msg.optBoolean("overlay", false)
                 animations = msg.optBoolean("animations", true)
                 barPx = (msg.optDouble("bottom", 0.0) * density).toInt()
-                (tabsLayer.layoutParams as FrameLayout.LayoutParams).bottomMargin = barPx
-                tabsLayer.requestLayout()
+                (refresh.layoutParams as FrameLayout.LayoutParams).bottomMargin = barPx
+                refresh.requestLayout()
                 val dark = msg.optBoolean("dark", true)
                 WindowCompat.getInsetsController(window, root).apply {
                     isAppearanceLightStatusBars = !dark
@@ -240,6 +338,72 @@ class MainActivity : ComponentActivity(), TabView.Host {
             } catch (e: ActivityNotFoundException) {
                 toast("No app shows downloads")
             }
+            "find" -> currentView()?.findAllAsync(msg.optString("text").take(500))
+            "find_next" -> currentView()?.findNext(msg.optBoolean("forward", true))
+            "find_clear" -> currentView()?.clearMatches()
+            "print" -> currentView()?.let { printPage(it) }
+            "add_to_home" -> currentView()?.let { addToHome(it) }
+            "default_browser" -> askDefaultBrowser()
+        }
+    }
+
+    private fun currentView(): TabView? = current?.let { tabs[it] }
+
+    /** Print, or "Save as PDF" in the system dialog. */
+    private fun printPage(view: TabView) {
+        val name = view.title?.takeIf { it.isNotBlank() } ?: "BlackHole"
+        val printer = getSystemService(Context.PRINT_SERVICE) as PrintManager
+        printer.print(name, view.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
+    }
+
+    /** A launcher shortcut that opens the page in BlackHole. */
+    private fun addToHome(view: TabView) {
+        val url = view.url ?: return
+        if (!URLUtil.isNetworkUrl(url)) return
+        if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this)) {
+            toast("Your home screen does not accept shortcuts")
+            return
+        }
+        val label = view.title?.takeIf { it.isNotBlank() } ?: Uri.parse(url).host ?: "BlackHole"
+        val icon = view.pageIcon?.let { IconCompat.createWithBitmap(shortcutIcon(it)) }
+            ?: IconCompat.createWithResource(this, R.mipmap.ic_launcher)
+        val open = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setClass(this, MainActivity::class.java)
+        val info = ShortcutInfoCompat.Builder(this, "site-" + Integer.toHexString(url.hashCode()))
+            .setShortLabel(label.take(24))
+            .setLongLabel(label.take(60))
+            .setIcon(icon)
+            .setIntent(open)
+            .build()
+        ShortcutManagerCompat.requestPinShortcut(this, info, null)
+    }
+
+    /** The site icon centred on a light rounded tile (launcher icons are 192 px). */
+    private fun shortcutIcon(favicon: Bitmap): Bitmap {
+        val side = 192
+        val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        paint.color = 0xFFF4F3F8.toInt()
+        canvas.drawRoundRect(RectF(0f, 0f, side.toFloat(), side.toFloat()), 44f, 44f, paint)
+        val inset = side * 0.24f
+        canvas.drawBitmap(favicon, null, RectF(inset, inset, side - inset, side - inset), paint)
+        return out
+    }
+
+    private fun askDefaultBrowser() {
+        val roles = getSystemService(RoleManager::class.java)
+        if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
+            if (roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                toast("BlackHole is already your default browser")
+            } else {
+                roleRequest.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
+            }
+            return
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+        } catch (e: ActivityNotFoundException) {
+            toast("Choose the default browser in the system settings")
         }
     }
 
@@ -262,9 +426,11 @@ class MainActivity : ComponentActivity(), TabView.Host {
             "open" -> {
                 val view = tabs[tab] ?: TabView(this, tab, e.optString("profile"), e.optString("script"), this).also {
                     it.visibility = View.GONE
+                    it.settings.textZoom = textZoom
                     tabsLayer.addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                     tabs[tab] = it
                 }
+                view.setDesktop(e.optBoolean("desktop"), reload = false)
                 view.loadUrl(e.optString("url"))
             }
             "show" -> show(if (e.isNull("tab")) null else tab)
@@ -275,6 +441,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
                     "back" -> if (v.canGoBack()) v.goBack()
                     "forward" -> if (v.canGoForward()) v.goForward()
                     "reload" -> v.reload()
+                    "stop" -> v.stopLoading()
                 }
             }
             "drop" -> tabs.remove(tab)?.let { v ->
@@ -286,6 +453,26 @@ class MainActivity : ComponentActivity(), TabView.Host {
             "clear_profile" -> clearProfile(e.optString("profile"))
             "external" -> external(e.optString("url"))
             "exit" -> moveTaskToBack(true)
+            "desktop_mode" -> tabs[tab]?.setDesktop(e.optBoolean("on"), reload = true)
+            "web_prefs" -> {
+                textZoom = e.optInt("text_zoom", 100)
+                pullRefresh = e.optBoolean("pull_refresh", true)
+                tabs.values.forEach { it.settings.textZoom = textZoom }
+            }
+            "permission" -> answerPermission(e.optLong("id"), e.optBoolean("allow"))
+            // "Download link" of the long press menu (the page's own downloads go through download()).
+            "download" -> enqueue(
+                e.optString("url"), WebSettings.getDefaultUserAgent(this), e.optString("disposition"),
+                e.optString("mime"), currentView()?.profile ?: "Default",
+            )
+            "update_probe" -> updateProbe(e.optString("url"))
+            "update_sums" -> updateSums(e.optString("tag"), e.optString("url"))
+            "update_download" -> updateDownload(e.optString("url"), e.optString("sha256"), e.optString("name"))
+            "update_install" -> updateInstall()
+            "update_discard" -> {
+                updateFile?.delete()
+                updateFile = null
+            }
             // "ssl" and "cancel" answer a WebView callback synchronously (TabView); "download"
             // answers the DownloadListener (download()), which has the request's user agent.
         }
@@ -336,6 +523,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
     private fun back() {
         val view = current?.let { tabs[it] }
         when {
+            fullView != null -> leaveFullscreen()
             overlay -> postUi("""{"type":"back"}""")
             view != null && view.canGoBack() -> view.goBack()
             else -> apply(Native.event("""{"ev":"back_exhausted"}"""))
@@ -411,7 +599,88 @@ class MainActivity : ComponentActivity(), TabView.Host {
     }
 
     override fun progress(tab: Long, value: Int) {
-        if (tab == current) postUi(JSONObject().put("type", "progress").put("tab", tab).put("value", value).toString())
+        if (tab != current) return
+        postUi(JSONObject().put("type", "progress").put("tab", tab).put("value", value).toString())
+        if (value >= 100) refresh.isRefreshing = false
+    }
+
+    override fun found(tab: Long, active: Int, count: Int) {
+        if (tab == current) postUi(JSONObject().put("type", "found").put("active", active).put("count", count).toString())
+    }
+
+    override fun fullscreen(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (fullView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+        fullView = view
+        fullCallback = callback
+        view.setBackgroundColor(Color.BLACK)
+        root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        WindowCompat.getInsetsController(window, root).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    /** The page left full screen (`onHideCustomView`). */
+    override fun exitFullscreen() {
+        val view = fullView ?: return
+        fullView = null
+        fullCallback = null
+        root.removeView(view)
+        WindowCompat.getInsetsController(window, root).show(WindowInsetsCompat.Type.systemBars())
+    }
+
+    /** Back during full screen: the page is told, then the view goes. */
+    private fun leaveFullscreen() {
+        val callback = fullCallback
+        exitFullscreen()
+        callback?.onCustomViewHidden()
+    }
+
+    override fun chooseFiles(callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {
+        fileCallback?.onReceiveValue(null)
+        fileCallback = callback
+        val intent = params.createIntent()
+        if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        return try {
+            pickFiles.launch(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            fileCallback = null
+            toast("No app can pick a file")
+            false
+        }
+    }
+
+    override fun askPermission(tab: Long, origin: String, kinds: List<String>, answer: (Boolean) -> Unit) {
+        val id = ++permissionSeq
+        permissions[id] = kinds to answer
+        val json = JSONObject().put("ev", "permission").put("id", id).put("tab", tab).put("origin", origin).put("kinds", JSONArray(kinds))
+        event(json)
+    }
+
+    private fun systemPermissions(kind: String): List<String> = when (kind) {
+        "camera" -> listOf(Manifest.permission.CAMERA)
+        "microphone" -> listOf(Manifest.permission.RECORD_AUDIO)
+        "location" -> listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        else -> emptyList()
+    }
+
+    private fun hasKind(kind: String): Boolean = systemPermissions(kind).let { needed ->
+        needed.isEmpty() || needed.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
+    }
+
+    /** The core's answer; an allowed site still needs the app's own system permission. */
+    private fun answerPermission(id: Long, allow: Boolean) {
+        val (kinds, answer) = permissions.remove(id) ?: return
+        if (!allow) return answer(false)
+        val missing = kinds.filterNot { hasKind(it) }.flatMap { systemPermissions(it) }
+        if (missing.isEmpty()) return answer(true)
+        if (runtimeAnswer != null) return answer(false)
+        runtimeAnswer = { answer(kinds.all { hasKind(it) }) }
+        askRuntime.launch(missing.toTypedArray())
     }
 
     override fun navigated(tab: Long) {
@@ -448,8 +717,186 @@ class MainActivity : ComponentActivity(), TabView.Host {
         }
     }
 
-    override fun linkMenu(tab: Long, url: String) {
-        if (URLUtil.isNetworkUrl(url)) postUi(JSONObject().put("type", "link_menu").put("url", url).toString())
+    override fun linkMenu(tab: Long, url: String?, image: String?) {
+        val link = url?.takeIf { URLUtil.isNetworkUrl(it) }
+        val img = image?.takeIf { URLUtil.isNetworkUrl(it) }
+        if (link == null && img == null) return
+        postUi(JSONObject().put("type", "link_menu").put("url", link ?: JSONObject.NULL).put("image", img ?: JSONObject.NULL).toString())
+    }
+
+    // Updates: the core decides, this shell fetches (Android's trust store) and installs.
+
+    private fun coreEvent(json: JSONObject) {
+        main.post { apply(Native.event(json.toString())) }
+    }
+
+    private fun updateError(e: Exception) =
+        coreEvent(JSONObject().put("ev", "update_failed").put("error", e.message ?: e.javaClass.simpleName))
+
+    /** GitHub only, over https; redirects (to the release files host) stay on https. */
+    private fun connect(url: String, method: String = "GET"): HttpURLConnection {
+        if (!url.startsWith("https://github.com/")) throw IOException("Refused address")
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.requestMethod = method
+        c.instanceFollowRedirects = true
+        c.connectTimeout = 15000
+        c.readTimeout = 60000
+        c.setRequestProperty("User-Agent", agent)
+        val code = c.responseCode
+        if (!c.url.toString().startsWith("https://")) throw IOException("Insecure redirect")
+        if (code !in 200..299) throw IOException("HTTP $code")
+        return c
+    }
+
+    private fun updateProbe(url: String) = io.execute {
+        try {
+            val c = connect(url, "HEAD")
+            val final = c.url.toString()
+            c.disconnect()
+            coreEvent(JSONObject().put("ev", "update_latest").put("url", final))
+        } catch (e: IOException) {
+            updateError(e)
+        }
+    }
+
+    private fun updateSums(tag: String, url: String) = io.execute {
+        try {
+            val c = connect(url)
+            val bytes = c.inputStream.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                while (out.size() <= 1 shl 20) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    out.write(buffer, 0, n)
+                }
+                if (out.size() > 1 shl 20) throw IOException("Checksums too large")
+                out.toByteArray()
+            }
+            c.disconnect()
+            coreEvent(JSONObject().put("ev", "update_sums").put("tag", tag).put("sums", String(bytes, Charsets.UTF_8)).put("debug", debuggable))
+        } catch (e: IOException) {
+            updateError(e)
+        }
+    }
+
+    private fun sha256(file: File): String = file.inputStream().use { input ->
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** Downloads the APK (or reuses the one already here), then reports its SHA-256 to the core. */
+    private fun updateDownload(url: String, expected: String, name: String) {
+        if (!name.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) return
+        val dir = File(cacheDir, "updates").apply { mkdirs() }
+        val file = File(dir, name)
+        updateFile = file
+        io.execute {
+            try {
+                if (!(file.isFile && sha256(file).equals(expected, ignoreCase = true))) {
+                    dir.listFiles()?.forEach { it.delete() }
+                    val c = connect(url)
+                    val total = c.contentLengthLong
+                    if (total > MAX_APK) throw IOException("Download too large")
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var done = 0L
+                    var shown = 0L
+                    c.inputStream.use { input ->
+                        file.outputStream().use { out ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                done += n
+                                if (done > MAX_APK) throw IOException("Download too large")
+                                digest.update(buffer, 0, n)
+                                out.write(buffer, 0, n)
+                                val now = System.currentTimeMillis()
+                                if (now - shown > 250) {
+                                    shown = now
+                                    val d = done
+                                    main.post { postUi(JSONObject().put("type", "update_progress").put("done", d).put("total", total).toString()) }
+                                }
+                            }
+                        }
+                    }
+                    c.disconnect()
+                }
+                coreEvent(JSONObject().put("ev", "update_downloaded").put("sha256", sha256(file)))
+            } catch (e: IOException) {
+                file.delete()
+                updateError(e)
+            }
+        }
+    }
+
+    /** Hands the checked APK to the system installer, which asks the user to confirm. */
+    private fun updateInstall() {
+        val file = updateFile?.takeIf { it.isFile } ?: return updateError(IOException("The download is gone"))
+        if (!packageManager.canRequestPackageInstalls()) {
+            updateError(IOException("Allow BlackHole to install apps, then tap Install again"))
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            } catch (e: ActivityNotFoundException) {
+                // The error says what to allow.
+            }
+            return
+        }
+        io.execute {
+            try {
+                val installer = packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                params.setAppPackageName(packageName)
+                val id = installer.createSession(params)
+                installer.openSession(id).use { session ->
+                    session.openWrite("blackhole.apk", 0, file.length()).use { out ->
+                        file.inputStream().use { it.copyTo(out) }
+                        session.fsync(out)
+                    }
+                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                        (if (android.os.Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                    val status = PendingIntent.getBroadcast(this, id, Intent(INSTALL_STATUS).setPackage(packageName), flags)
+                    session.commit(status.intentSender)
+                }
+            } catch (e: IOException) {
+                updateError(e)
+            } catch (e: SecurityException) {
+                coreEvent(JSONObject().put("ev", "update_failed").put("error", e.message ?: "Installation refused"))
+            }
+        }
+    }
+
+    /** What the installer says: ask the user, or why it failed. */
+    private val installStatus = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java) ?: return
+                    try {
+                        startActivity(confirm)
+                    } catch (e: ActivityNotFoundException) {
+                        updateError(IOException("No installer"))
+                    }
+                }
+                PackageInstaller.STATUS_SUCCESS -> Unit // The app is replaced (and restarted by the user).
+                else -> {
+                    val why = when (status) {
+                        PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation cancelled"
+                        PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+                            "This APK is signed with another key: uninstall BlackHole first"
+                        PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough storage"
+                        else -> intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Installation failed"
+                    }
+                    coreEvent(JSONObject().put("ev", "update_failed").put("error", why))
+                }
+            }
+        }
     }
 
     override fun download(url: String, userAgent: String, disposition: String, mime: String, profile: String) {
@@ -525,6 +972,16 @@ class MainActivity : ComponentActivity(), TabView.Host {
         if (intent.action == Intent.ACTION_VIEW && data != null && URLUtil.isNetworkUrl(data)) {
             apply(Native.event(JSONObject().put("ev", "intent").put("url", data).toString()))
         }
+        // Text shared with BlackHole, a web search, or "BlackHole" in a text selection menu.
+        val shared = when (intent.action) {
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_WEB_SEARCH -> intent.getStringExtra(SearchManager.QUERY)
+            Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            else -> null
+        }
+        if (!shared.isNullOrBlank()) {
+            apply(Native.event(JSONObject().put("ev", "shared").put("text", shared.take(2000)).toString()))
+        }
         // Debug builds only: the test script (scripts/test-android.ps1) drives the app with
         // `adb shell am start ... --es bh_cmd64 <base64 JSON>` (an interface message) and
         // `--es bh_eval64 <base64 JS>` (run in the interface page; results go to logcat).
@@ -550,9 +1007,14 @@ class MainActivity : ComponentActivity(), TabView.Host {
         main.post(tick)
         current?.let { tabs[it] }?.onResume()
         postUi(envMessage())
+        apply(Native.event("""{"ev":"resume"}"""))
     }
 
     override fun onDestroy() {
+        unregisterReceiver(installStatus)
+        io.shutdown()
+        fileCallback?.onReceiveValue(null)
+        fileCallback = null
         tabs.values.forEach { it.destroy() }
         tabs.clear()
         shell.destroy()

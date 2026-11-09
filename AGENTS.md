@@ -313,6 +313,11 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   par `textContent`, https seulement pour les téléchargements, aucune sauvegarde des données,
   aucun secret (portefeuille non porté), aucune clé de signature dans le dépôt (release : secrets
   GitHub `ANDROID_KEYSTORE_BASE64`…, sinon APK debug publié avec un avertissement).
+- Mises à jour de l'APK (`update.rs`) : le cœur décide (tag de `releases/latest`, APK signé comme
+  l'app, SHA-256), la coque fait le réseau (`ureq` sans certificats sur Android) et l'installation
+  (`PackageInstaller`). Favicons (`icons.rs`, `icons.json`, jamais en privé), autorisations de site
+  (`permissions.rs`, accordées seulement par la réponse de l'interface), site bureau, recherche dans
+  la page, impression, raccourci d'écran d'accueil, partage reçu, plein écran vidéo, fichiers.
 - Commandes : `cd android; .\gradlew.bat assembleDebug` (lance `cargo ndk`), `scripts\test-android.ps1
   [-Boot]` (adb, captures `%TEMP%h_android_shots`, contrôles nommés `bheval:` lus dans logcat).
   Toute nouvelle fonction d'interface mobile : un scénario et un `Check` dans ce script.

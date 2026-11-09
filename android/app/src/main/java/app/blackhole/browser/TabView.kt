@@ -4,9 +4,16 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import android.net.http.SslError
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
+import android.view.View
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -42,7 +49,17 @@ class TabView(
         fun pageEvent(tab: Long, json: String)
         fun progress(tab: Long, value: Int)
         fun navigated(tab: Long)
-        fun linkMenu(tab: Long, url: String)
+        /** Long press on a link ([url]), an image ([image]) or a linked image (both). */
+        fun linkMenu(tab: Long, url: String?, image: String?)
+        /** A video (or any element) goes full screen; [exitFullscreen] when the page leaves it. */
+        fun fullscreen(view: View, callback: WebChromeClient.CustomViewCallback)
+        fun exitFullscreen()
+        /** `<input type=file>`: `false` when no app can pick a file (the page gets nothing). */
+        fun chooseFiles(callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean
+        /** A site asks for `camera`, `microphone`, `location`…: [answer] is called once. */
+        fun askPermission(tab: Long, origin: String, kinds: List<String>, answer: (Boolean) -> Unit)
+        /** Find in page results of this tab. */
+        fun found(tab: Long, active: Int, count: Int)
         /** A request of [tab] was refused (any thread): the shield's count changed. */
         fun blocked(tab: Long)
         fun download(url: String, userAgent: String, disposition: String, mime: String, profile: String)
@@ -56,6 +73,23 @@ class TabView(
 
     private val debug = context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
 
+    /** The page's icon, for "Add to home screen". */
+    var pageIcon: Bitmap? = null
+        private set
+
+    /**
+     * The system's user agent without the WebView tokens (`; wv`, `Version/4.0`): sites treat it
+     * as Chrome. Lazy: read after the profile is set (the first thing done to the view).
+     */
+    private val mobileAgent: String by lazy {
+        WebSettings.getDefaultUserAgent(context).replace("; wv)", ")").replace(Regex("""Version/[\d.]+ """), "")
+    }
+
+    /** `requestFocusNodeHref` answers here: the link and the image of a linked image. */
+    private val hrefs = Handler(Looper.getMainLooper()) { msg ->
+        host.linkMenu(tab, msg.data.getString("url"), msg.data.getString("src"))
+        true
+    }
     init {
         // A profile is chosen before anything else touches the view.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
@@ -71,6 +105,11 @@ class TabView(
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
+            // Pages without a viewport tag are laid out like a desktop page, then fitted.
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            setGeolocationEnabled(true)
+            userAgentString = mobileAgent
             safeBrowsingEnabled = true
             mediaPlaybackRequiresUserGesture = true
         }
@@ -95,14 +134,51 @@ class TabView(
         }
         setOnLongClickListener {
             val hit = hitTestResult
-            val url = hit.extra
-            if (url != null && (hit.type == HitTestResult.SRC_ANCHOR_TYPE || hit.type == HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
-                host.linkMenu(tab, url)
-                true
-            } else {
-                false
+            when (hit.type) {
+                HitTestResult.SRC_ANCHOR_TYPE -> {
+                    host.linkMenu(tab, hit.extra, null)
+                    true
+                }
+                // `extra` is the image here: the link comes from `requestFocusNodeHref`.
+                HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    requestFocusNodeHref(hrefs.obtainMessage())
+                    true
+                }
+                HitTestResult.IMAGE_TYPE -> {
+                    host.linkMenu(tab, null, hit.extra)
+                    true
+                }
+                else -> false
             }
         }
+        setFindListener { active, count, done -> if (done) host.found(tab, if (count == 0) 0 else active + 1, count) }
+    }
+
+    /** Desktop site: a desktop user agent (the page is reloaded when [reload]). */
+    fun setDesktop(on: Boolean, reload: Boolean) {
+        val agent = if (on) desktopAgent(mobileAgent) else mobileAgent
+        if (settings.userAgentString == agent) return
+        settings.userAgentString = agent
+        if (reload) reload()
+    }
+
+    private fun desktopAgent(mobile: String): String =
+        mobile.replace(Regex("""\(Linux; Android[^)]*\)"""), "(X11; Linux x86_64)").replace(" Mobile", "")
+
+    /** The icon as a small PNG `data:` URL (64 px at most). */
+    private fun iconData(icon: Bitmap): String? = try {
+        val side = 64
+        val scaled = if (icon.width > side || icon.height > side) {
+            val k = side.toFloat() / maxOf(icon.width, icon.height)
+            Bitmap.createScaledBitmap(icon, (icon.width * k).toInt().coerceAtLeast(1), (icon.height * k).toInt().coerceAtLeast(1), true)
+        } else {
+            icon
+        }
+        val out = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+        "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    } catch (e: RuntimeException) {
+        null
     }
 
     /** A small JPEG of the page for the tab grid, as a `data:` URL. */
@@ -141,8 +217,9 @@ class TabView(
             return has(ev("navigating", "url" to request.url.toString()), "cancel")
         }
 
-        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        override fun onPageStarted(view: WebView, url: String, icon: Bitmap?) {
             pageUrl = url
+            pageIcon = null
             ev("started", "url" to url)
             host.navigated(tab)
         }
@@ -199,6 +276,37 @@ class TabView(
 
         override fun onReceivedTitle(view: WebView, title: String?) {
             if (!title.isNullOrBlank()) ev("title", "title" to title)
+        }
+
+        override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
+            icon ?: return
+            pageIcon = icon
+            iconData(icon)?.let { ev("favicon", "data" to it) }
+        }
+
+        override fun onShowCustomView(view: View, callback: WebChromeClient.CustomViewCallback) = host.fullscreen(view, callback)
+
+        override fun onHideCustomView() = host.exitFullscreen()
+
+        override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean =
+            host.chooseFiles(callback, params)
+
+        override fun onPermissionRequest(request: PermissionRequest) {
+            val kinds = request.resources.map {
+                when (it) {
+                    PermissionRequest.RESOURCE_VIDEO_CAPTURE -> "camera"
+                    PermissionRequest.RESOURCE_AUDIO_CAPTURE -> "microphone"
+                    PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID -> "protected_media"
+                    else -> "other" // refused by the core
+                }
+            }
+            host.askPermission(tab, request.origin.toString(), kinds) { ok ->
+                if (ok) request.grant(request.resources) else request.deny()
+            }
+        }
+
+        override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+            host.askPermission(tab, origin, listOf("location")) { ok -> callback.invoke(origin, ok, false) }
         }
     }
 }

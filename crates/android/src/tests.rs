@@ -48,7 +48,7 @@ fn go(c: &mut Core, input: &str) -> u64 {
 fn an_address_typed_on_the_start_page_opens_a_tab_on_screen() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = core(&dir);
-    assert_eq!(c.boot()[0], Effect::Show { tab: None });
+    assert!(c.boot().contains(&Effect::Show { tab: None }));
     let out = c.command(C::Navigate {
         input: "example.org".into(),
         new_tab: false,
@@ -426,4 +426,223 @@ fn the_error_page_escapes_site_text() {
     let html = crate::error_page(&json!({"kind": "unreachable", "url": "https://x.example/</script><script>alert(1)"}));
     assert!(!html.contains("</script><script>alert(1)"));
     assert!(html.contains("\\u003c/script>"));
+}
+
+fn has_toast(out: &[Effect], text: &str) -> bool {
+    ui(out, "toast").is_some_and(|t| t["text"].as_str().unwrap_or_default().contains(text))
+}
+
+const REPO_TAG: &str = "https://github.com/paullemoine3/blackhole/releases/tag/";
+
+#[test]
+fn a_manual_update_check_finds_the_apk_signed_like_the_app_then_installs_it_when_it_matches() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let out = c.command(C::CheckUpdate { manual: true });
+    assert!(matches!(&out[0], Effect::UpdateProbe { url } if url.ends_with("/releases/latest")));
+    assert_eq!(ui(&out, "state").unwrap()["update"]["status"], "checking");
+    // A second check while one runs does nothing.
+    assert!(c.command(C::CheckUpdate { manual: true }).is_empty());
+    let out = c.event(E::UpdateLatest {
+        url: format!("{REPO_TAG}v999.1.0"),
+    });
+    let Effect::UpdateSums { tag, url } = &out[0] else { panic!("{out:?}") };
+    assert_eq!(tag, "v999.1.0");
+    assert!(url.ends_with("/releases/download/v999.1.0/SHA256SUMS.txt"));
+    let sums = format!(
+        "{}  BlackHole-android.apk\n{}  BlackHole-android-debug.apk\n",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    let out = c.event(E::UpdateSums {
+        tag: "v999.1.0".into(),
+        sums: sums.clone(),
+        debug: true,
+    });
+    assert!(has_toast(&out, "999.1.0 is available"));
+    let update = &ui(&out, "state").unwrap()["update"];
+    assert_eq!(update["status"], "available");
+    assert_eq!(update["version"], "999.1.0");
+    // The debug-signed app gets the debug APK: a release-signed one could not replace it.
+    let out = c.command(C::InstallUpdate);
+    assert!(matches!(&out[0], Effect::UpdateDownload { name, sha256, url }
+        if name == "BlackHole-android-debug.apk" && *sha256 == "b".repeat(64) && url.starts_with("https://github.com/")));
+    // A file that is not the one listed is thrown away, never installed.
+    let out = c.event(E::UpdateDownloaded { sha256: "c".repeat(64) });
+    assert_eq!(out[0], Effect::UpdateDiscard);
+    assert!(!out.contains(&Effect::UpdateInstall));
+    assert_eq!(ui(&out, "state").unwrap()["update"]["retry"], true);
+    // Install again (retry), the right file this time.
+    assert!(matches!(c.command(C::InstallUpdate)[0], Effect::UpdateDownload { .. }));
+    let out = c.event(E::UpdateDownloaded { sha256: "B".repeat(64) });
+    assert_eq!(out[0], Effect::UpdateInstall);
+    // A late answer of the network changes nothing now.
+    assert!(c.event(E::UpdateLatest { url: format!("{REPO_TAG}v999.2.0") }).is_empty());
+}
+
+#[test]
+fn update_checks_say_up_to_date_refuse_foreign_redirects_and_run_daily_on_their_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    c.command(C::CheckUpdate { manual: true });
+    let out = c.event(E::UpdateLatest { url: format!("{REPO_TAG}v0.0.1") });
+    assert!(has_toast(&out, "up to date"));
+    assert_eq!(ui(&out, "state").unwrap()["update"]["status"], "latest");
+    // A redirect anywhere else is no release.
+    c.command(C::CheckUpdate { manual: true });
+    let out = c.event(E::UpdateLatest { url: "https://evil.example/releases/tag/v999.0.0".into() });
+    assert!(!out.iter().any(|e| matches!(e, Effect::UpdateSums { .. })));
+    // A release without an APK signed like the app.
+    c.command(C::CheckUpdate { manual: true });
+    c.event(E::UpdateLatest { url: format!("{REPO_TAG}v999.0.0") });
+    let out = c.event(E::UpdateSums {
+        tag: "v999.0.0".into(),
+        sums: format!("{}  BlackHole-android-debug.apk\n", "b".repeat(64)),
+        debug: false,
+    });
+    assert_eq!(ui(&out, "state").unwrap()["update"]["status"], "failed");
+    assert!(c.command(C::InstallUpdate).is_empty(), "nothing to install");
+    // Just checked: the app coming back does not check again; a day later it does, silently.
+    assert!(c.event(E::Resume).is_empty());
+    c.prefs.update_checked -= 25 * 3600;
+    let out = c.event(E::Resume);
+    assert!(matches!(out[0], Effect::UpdateProbe { .. }));
+    let out = c.event(E::UpdateLatest { url: format!("{REPO_TAG}v0.0.1") });
+    assert!(ui(&out, "toast").is_none(), "an automatic check that finds nothing says nothing");
+    // Turned off in Settings: never on its own.
+    c.command(C::SetSetting { name: "auto_update".into(), value: json!(false) });
+    c.prefs.update_checked = 0;
+    assert!(c.event(E::Resume).is_empty());
+    let failed = c.command(C::CheckUpdate { manual: true });
+    assert!(!failed.is_empty());
+    let out = c.event(E::UpdateFailed { error: "timeout\nstack".into() });
+    assert!(has_toast(&out, "Update: timeout"));
+}
+
+#[test]
+fn page_icons_are_kept_by_site_never_for_private_tabs_and_forgotten_with_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://www.example.org/");
+    c.event(E::Started { tab, url: "https://www.example.org/".into() });
+    let png = "data:image/png;base64,iVBORw0KGgo=".to_owned();
+    let out = c.event(E::Favicon { tab, data: png.clone() });
+    let icon = ui(&out, "icon").unwrap();
+    assert_eq!(icon["host"], "example.org");
+    assert!(c.event(E::Favicon { tab, data: png.clone() }).is_empty(), "same icon again");
+    assert!(c.event(E::Favicon { tab, data: "data:text/html,<b>".into() }).is_empty());
+    let ready = c.command(C::Ready);
+    assert_eq!(ui(&ready, "icons").unwrap()["icons"]["example.org"], json!(png));
+    let out = c.command(C::Navigate { input: "https://p.example/".into(), new_tab: true, private: true });
+    let private = opened(&out).unwrap().0;
+    c.event(E::Started { tab: private, url: "https://p.example/".into() });
+    assert!(c.event(E::Favicon { tab: private, data: png.clone() }).is_empty());
+    c.command(C::ClearHistory);
+    assert_eq!(ui(&c.command(C::Ready), "icons").unwrap()["icons"], json!({}));
+}
+
+#[test]
+fn sites_get_the_camera_only_through_the_interface_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://meet.example/");
+    let kinds = vec!["camera".to_owned(), "microphone".to_owned()];
+    // Asked on screen: the interface asks the user.
+    let out = c.event(E::Permission { id: 1, tab, origin: "https://meet.example".into(), kinds: kinds.clone() });
+    let ask = ui(&out, "permission").unwrap();
+    assert_eq!(ask["host"], "meet.example");
+    assert_eq!(ask["kinds"], json!(["camera", "microphone"]));
+    assert!(!out.iter().any(|e| matches!(e, Effect::Permission { .. })));
+    assert_eq!(c.command(C::PermissionAnswer { id: 1, allow: true }), vec![Effect::Permission { id: 1, allow: true }]);
+    assert!(c.command(C::PermissionAnswer { id: 1, allow: true }).is_empty(), "answered once");
+    // Remembered for the site until the app closes.
+    assert_eq!(
+        c.event(E::Permission { id: 2, tab, origin: "https://meet.example".into(), kinds: kinds.clone() }),
+        vec![Effect::Permission { id: 2, allow: true }]
+    );
+    // Plain http, an unknown kind or a tab that is not on screen: refused at once.
+    let deny = |id| vec![Effect::Permission { id, allow: false }];
+    assert_eq!(c.event(E::Permission { id: 3, tab, origin: "http://meet.example".into(), kinds: kinds.clone() }), deny(3));
+    assert_eq!(c.event(E::Permission { id: 4, tab, origin: "https://meet.example".into(), kinds: vec!["usb".into()] }), deny(4));
+    let other = go(&mut c, "https://other.example/");
+    assert_eq!(c.event(E::Permission { id: 5, tab, origin: "https://x.example".into(), kinds: kinds.clone() }), deny(5));
+    // Pending when its tab closes: refused.
+    c.event(E::Permission { id: 6, tab: other, origin: "https://other.example".into(), kinds: vec!["location".into()] });
+    let out = c.command(C::Close { tab: other });
+    assert!(out.contains(&Effect::Permission { id: 6, allow: false }));
+    // Clearing site data forgets what was allowed.
+    c.command(C::Activate { tab });
+    c.command(C::ClearSiteData);
+    assert!(ui(&c.event(E::Permission { id: 7, tab, origin: "https://meet.example".into(), kinds }), "permission").is_some());
+}
+
+#[test]
+fn shared_text_opens_its_address_or_searches_it() {
+    use crate::core::shared_target;
+    use blackhole_domain::SearchEngine;
+    let engine = SearchEngine::DuckDuckGo;
+    assert_eq!(
+        shared_target("Look at this: https://example.org/a?b=1 (great)", engine).unwrap().as_str(),
+        "https://example.org/a?b=1"
+    );
+    assert_eq!(shared_target("example.org", engine).unwrap().as_str(), "https://example.org/");
+    assert!(shared_target("black holes", engine).unwrap().as_str().starts_with("https://duckduckgo.com/"));
+    assert!(shared_target("javascript:alert(1)", engine).unwrap().as_str().starts_with("https://duckduckgo.com/"));
+    assert!(shared_target("   ", engine).is_none());
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let out = c.event(E::Shared { text: "read https://example.org/x".into() });
+    assert_eq!(opened(&out).unwrap().1, "https://example.org/x");
+}
+
+#[test]
+fn desktop_site_follows_the_tab_and_web_settings_reach_the_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    assert!(c.boot().contains(&Effect::WebPrefs { text_zoom: 100, pull_refresh: true }));
+    let tab = go(&mut c, "https://example.org/");
+    let out = c.command(C::DesktopSite { tab });
+    assert!(out.contains(&Effect::DesktopMode { tab, on: true }));
+    assert_eq!(ui(&out, "state").unwrap()["desktop"], true);
+    // A view created again (released, then shown) keeps the desktop site.
+    c.live.remove(tab);
+    let out = c.command(C::Activate { tab });
+    assert!(out.iter().any(|e| matches!(e, Effect::Open { desktop: true, .. })));
+    assert!(c.command(C::DesktopSite { tab }).contains(&Effect::DesktopMode { tab, on: false }));
+    let out = c.command(C::SetSetting { name: "text_zoom".into(), value: json!(130) });
+    assert!(out.contains(&Effect::WebPrefs { text_zoom: 130, pull_refresh: true }));
+    assert!(c.command(C::SetSetting { name: "text_zoom".into(), value: json!(3000) }).is_empty());
+    assert_eq!(c.command(C::Stop), vec![Effect::Nav { tab, action: "stop" }]);
+    // "Download link" follows the download rules: https only.
+    assert!(c.command(C::DownloadUrl { url: "https://example.org/f.pdf".into() }).iter().any(|e| matches!(e, Effect::Download { .. })));
+    assert!(!c.command(C::DownloadUrl { url: "http://example.org/f.pdf".into() }).iter().any(|e| matches!(e, Effect::Download { .. })));
+}
+
+#[test]
+fn a_recreated_activity_gets_the_tab_on_screen_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://example.org/");
+    // The system recreates the activity, the process (and the core) lives on: no view exists.
+    let out = c.boot();
+    assert_eq!(opened(&out).map(|o| o.0), Some(tab), "the view is created again");
+    assert!(out.contains(&Effect::Show { tab: Some(tab) }));
+    assert_eq!(ui(&out, "state").unwrap()["current"], json!(tab));
+    // On the start page, it stays there.
+    c.command(C::Home);
+    let out = c.boot();
+    assert!(opened(&out).is_none());
+    assert!(out.contains(&Effect::Show { tab: None }));
+}
+
+#[test]
+fn the_go_suggestion_shows_the_whole_address_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let out = c.command(C::Suggest { text: "example.org/docs/a.html?x=1".into() });
+    let first = &ui(&out, "suggest").unwrap()["items"][0];
+    assert_eq!(first["kind"], "go");
+    assert_eq!(first["title"], "example.org/docs/a.html?x=1");
+    let out = c.command(C::Suggest { text: "example.org".into() });
+    assert_eq!(ui(&out, "suggest").unwrap()["items"][0]["title"], "example.org");
 }

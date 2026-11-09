@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.4",
+        &[
+            "BlackHole for Android updates itself: once a day (or with Check now in Settings > Updates) it looks for a new release on GitHub, then downloads the APK signed like the installed app, checks it against the release checksums and hands it to the system installer",
+            "Android address bar: tapping it puts the whole address in the field, selected and ready to change; the bar shows the site's icon, its host and the path in grey; suggestions follow every key, and the go suggestion shows the whole address typed",
+            "Site icons on Android everywhere a site appears: address bar, quick access, tabs, tab grid, history and suggestions (never kept for private tabs, forgotten with the history)",
+            "Android browser basics: find in page, desktop site per tab, add to home screen, print or save as PDF, Stop while a page loads, pull to refresh and text size (Settings), and BlackHole as the default browser",
+            "Android: long press an image to open, download or copy it, and a link to download it; full screen videos, file uploads, and the camera, microphone or location for a site only after you allow it",
+            "Android: text shared from another app, a web search or \"BlackHole\" in a text selection menu opens its address or searches it",
+            "Android fixes: tapping the address bar no longer closes the sheet at once (the keyboard typed into a hidden field), the page no longer stays black when the system recreates the app, a long press on a linked image offers the link instead of the image, and pages without a mobile layout are fitted to the screen",
+        ],
+    ),
+    (
         "0.8.3",
         &[
             "Updates are offered again: BlackHole now finds a new version through the GitHub release page instead of its API, whose hourly quota is shared by everyone behind the same address (an office network used it up, so no update was ever proposed); a failed check is retried after 30 minutes",

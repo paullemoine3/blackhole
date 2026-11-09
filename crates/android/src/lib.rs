@@ -9,7 +9,10 @@
 pub mod bridge;
 mod core;
 pub mod devices;
+mod icons;
 mod live;
+mod permissions;
+mod update;
 
 pub use crate::core::{error_page, Blocker, Core, MobilePrefs, MAX_LIVE};
 pub use bridge::{Effect, MobileCommand, NativeEvent, PageEvent};

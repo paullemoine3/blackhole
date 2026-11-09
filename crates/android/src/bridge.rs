@@ -43,6 +43,28 @@ pub enum MobileCommand {
     Back,
     Forward,
     Reload,
+    /// Stops loading the page on screen.
+    Stop,
+    /// Desktop site for the tab (a desktop user agent), or back to the mobile one.
+    DesktopSite {
+        tab: u64,
+    },
+    /// Long press menu: "Download link" / "Download image".
+    DownloadUrl {
+        url: String,
+    },
+    /// The answer to a site's request for the camera, microphone or location.
+    PermissionAnswer {
+        id: u64,
+        allow: bool,
+    },
+    /// Looks for a newer release (Settings > Updates, or the automatic daily check).
+    CheckUpdate {
+        #[serde(default)]
+        manual: bool,
+    },
+    /// Downloads the update found by `CheckUpdate`, checks it, then hands it to the installer.
+    InstallUpdate,
     /// The start page (no tab on screen).
     Home,
     /// Adds the tab to quick access, or removes it.
@@ -187,6 +209,43 @@ pub enum NativeEvent {
     },
     /// The activity goes to the background: save now.
     Pause,
+    /// The activity is on screen again (the daily update check runs from here).
+    Resume,
+    /// The icon of the page shown by `tab`, as a small PNG `data:` URL.
+    Favicon {
+        tab: u64,
+        data: String,
+    },
+    /// A site asks for the camera, microphone or location (`id` is the shell's request).
+    Permission {
+        id: u64,
+        tab: u64,
+        origin: String,
+        kinds: Vec<String>,
+    },
+    /// Text shared with BlackHole by another app (`ACTION_SEND`, "Search with…").
+    Shared {
+        text: String,
+    },
+    /// Where `Effect::UpdateProbe` was redirected to (the latest release's tag page).
+    UpdateLatest {
+        url: String,
+    },
+    /// The `SHA256SUMS.txt` of release `tag`; `debug`: this app is signed with the debug key.
+    UpdateSums {
+        tag: String,
+        sums: String,
+        #[serde(default)]
+        debug: bool,
+    },
+    /// The SHA-256 of the APK downloaded for `Effect::UpdateDownload`.
+    UpdateDownloaded {
+        sha256: String,
+    },
+    /// A step of the update failed (network, download, installer).
+    UpdateFailed {
+        error: String,
+    },
     /// A few times a second while the app is on screen: what the network brought.
     Tick,
 }
@@ -208,6 +267,8 @@ pub enum Effect {
         private: bool,
         /// Document-start script of the page (Shields, error page bridge).
         script: String,
+        /// Desktop site (desktop user agent).
+        desktop: bool,
     },
     /// Puts the tab on screen; `None`: the start page.
     Show {
@@ -256,6 +317,41 @@ pub enum Effect {
     },
     /// The app goes to the background (back on the start page).
     Exit,
+    /// Desktop site on or off for the tab's view (then reloaded).
+    DesktopMode {
+        tab: u64,
+        on: bool,
+    },
+    /// Settings every tab view follows.
+    WebPrefs {
+        /// Text size in percent.
+        text_zoom: u32,
+        pull_refresh: bool,
+    },
+    /// The answer to `NativeEvent::Permission`.
+    Permission {
+        id: u64,
+        allow: bool,
+    },
+    /// Follows `url` (the releases page) and reports where it led (`NativeEvent::UpdateLatest`).
+    UpdateProbe {
+        url: String,
+    },
+    /// Fetches the checksums of release `tag` (`NativeEvent::UpdateSums`).
+    UpdateSums {
+        tag: String,
+        url: String,
+    },
+    /// Downloads the APK (https, GitHub) and reports its SHA-256 (`NativeEvent::UpdateDownloaded`).
+    UpdateDownload {
+        url: String,
+        sha256: String,
+        name: String,
+    },
+    /// Hands the checked APK to the system installer.
+    UpdateInstall,
+    /// Deletes the downloaded APK (its checksum did not match).
+    UpdateDiscard,
 }
 
 /// Effects as the JSON array returned over JNI.
@@ -289,6 +385,28 @@ mod tests {
             assert!(serde_json::from_str::<PageEvent>(cmd).is_err());
         }
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"error_menu","x":1,"y":2}"#).is_ok());
+    }
+
+    #[test]
+    fn new_commands_and_events_parse() {
+        let c: MobileCommand = serde_json::from_str(r#"{"cmd":"check_update","manual":true}"#).unwrap();
+        assert_eq!(c, MobileCommand::CheckUpdate { manual: true });
+        let c: MobileCommand = serde_json::from_str(r#"{"cmd":"permission_answer","id":3,"allow":false}"#).unwrap();
+        assert_eq!(c, MobileCommand::PermissionAnswer { id: 3, allow: false });
+        let e: NativeEvent =
+            serde_json::from_str(r#"{"ev":"update_sums","tag":"v1.0.0","sums":""}"#).unwrap();
+        assert_eq!(
+            e,
+            NativeEvent::UpdateSums {
+                tag: "v1.0.0".into(),
+                sums: String::new(),
+                debug: false
+            }
+        );
+        // A page can never ask for a permission answer or an update itself.
+        for cmd in [r#"{"cmd":"permission_answer","id":1,"allow":true}"#, r#"{"cmd":"install_update"}"#] {
+            assert!(serde_json::from_str::<PageEvent>(cmd).is_err());
+        }
     }
 
     #[test]

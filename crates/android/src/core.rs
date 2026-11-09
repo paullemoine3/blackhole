@@ -13,7 +13,7 @@ use blackhole_domain::{
 use blackhole_infrastructure::{default_privacy_policy, flush_writes, write_later, JsonWorkspaceRepository};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,15 +39,30 @@ const THEMES: [&str; 3] = ["system", "dark", "light"];
 #[serde(default)]
 pub struct MobilePrefs {
     pub theme: String,
+    /// Looks for a new release once a day.
+    pub auto_update: bool,
+    /// Last update check (Unix seconds).
+    pub update_checked: i64,
+    /// Text size of pages, in percent.
+    pub text_zoom: u32,
+    /// Pull down at the top of a page to reload it.
+    pub pull_refresh: bool,
 }
 
 impl Default for MobilePrefs {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            auto_update: true,
+            update_checked: 0,
+            text_zoom: 100,
+            pull_refresh: true,
         }
     }
 }
+
+/// Text sizes offered in Settings.
+pub(crate) const TEXT_ZOOMS: [u32; 5] = [85, 100, 115, 130, 150];
 
 /// Request blocking, called from WebView network threads (`shouldInterceptRequest`).
 #[derive(Debug)]
@@ -117,9 +132,14 @@ pub struct Core {
     pub(crate) pages: HashMap<u64, (Url, String)>,
     /// Paired devices and tab sync (`None` until the shell enables them).
     pub(crate) nearby: Option<crate::devices::Nearby>,
+    pub(crate) update: crate::update::Updater,
+    pub(crate) icons: crate::icons::Icons,
+    pub(crate) permissions: crate::permissions::Permissions,
+    /// Tabs showing the desktop site.
+    pub(crate) desktop: HashSet<u64>,
 }
 
-fn now_unix() -> i64 {
+pub(crate) fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
@@ -133,6 +153,21 @@ fn web_url(raw: &str) -> Option<Url> {
     Url::parse(raw)
         .ok()
         .filter(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some())
+}
+
+/// What text shared by another app opens: the first web address in it ("Look at this
+/// https://…"), else a search for it (or the address it reads as).
+pub(crate) fn shared_target(text: &str, engine: SearchEngine) -> Option<Url> {
+    let found = text.split_whitespace().find_map(|word| {
+        let word = word.trim_matches(|c: char| "\"'“”‘’«»()[]<>,;!".contains(c));
+        let lower = word.to_ascii_lowercase();
+        (lower.starts_with("http://") || lower.starts_with("https://")).then(|| web_url(word)).flatten()
+    });
+    if found.is_some() {
+        return found;
+    }
+    let clean = blackhole_domain::selection::clean_selection(text)?;
+    Some(blackhole_domain::selection::selection_action(&clean, engine).url().clone())
 }
 
 /// The shell's error page for `config` (`<` escaped so no text of the site closes the script).
@@ -182,6 +217,29 @@ impl Core {
             bypasses: Bypasses::default(),
             pages: HashMap::new(),
             nearby: None,
+            update: crate::update::Updater::default(),
+            icons: crate::icons::Icons::load(data),
+            permissions: crate::permissions::Permissions::default(),
+            desktop: HashSet::new(),
+        }
+    }
+
+    pub(crate) fn save_prefs(&self) {
+        if let Ok(raw) = serde_json::to_string(&self.prefs) {
+            write_later(self.data.join("mobile.json"), raw);
+        }
+    }
+
+    fn web_prefs(&self) -> Effect {
+        Effect::WebPrefs {
+            text_zoom: self.prefs.text_zoom,
+            pull_refresh: self.prefs.pull_refresh,
+        }
+    }
+
+    fn icons_message(&self) -> Effect {
+        Effect::Ui {
+            msg: json!({"type": "icons", "icons": self.icons.all()}),
         }
     }
 
@@ -190,8 +248,18 @@ impl Core {
     }
 
     /// The first screen: the start page, like a new day in Arc (tabs wait in the drawer).
+    ///
+    /// Also called when the system recreates the activity while the process (and this core)
+    /// lives on: the new activity has no view, so none is alive any more and the tab that was on
+    /// screen is opened again (otherwise its page stays black).
     pub fn boot(&mut self) -> Vec<Effect> {
-        let mut out = vec![Effect::Show { tab: None }];
+        self.live = Live::default();
+        self.errors.clear();
+        let mut out = vec![self.web_prefs()];
+        out.extend(match self.current.filter(|&tab| self.exists(tab)) {
+            Some(tab) => self.show(tab, None),
+            None => self.home(),
+        });
         out.push(self.state());
         out
     }
@@ -274,6 +342,7 @@ impl Core {
                     profile: self.profile_of(tab),
                     private: Self::is_private(tab),
                     script: self.page_script(),
+                    desktop: self.desktop.contains(&tab),
                 });
             } else if let Some(url) = load {
                 out.push(Effect::Load {
@@ -406,6 +475,8 @@ impl Core {
         self.errors.remove(&tab);
         self.upgraded.remove(&tab);
         self.pages.remove(&tab);
+        self.desktop.remove(&tab);
+        out.extend(self.permissions_of_closed(tab));
         out.push(Effect::Drop { tab });
         self.closed.push(Closed { url, private });
         if self.closed.len() > MAX_CLOSED {
@@ -453,9 +524,13 @@ impl Core {
                 self.live.remove(**id);
                 self.errors.remove(id);
                 self.pages.remove(id);
+                self.desktop.remove(id);
             })
             .map(|&tab| Effect::Drop { tab })
             .collect();
+        for id in ids {
+            out.extend(self.permissions_of_closed(id));
+        }
         self.closed.retain(|c| !c.private);
         out.push(Effect::ClearProfile {
             profile: "private".into(),
@@ -495,9 +570,24 @@ impl Core {
             }
             ("theme", _, Some(theme)) if THEMES.contains(&theme) => {
                 self.prefs.theme = theme.to_owned();
-                if let Ok(raw) = serde_json::to_string(&self.prefs) {
-                    write_later(self.data.join("mobile.json"), raw);
-                }
+                self.save_prefs();
+            }
+            ("auto_update", Some(on), _) => {
+                self.prefs.auto_update = on;
+                self.save_prefs();
+            }
+            ("pull_refresh", Some(on), _) => {
+                self.prefs.pull_refresh = on;
+                self.save_prefs();
+                return vec![self.web_prefs(), self.state()];
+            }
+            ("text_zoom", _, _) => {
+                let Some(zoom) = value.as_u64().and_then(|z| u32::try_from(z).ok()).filter(|z| TEXT_ZOOMS.contains(z)) else {
+                    return Vec::new();
+                };
+                self.prefs.text_zoom = zoom;
+                self.save_prefs();
+                return vec![self.web_prefs(), self.state()];
             }
             _ => return Vec::new(),
         }
@@ -511,7 +601,12 @@ impl Core {
         if !text.is_empty() {
             let engine = self.svc.settings().search_engine;
             match blackhole_domain::omnibox::web_address(text) {
-                Some(url) => items.push(json!({"kind": "go", "title": host_of(&url), "url": url.as_str()})),
+                Some(url) => {
+                    // The whole address the user is about to open, without the scheme.
+                    let shown = url.as_str().split_once("://").map_or(url.as_str(), |(_, rest)| rest);
+                    let shown = shown.strip_suffix('/').unwrap_or(shown);
+                    items.push(json!({"kind": "go", "title": shown, "url": url.as_str()}));
+                }
                 None => items.push(json!({"kind": "search", "title": text, "engine": engine.label()})),
             }
         }
@@ -639,7 +734,7 @@ impl Core {
     pub fn command(&mut self, command: MobileCommand) -> Vec<Effect> {
         use MobileCommand as C;
         match command {
-            C::Ready => vec![self.state()],
+            C::Ready => vec![self.web_prefs(), self.icons_message(), self.state()],
             C::Navigate { input, new_tab, private } => self.navigate(&input, new_tab, private),
             C::OpenLink { url, private } => match web_url(&url) {
                 Some(url) => self.navigate(url.as_str(), true, private),
@@ -660,6 +755,29 @@ impl Core {
             C::Back => self.current.map_or_else(Vec::new, |tab| vec![Effect::Nav { tab, action: "back" }]),
             C::Forward => self.current.map_or_else(Vec::new, |tab| vec![Effect::Nav { tab, action: "forward" }]),
             C::Reload => self.current.map_or_else(Vec::new, |tab| self.reload(tab)),
+            C::Stop => self.current.map_or_else(Vec::new, |tab| vec![Effect::Nav { tab, action: "stop" }]),
+            C::DesktopSite { tab } if self.exists(tab) => {
+                let on = !self.desktop.remove(&tab);
+                if on {
+                    self.desktop.insert(tab);
+                }
+                let mut out = Vec::new();
+                if self.live.contains(tab) {
+                    out.push(Effect::DesktopMode { tab, on });
+                }
+                out.push(Self::toast(if on { "Desktop site" } else { "Mobile site" }, false));
+                out.push(self.state());
+                out
+            }
+            C::DesktopSite { .. } => Vec::new(),
+            C::DownloadUrl { url } => self.event(NativeEvent::Download {
+                url,
+                mime: String::new(),
+                disposition: String::new(),
+            }),
+            C::PermissionAnswer { id, allow } => self.permission_answer(id, allow),
+            C::CheckUpdate { manual } => self.update_check(manual, now_unix()),
+            C::InstallUpdate => self.update_install(),
             C::Home => {
                 let mut out = self.home();
                 out.push(self.state());
@@ -703,12 +821,15 @@ impl Core {
             }
             C::ClearHistory => {
                 self.svc.clear_history();
-                vec![self.history(""), self.state()]
+                // Icons tell which sites were visited.
+                self.icons.clear();
+                vec![self.history(""), self.icons_message(), self.state()]
             }
             C::ClearSiteData => {
                 if let Ok(mut log) = self.blocker.log.lock() {
                     log.clear();
                 }
+                self.permissions.clear();
                 vec![
                     Effect::ClearProfile { profile: "*".into() },
                     Self::toast("Cookies and site data cleared", false),
@@ -899,6 +1020,31 @@ impl Core {
                 flush_writes();
                 Vec::new()
             }
+            E::Resume => self.update_due(now_unix()),
+            E::Favicon { tab, data } => {
+                // Private tabs leave no trace, icons included.
+                if Self::is_private(tab) || self.errors.contains_key(&tab) {
+                    return Vec::new();
+                }
+                let Some(host) = self.pages.get(&tab).map(|(u, _)| host_of(u)).filter(|h| !h.is_empty()) else {
+                    return Vec::new();
+                };
+                if !self.icons.set(&host, &data) {
+                    return Vec::new();
+                }
+                vec![Effect::Ui {
+                    msg: json!({"type": "icon", "host": crate::icons::site_key(&host), "data": data}),
+                }]
+            }
+            E::Permission { id, tab, origin, kinds } => self.permission_asked(id, tab, &origin, &kinds),
+            E::Shared { text } => match shared_target(&text, self.svc.settings().search_engine) {
+                Some(url) => self.navigate(url.as_str(), true, false),
+                None => Vec::new(),
+            },
+            E::UpdateLatest { url } => self.update_latest(&url),
+            E::UpdateSums { tag, sums, debug } => self.update_sums(&tag, &sums, debug),
+            E::UpdateDownloaded { sha256 } => self.update_downloaded(&sha256),
+            E::UpdateFailed { error } => self.update_failed(&error),
             E::Tick => self.tick(),
         }
     }
@@ -978,6 +1124,8 @@ impl Core {
                 "favorites": favorites,
                 "recent": recent,
                 "blocked": {"total": total, "site": site_blocked},
+                "desktop": self.current.is_some_and(|t| self.desktop.contains(&t)),
+                "update": self.update_json(),
                 "devices": self.devices_json(),
                 "settings": {
                     "engine": settings.search_engine.id(),
@@ -989,6 +1137,10 @@ impl Core {
                     "hide_ads": shields.hide_ads,
                     "video_ads": shields.video_ads,
                     "cookie_banners": shields.cookie_banners,
+                    "text_zoom": self.prefs.text_zoom,
+                    "text_zooms": TEXT_ZOOMS,
+                    "pull_refresh": self.prefs.pull_refresh,
+                    "auto_update": self.prefs.auto_update,
                 },
             }),
         }

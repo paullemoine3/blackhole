@@ -54,7 +54,9 @@ $server = Start-Job -ArgumentList $port -ScriptBlock {
             $path = (($reader.ReadLine()) -split ' ')[1]
             while ($reader.ReadLine()) {}
             $status = '200 OK'
-            $page = { param($t, $c) "<!doctype html><meta name=viewport content='width=device-width'><title>$t</title><body style='font:18px sans-serif;margin:24px;background:$c'><h1>$t</h1><p>BlackHole Android test page.</p>" }
+            # A 1x1 PNG as the page icon: the shell hands it to the core (favicons).
+            $icon = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+            $page = { param($t, $c) "<!doctype html><meta name=viewport content='width=device-width'><link rel=icon href='$icon'><title>$t</title><body style='font:18px sans-serif;margin:24px;background:$c'><h1>$t</h1><p>BlackHole Android test page.</p>" }
             if ($path -like '/a*') { $body = (& $page 'Alpha page' '#fdf3e7') + "<img src='https://stats.g.doubleclick.net/pixel.gif' width=1 height=1><p>" + ('Lorem ipsum dolor sit amet. ' * 40) }
             elseif ($path -like '/b*') { $body = & $page 'Beta page' '#e8f4fd' }
             elseif ($path -like '/p*') { $body = & $page 'Private page' '#f1e8fd' }
@@ -90,13 +92,28 @@ Wait 5000
 Shot '02-page'
 Eval page "S.url + ' ' + S.title"
 Eval blocked "S.blocked.site"
+Eval favicon "icons.size + ' ' + !document.querySelector('#site').hidden"
+# Find in page (the bar's row becomes a search field).
+Run "startFind(); document.querySelector('#fq').value = 'Lorem'; document.querySelector('#fq').dispatchEvent(new Event('input'))"
+Wait 1500
+Shot '19-find'
+Eval find "document.querySelector('#fcount').textContent"
+Run "endFind()"
+Wait 300
+# Desktop site, then back to the mobile one.
+Run "send({ cmd: 'desktop_site', tab: S.current })"
+Wait 1500
+Eval desktop "S.desktop"
+Run "send({ cmd: 'desktop_site', tab: S.current })"
+Wait 1200
 Cmd ('{"cmd":"navigate","input":"' + $base + '/b"}')
 Wait 4000
 Eval second "S.url + ' ' + S.tabs.length"
-Run "openSheet(true)"
+Run "openSheet(true, true)"
 Wait 900
 Shot '03-palette'
 Eval sheet "document.querySelector('#sheet').classList.contains('on')"
+Eval editurl "document.querySelector('#q').value"
 Run "document.querySelector('#q').value='page'; document.querySelector('#q').dispatchEvent(new Event('input'))"
 Wait 900
 Shot '04-suggest'
@@ -143,6 +160,16 @@ Wait 900
 Shot '12-settings-dark'
 Eval dark "document.documentElement.dataset.theme"
 Cmd '{"cmd":"set_setting","name":"theme","value":"system"}'
+Cmd '{"cmd":"set_setting","name":"text_zoom","value":130}'
+Wait 500
+Eval zoom "S.settings.text_zoom"
+Cmd '{"cmd":"set_setting","name":"text_zoom","value":100}'
+# Updates: the manual check reaches GitHub (network) and comes back with an answer.
+Run "document.querySelector('#updates').scrollIntoView()"
+Cmd '{"cmd":"check_update","manual":true}'
+Wait 8000
+Shot '20-updates'
+Eval update "S.update.status"
 Run "document.querySelector('#devices').scrollIntoView()"
 Wait 700
 Shot '16-devices'
@@ -158,6 +185,16 @@ Run "receive({ type: 'sync_offer', id: 'none', name: 'Desk', text: '2 tabs to op
 Wait 900
 Shot '18-sync-offer'
 Eval offer "document.querySelector('#pop').textContent.includes('Synchronize tabs with Desk')"
+Run "close('pop')"
+# A site asking for the camera: closing the question refuses it.
+Run "receive({ type: 'permission', id: 999, host: 'meet.example', kinds: ['camera', 'microphone'] })"
+Wait 800
+Shot '21-permission'
+Eval permission "document.querySelector('#pop').textContent.includes('meet.example wants to use your camera and microphone')"
+Run "close('pop')"
+Run "receive({ type: 'link_menu', url: null, image: 'https://example.org/a.png' })"
+Wait 800
+Eval imagemenu "document.querySelector('#pop').textContent.includes('Download image')"
 Run "close('pop')"
 Cmd '{"cmd":"set_setting","name":"animations","value":false}'
 Wait 600
@@ -202,7 +239,11 @@ Check ((V home) -eq 'true') 'start page shown at launch'
 Check ((V page) -match '127\.0\.0\.1:\d+/a Alpha page') 'address opens a tab (title shown)'
 Check ([int]((V blocked) -replace '\D', '0') -ge 1) 'Shields block the tracker of a page'
 Check ((V second) -match '/b 1"$') 'address bar loads in the same tab'
+Check ((V favicon) -match '^"[1-9]\d* true"$') 'page icon kept and shown in the bar'
+Check ((V find) -match '^"1/\d+"$') 'find in page counts the matches'
+Check ((V desktop) -eq 'true') 'desktop site on the tab'
 Check ((V sheet) -eq 'true') 'palette sheet opens'
+Check ((V editurl) -match '127\.0\.0\.1:\d+/b') 'tapping the bar puts its address in the field'
 Check ([int]((V suggest) -replace '\D', '0') -ge 2) 'suggestions listed'
 Check ((V moving) -match 'matrix\(1, 0, 0, 1, -\d') 'drawer caught mid-slide'
 Check ((V drawer) -match 'none|matrix\(1, 0, 0, 1, 0, 0\)') 'drawer slides in'
@@ -213,6 +254,10 @@ Check ((V privgone) -eq '"0 false"') 'private tabs closed'
 Check ((V error) -eq '"not_found"') 'error page for an unknown host'
 Check ((V shields) -match 'Shields') 'typed tracker address refused'
 Check ((V dark) -eq '"dark"') 'dark theme forced in Settings'
+Check ((V zoom) -eq '130') 'text size setting'
+Check ((V update) -match '^"(latest|available)"$') 'manual update check answers (network)'
+Check ((V permission) -eq 'true') 'site permission question'
+Check ((V imagemenu) -eq 'true') 'long press menu of an image'
 Check ((V devices) -eq 'true') 'Settings > Devices available (Keystore key)'
 Check ((V code) -eq 'true') 'a pairing code is shown'
 Check ((V offer) -eq 'true') 'the sync proposal shows Merge / Always / Later'

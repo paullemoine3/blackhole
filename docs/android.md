@@ -18,6 +18,9 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   src/core.rs            état : BrowserService du bureau, onglets privés, vues vivantes, erreurs
   src/bridge.rs          protocole JSON : MobileCommand / PageEvent / NativeEvent / Effect
   src/live.rs            vues vivantes (au plus MAX_LIVE = 4, LRU)
+  src/update.rs          mises à jour de l'APK depuis les releases GitHub
+  src/icons.rs           icônes des sites (favicons), icons.json
+  src/permissions.rs     caméra, micro, position demandés par un site
   src/jni.rs             points d'entrée JNI (Android seulement, seul module à `#[no_mangle]`)
   ui/mobile.html         l'interface : barre du bas, tiroir, grille d'onglets, palette, réglages
   ui/page.js             script de début de page des onglets (pont `__bhipc` de la page d'erreur)
@@ -44,7 +47,14 @@ crates/android/          « blackhole-android » (cdylib + rlib)
 - Interface → shell : `WebViewCompat.addWebMessageListener(shell, "bh", {origine des assets})`,
   cadre principal seulement ; messages `MobileCommand` (énumération fermée, l'équivalent de
   `UiCommand`). Quelques messages restent dans la coque (`surface`, `thumbs`, `peek`,
-  `peek_end`, `copy`, `share`, `open_downloads`). Jamais `addJavascriptInterface`.
+  `peek_end`, `copy`, `share`, `open_downloads`, `find`, `find_next`, `find_clear`, `print`,
+  `add_to_home`, `default_browser`). Jamais `addJavascriptInterface`.
+- Autorisations de site : `onPermissionRequest` / `onGeolocationPermissionsShowPrompt` →
+  `NativeEvent::Permission` ; le cœur refuse ce qui n'est ni caméra, ni micro, ni position, ni
+  contenu protégé, une origine non sécurisée et un onglet qui n'est pas affiché, sinon l'interface
+  pose la question (fermer = refuser). Seule `MobileCommand::PermissionAnswer` accorde ; une
+  réponse positive vaut pour l'origine jusqu'à la fermeture de l'app (jamais en privé, oubliée
+  avec les données des sites), puis la coque demande la permission système correspondante.
 - Pages → shell : listener `bhPage` sur les onglets, ouvert à toutes les origines (les pages
   sont **non fiables**) et lu au cadre principal seulement ; seul `PageEvent::ErrorMenu` existe.
   Il n'ouvre le menu de la coque que si l'onglet affiché montre notre page d'erreur ; seule
@@ -78,6 +88,27 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   le français : brancher `ui/i18n.js` (ou son équivalent) dans `mobile.html`, transmettre la langue
   du système depuis Kotlin (`Locale.getDefault()`), traduire les toasts de `core.rs`/`devices.rs`.
 
+## Mises à jour
+
+Même source que le bureau : `github.com/<repo>/releases/latest` redirige vers le tag de la
+dernière release, dont `SHA256SUMS.txt` liste les fichiers. Le cœur (`update.rs`, règles de
+`infrastructure/updater.rs`) décide de tout ; la coque Kotlin fait le réseau (le magasin de
+certificats d'Android : `ureq` n'en trouve aucun) et l'installation.
+
+1. `MobileCommand::CheckUpdate` (Réglages > Updates > Check now) ou `NativeEvent::Resume` une
+   fois par jour (`MobilePrefs::auto_update`, `update_checked`) → `Effect::UpdateProbe`.
+2. La coque suit la redirection (HEAD, https, github.com seulement) → `NativeEvent::UpdateLatest` ;
+   un tag plus récent que la version de l'app → `Effect::UpdateSums` → `NativeEvent::UpdateSums`
+   (avec `debug` : l'app est signée avec la clé de debug).
+3. Le cœur choisit l'APK signé comme l'app (`BlackHole-android.apk`, ou
+   `BlackHole-android-debug.apk` pour une app de debug : un APK signé autrement ne peut pas la
+   remplacer) → carte « BlackHole x.y.z » sur l'accueil, toast avec Install.
+4. Install → `Effect::UpdateDownload` (dossier `cache/updates`, 200 Mo au plus, progression) →
+   SHA-256 → `NativeEvent::UpdateDownloaded` ; seul le cœur compare au fichier de sommes :
+   `Effect::UpdateInstall` (session `PackageInstaller`, confirmation du système) ou
+   `Effect::UpdateDiscard`. Sans l'autorisation « Installer des applis inconnues », la coque ouvre
+   le réglage système et l'erreur l'explique ; Retry réutilise le fichier déjà vérifié.
+
 ## Fonctionnalités (v1)
 
 Onglets (grille, balayer pour fermer, Undo 15 s, glisser la barre pour changer d'onglet),
@@ -89,6 +120,28 @@ couleur d'espace, animations, Shields, effacement des données), espaces, pages 
 geste retour (ferme la surface ouverte, puis page précédente, puis accueil, puis quitte),
 zones sûres (bord à bord), animations réduites (réglage système « Supprimer les animations »
 ou réglage de l'app → `body.still`, animations natives de changement d'onglet coupées).
+
+Fonctions de navigateur ajoutées ensuite : barre d'adresse modifiable (toucher la barre met
+l'adresse complète, sélectionnée, dans le champ ; l'icône du site, l'hôte puis le chemin en gris),
+icônes des sites partout (barre, accès rapide, onglets, grille, historique, suggestions),
+Reload devient Stop pendant le chargement, recherche dans la page (compteur, précédent/suivant),
+site bureau par onglet (user agent de bureau, recréé avec la vue), ajout à l'écran d'accueil,
+impression / PDF, menu d'appui long des images (ouvrir, télécharger, copier l'adresse) et
+« Download link », plein écran des vidéos, envoi de fichiers (`<input type=file>`), caméra /
+micro / position sur demande, texte partagé par une autre app (`ACTION_SEND`, `WEB_SEARCH`,
+`PROCESS_TEXT` : son adresse s'ouvre, sinon il est cherché), tirer pour actualiser (réglage),
+taille du texte (réglage), navigateur par défaut (`RoleManager`), user agent sans `; wv` (les
+sites, dont la connexion Google, traitent BlackHole comme Chrome), pages sans balise viewport
+mises à l'échelle (`useWideViewPort`).
+
+Activité recréée par le système (processus et cœur conservés, par exemple après un manque de
+mémoire ou « Ne pas conserver les activités ») : `Native.init` rappelle `Core::boot`, qui oublie
+les vues vivantes et rouvre l'onglet affiché (sans cela, la page restait noire). Toucher la barre
+ouvre la feuille sur le `click` qui suit le toucher, et le voile ignore les clics des 400 ms qui
+suivent une ouverture (le clic du toucher refermait la feuille, clavier ouvert sur un champ caché).
+
+Liens d'une image dans une image : l'appui long passe par `requestFocusNodeHref` (le lien et
+l'image), et non plus par l'adresse de l'image prise pour celle du lien.
 
 À plus tard : authentification HTTP, mots de passe, pages
 d'erreur des statuts 401/403/5xx sans corps, masquage de la barre au défilement, ouverture du

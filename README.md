@@ -21,6 +21,7 @@
 
 ## 🆕 Nouveautés
 
+- 📲 **0.8.4** : BlackHole pour Android se met à jour tout seul depuis les releases GitHub, barre d'adresse modifiable avec les icônes des sites, recherche dans la page, site bureau, ajout à l'écran d'accueil, impression, plein écran vidéo, envoi de fichiers et partage.
 - 📱 **BlackHole pour Android** et **synchronisation des onglets** entre appareils appairés, sur le réseau local, sans compte ni serveur.
 - 🛡️ **Shields** à la Brave : traqueurs, publicités, emplacements pub, pubs YouTube et bannières cookies, avec un rapport de confidentialité par site.
 - 🌌 **Pages d'erreur animées** pour chaque cas : site injoignable, adresse introuvable, certificat, 401/403/5xx, hors ligne…

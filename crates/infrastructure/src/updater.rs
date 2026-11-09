@@ -18,6 +18,9 @@ use std::{
 pub const REPO: &str = "paullemoine3/blackhole";
 const SUMS: &str = "SHA256SUMS.txt";
 const MAX_BYTES: u64 = 400 * 1024 * 1024;
+/// Android APKs of a release (see the `android` job of the release workflow).
+pub const ANDROID_APK: &str = "BlackHole-android.apk";
+pub const ANDROID_DEBUG_APK: &str = "BlackHole-android-debug.apk";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Release {
@@ -52,12 +55,15 @@ pub fn wants_asset(os: &str, name: &str) -> bool {
     match os {
         "windows" => name.starts_with("BlackHole-Setup-") && name.ends_with("-x64.exe"),
         "macos" => name == "BlackHole-macos-universal.zip",
+        // An APK only replaces one signed with the same key: release key or Gradle's debug key.
+        "android" => name == ANDROID_APK,
+        "android-debug" => name == ANDROID_DEBUG_APK,
         _ => false,
     }
 }
 
 /// Only release downloads hosted by GitHub are ever followed.
-fn trusted_url(url: &str) -> bool {
+pub fn trusted_url(url: &str) -> bool {
     url.starts_with("https://github.com/")
 }
 
@@ -69,8 +75,14 @@ fn plain_name(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+'))
 }
 
-fn latest_url() -> String {
+/// The page that redirects to the latest release's tag (see [`tag_of_latest`]).
+pub fn latest_url() -> String {
     format!("https://github.com/{REPO}/releases/latest")
+}
+
+/// The checksums published with release `tag` (`None` for a tag that is not a plain name).
+pub fn sums_url(tag: &str) -> Option<String> {
+    plain_name(tag).then(|| download_url(tag, SUMS))
 }
 
 fn download_url(tag: &str, asset: &str) -> String {
@@ -415,6 +427,29 @@ mod tests {
         assert!(trusted_url(&found.url));
         assert_eq!(found.sha256.len(), 64);
         assert!(check("999.0.0").expect("check").is_none());
+    }
+
+    #[test]
+    fn an_apk_only_updates_one_signed_with_the_same_key() {
+        let sums = format!(
+            "{}  BlackHole-android.apk\n{}  BlackHole-android-debug.apk\n",
+            "5".repeat(64),
+            "6".repeat(64)
+        );
+        let signed = release_from_sums("v0.9.0", &sums, "android").unwrap();
+        assert_eq!(signed.asset, ANDROID_APK);
+        assert_eq!(signed.sha256, "5".repeat(64));
+        assert!(trusted_url(&signed.url));
+        let debug = release_from_sums("v0.9.0", &sums, "android-debug").unwrap();
+        assert_eq!(debug.asset, ANDROID_DEBUG_APK);
+        let only_debug = format!("{}  BlackHole-android-debug.apk\n", "6".repeat(64));
+        assert!(release_from_sums("v0.9.0", &only_debug, "android").is_none());
+        assert_eq!(
+            sums_url("v0.9.0").unwrap(),
+            format!("https://github.com/{REPO}/releases/download/v0.9.0/SHA256SUMS.txt")
+        );
+        assert!(sums_url("../x").is_none());
+        assert!(latest_url().ends_with("/releases/latest"));
     }
 
     #[test]
