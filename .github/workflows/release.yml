@@ -173,12 +173,30 @@ jobs:
           chmod +x gradlew
           mkdir -p ../dist
           if [ -n "$KEYSTORE_BASE64" ]; then
-            # The key only lives in the runner's temporary directory for this job.
+            # The key only lives in the runner's temporary directory for this job, removed even
+            # when the build fails.
             export BH_ANDROID_KEYSTORE="$RUNNER_TEMP/release.keystore"
-            echo "$KEYSTORE_BASE64" | base64 -d > "$BH_ANDROID_KEYSTORE"
+            trap 'rm -f "$BH_ANDROID_KEYSTORE"' EXIT
+            # Secrets pasted from a terminal often carry a trailing newline (or CR, or spaces
+            # around the alias): strip them, or keytool looks for an alias that does not exist.
+            printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$BH_ANDROID_KEYSTORE"
+            BH_ANDROID_KEY_ALIAS="$(printf '%s' "$BH_ANDROID_KEY_ALIAS" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            BH_ANDROID_KEYSTORE_PASSWORD="$(printf '%s' "$BH_ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+            BH_ANDROID_KEY_PASSWORD="$(printf '%s' "$BH_ANDROID_KEY_PASSWORD" | tr -d '\r\n')"
+            export BH_ANDROID_KEY_ALIAS BH_ANDROID_KEYSTORE_PASSWORD BH_ANDROID_KEY_PASSWORD
+            # Check the key before a 3-minute build, with an error that says what is wrong.
+            if ! keytool -list -keystore "$BH_ANDROID_KEYSTORE" -storepass:env BH_ANDROID_KEYSTORE_PASSWORD > "$RUNNER_TEMP/aliases.txt" 2>&1; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 or ANDROID_KEYSTORE_PASSWORD is wrong: the keystore does not open"
+              exit 1
+            fi
+            if ! keytool -list -keystore "$BH_ANDROID_KEYSTORE" -storepass:env BH_ANDROID_KEYSTORE_PASSWORD -alias "$BH_ANDROID_KEY_ALIAS" > /dev/null 2>&1; then
+              aliases="$(grep -i 'PrivateKeyEntry' "$RUNNER_TEMP/aliases.txt" | cut -d, -f1 | paste -sd ' ' -)"
+              echo "::error::ANDROID_KEY_ALIAS does not name a key of the keystore; its keys: ${aliases:-none}"
+              exit 1
+            fi
+            rm -f "$RUNNER_TEMP/aliases.txt"
             ./gradlew assembleRelease -PrustRelease --no-daemon
             cp app/build/outputs/apk/release/app-release.apk ../dist/BlackHole-android.apk
-            rm -f "$BH_ANDROID_KEYSTORE"
           else
             echo "::warning::No Android release key in the secrets: publishing a debug-signed APK (BlackHole-android-debug.apk)"
             ./gradlew assembleDebug -PrustRelease --no-daemon
