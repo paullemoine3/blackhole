@@ -38,6 +38,12 @@ const MAX_PACKET: usize = 16 * 1024;
 const MAX_URL: usize = 8 * 1024;
 const MAX_TITLE: usize = 300;
 const MAX_NAME: usize = 64;
+/// A synced ledger travels in parts of this many bytes (a packet stays under `MAX_PACKET`
+/// even if every character needed escaping), at most `MAX_PARTS` of them.
+const PART_BYTES: usize = 6_000;
+const MAX_PARTS: usize = 100;
+/// Parts of a ledger not completed within this time are dropped.
+const PARTS_FOR: Duration = Duration::from_secs(60);
 /// Rounds of SHA-256 turning a pairing code into its key: guessing the 60-bit code from a
 /// recorded pairing costs as much again for every guess.
 const STRETCH: u32 = 100_000;
@@ -121,7 +127,17 @@ pub struct Device {
     key: String,
     #[serde(default)]
     pub paired_at: i64,
+    /// Synchronization with this device: `ask` (default), `auto` or `off`.
+    #[serde(default = "ask")]
+    pub sync: String,
 }
+
+fn ask() -> String {
+    "ask".into()
+}
+
+/// The synchronization modes a device can have.
+pub const SYNC_MODES: [&str; 3] = ["ask", "auto", "off"];
 
 impl Device {
     fn key(&self) -> Option<[u8; 32]> {
@@ -145,9 +161,15 @@ impl DeviceStore {
         Self(Vault::named(data, FILE))
     }
 
+    /// Sealed with a key given by the platform (Android: kept by the Android Keystore), where
+    /// the system keychain is not available.
+    pub fn with_vault_key(data: &std::path::Path, key: [u8; 32]) -> Self {
+        Self(Vault::named_with_key(data, FILE, key))
+    }
+
     #[cfg(test)]
     fn with_key(data: &std::path::Path) -> Self {
-        Self(Vault::named_with_key(data, FILE, [9; 32]))
+        Self::with_vault_key(data, [9; 32])
     }
 
     fn load(&self) -> Result<Book, String> {
@@ -185,6 +207,14 @@ enum Message {
     },
     Ack {
         id: u64,
+    },
+    /// A part of a synced ledger (`snap` identifies the ledger, `id` this part for its `Ack`).
+    Part {
+        snap: u64,
+        id: u64,
+        part: u16,
+        parts: u16,
+        data: String,
     },
     /// The sender forgot this device: forget it too.
     Unpair,
@@ -271,6 +301,11 @@ impl Config {
         )
     }
 
+    /// The local network, with devices sealed by `store` (see `DeviceStore::with_vault_key`).
+    pub fn lan_with(store: DeviceStore, name: &str) -> Self {
+        Self::on(store, name, Ipv4Addr::UNSPECIFIED.into(), Ipv4Addr::BROADCAST.into())
+    }
+
     fn on(store: DeviceStore, name: &str, bind: IpAddr, broadcast: IpAddr) -> Self {
         Self {
             store,
@@ -296,6 +331,16 @@ pub enum Request {
         position: Option<f64>,
     },
     Forget(String),
+    /// `ask`, `auto` or `off` for a device.
+    SetSync {
+        device: String,
+        mode: String,
+    },
+    /// This device's synced ledger (JSON), for a paired device.
+    Snapshot {
+        device: String,
+        json: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -303,6 +348,7 @@ pub struct DeviceInfo {
     pub id: String,
     pub name: String,
     pub online: bool,
+    pub sync: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -318,6 +364,12 @@ pub enum Event {
         position: Option<f64>,
     },
     Delivered(String),
+    /// The synced ledger of a paired device (JSON, untrusted: parse it with care).
+    Snapshot {
+        device: String,
+        name: String,
+        json: String,
+    },
     /// Something to tell the user (an error, mostly).
     Status(String),
 }
@@ -371,6 +423,14 @@ struct Outgoing {
     packet: Vec<u8>,
     tries: u32,
     next: Instant,
+    /// A part of a ledger: no "delivered" nor "did not answer" for it.
+    quiet: bool,
+}
+
+/// A ledger arriving in parts.
+struct Incoming {
+    parts: Vec<Option<String>>,
+    since: Instant,
 }
 
 struct Worker {
@@ -391,6 +451,7 @@ struct Worker {
     /// After a failed bind, when to try again (the error is told once).
     bind_retry: Option<Instant>,
     shown: Option<Vec<DeviceInfo>>,
+    incoming: HashMap<(String, u64), Incoming>,
     events: Sender<Event>,
 }
 
@@ -412,6 +473,7 @@ impl Worker {
             hello_due: Instant::now(),
             bind_retry: None,
             shown: None,
+            incoming: HashMap::new(),
             events,
         }
     }
@@ -545,6 +607,7 @@ impl Worker {
                     .heard
                     .get(&d.id)
                     .is_some_and(|(_, at)| at.elapsed() < ONLINE_FOR),
+                sync: d.sync.clone(),
             })
             .collect();
         if self.shown.as_ref() != Some(&list) {
@@ -560,6 +623,7 @@ impl Worker {
             name: bounded(name, MAX_NAME),
             key: hex(&key),
             paired_at: now_secs(),
+            sync: ask(),
         });
         self.save();
         self.emit(Event::Paired(bounded(name, MAX_NAME)));
@@ -652,7 +716,57 @@ impl Worker {
                     packet,
                     tries: 0,
                     next: Instant::now(),
+                    quiet: false,
                 });
+            }
+            Request::SetSync { device, mode } => {
+                if !SYNC_MODES.contains(&mode.as_str()) {
+                    return;
+                }
+                if let Some(d) = self.book.devices.iter_mut().find(|d| d.id == device) {
+                    d.sync = mode;
+                    self.save();
+                    self.devices_changed();
+                }
+            }
+            Request::Snapshot { device, json } => {
+                let Some(key) = self
+                    .book
+                    .devices
+                    .iter()
+                    .find(|d| d.id == device)
+                    .and_then(Device::key)
+                else {
+                    return;
+                };
+                let chunks = split(&json, PART_BYTES);
+                if chunks.len() > MAX_PARTS {
+                    self.emit(Event::Status("Too many tabs to synchronize at once".into()));
+                    return;
+                }
+                // A newer ledger replaces the parts of an older one still on their way.
+                self.outgoing.retain(|o| !(o.quiet && o.device == device));
+                let snap = u64::from_le_bytes(random_bytes());
+                let parts = u16::try_from(chunks.len()).unwrap_or(u16::MAX);
+                for (i, data) in chunks.into_iter().enumerate() {
+                    let id = u64::from_le_bytes(random_bytes());
+                    let part = Message::Part {
+                        snap,
+                        id,
+                        part: u16::try_from(i).unwrap_or(u16::MAX),
+                        parts,
+                        data,
+                    };
+                    let packet = seal(&key, PAIRED, &self.envelope(part));
+                    self.outgoing.push(Outgoing {
+                        id,
+                        device: device.clone(),
+                        packet,
+                        tries: 0,
+                        next: Instant::now(),
+                        quiet: true,
+                    });
+                }
             }
             Request::Forget(id) => {
                 let Some(device) = self.book.devices.iter().find(|d| d.id == id).cloned() else {
@@ -719,11 +833,15 @@ impl Worker {
         }
         for i in failed.into_iter().rev() {
             let gone = self.outgoing.remove(i);
+            if gone.quiet {
+                continue;
+            }
             let name = self.name_of(&gone.device);
             self.emit(Event::Status(format!(
                 "{name} did not answer: is BlackHole open on it, on the same network?"
             )));
         }
+        self.incoming.retain(|_, i| i.since.elapsed() < PARTS_FOR);
         self.devices_changed();
     }
 
@@ -854,11 +972,51 @@ impl Worker {
                 }
             }
             Message::Ack { id } => {
+                let quiet = self
+                    .outgoing
+                    .iter()
+                    .any(|o| o.id == id && o.device == device.id && o.quiet);
                 let before = self.outgoing.len();
                 self.outgoing
                     .retain(|o| !(o.id == id && o.device == device.id));
-                if self.outgoing.len() < before {
+                if self.outgoing.len() < before && !quiet {
                     self.emit(Event::Delivered(device.name.clone()));
+                }
+            }
+            Message::Part {
+                snap,
+                id,
+                part,
+                parts,
+                data,
+            } => {
+                let ack = seal(&key, PAIRED, &self.envelope(Message::Ack { id }));
+                self.send(&ack, from);
+                let (part, parts) = (usize::from(part), usize::from(parts));
+                if parts == 0 || parts > MAX_PARTS || part >= parts || data.len() > PART_BYTES {
+                    return;
+                }
+                let slot = self
+                    .incoming
+                    .entry((device.id.clone(), snap))
+                    .or_insert_with(|| Incoming {
+                        parts: vec![None; parts],
+                        since: Instant::now(),
+                    });
+                if slot.parts.len() != parts {
+                    return;
+                }
+                slot.parts[part] = Some(data);
+                if slot.parts.iter().all(Option::is_some) {
+                    let done = self.incoming.remove(&(device.id.clone(), snap));
+                    let json: String = done
+                        .map(|i| i.parts.into_iter().flatten().collect())
+                        .unwrap_or_default();
+                    self.emit(Event::Snapshot {
+                        device: device.id.clone(),
+                        name: device.name.clone(),
+                        json,
+                    });
                 }
             }
             Message::Unpair => self.forget(&device.id),
@@ -866,6 +1024,22 @@ impl Worker {
         }
         self.devices_changed();
     }
+}
+
+/// Cuts `text` in pieces of at most `max` bytes, on character boundaries.
+fn split(text: &str, max: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for c in text.chars() {
+        if !current.is_empty() && current.len() + c.len_utf8() > max {
+            out.push(std::mem::take(&mut current));
+        }
+        current.push(c);
+    }
+    if !current.is_empty() || out.is_empty() {
+        out.push(current);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -947,6 +1121,7 @@ mod tests {
                 name: "Laptop".into(),
                 key: hex(&[5; 32]),
                 paired_at: 1,
+                sync: ask(),
             }],
         };
         store.save(&book).unwrap();
@@ -985,6 +1160,14 @@ mod tests {
             }
         }
         panic!("event not received");
+    }
+
+    #[test]
+    fn split_keeps_characters_whole() {
+        let parts = split("aé€😀b", 3);
+        assert!(parts.iter().all(|p| p.len() <= 4));
+        assert_eq!(parts.concat(), "aé€😀b");
+        assert_eq!(split("", 3), vec![String::new()]);
     }
 
     #[test]
@@ -1041,6 +1224,25 @@ mod tests {
             wait_for(&b, |e| matches!(e, Event::Delivered(_))),
             Event::Delivered("Desk".into())
         );
+
+        // A synced ledger bigger than a packet travels in parts and arrives whole.
+        let big: String = (0..2500).map(|i| format!("{{\"é\":{i}}}")).collect();
+        b.request(Request::SetSync {
+            device: list[0].id.clone(),
+            mode: "auto".into(),
+        });
+        wait_for(&b, |e| matches!(e, Event::Devices(l) if l.first().is_some_and(|d| d.sync == "auto")));
+        b.request(Request::Snapshot {
+            device: list[0].id.clone(),
+            json: big.clone(),
+        });
+        let Event::Snapshot { name, json, .. } =
+            wait_for(&a, |e| matches!(e, Event::Snapshot { .. }))
+        else {
+            unreachable!()
+        };
+        assert_eq!((name.as_str(), json.len()), ("Laptop", big.len()));
+        assert_eq!(json, big);
 
         b.request(Request::Send {
             device: list[0].id.clone(),

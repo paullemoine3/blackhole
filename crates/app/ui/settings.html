@@ -38,14 +38,18 @@
   .opt:hover { background: rgba(255,255,255,.07); }
   .radio { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); flex: none; }
   .opt.sel .radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px #1b1a26; }
-  .check { width: 30px; height: 18px; border-radius: 9px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .15s; }
-  .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
-  .opt.sel .check { background: var(--accent); }
+  /* Switches spring over and glow when on, like the Android settings. */
+  .check { width: 30px; height: 18px; border-radius: 9px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .25s, box-shadow .25s; }
+  .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .3s cubic-bezier(.2,.9,.3,1.35); }
+  .opt.sel .check { background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); }
+  @media (prefers-reduced-motion: reduce) { .check, .check::after { transition: none; } }
   .opt.sel .check::after { transform: translateX(12px); }
   .grow { flex: 1; min-width: 0; }
   .sub { font-size: 12.5px; opacity: .55; }
   .btn { font: inherit; font-size: 13px; color: inherit; border: 0; cursor: pointer; border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.1); }
   .btn:hover { background: rgba(255,255,255,.18); }
+  .btn:disabled { opacity: .4; cursor: default; }
   .btn.primary { background: var(--accent); color: #fff; }
   .btn.armed, .btn.armed:hover { background: rgba(255,90,90,.85); color: #fff; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; }
@@ -72,6 +76,12 @@
   .code { font: 600 26px/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .12em; text-align: center; padding: 14px 10px 4px; user-select: text; -webkit-user-select: text; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.25); flex: none; }
   .dot.on { background: #2fd4a0; }
+  .seg { display: inline-flex; background: rgba(255,255,255,.08); border-radius: 9px; padding: 2px; flex: none; }
+  .seg button { font: inherit; font-size: 12px; color: inherit; border: 0; background: transparent; border-radius: 7px; padding: 4px 10px; cursor: pointer; opacity: .7;
+    transition: background .25s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+  .seg button.on { background: var(--accent); color: #fff; opacity: 1; }
+  .devrow { flex-wrap: wrap; }
+  .devrow .syncline { flex-basis: 100%; display: flex; align-items: center; gap: 10px; padding-left: 18px; font-size: 12.5px; }
   .pwrow { flex-wrap: wrap; }
   .pwrow .btn { padding: 5px 9px; font-size: 12px; }
   .pwrow code { display: inline-block; margin-top: 4px; }
@@ -153,7 +163,7 @@
   </section>
 
   <section id="devices">
-    <h1>Devices</h1><p class="lead">Continue a tab on your other computer: right-click the tab, or use the command bar.</p>
+    <h1>Devices</h1><p class="lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</p>
     <div class="card"><h2>Paired devices</h2><div id="devlist"></div></div>
     <div class="card" id="devpair"><h2>Pair a device</h2>
       <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</p><div class="actions"><button class="btn" id="devcancel">Cancel</button></div></div>
@@ -161,7 +171,8 @@
       <div class="actions"><input class="field" id="devinput" placeholder="Or type the code shown on the other device (ABCD-EFGH-JKMN)" spellcheck="false" autocomplete="off" maxlength="20"><button class="btn" id="devjoin">Pair</button></div>
       <p class="note" id="devstatus"></p>
     </div>
-    <div class="card"><h2>How it works</h2><p class="note">Both devices must be on the same local network; there is no server and no account. Only the address of the tab travels (and where a YouTube or Twitch video was), encrypted with a key known to the two paired devices: no cookies, no session, so you may have to sign in again on the other device. Nothing listens on the network until a device is paired: the first time, Windows or macOS asks to allow BlackHole on the local network.</p></div>
+    <div class="card"><h2>How it works</h2><p class="note">Both devices must be on the same local network; there is no server and no account. Only the address of the tab travels (and where a YouTube or Twitch video was), encrypted with a key known to the two paired devices: no cookies, no session, so you may have to sign in again on the other device. Nothing listens on the network until a device is paired: the first time, Windows or macOS asks to allow BlackHole on the local network.</p>
+      <p class="note">Tab sync keeps quick access, open tabs and spaces (name and color) the same on both devices; private windows, folders and history stay on each device. <b>Ask</b> proposes to merge when the device comes back on the network, <b>Always</b> merges on its own, <b>Off</b> never syncs. A tab closed on one device closes on the other.</p></div>
   </section>
 
   <section id="passwords">
@@ -484,10 +495,23 @@ $('calsync').onclick = () => send({ cmd: 'calendar_sync' });
 function renderDevices(d) {
   if (!d) return;
   $('devlist').replaceChildren(...(d.list.length ? d.list.map(dev => {
-    const row = el('div', 'row');
+    const row = el('div', 'row devrow');
     const forget = el('button', 'btn', 'Forget');
     confirmClick(forget, 'Click again to forget', () => send({ cmd: 'device_forget', id: dev.id }));
     row.append(el('span', 'dot' + (dev.online ? ' on' : '')), el('span', 'grow', dev.name), el('span', 'sub', dev.online ? 'On this network' : 'Not seen lately'), forget);
+    // Tab sync with this device: Ask / Always / Off, and a manual sync.
+    const line = el('div', 'syncline');
+    const seg = el('span', 'seg');
+    for (const [mode, label] of [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']]) {
+      const b = el('button', dev.sync === mode ? 'on' : null, label);
+      b.onclick = () => send({ cmd: 'device_sync', id: dev.id, mode });
+      seg.append(b);
+    }
+    const now = el('button', 'btn', 'Sync now');
+    now.disabled = !dev.online || dev.sync === 'off';
+    now.onclick = () => send({ cmd: 'device_sync_now', id: dev.id });
+    line.append(el('span', 'sub', 'Tab sync'), seg, now);
+    row.append(line);
     return row;
   }) : [el('div', 'empty', d.available ? 'No device paired yet.' : 'Not available in private windows.')]));
   $('devpair').hidden = !d.available;

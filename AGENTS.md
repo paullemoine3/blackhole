@@ -23,6 +23,8 @@ WebView2 sur Windows. Les deux plateformes sont de premier rang.
   nom, `macos-webext` héberge aussi les extensions Windows et un stub ailleurs.
 - `vendor/wry` : dépendance locale via `[patch.crates-io]`. Préserver le pont
   IPC `__bhipc`, qui évite les collisions avec le global `ipc` des pages web.
+- `crates/android` (cœur Rust de la version Android, `cdylib` appelé par JNI) et
+  `android/` (coque Kotlin, projet Gradle) : voir la section Android et `docs/android.md`.
 
 Garder les dépendances orientées vers les couches internes. Placer la logique
 testable dans domain/application/infrastructure plutôt que dans le binaire.
@@ -260,6 +262,45 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   (`Settings::password_lock_minutes`). Fenêtre privée : lecture seule. Import CSV → portefeuille.
 - Test : fin de `test-ui.ps1` (`eval` « pwN: » hors indices, mots de passe de test générés).
   Trousseau macOS (Keychain) et `arboard` macOS vérifiés par compilation croisée seulement.
+
+## Android (version allégée)
+
+- Pas de wry sur Android (une WebView par Activity, tao, gestionnaires BlackHole absents) : la
+  coque Kotlin (`android/app/src/main/java/app/blackhole/browser/`) pilote les WebViews ; le cœur
+  `crates/android` réutilise `BrowserService`, le domaine et l'infrastructure sans les modifier.
+  Ne jamais dégrader Windows/macOS pour Android ; `crates/app` et `vendor/wry` n'en dépendent pas.
+- Protocole JSON (`crates/android/src/bridge.rs`) : `MobileCommand` (interface, origine des assets
+  seulement, cadre principal), `PageEvent` (pages non fiables, `bhPage`, seulement `ErrorMenu`),
+  `NativeEvent` (coque), `Effect` (réponses). Ajouter une commande = variante + test dans le cœur.
+  Logique dans `core.rs` (testée sur l'hôte : `cargo test -p blackhole-android`), jamais dans Kotlin.
+- `unsafe_code` est `deny` (pas `forbid`) dans ce seul crate : `#[no_mangle]` n'est permis que dans
+  `src/jni.rs` (`cfg(target_os = "android")`).
+- Pages : `crates/android/ui/mobile.html` (interface unique : barre du bas, tiroir, grille, palette,
+  réglages, historique) et `page.js` ; `error.html` et `shields.js` du bureau sont partagés par
+  `include_str!`. Une modification de ces deux fichiers vaut pour les deux apps ; les jetons et
+  animations recopiés depuis `home.html`/`palette.html` sont à garder en phase.
+- Mêmes règles que le bureau : navigations filtrées par le cœur (`Navigating` → `Cancel`/`Load`),
+  exceptions de certificat/http accordées seulement par le menu de l'interface, données externes
+  par `textContent`, https seulement pour les téléchargements, aucune sauvegarde des données,
+  aucun secret (portefeuille non porté), aucune clé de signature dans le dépôt (release : secrets
+  GitHub `ANDROID_KEYSTORE_BASE64`…, sinon APK debug publié avec un avertissement).
+- Commandes : `cd android; .\gradlew.bat assembleDebug` (lance `cargo ndk`), `scripts\test-android.ps1
+  [-Boot]` (adb, captures `%TEMP%h_android_shots`, contrôles nommés `bheval:` lus dans logcat).
+  Toute nouvelle fonction d'interface mobile : un scénario et un `Check` dans ce script.
+
+## Synchronisation des onglets (0.8)
+
+- Entre appareils appairés (« Continuer sur l'autre appareil ») : accès rapide, onglets ouverts (hors
+  dossiers) et espaces (nom, couleur). Règles pures `domain/sync.rs` (`Ledger::observe`, `merge` :
+  dernière modification gagne, pierres tombales 30 j, `Plan` d'actions) et `Workspace::sync_view` /
+  `apply_sync` (onglets ouverts en arrière-plan, l'onglet affiché ne change que s'il est fermé).
+  `infrastructure/sync.rs` : `SyncEngine` (`sync.json`, format de transport validé, `decide`).
+  Transport : `handoff` `Request::Snapshot` → `Message::Part` (fragments acquittés) → `Event::Snapshot`.
+- Mode par appareil dans `devices.bin` (`ask` par défaut, `auto`, `off`, `Request::SetSync`) ; `ask`
+  propose (toast Merge / Always / Later), une réponse à une fusion acceptée s'applique sans question.
+  Desktop : `app/src/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
+  `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, historique, dossiers.
+- Test : `scripts\test-sync.ps1` (Windows devtools ↔ émulateur, ports `BH_HANDOFF_PORT`/`_PEER_PORT`).
 
 ## Livraison et entretien
 

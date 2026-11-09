@@ -1,11 +1,16 @@
 name: Release
 
 # Push on main with a Cargo.toml version that has no release yet, or a tag vX.Y.Z (must equal the
-# Cargo.toml version) -> build macOS + Windows, publish a GitHub release (tag vX.Y.Z).
+# Cargo.toml version) -> build macOS + Windows + Android, publish a GitHub release (tag vX.Y.Z).
 # Other pushes and pull requests only build and test.
 # The in-app updater reads that release: it installs BlackHole-Setup-*-x64.exe (Windows) or
 # BlackHole-macos-universal.zip (macOS) after checking them against SHA256SUMS.txt.
+# Android: BlackHole-android.apk, signed with the release key from the secrets
+# ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD;
+# without them, BlackHole-android-debug.apk (Gradle's debug key) with a warning.
 # Manual run (Actions -> Run workflow) builds the same artifacts without publishing.
+# The release text comes from crates/domain/src/changelog.rs (scripts/release_notes.py): a
+# version without an entry there is not published.
 on:
   push:
     branches: [main]
@@ -57,6 +62,9 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
+      - name: Release notes exist for this version
+        if: steps.ver.outputs.release == 'true'
+        run: python3 scripts/release_notes.py "${{ steps.ver.outputs.version }}" > /dev/null
 
   windows:
     needs: [test, version]
@@ -126,17 +134,73 @@ jobs:
             dist/BlackHole-macos-universal.zip
             dist/BlackHole-macos-universal.dmg
 
+  android:
+    needs: [test, version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: android-actions/setup-android@v3
+
+      - name: NDK, SDK packages and cargo-ndk
+        run: |
+          sdkmanager --install "ndk;27.3.13750724" "platforms;android-35" "build-tools;35.0.0"
+          cargo install cargo-ndk --locked
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
+      - name: Clippy (Android target)
+        run: cargo ndk -t arm64-v8a -P 29 clippy -p blackhole-android --all-targets --locked -- -D warnings
+
+      - name: Build APK
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          BH_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BH_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          BH_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          mkdir -p ../dist
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            # The key only lives in the runner's temporary directory for this job.
+            export BH_ANDROID_KEYSTORE="$RUNNER_TEMP/release.keystore"
+            echo "$KEYSTORE_BASE64" | base64 -d > "$BH_ANDROID_KEYSTORE"
+            ./gradlew assembleRelease -PrustRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../dist/BlackHole-android.apk
+            rm -f "$BH_ANDROID_KEYSTORE"
+          else
+            echo "::warning::No Android release key in the secrets: publishing a debug-signed APK (BlackHole-android-debug.apk)"
+            ./gradlew assembleDebug -PrustRelease --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../dist/BlackHole-android-debug.apk
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlackHole-android
+          path: dist/BlackHole-android*.apk
+
   publish:
     if: needs.version.outputs.release == 'true'
-    needs: [version, windows, macos]
+    needs: [version, windows, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Release notes (from the in-app changelog)
+        run: python3 scripts/release_notes.py "${{ needs.version.outputs.version }}" > release-notes.md
 
       - name: Checksums
         working-directory: dist
@@ -146,10 +210,12 @@ jobs:
         with:
           tag_name: v${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             dist/BlackHole-Setup-*-x64.exe
             dist/BlackHole-windows-x64.zip
             dist/BlackHole-macos-universal.zip
             dist/BlackHole-macos-universal.dmg
+            dist/BlackHole-android*.apk
             dist/SHA256SUMS.txt

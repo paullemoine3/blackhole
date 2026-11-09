@@ -1156,7 +1156,7 @@ impl Running {
 
     // ---- state → UI -------------------------------------------------------------------
 
-    fn ui(&self, js: String) {
+    pub(crate) fn ui(&self, js: String) {
         let _ = self.chrome.evaluate_script(&js);
         let _ = self
             .flyout
@@ -2579,12 +2579,12 @@ impl Running {
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
     }
 
-    fn toast(&self, message: &str) {
+    pub(crate) fn toast(&self, message: &str) {
         self.ui(format!("window.bh&&bh.toast({})", json!(message)));
     }
 
     /// A toast with a button that runs `run` (a `UiCommand`), shown a little longer.
-    fn toast_action(&self, message: &str, label: &str, run: serde_json::Value) {
+    pub(crate) fn toast_action(&self, message: &str, label: &str, run: serde_json::Value) {
         let action = json!({"label": label, "run": run});
         self.ui(format!("window.bh&&bh.toast({},{action})", json!(message)));
     }
@@ -3135,7 +3135,7 @@ impl Running {
         }
     }
 
-    fn sync(&mut self) {
+    pub(crate) fn sync(&mut self) {
         self.icons_for_ui.set(true);
         self.icons_for_home.set(true);
         self.ensure_active_view();
@@ -3404,7 +3404,7 @@ impl Running {
 
     /// Releases the page view of a tab and everything that followed it (media probe, floating
     /// video bookkeeping), so no state outlives the view.
-    fn drop_view(&mut self, id: TabId) {
+    pub(crate) fn drop_view(&mut self, id: TabId) {
         self.tabs.remove(&id);
         self.last_active.remove(&id);
         if let Ok(mut probes) = self.media.lock() {
@@ -4334,6 +4334,9 @@ impl Running {
             | UiCommand::DeviceJoin { .. }
             | UiCommand::DeviceCancelPairing
             | UiCommand::DeviceForget { .. }
+            | UiCommand::DeviceSync { .. }
+            | UiCommand::DeviceSyncNow { .. }
+            | UiCommand::SyncAnswer { .. }
             | UiCommand::ContinueOn { .. }) => self.handle_devices(command),
             UiCommand::OpenLink { url, target } => match target.as_str() {
                 "window" | "private" => {

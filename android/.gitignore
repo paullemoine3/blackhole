@@ -1,0 +1,11 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+# Signing keys never belong in the repository (debug builds use Gradle's debug key).
+*.jks
+*.keystore
+keystore.properties

@@ -176,6 +176,10 @@
   .tab { gap: 6px; }
   .shield { font-size: 11px; opacity: .7; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
+  /* The count jumps when something new is blocked (as on Android). */
+  #blockedn { display: inline-block; }
+  #blockedn.bump { animation: bump .4s cubic-bezier(.2,.9,.3,1.15); }
+  @keyframes bump { 40% { transform: scale(1.35); color: #8ff0b4; } }
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
   #toast.act { display: flex; align-items: center; gap: 8px; }
@@ -895,7 +899,12 @@ window.bh = {
       b.oncontextmenu = (e) => { e.preventDefault(); spaceMenu(sp, e.clientX, e.clientY); };
       return b;
     }));
-    $('blockedn').textContent = ' ' + s.blocked;
+    const bn = $('blockedn'), blocked = ' ' + s.blocked;
+    if (bn.textContent !== blocked) {
+      const grew = Number(bn.textContent) < s.blocked;
+      bn.textContent = blocked;
+      if (grew) { bn.classList.remove('bump'); void bn.offsetWidth; bn.classList.add('bump'); }
+    }
     document.body.classList.toggle('noanim', s.animations === false);
     if (before) motion.play(before, prev, s);
     if (switched) motion.spaces(prev.activeSpace, s.activeSpace);

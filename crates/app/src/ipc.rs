@@ -183,6 +183,20 @@ pub enum UiCommand {
     DeviceForget {
         id: String,
     },
+    /// Settings > Devices: tab synchronization with a device, `ask`, `auto` or `off`.
+    DeviceSync {
+        id: String,
+        mode: String,
+    },
+    /// Settings > Devices: sends this device's tabs and asks for the other's.
+    DeviceSyncNow {
+        id: String,
+    },
+    /// The proposal to synchronize with a device: `merge` (once), `always` or `later`.
+    SyncAnswer {
+        id: String,
+        answer: String,
+    },
     /// Tab menu and command bar: opens the tab on a paired device.
     ContinueOn {
         id: u64,

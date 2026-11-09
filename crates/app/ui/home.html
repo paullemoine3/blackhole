@@ -10,9 +10,14 @@
   body { overflow-y: auto; background: radial-gradient(800px 500px at 50% -10%, rgba(124,92,255,.22), transparent 70%), #0c0b12; }
   main { max-width: 860px; margin: 0 auto; padding: 56px 28px 40px; }
   .brand { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 26px; }
-  .logo { width: 46px; height: 46px; border-radius: 50%; flex: none;
+  /* The black hole breathes and its ring turns, like the Android start page. */
+  .logo { width: 46px; height: 46px; border-radius: 50%; flex: none; position: relative;
     background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%);
-    box-shadow: 0 0 30px rgba(255,120,40,.3); }
+    box-shadow: 0 0 30px rgba(255,120,40,.3); animation: breathe 5s ease-in-out infinite; }
+  .logo::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent;
+    border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8); animation: orbit 6s linear infinite; }
+  @keyframes breathe { 50% { transform: scale(1.06); } }
+  @keyframes orbit { to { transform: rotate(360deg); } }
   h1 { font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
   .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 18px; margin-bottom: 18px; }
   .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }

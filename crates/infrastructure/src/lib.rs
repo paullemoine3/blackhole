@@ -14,6 +14,7 @@ pub mod handoff;
 pub mod import;
 pub mod peers;
 pub mod store;
+pub mod sync;
 pub mod updater;
 pub mod wallet;
 mod writer;

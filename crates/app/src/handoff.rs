@@ -2,13 +2,26 @@
 //! local network; the tab menu and the command bar send a tab there, which opens it. The network,
 //! the keys and the message format live in `blackhole_infrastructure::handoff`; this side only
 //! reads the video position of the tab and shows the results. Not started in private windows.
+//!
+//! Tab synchronization with the paired devices (quick access, open tabs, spaces) rides on the
+//! same service: the rules are `blackhole_domain::sync`, the ledger `blackhole_infrastructure::
+//! sync`. A device coming online gets this device's ledger; an `auto` device also gets it a few
+//! seconds after each change; a received ledger is merged at once (`auto`) or proposed (`ask`).
 
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::handoff::{can_continue, has_position, resume_url};
 use blackhole_infrastructure::handoff::{self, DeviceInfo, Event, Handle, Request};
+use blackhole_infrastructure::sync::{decide, Decision, Received, SyncEngine};
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::time::{Duration, Instant};
 use url::Url;
+
+/// How often the workspace is compared with the synced ledger.
+const OBSERVE_EVERY: Duration = Duration::from_secs(2);
+/// After a change, `auto` devices get the ledger once things have settled this long.
+const SEND_AFTER: Duration = Duration::from_secs(3);
 
 /// Where the video of the page is (the longest one that has started), in seconds.
 const POSITION_JS: &str = "(()=>{const v=[...document.querySelectorAll('video')].filter(v=>v.currentTime>0&&!v.ended).sort((a,b)=>(b.duration||0)-(a.duration||0))[0];return v?v.currentTime:null})()";
@@ -24,6 +37,15 @@ pub struct Nearby {
     status: String,
     tx: Sender<Pending>,
     rx: Receiver<Pending>,
+    sync: SyncEngine,
+    /// Devices seen online at the last list (a device coming online gets the ledger).
+    online: HashSet<String>,
+    /// Ledgers waiting for the user's answer, by device: its name and the ledger.
+    proposals: HashMap<String, (String, Received)>,
+    /// Devices whose proposal was put off ("Later") for this run.
+    later: HashSet<String>,
+    observe_at: Instant,
+    changed_at: Option<Instant>,
 }
 
 impl Nearby {
@@ -31,7 +53,17 @@ impl Nearby {
         let (tx, rx) = channel();
         // Development builds stay on this machine: no firewall prompt while testing.
         let config = if cfg!(feature = "devtools") {
-            handoff::Config::loopback(data, &device_name())
+            let mut config = handoff::Config::loopback(data, &device_name());
+            // scripts/test-sync.ps1: the Android emulator is reached through `adb emu redir`,
+            // which needs other ports than the default one on this machine.
+            let port = |name| std::env::var(name).ok().and_then(|p| p.parse::<u16>().ok());
+            if let Some(p) = port("BH_HANDOFF_PORT") {
+                config.port = p;
+            }
+            if let Some(p) = port("BH_HANDOFF_PEER_PORT") {
+                config.peer_port = p;
+            }
+            config
         } else {
             handoff::Config::lan(data, &device_name())
         };
@@ -42,6 +74,12 @@ impl Nearby {
             status: String::new(),
             tx,
             rx,
+            sync: SyncEngine::open(data),
+            online: HashSet::new(),
+            proposals: HashMap::new(),
+            later: HashSet::new(),
+            observe_at: Instant::now(),
+            changed_at: None,
         }
     }
 
@@ -56,7 +94,7 @@ impl Nearby {
         json!(self
             .devices
             .iter()
-            .map(|d| json!({"id": d.id, "name": d.name, "online": d.online}))
+            .map(|d| json!({"id": d.id, "name": d.name, "online": d.online, "sync": d.sync}))
             .collect::<Vec<_>>())
     }
 }
@@ -152,10 +190,20 @@ impl Running {
         for event in events {
             match event {
                 Event::Devices(list) => {
+                    let came: Vec<String> = list
+                        .iter()
+                        .filter(|d| d.online && d.sync != "off" && !self.nearby.online.contains(&d.id))
+                        .map(|d| d.id.clone())
+                        .collect();
+                    self.nearby.online = list.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
                     self.nearby.devices = list;
+                    for device in came {
+                        self.send_ledger(&device, false, false);
+                    }
                     self.ui_settings();
                     self.ui_state();
                 }
+                Event::Snapshot { device, name, json } => self.on_ledger(device, name, &json),
                 Event::Code(code) => {
                     self.nearby.code = code;
                     if self.nearby.code.is_some() {
@@ -189,6 +237,104 @@ impl Running {
                 }
             }
         }
+        self.sync_tick();
+    }
+
+    /// Tab synchronization, every turn of the event loop: the workspace is compared with the
+    /// ledger now and then, and `auto` devices get it once a change has settled.
+    fn sync_tick(&mut self) {
+        if self.nearby.handle.is_none() || self.nearby.devices.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        if now >= self.nearby.observe_at {
+            self.nearby.observe_at = now + OBSERVE_EVERY;
+            if self.nearby.sync.observe(&self.svc) {
+                self.nearby.changed_at = Some(now);
+            }
+        }
+        if self.nearby.changed_at.is_some_and(|at| at.elapsed() >= SEND_AFTER) {
+            self.nearby.changed_at = None;
+            let auto: Vec<String> = self
+                .nearby
+                .devices
+                .iter()
+                .filter(|d| d.online && d.sync == "auto")
+                .map(|d| d.id.clone())
+                .collect();
+            for device in auto {
+                self.send_ledger(&device, false, false);
+            }
+        }
+    }
+
+    fn send_ledger(&mut self, device: &str, reply: bool, pull: bool) {
+        self.nearby.sync.observe(&self.svc);
+        let json = self.nearby.sync.snapshot(reply, pull);
+        self.nearby.request(Request::Snapshot {
+            device: device.to_owned(),
+            json,
+        });
+    }
+
+    /// A paired device's ledger arrived: merge it, propose it, or answer with this one.
+    fn on_ledger(&mut self, device: String, name: String, json: &str) {
+        let Some(received) = SyncEngine::parse(json) else {
+            return;
+        };
+        let mode = self
+            .nearby
+            .devices
+            .iter()
+            .find(|d| d.id == device)
+            .map_or_else(|| "ask".to_owned(), |d| d.sync.clone());
+        let merge = self.nearby.sync.preview(&self.svc, &received);
+        match decide(&mode, &received, &merge) {
+            Decision::Nothing => {}
+            Decision::SendBack => self.send_ledger(&device, true, false),
+            Decision::Apply => {
+                let quiet = received.reply;
+                self.apply_ledger(&device, &received);
+                if !quiet {
+                    self.toast(&format!("Tabs synchronized with {name}"));
+                }
+            }
+            Decision::Ask { opens, closes, changes } => {
+                if self.nearby.later.contains(&device) {
+                    return;
+                }
+                let mut what = Vec::new();
+                if opens > 0 {
+                    what.push(format!("{opens} tab{} to open", if opens == 1 { "" } else { "s" }));
+                }
+                if closes > 0 {
+                    what.push(format!("{closes} to close"));
+                }
+                if changes > 0 {
+                    what.push(format!("{changes} change{}", if changes == 1 { "" } else { "s" }));
+                }
+                let message = format!("Synchronize tabs with {name}? {}", what.join(", "));
+                self.nearby.proposals.insert(device.clone(), (name, received));
+                let run = |answer: &str| json!({"cmd": "sync_answer", "id": device, "answer": answer});
+                let actions = json!([
+                    {"label": "Merge", "run": run("merge")},
+                    {"label": "Always", "run": run("always")},
+                    {"label": "Later", "run": run("later")},
+                ]);
+                self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+            }
+        }
+    }
+
+    fn apply_ledger(&mut self, device: &str, received: &Received) {
+        let (removed, behind) = self.nearby.sync.accept(&mut self.svc, received);
+        for id in removed {
+            self.drop_view(id);
+        }
+        self.sync();
+        if behind || received.pull {
+            self.send_ledger(device, true, false);
+        }
     }
 
     /// Settings > Devices.
@@ -211,6 +357,35 @@ impl Running {
                 self.nearby.request(Request::Forget(id));
             }
             UiCommand::ContinueOn { id, device } => self.continue_on(id, device),
+            UiCommand::DeviceSync { id, mode } => {
+                self.nearby.later.remove(&id);
+                self.nearby.request(Request::SetSync { device: id, mode });
+            }
+            UiCommand::DeviceSyncNow { id } => {
+                self.nearby.later.remove(&id);
+                self.send_ledger(&id, false, true);
+                self.toast("Synchronizing…");
+            }
+            UiCommand::SyncAnswer { id, answer } => {
+                let Some((name, received)) = self.nearby.proposals.remove(&id) else {
+                    return;
+                };
+                match answer.as_str() {
+                    "merge" | "always" => {
+                        if answer == "always" {
+                            self.nearby.request(Request::SetSync {
+                                device: id.clone(),
+                                mode: "auto".into(),
+                            });
+                        }
+                        self.apply_ledger(&id, &received);
+                        self.toast(&format!("Tabs synchronized with {name}"));
+                    }
+                    _ => {
+                        self.nearby.later.insert(id);
+                    }
+                }
+            }
             _ => {}
         }
     }

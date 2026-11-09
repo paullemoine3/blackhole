@@ -14,6 +14,7 @@ pub mod passwords;
 pub mod privacy;
 pub mod selection;
 pub mod settings;
+pub mod sync;
 pub mod watch;
 pub mod workspace;
 
