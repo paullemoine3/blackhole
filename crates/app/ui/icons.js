@@ -83,6 +83,7 @@
     globe: '<circle cx="8" cy="8" r="5.8"/><path d="M2.2 8h11.6M8 2.2c1.6 1.6 2.4 3.5 2.4 5.8S9.6 12.2 8 13.8C6.4 12.2 5.6 10.3 5.6 8S6.4 3.8 8 2.2z"/>',
     info: '<circle cx="8" cy="8" r="5.8"/><path d="M8 7.3v3.6"/>' + dot(8, 5.2),
     sparkle: '<path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4z"/>',
+    rocket: '<path d="M8 1.5c2.2 1.7 3.2 4 3.2 6.8v3.2H4.8V8.3C4.8 5.5 5.8 3.2 8 1.5z"/><circle cx="8" cy="6.6" r="1.3"/><path d="M4.8 9.2l-2.3 2.3v2h2.3M11.2 9.2l2.3 2.3v2h-2.3M7 13.2v1.3M9 13.2v1.3"/>',
   };
   P.settings = P.gear;
   const SIZES = { xs: 1, sm: 1, md: 1, lg: 1 };

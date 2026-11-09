@@ -152,7 +152,7 @@ cargo test --workspace --locked
   iscc /DAppVersion=X.Y.Z /DExePath=..\target\release\blackhole.exe scripts\windows-installer.iss
   ```
   Sortie dans `dist\`. L'icône vient de `scripts/make_icon.py` (PNG macOS + `.ico` Windows).
-- Mise à jour dans l'app (`updater.rs`) : bouton `#update` en bas de la sidebar (le flyout de survol est une 2e vue chrome, recréée avant la palette dans `raise_palette`) ; Windows lance l'installeur en silencieux, macOS remplace le `.app`. Désactivée pour les builds `cargo` (dossier `target`) et `devtools`.
+- Mise à jour dans l'app (`updater.rs`) : bouton `#update` en bas de la sidebar (le flyout de survol est une 2e vue chrome, recréée avant la palette dans `raise_palette`) ; Windows lance l'installeur en silencieux, macOS remplace le `.app`. Désactivée pour les builds `cargo` (dossier `target`) et `devtools`. Recherche par la redirection `github.com/<repo>/releases/latest` puis `SHA256SUMS.txt` du tag (jamais l'API REST : 60 requêtes/h anonymes par IP, vite épuisées derrière un réseau d'entreprise) ; échec → nouvel essai 30 min plus tard. Réglages > Général > Updates : vérification manuelle (`check_app_update`, permise partout), installation seulement si `can_self_update()`, sinon lien vers la page de la version. Installer (barre latérale ou Réglages) fait décoller un vaisseau (`launchShip` / `bhLaunch`, icône `rocket`), absent en animations coupées. Test réseau : `cargo test -p blackhole-infrastructure updater -- --ignored`.
 
 ## Environnement PowerShell (Windows)
 - Pas de `&&`/`||` : utiliser `;` et `if ($?)`. Le code de sortie 1 peut venir du stderr de cargo sans gravité.

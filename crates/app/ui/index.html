@@ -207,6 +207,22 @@
   @keyframes up-shine { to { transform: translateX(120%); } }
   @keyframes up-spin { to { transform: rotate(360deg); } }
   body.noanim .update, body.noanim .update * { animation: none !important; transition: none !important; }
+  /* Install: a ship takes off from the button (launchShip); same motion as Settings > Updates. */
+  .launch { position: fixed; z-index: 50; width: 20px; height: 20px; margin: -10px 0 0 -10px; pointer-events: none; color: #fff;
+    filter: drop-shadow(0 0 6px var(--accent)); animation: launch-climb 1.4s cubic-bezier(.55, 0, 1, .45) forwards; }
+  .launch svg { width: 20px; height: 20px; display: block; animation: launch-shake .08s linear 5; }
+  .launch::after { content: ""; position: absolute; left: 50%; top: 92%; width: 4px; margin-left: -2px; border-radius: 2px; height: 0;
+    background: linear-gradient(to bottom, #ffd36b, rgba(255, 90, 40, .6) 35%, transparent); animation: launch-flame 1.4s ease-in forwards; }
+  .launch .spark { position: absolute; left: 50%; top: 100%; width: 3px; height: 3px; border-radius: 50%; background: #ffc35c; opacity: 0;
+    animation: launch-spark .7s .2s ease-out forwards; }
+  @keyframes launch-climb { 0% { transform: translateY(6px) scale(.4); opacity: 0; } 12% { transform: translateY(0) scale(1); opacity: 1; }
+    35% { transform: translateY(-4px); } 100% { transform: translateY(-110vh) scale(.85); opacity: 1; } }
+  @keyframes launch-shake { 25% { transform: translateX(-.6px); } 75% { transform: translateX(.6px); } }
+  @keyframes launch-flame { 0%, 25% { height: 4px; opacity: 1; } 100% { height: 160px; opacity: 0; } }
+  @keyframes launch-spark { 0% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+  .update.launched .ico { visibility: hidden; }
+  body.noanim .launch { display: none; }
+  @media (prefers-reduced-motion: reduce) { .launch { display: none; } }
 
   /* ---- Motion ----------------------------------------------------------------------------
      Rows reflow smoothly (FLIP in `motion` below), closed rows fade out where they were,
@@ -1079,7 +1095,33 @@ function renderUpdate(u, current) {
   b.title = busy ? bhT('sidebar.update_downloading', { version })
     : u.state === 'error' ? u.error : bhT('sidebar.update_available', { version, current });
 }
-$('update').onclick = () => { if (!$('update').classList.contains('busy')) send({ cmd: 'apply_update' }); };
+$('update').onclick = () => {
+  const b = $('update');
+  if (b.classList.contains('busy')) return;
+  launchShip(b.querySelector('.ico'));
+  send({ cmd: 'apply_update' });
+};
+// The ship leaves the button's icon spot with a flame trail and sparks (see Settings > Updates).
+function launchShip(from) {
+  if (!from || document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = from.getBoundingClientRect();
+  const ship = document.createElement('div');
+  ship.className = 'launch';
+  ship.style.left = (r.left + r.width / 2) + 'px';
+  ship.style.top = (r.top + r.height / 2) + 'px';
+  ship.append(bhIcon('rocket', 'md'));
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI * (0.15 + 0.7 * i / 7);
+    const spark = document.createElement('i');
+    spark.className = 'spark';
+    spark.style.setProperty('--dx', (Math.cos(a) * 26).toFixed(1) + 'px');
+    spark.style.setProperty('--dy', (Math.sin(a) * 18).toFixed(1) + 'px');
+    ship.append(spark);
+  }
+  document.body.append(ship);
+  $('update').classList.add('launched');
+  setTimeout(() => { ship.remove(); $('update').classList.remove('launched'); }, 1600);
+}
 // The privacy report of the site shown opens above the shield.
 $('shield').onclick = () => { const r = $('shield').getBoundingClientRect(); send({ cmd: 'privacy_report', x: r.left, y: r.top - 8 }); };
 $('new').onclick = () => send({ cmd: 'new_tab' });

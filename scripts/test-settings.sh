@@ -2,8 +2,9 @@
 # Settings window and icon scale on macOS, driven by the devtools harness: every Settings section
 # is captured (/tmp/bh_shots/<prefix>settings-*.png, plus the sidebar and the Easel window), then
 # the checks read the page: design tokens and icons present, switches, their intermediate state,
-# the animations-off mode, keyboard navigation of the sections, empty states.
-# Scratch profile /tmp/bh_data (wiped first); no network needed. Keep the window visible.
+# the animations-off mode, keyboard navigation of the sections, empty states, Settings > Updates
+# and the ship launched by Install. Scratch profile /tmp/bh_data (wiped first); network only for
+# the last check (Check for updates). Keep the window visible.
 #   BH_SHOTS_ONLY=1 BH_PREFIX=before- bash scripts/test-settings.sh   # captures only
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -46,6 +47,25 @@ cmd {"cmd":"open_settings","tab":"privacy"}
 wait 1000
 eval settings 'focus:' + (() => { const b = document.getElementById('clear'); b.focus(); return getComputedStyle(b).outlineStyle + '|' + b.matches(':focus-visible'); })()
 shots ${P}settings-focus
+cmd {"cmd":"open_settings","tab":"general"}
+wait 1000
+eval settings 'upd:' + document.getElementById('appupd-name').textContent + '|' + document.getElementById('appupd-sub').textContent + '|' + getComputedStyle(document.getElementById('appupd-install')).display + '|' + document.querySelectorAll('#appupd-check svg.bh-i').length
+eval settings 'ship:' + (() => { document.querySelector('main').scrollTop = 1e4; bhLaunch(document.querySelector('#appupd-check .bh-i')); return document.querySelectorAll('.launch svg.bh-i').length + '|' + document.querySelectorAll('.launch .spark').length; })()
+wait 600
+shots ${P}settings-launch
+eval settings 'ship2:' + (() => { const l = document.querySelector('.launch'); return l ? new DOMMatrix(getComputedStyle(l).transform).m42 < -20 : 'gone'; })()
+eval chrome 'ship3:' + (() => { launchShip(document.getElementById('gear')); return document.querySelectorAll('.launch svg.bh-i').length; })()
+wait 500
+shot ${P}sidebar-launch
+wait 1200
+cmd {"cmd":"set_animations","on":false}
+wait 400
+eval settings 'ship4:' + (() => { bhLaunch(document.querySelector('#appupd-check .bh-i')); return document.querySelectorAll('.launch').length; })()
+cmd {"cmd":"set_animations","on":true}
+wait 300
+cmd {"cmd":"check_app_update"}
+wait 8000
+eval settings 'chk:' + document.getElementById('appupd-sub').textContent + '|' + document.getElementById('appupd-check').disabled
 S
   fi
   echo "cmd {\"cmd\":\"close_settings\"}"
@@ -73,7 +93,15 @@ check 9 'empty:true|Nothing blocked yet' "empty state with its icon"
 check 10 'side:11111' "sidebar icons drawn (no emoji)"
 check 11 'bar:11111' "top bar icons drawn (no font glyphs)"
 check 12 'focus:solid|true' "keyboard focus ring"
-for s in general shortcuts extensions calendar devices passwords import privacy focus; do
+check 13 'upd:BlackHole ' "Updates card: version, never checked yet, install hidden"
+check 13 '|none|1' "Updates card: install not displayed, check button icon"
+check 14 'ship:1|8' "install launches a ship (icon and 8 sparks) in Settings"
+check 15 'ship2:true' "the ship is climbing mid-flight"
+check 16 'ship3:1' "the sidebar launches the same ship"
+check 17 'ship4:0' "animations off: no ship"
+# Network: up to date (or GitHub unreachable), never stuck on "Looking for a new version".
+if [[ "${L[18]:-}" == *"chk:"* && "${L[18]:-}" == *"|false"* && "${L[18]:-}" != *"Looking"* ]]; then echo "ok   manual check answers (${L[18]#*chk:})"; else echo "FAIL manual check (got: ${L[18]:-none})"; fail=1; fi
+for s in general shortcuts extensions calendar devices passwords import privacy focus launch; do
   [[ -f /tmp/bh_shots/${P}settings-$s.png ]] || { echo "FAIL screenshot settings-$s missing"; fail=1; }
 done
 exit $fail

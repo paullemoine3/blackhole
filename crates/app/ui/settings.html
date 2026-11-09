@@ -157,6 +157,25 @@
     background: var(--bh-fill-control); box-shadow: inset 0 -1px 0 var(--bh-border-strong), 0 0 0 1px var(--bh-border-default); }
   kbd.words { font: var(--bh-text-caption); }
 
+  /* Updates: a check in progress turns its icon; installing launches a ship (bhLaunch). */
+  .btn[hidden] { display: none; }
+  #appupd { flex-wrap: wrap; }
+  #appupd .grow { flex: 1 1 260px; }
+  .btn.spin .bh-i { animation: bh-spin 1s linear infinite; }
+  @keyframes bh-spin { to { transform: rotate(360deg); } }
+  .launch { position: fixed; z-index: 20; width: 20px; height: 20px; margin: -10px 0 0 -10px; pointer-events: none; color: var(--bh-accent);
+    filter: drop-shadow(0 0 6px var(--bh-accent)); animation: launch-climb 1.4s cubic-bezier(.55, 0, 1, .45) forwards; }
+  .launch .bh-i { width: 20px; height: 20px; display: block; color: var(--bh-text-primary); animation: launch-shake .08s linear 5; }
+  .launch::after { content: ""; position: absolute; left: 50%; top: 92%; width: 4px; margin-left: -2px; border-radius: 2px; height: 0;
+    background: linear-gradient(to bottom, #ffd36b, rgba(255, 90, 40, .6) 35%, transparent); animation: launch-flame 1.4s ease-in forwards; }
+  .launch .spark { position: absolute; left: 50%; top: 100%; width: 3px; height: 3px; border-radius: 50%; background: #ffc35c; opacity: 0;
+    animation: launch-spark .7s .2s ease-out forwards; }
+  @keyframes launch-climb { 0% { transform: translateY(6px) scale(.4); opacity: 0; } 12% { transform: translateY(0) scale(1); opacity: 1; }
+    35% { transform: translateY(-4px); } 100% { transform: translateY(-110vh) scale(.85); opacity: 1; } }
+  @keyframes launch-shake { 25% { transform: translateX(-.6px); } 75% { transform: translateX(.6px); } }
+  @keyframes launch-flame { 0%, 25% { height: 4px; opacity: 1; } 100% { height: 160px; opacity: 0; } }
+  @keyframes launch-spark { 0% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+
   /* Animations off (setting) or reduced by the system: nothing moves. */
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -195,6 +214,14 @@
     <div class="card" id="hwcard" hidden><h2 data-i18n="settings.performance">Performance</h2><div class="rows" id="hw"></div></div>
     <div class="card"><h2 data-i18n="settings.system">System</h2>
       <div class="opt"><span class="grow"><span class="label" data-i18n="settings.default_browser">Default browser</span><span class="sub" id="defnote"></span></span><button class="btn primary" id="default"><span data-i18n="settings.make_default">Make default</span></button></div>
+    </div>
+    <div class="card"><h2 data-i18n="settings.app_updates">Updates</h2>
+      <div class="opt" id="appupd"><span class="grow"><span class="label" id="appupd-name"></span><span class="sub" id="appupd-sub" aria-live="polite"></span></span>
+        <span class="rowactions">
+          <button class="btn primary" id="appupd-install" hidden><i data-icon="rocket"></i><span data-i18n="settings.app_install">Install and restart</span></button>
+          <button class="btn" id="appupd-page" hidden><i data-icon="open"></i><span data-i18n="settings.app_release_page">Release page</span></button>
+          <button class="btn" id="appupd-check"><i data-icon="reload"></i><span data-i18n="settings.check_updates">Check for updates</span></button>
+        </span></div>
     </div>
   </section>
 
@@ -421,6 +448,57 @@ show('general');
 
 $('chk-ext').onclick = () => send({ cmd: 'check_catalog_updates' });
 $('upd-all').onclick = () => send({ cmd: 'update_all_catalog' });
+
+// Settings > Updates: BlackHole itself (the sidebar button installs the same release).
+let appUpdate = null;
+function renderAppUpdate(u, current) {
+  appUpdate = u;
+  $('appupd-name').textContent = bhT('settings.app_updates_label', { version: current });
+  const version = u.version || '';
+  const found = u.state === 'available' || u.state === 'install_failed';
+  const sub = {
+    idle: bhT('settings.app_never_checked'),
+    checking: bhT('settings.app_checking'),
+    current: bhT('settings.app_up_to_date'),
+    check_failed: bhT('settings.app_check_failed', { error: u.error || '' }),
+    available: u.installable ? bhT('settings.app_update_available', { version }) : bhT('settings.app_manual', { version }),
+    install_failed: bhT('settings.app_install_failed', { error: u.error || '' }),
+    downloading: bhT('settings.app_downloading', { version }),
+  }[u.state] || '';
+  if ($('appupd-sub').textContent !== sub) $('appupd-sub').textContent = sub;
+  $('appupd-install').hidden = !(found && u.installable) && u.state !== 'downloading';
+  $('appupd-install').disabled = u.state === 'downloading';
+  $('appupd-page').hidden = !(found && !u.installable);
+  const check = $('appupd-check');
+  check.disabled = u.state === 'checking' || u.state === 'downloading';
+  check.classList.toggle('spin', u.state === 'checking');
+}
+$('appupd-check').onclick = () => send({ cmd: 'check_app_update' });
+$('appupd-page').onclick = () => { if (appUpdate) send({ cmd: 'open_link', url: appUpdate.page, target: 'front' }); };
+$('appupd-install').onclick = () => {
+  if (!appUpdate || appUpdate.state === 'downloading') return;
+  bhLaunch($('appupd-install').querySelector('.bh-i'));
+  send({ cmd: 'apply_update' });
+};
+// A small ship takes off from `from` (an icon) with a flame trail and sparks; nothing when
+// animations are off or reduced.
+function bhLaunch(from) {
+  if (!from || document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = from.getBoundingClientRect();
+  const ship = el('div', 'launch');
+  ship.style.left = (r.left + r.width / 2) + 'px';
+  ship.style.top = (r.top + r.height / 2) + 'px';
+  ship.append(bhIcon('rocket', 'md'));
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI * (0.15 + 0.7 * i / 7);
+    const spark = el('i', 'spark');
+    spark.style.setProperty('--dx', (Math.cos(a) * 26).toFixed(1) + 'px');
+    spark.style.setProperty('--dy', (Math.sin(a) * 18).toFixed(1) + 'px');
+    ship.append(spark);
+  }
+  document.body.append(ship);
+  setTimeout(() => ship.remove(), 1600);
+}
 $('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
 $('imp-csv').onclick = () => send({ cmd: 'import_file', kind: 'logins' });
 
@@ -547,6 +625,7 @@ window.bh = {
     }) : [empty('shield', bhT('settings.nothing_blocked'))]));
     if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
     $('version').textContent = s.version;
+    renderAppUpdate(s.appUpdate, s.version);
     const outdated = s.catalog.filter(c => c.outdated && c.supported);
     $('upd-all').hidden = !outdated.length;
     $('chk-msg').textContent = s.catalogChecked == null ? '' : outdated.length

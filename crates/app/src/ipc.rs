@@ -345,6 +345,8 @@ pub enum UiCommand {
     UpdateAllCatalog,
     /// Sidebar update button: installs the release found by the background check.
     ApplyUpdate,
+    /// Settings > Updates: looks for a new release now.
+    CheckAppUpdate,
     /// Toolbar click on an extension: opens its popup under the button (window coordinates).
     ExtAction {
         id: String,

@@ -373,6 +373,9 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   et `Cargo.lock`. Le workflow `.github/workflows/release.yml` peut publier sur
   push de `main` si la version n'a pas encore de tag, ou sur tag `vX.Y.Z`.
 - `scripts/package-macos.sh` produit le bundle macOS ; `--install` l'installe.
+- Mise à jour dans l'app (`infrastructure/updater.rs`) : dernière version lue par la redirection
+  `github.com/<repo>/releases/latest` + `SHA256SUMS.txt` du tag, jamais l'API REST (quota anonyme
+  par IP). Réglages > Général > Updates : vérification manuelle ; Installer fait décoller un vaisseau.
   L'installeur Windows utilise `scripts/windows-installer.iss` avec Inno Setup.
 - Terminer par un résumé des changements, des vérifications effectuées et des
   limites, notamment pour l'autre système d'exploitation.

@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.3",
+        &[
+            "Updates are offered again: BlackHole now finds a new version through the GitHub release page instead of its API, whose hourly quota is shared by everyone behind the same address (an office network used it up, so no update was ever proposed); a failed check is retried after 30 minutes",
+            "Settings > General > Updates: see your version, check for a new one now, and install it from there",
+            "Installing an update launches a small ship from the button, in the sidebar and in Settings (not with animations off or reduced motion)",
+        ],
+    ),
+    (
         "0.8.2",
         &[
             "BlackHole speaks English and French: pick the language in Settings > General (or follow the system), and every open page switches at once, no restart",

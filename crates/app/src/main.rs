@@ -235,6 +235,8 @@ fn overlap_share(own: (f64, f64, f64, f64), other: (f64, f64, f64, f64)) -> f64 
 }
 const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
+/// After a failed check (offline, GitHub unreachable), try again well before `UPDATE_CHECK_EVERY`.
+const UPDATE_RETRY: Duration = Duration::from_secs(30 * 60);
 
 /// Where the self-update stands; shown as a button at the bottom of the sidebar.
 enum UpdateState {
@@ -246,6 +248,9 @@ enum UpdateState {
 
 enum UpdateMsg {
     Found(Release),
+    /// The check found nothing newer.
+    Current,
+    CheckFailed(String),
     Downloaded(PathBuf),
     Failed(String),
 }
@@ -478,6 +483,10 @@ struct Running {
     update_tx: std::sync::mpsc::Sender<UpdateMsg>,
     update_rx: std::sync::mpsc::Receiver<UpdateMsg>,
     next_update_check: Option<Instant>,
+    /// A release check is running (background or Settings > Updates).
+    update_checking: bool,
+    /// What the last finished check said: up to date, or why it failed (Settings > Updates).
+    update_checked: Option<Result<(), String>>,
     quit: bool,
     maximized: bool,
     install_errors: HashMap<String, String>,
@@ -856,6 +865,8 @@ impl Running {
             update_tx,
             update_rx,
             next_update_check: updates_enabled().then(|| Instant::now() + FIRST_UPDATE_CHECK),
+            update_checking: false,
+            update_checked: None,
             quit: false,
             maximized: false,
             install_errors: HashMap::new(),
@@ -1327,6 +1338,7 @@ impl Running {
             "tabSeq": self.settings_seq,
             "catalog": self.catalog_state(),
             "catalogChecked": self.catalog_checked,
+            "appUpdate": self.app_update_json(),
             "appExtensions": self.app_ext.iter().map(|e| {
                 let on = app_extension_enabled(&self.data, &e.id);
                 let state = self.webext.as_ref().and_then(|h| h.state(&e.id));
@@ -1522,7 +1534,11 @@ impl Running {
         host.set_active_tab(view, tab.url.as_str(), &tab.title);
     }
 
+    /// Sidebar button: only for an installation that can replace itself.
     fn update_json(&self) -> serde_json::Value {
+        if !can_self_update() {
+            return json!(null);
+        }
         match &self.update {
             UpdateState::Idle => json!(null),
             UpdateState::Available(r) => json!({"state": "available", "version": r.version}),
@@ -1533,39 +1549,93 @@ impl Running {
         }
     }
 
+    /// Settings > Updates: the check and the install, step by step.
+    fn app_update_json(&self) -> serde_json::Value {
+        let (state, version, error) = match (&self.update, &self.update_checked) {
+            (UpdateState::Downloading(r), _) => ("downloading", Some(&r.version), None),
+            _ if self.update_checking => ("checking", None, None),
+            (UpdateState::Available(r), _) => ("available", Some(&r.version), None),
+            (UpdateState::Failed(r, why), _) => ("install_failed", Some(&r.version), Some(why)),
+            (UpdateState::Idle, None) => ("idle", None, None),
+            (UpdateState::Idle, Some(Ok(()))) => ("current", None, None),
+            (UpdateState::Idle, Some(Err(why))) => ("check_failed", None, Some(why)),
+        };
+        json!({
+            "state": state,
+            "version": version,
+            "error": error,
+            "installable": can_self_update(),
+            "page": format!("https://github.com/{}/releases/latest", updater::REPO),
+        })
+    }
+
+    /// Looks for a newer release off the UI thread; the answer comes back through `update_rx`.
+    fn check_for_update(&mut self) {
+        if self.update_checking || matches!(self.update, UpdateState::Downloading(_)) {
+            return;
+        }
+        self.update_checking = true;
+        let tx = self.update_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(match updater::check(env!("CARGO_PKG_VERSION")) {
+                Ok(Some(release)) => UpdateMsg::Found(release),
+                Ok(None) => UpdateMsg::Current,
+                Err(why) => UpdateMsg::CheckFailed(why),
+            });
+        });
+    }
+
     /// Runs the periodic release check and applies what the background threads report.
     fn poll_update(&mut self) {
         if let Some(at) = self.next_update_check {
             if Instant::now() >= at {
                 self.next_update_check = Some(Instant::now() + UPDATE_CHECK_EVERY);
-                let tx = self.update_tx.clone();
-                std::thread::spawn(move || match updater::check(env!("CARGO_PKG_VERSION")) {
-                    Ok(Some(release)) => {
-                        let _ = tx.send(UpdateMsg::Found(release));
-                    }
-                    Ok(None) => {}
-                    Err(why) => tracing::warn!("update check failed: {why}"),
-                });
+                self.check_for_update();
             }
         }
         while let Ok(msg) = self.update_rx.try_recv() {
-            match (msg, std::mem::replace(&mut self.update, UpdateState::Idle)) {
-                (UpdateMsg::Found(release), UpdateState::Idle | UpdateState::Available(_)) => {
-                    self.update = UpdateState::Available(release);
-                }
-                (UpdateMsg::Downloaded(path), UpdateState::Downloading(release)) => {
-                    match updater::apply(&path) {
-                        Ok(()) => {
-                            self.quit = true;
-                            self.update = UpdateState::Downloading(release);
-                        }
-                        Err(why) => self.update = UpdateState::Failed(release, why),
+            match msg {
+                UpdateMsg::Found(release) => {
+                    self.update_checking = false;
+                    self.update_checked = Some(Ok(()));
+                    if !matches!(self.update, UpdateState::Downloading(_)) {
+                        self.update = UpdateState::Available(release);
                     }
                 }
-                (UpdateMsg::Failed(why), UpdateState::Downloading(release)) => {
-                    self.update = UpdateState::Failed(release, why);
+                UpdateMsg::Current => {
+                    self.update_checking = false;
+                    self.update_checked = Some(Ok(()));
                 }
-                (_, state) => self.update = state,
+                UpdateMsg::CheckFailed(why) => {
+                    tracing::warn!("update check failed: {why}");
+                    self.update_checking = false;
+                    self.update_checked = Some(Err(why));
+                    // A failed check no longer waits for the next 6-hour round.
+                    let retry = Instant::now() + UPDATE_RETRY;
+                    if let Some(at) = &mut self.next_update_check {
+                        *at = (*at).min(retry);
+                    }
+                }
+                UpdateMsg::Downloaded(path) => {
+                    if let UpdateState::Downloading(release) =
+                        std::mem::replace(&mut self.update, UpdateState::Idle)
+                    {
+                        match updater::apply(&path) {
+                            Ok(()) => {
+                                self.quit = true;
+                                self.update = UpdateState::Downloading(release);
+                            }
+                            Err(why) => self.update = UpdateState::Failed(release, why),
+                        }
+                    }
+                }
+                UpdateMsg::Failed(why) => {
+                    if let UpdateState::Downloading(release) =
+                        std::mem::replace(&mut self.update, UpdateState::Idle)
+                    {
+                        self.update = UpdateState::Failed(release, why);
+                    }
+                }
             }
             self.ui_state();
         }
@@ -1573,6 +1643,9 @@ impl Running {
 
     /// Sidebar button: downloads the new version, then the installer takes over and restarts.
     fn start_update(&mut self) {
+        if !can_self_update() {
+            return;
+        }
         let release = match &self.update {
             UpdateState::Available(r) | UpdateState::Failed(r, _) => r.clone(),
             _ => return,
@@ -4901,6 +4974,10 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::ApplyUpdate => self.start_update(),
+            UiCommand::CheckAppUpdate => {
+                self.check_for_update();
+                self.ui_state();
+            }
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
                 #[cfg(target_os = "macos")]
                 self.show_native_popup(&id, (x, y, w, hh));
@@ -5817,7 +5894,12 @@ fn open_download(path: &std::path::Path) {
 
 /// Scripted devtools runs and cargo builds never look for (or install) updates.
 fn updates_enabled() -> bool {
-    !cfg!(feature = "devtools") && !private_mode() && updater::supported()
+    !cfg!(feature = "devtools") && can_self_update()
+}
+
+/// Whether this installation may download and install a release (Settings can still check).
+fn can_self_update() -> bool {
+    !private_mode() && updater::supported()
 }
 
 /// A private window runs in its own process with a throwaway profile (cookies, history, tabs,

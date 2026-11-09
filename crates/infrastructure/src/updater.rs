@@ -1,11 +1,13 @@
 //! Self-update from GitHub releases.
 //!
-//! The latest release is read from the GitHub API; its platform asset is downloaded over HTTPS,
-//! checked against the `SHA256SUMS.txt` published next to it, then handed to the platform
-//! installer (Inno Setup on Windows, an app-bundle swap on macOS).
+//! The latest release is found by following `github.com/<repo>/releases/latest`, which redirects
+//! to its tag page: unlike the REST API (60 anonymous requests an hour, shared by everyone behind
+//! the same address — an office network exhausts it), the site has no such quota. The
+//! `SHA256SUMS.txt` published with the release lists its assets; the platform one is downloaded
+//! over HTTPS, checked against it, then handed to the platform installer (Inno Setup on Windows,
+//! an app-bundle swap on macOS).
 
 use crate::catalog;
-use serde_json::Value;
 use std::{
     fs,
     io::Read,
@@ -23,13 +25,6 @@ pub struct Release {
     pub asset: String,
     pub url: String,
     pub sha256: String,
-}
-
-struct Candidate {
-    version: String,
-    asset: String,
-    url: String,
-    sums_url: String,
 }
 
 /// `1.2.3`, `v1.2` or `1.2.3-rc1` → (1, 2, 3); anything else is not a version.
@@ -66,43 +61,59 @@ fn trusted_url(url: &str) -> bool {
     url.starts_with("https://github.com/")
 }
 
-/// Looks for a newer release in the API payload of `releases/latest`.
-fn pick(json: &Value, current: &str, os: &str) -> Option<Candidate> {
-    if json["draft"].as_bool().unwrap_or(false) || json["prerelease"].as_bool().unwrap_or(false) {
-        return None;
-    }
-    let version = json["tag_name"]
-        .as_str()?
-        .trim_start_matches('v')
-        .to_owned();
-    if !is_newer(&version, current) {
-        return None;
-    }
-    let assets = json["assets"].as_array()?;
-    let url_of = |pred: &dyn Fn(&str) -> bool| {
-        assets.iter().find_map(|a| {
-            let name = a["name"].as_str()?;
-            let url = a["browser_download_url"].as_str()?;
-            (pred(name) && trusted_url(url)).then(|| (name.to_owned(), url.to_owned()))
-        })
-    };
-    let (asset, url) = url_of(&|n| wants_asset(os, n))?;
-    let (_, sums_url) = url_of(&|n| n == SUMS)?;
-    Some(Candidate {
-        version,
-        asset,
-        url,
-        sums_url,
+/// Tags and asset names end up in a URL: only plain file-name characters are accepted.
+fn plain_name(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with('.')
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+'))
+}
+
+fn latest_url() -> String {
+    format!("https://github.com/{REPO}/releases/latest")
+}
+
+fn download_url(tag: &str, asset: &str) -> String {
+    format!("https://github.com/{REPO}/releases/download/{tag}/{asset}")
+}
+
+/// The tag `releases/latest` redirected to (`…/releases/tag/v1.2.3`). A repository without a
+/// release redirects to its release list instead: `None`. Drafts and pre-releases are never
+/// "latest" for GitHub.
+pub fn tag_of_latest(final_url: &str) -> Option<&str> {
+    let prefix = format!("https://github.com/{REPO}/releases/tag/");
+    let rest = final_url.strip_prefix(prefix.as_str())?;
+    let tag = rest.split(['?', '#']).next()?.trim_end_matches('/');
+    (plain_name(tag) && parse_version(tag).is_some()).then_some(tag)
+}
+
+/// `(hash, file)` pairs of `sha256sum` output (`<hash>  <name>` per line, `*` marks binary mode).
+fn sum_lines(sums: &str) -> impl Iterator<Item = (String, &str)> {
+    sums.lines().filter_map(|line| {
+        let (hash, file) = line.split_once(char::is_whitespace)?;
+        let file = file.trim().trim_start_matches('*');
+        (hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| (hash.to_ascii_lowercase(), file))
     })
 }
 
-/// Finds `name` in `sha256sum` output (`<hash>  <name>` per line, `*` marks binary mode).
+/// Finds `name` in `sha256sum` output.
 pub fn find_sum(sums: &str, name: &str) -> Option<String> {
-    sums.lines().find_map(|line| {
-        let (hash, file) = line.split_once(char::is_whitespace)?;
-        let file = file.trim().trim_start_matches('*');
-        (file == name && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| hash.to_ascii_lowercase())
+    sum_lines(sums).find_map(|(hash, file)| (file == name).then_some(hash))
+}
+
+/// The platform asset of release `tag`, as listed (with its checksum) in its `SHA256SUMS.txt`.
+pub fn release_from_sums(tag: &str, sums: &str, os: &str) -> Option<Release> {
+    if !plain_name(tag) {
+        return None;
+    }
+    let (sha256, asset) =
+        sum_lines(sums).find(|(_, file)| wants_asset(os, file) && plain_name(file))?;
+    Some(Release {
+        version: tag.trim_start_matches('v').to_owned(),
+        url: download_url(tag, asset),
+        asset: asset.to_owned(),
+        sha256,
     })
 }
 
@@ -129,33 +140,28 @@ fn read_limited(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, String> {
 /// Blocking. `Ok(None)` means up to date (or nothing published yet). Run it off the UI thread.
 pub fn check(current: &str) -> Result<Option<Release>, String> {
     let agent = agent();
-    let api = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let resp = match agent
-        .get(&api)
-        .set("Accept", "application/vnd.github+json")
+    // HEAD: only the redirect matters, not the page.
+    let resp = agent
+        .head(&latest_url())
         .call()
-    {
-        Ok(resp) => resp,
-        Err(ureq::Error::Status(404, _)) => return Ok(None),
-        Err(e) => return Err(e.to_string()),
-    };
-    let json: Value =
-        serde_json::from_slice(&read_limited(resp, 4 * 1024 * 1024)?).map_err(|e| e.to_string())?;
-    let Some(c) = pick(&json, current, std::env::consts::OS) else {
+        .map_err(|e| e.to_string())?;
+    let Some(tag) = tag_of_latest(resp.get_url()).map(str::to_owned) else {
         return Ok(None);
     };
+    if !is_newer(&tag, current) {
+        return Ok(None);
+    }
     let sums = read_limited(
-        agent.get(&c.sums_url).call().map_err(|e| e.to_string())?,
+        agent
+            .get(&download_url(&tag, SUMS))
+            .call()
+            .map_err(|e| e.to_string())?,
         1 << 20,
     )?;
     let sums = String::from_utf8_lossy(&sums);
-    let sha256 = find_sum(&sums, &c.asset).ok_or("no checksum published for the update")?;
-    Ok(Some(Release {
-        version: c.version,
-        asset: c.asset,
-        url: c.url,
-        sha256,
-    }))
+    release_from_sums(&tag, &sums, std::env::consts::OS)
+        .map(Some)
+        .ok_or_else(|| format!("release {tag} has no verified download for this system"))
 }
 
 pub fn updates_dir(data: &Path) -> PathBuf {
@@ -334,18 +340,14 @@ fn apply_impl(_: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    fn release(tag: &str) -> Value {
-        json!({
-            "tag_name": tag, "draft": false, "prerelease": false,
-            "assets": [
-                {"name": "BlackHole-Setup-0.2.0-x64.exe", "browser_download_url": "https://github.com/o/r/releases/download/v0.2.0/BlackHole-Setup-0.2.0-x64.exe"},
-                {"name": "BlackHole-macos-universal.zip", "browser_download_url": "https://github.com/o/r/releases/download/v0.2.0/BlackHole-macos-universal.zip"},
-                {"name": "SHA256SUMS.txt", "browser_download_url": "https://github.com/o/r/releases/download/v0.2.0/SHA256SUMS.txt"},
-            ],
-        })
-    }
+    const SUMS_0_2_0: &str = "\
+1111111111111111111111111111111111111111111111111111111111111111  BlackHole-Setup-0.2.0-x64.exe
+2222222222222222222222222222222222222222222222222222222222222222  BlackHole-android.apk
+3333333333333333333333333333333333333333333333333333333333333333  BlackHole-macos-universal.dmg
+4444444444444444444444444444444444444444444444444444444444444444  BlackHole-macos-universal.zip
+5555555555555555555555555555555555555555555555555555555555555555  BlackHole-windows-x64.zip
+";
 
     #[test]
     fn versions_compare_numerically() {
@@ -354,36 +356,65 @@ mod tests {
         assert_eq!(parse_version("1.0.0-rc1"), Some((1, 0, 0)));
         assert_eq!(parse_version("nightly"), None);
         assert!(is_newer("0.10.0", "0.9.9"));
+        assert!(is_newer("v0.8.3", "0.8.2"));
         assert!(!is_newer("0.1.0", "0.1.0"));
         assert!(!is_newer("junk", "0.1.0"));
     }
 
     #[test]
-    fn picks_the_platform_asset_of_a_newer_release() {
-        let win = pick(&release("v0.2.0"), "0.1.0", "windows").unwrap();
-        assert_eq!(win.asset, "BlackHole-Setup-0.2.0-x64.exe");
-        assert_eq!(win.version, "0.2.0");
-        assert!(win.sums_url.ends_with("SHA256SUMS.txt"));
-        let mac = pick(&release("v0.2.0"), "0.1.0", "macos").unwrap();
-        assert_eq!(mac.asset, "BlackHole-macos-universal.zip");
-        assert!(pick(&release("v0.2.0"), "0.2.0", "windows").is_none());
-        assert!(pick(&release("v0.2.0"), "0.1.0", "linux").is_none());
+    fn reads_the_tag_the_latest_release_redirects_to() {
+        let tag = |u: &str| tag_of_latest(u).map(str::to_owned);
+        let base = format!("https://github.com/{REPO}/releases");
+        assert_eq!(tag(&format!("{base}/tag/v0.8.2")), Some("v0.8.2".into()));
+        assert_eq!(
+            tag(&format!("{base}/tag/v0.8.2/?x=1")),
+            Some("v0.8.2".into())
+        );
+        // No release yet: GitHub shows the (empty) release list.
+        assert_eq!(tag(&base), None);
+        assert_eq!(tag(&format!("{base}/latest")), None);
+        assert_eq!(
+            tag("https://github.com/someone/else/releases/tag/v9.0.0"),
+            None
+        );
+        assert_eq!(tag(&format!("{base}/tag/nightly")), None);
+        assert_eq!(tag(&format!("{base}/tag/v1.0.0%2F..%2Fx")), None);
     }
 
     #[test]
-    fn ignores_drafts_prereleases_and_foreign_hosts() {
-        let mut r = release("v0.2.0");
-        r["prerelease"] = json!(true);
-        assert!(pick(&r, "0.1.0", "windows").is_none());
-        let mut r = release("v0.2.0");
-        r["assets"][0]["browser_download_url"] = json!("https://evil.example/setup.exe");
-        assert!(pick(&r, "0.1.0", "windows").is_none());
-        let mut r = release("v0.2.0");
-        r["assets"].as_array_mut().unwrap().pop();
-        assert!(
-            pick(&r, "0.1.0", "windows").is_none(),
-            "no checksums, no update"
+    fn picks_the_platform_asset_listed_in_the_checksums() {
+        let win = release_from_sums("v0.2.0", SUMS_0_2_0, "windows").unwrap();
+        assert_eq!(win.version, "0.2.0");
+        assert_eq!(win.asset, "BlackHole-Setup-0.2.0-x64.exe");
+        assert_eq!(
+            win.url,
+            format!(
+                "https://github.com/{REPO}/releases/download/v0.2.0/BlackHole-Setup-0.2.0-x64.exe"
+            )
         );
+        assert_eq!(win.sha256, "1".repeat(64));
+        assert!(trusted_url(&win.url));
+        let mac = release_from_sums("v0.2.0", SUMS_0_2_0, "macos").unwrap();
+        assert_eq!(mac.asset, "BlackHole-macos-universal.zip");
+        assert_eq!(mac.sha256, "4".repeat(64));
+        assert!(release_from_sums("v0.2.0", SUMS_0_2_0, "linux").is_none());
+        assert!(
+            release_from_sums("v0.2.0", "not a checksum file", "macos").is_none(),
+            "no checksum, no update"
+        );
+        assert!(release_from_sums("../v0.2.0", SUMS_0_2_0, "macos").is_none());
+    }
+
+    /// Network: `cargo test -p blackhole-infrastructure updater -- --ignored`.
+    #[test]
+    #[ignore]
+    fn finds_the_published_release_without_the_api() {
+        let found = check("0.0.1")
+            .expect("check")
+            .expect("a release is published");
+        assert!(trusted_url(&found.url));
+        assert_eq!(found.sha256.len(), 64);
+        assert!(check("999.0.0").expect("check").is_none());
     }
 
     #[test]
