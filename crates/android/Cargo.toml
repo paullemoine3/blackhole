@@ -1,0 +1,30 @@
+[package]
+name = "blackhole-android"
+version.workspace = true
+edition.workspace = true
+description = "Rust core of BlackHole for Android: tabs, history, settings and Shields behind a JSON bridge called over JNI by the Kotlin shell"
+
+[lib]
+name = "blackhole_android"
+# `cdylib`: the `libblackhole_android.so` loaded by the Kotlin shell; `rlib`: host unit tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+blackhole-domain.workspace = true
+blackhole-application.workspace = true
+blackhole-infrastructure.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+zeroize = "1.8"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+[dev-dependencies]
+tempfile = "3"
+
+# JNI entry points need `#[no_mangle]`, which the `unsafe_code` lint reports: it is denied
+# here (not forbidden) so that `src/jni.rs`, Android only, can allow it. No other module may.
+[lints.rust]
+unsafe_code = "deny"

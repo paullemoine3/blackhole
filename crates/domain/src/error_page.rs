@@ -8,6 +8,10 @@ pub enum Failure<'a> {
     WebView2(i32),
     /// WKWebView: the `NSError` domain and code.
     NsError(&'a str, i64),
+    /// Android WebView: a `WebViewClient.ERROR_*` code (main frame only).
+    Android(i32),
+    /// Android WebView: the primary error of an `SslError` (`SslError.SSL_*`).
+    AndroidSsl(i32),
 }
 
 /// Why a server certificate was refused.
@@ -169,6 +173,24 @@ pub fn classify(failure: Failure) -> Option<ErrorPage> {
         // navigation the shell redirected), 103 cannot show the type, 204 handed to a plug-in.
         Failure::NsError("WebKitErrorDomain", 101..=103 | 204) => None,
         Failure::NsError(..) => Some(Unreachable),
+        // -2 host lookup, -3/-4/-5 authentication (the server's own page follows), -9 redirect
+        // loop, -10 unsupported scheme (handed to another app), -11 TLS handshake, -12 bad URL,
+        // -16 Safe Browsing (WebView shows its own interstitial).
+        Failure::Android(code) => match code {
+            -2 => Some(NotFound),
+            -5..=-3 | -10 | -16 => None,
+            -9 => Some(TooManyRedirects),
+            -11 => Some(Certificate(Invalid)),
+            _ => Some(Unreachable),
+        },
+        // 0 not yet valid, 1 expired, 2 name mismatch, 3 untrusted, 4 date invalid, 5 invalid.
+        Failure::AndroidSsl(primary) => Some(Certificate(match primary {
+            0 => NotYetValid,
+            1 => Expired,
+            2 => NameMismatch,
+            3 => Untrusted,
+            _ => Invalid,
+        })),
     }
 }
 
@@ -262,6 +284,30 @@ impl Bypasses {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn android_errors() {
+        assert_eq!(classify(Failure::Android(-2)), Some(ErrorPage::NotFound));
+        assert_eq!(classify(Failure::Android(-9)), Some(ErrorPage::TooManyRedirects));
+        assert_eq!(
+            classify(Failure::Android(-11)),
+            Some(ErrorPage::Certificate(CertProblem::Invalid))
+        );
+        for code in [-1, -6, -7, -8, -15] {
+            assert_eq!(classify(Failure::Android(code)), Some(ErrorPage::Unreachable));
+        }
+        for code in [-3, -4, -5, -10, -16] {
+            assert_eq!(classify(Failure::Android(code)), None);
+        }
+        let ssl = |p| classify(Failure::AndroidSsl(p));
+        assert_eq!(ssl(0), Some(ErrorPage::Certificate(CertProblem::NotYetValid)));
+        assert_eq!(ssl(1), Some(ErrorPage::Certificate(CertProblem::Expired)));
+        assert_eq!(ssl(2), Some(ErrorPage::Certificate(CertProblem::NameMismatch)));
+        assert_eq!(ssl(3), Some(ErrorPage::Certificate(CertProblem::Untrusted)));
+        assert_eq!(ssl(5), Some(ErrorPage::Certificate(CertProblem::Invalid)));
+        // A wrong clock still turns a date problem into the clock page.
+        assert_eq!(ssl(1).map(|p| p.with_clock(0)), Some(ErrorPage::ClockWrong));
+    }
 
     #[test]
     fn webview2_statuses() {

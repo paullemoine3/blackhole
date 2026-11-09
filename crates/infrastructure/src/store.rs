@@ -189,8 +189,8 @@ impl Vault {
         Self::named_with_key(data, "vault.bin", key)
     }
 
-    #[cfg(test)]
-    pub(crate) fn named_with_key(data: &std::path::Path, file: &str, key: [u8; 32]) -> Self {
+    /// A vault file sealed with a key the platform keeps (Android: the Android Keystore).
+    pub fn named_with_key(data: &std::path::Path, file: &str, key: [u8; 32]) -> Self {
         Self {
             path: data.join(file),
             key: Some(key),

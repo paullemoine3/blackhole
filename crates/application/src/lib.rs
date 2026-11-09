@@ -600,6 +600,17 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         id
     }
 
+    /// What a merge with a paired device decided (see `blackhole_domain::sync`); returns the
+    /// tabs removed, whose views must go.
+    pub fn apply_sync(&mut self, plan: &[blackhole_domain::sync::Action]) -> Vec<TabId> {
+        if plan.is_empty() {
+            return Vec::new();
+        }
+        let removed = self.workspace.apply_sync(plan);
+        self.persist();
+        removed
+    }
+
     pub fn switch_space(&mut self, id: SpaceId) -> bool {
         let ok = self.workspace.switch_space(id);
         self.persist();

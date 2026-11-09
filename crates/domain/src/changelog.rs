@@ -1,6 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.0",
+        &[
+            "BlackHole for Android: a lighter version for phones with tabs in a grid (swipe to close, Undo), the address bar at the bottom within reach of your thumb (swipe it to change tab), the sidebar as a drawer, the command bar as a sheet, quick access, history, private tabs, spaces with their color, Shields with the privacy report, downloads and the animated error pages",
+            "The phone keeps the browser's rules: the same Shields lists, https by default, no backup of your browsing data, and private tabs whose cookies vanish with the last one",
+            "The Android app is published with each release (BlackHole-android.apk), next to the Windows and macOS builds",
+            "Continue on another device works with the phone too: pair BlackHole for Android with your computers (Settings > Devices) and send a tab either way",
+            "Tab sync between paired devices: quick access, open tabs and spaces (name and color) stay the same on your computer and your phone. When a device comes back on the network BlackHole proposes to merge (Merge, Always, Later); with Always it merges on its own; a tab closed on one device closes on the other. Private tabs, folders and history stay on each device (Settings > Devices: Ask, Always or Off per device, and Sync now)",
+            "Same motion on every device: on the start page the black hole breathes and its ring turns, switches in Settings spring over and glow when on, and the Shields count in the sidebar jumps when something new is blocked (all off with animations off or reduced motion)",
+        ],
+    ),
+    (
         "0.7.19",
         &[
             "Continue on another device: pair two computers once with a code (Settings > Devices), then send a tab to the other one from its menu or the command bar; only its address travels, encrypted, on the local network (a YouTube or Twitch video resumes where it was)",

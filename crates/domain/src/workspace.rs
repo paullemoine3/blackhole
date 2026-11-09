@@ -990,6 +990,108 @@ pub enum Removed {
     },
 }
 
+/// Synchronization with paired devices (see `crate::sync`).
+impl Workspace {
+    /// Quick access and loose tabs of every space (folder tabs are not synced).
+    pub fn sync_view(&self) -> Vec<crate::sync::LiveSpace> {
+        self.spaces
+            .iter()
+            .map(|s| crate::sync::LiveSpace {
+                name: s.name.clone(),
+                color: s.color.clone(),
+                tabs: s
+                    .tabs
+                    .iter()
+                    .filter(|t| t.folder.is_none())
+                    .map(|t| (t.url.clone(), t.title.clone(), t.pinned))
+                    .collect(),
+            })
+            .collect()
+    }
+
+    fn space_named(&self, name: &str) -> Option<usize> {
+        let key = name.trim().to_lowercase();
+        self.spaces.iter().position(|s| s.name.trim().to_lowercase() == key)
+    }
+
+    fn sync_tab(&self, space: usize, url: &Url) -> Option<usize> {
+        let mut wanted = url.clone();
+        wanted.set_fragment(None);
+        self.spaces[space].tabs.iter().position(|t| {
+            let mut current = t.url.clone();
+            current.set_fragment(None);
+            t.folder.is_none() && current == wanted
+        })
+    }
+
+    /// Applies what a merge decided, without showing anything new: tabs open in the background
+    /// of their space, the active space and tab stay unless the shown tab itself is closed.
+    /// Returns the tabs removed (their views must go).
+    pub fn apply_sync(&mut self, plan: &[crate::sync::Action]) -> Vec<TabId> {
+        use crate::sync::Action;
+        let mut removed = Vec::new();
+        for action in plan {
+            match action {
+                Action::AddSpace { name, color } => {
+                    if self.space_named(name).is_none() && !name.trim().is_empty() {
+                        let id = self.add_space(name, "#7c5cff");
+                        self.set_space_color(id, color);
+                    }
+                }
+                Action::SetColor { space, color } => {
+                    if let Some(at) = self.space_named(space) {
+                        let id = self.spaces[at].id;
+                        self.set_space_color(id, color);
+                    }
+                }
+                Action::Open { space, url, title, pinned } => {
+                    let Some(at) = self.space_named(space) else { continue };
+                    if self.sync_tab(at, url).is_some() {
+                        continue;
+                    }
+                    let id = TabId(self.alloc());
+                    let title = match title.trim() {
+                        "" => url.host_str().unwrap_or("New tab").to_owned(),
+                        t => t.to_owned(),
+                    };
+                    let tabs = &mut self.spaces[at].tabs;
+                    // Quick access at the end of the tiles, a loose tab at the top of the list.
+                    let pos = tabs.iter().position(|t| !t.pinned).unwrap_or(tabs.len());
+                    tabs.insert(
+                        pos,
+                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false },
+                    );
+                }
+                Action::Close { space, url } => {
+                    let Some(at) = self.space_named(space) else { continue };
+                    let Some(pos) = self.sync_tab(at, url) else { continue };
+                    let id = self.spaces[at].tabs[pos].id;
+                    if self.spaces[at].id == self.active_space {
+                        let next = self.successor(id, pos);
+                        self.spaces[at].tabs.remove(pos);
+                        Self::hand_over(&mut self.spaces[at], id, next);
+                    } else {
+                        let space = &mut self.spaces[at];
+                        space.tabs.remove(pos);
+                        let next = space.tabs.iter().find(|t| !t.pinned).map(|t| t.id);
+                        Self::hand_over(space, id, next);
+                    }
+                    self.recent.retain(|t| *t != id);
+                    removed.push(id);
+                }
+                Action::SetPinned { space, url, pinned } => {
+                    let Some(at) = self.space_named(space) else { continue };
+                    let Some(pos) = self.sync_tab(at, url) else { continue };
+                    let space = &mut self.spaces[at];
+                    space.tabs[pos].pinned = *pinned;
+                    space.tabs.sort_by_key(|t| !t.pinned);
+                }
+            }
+        }
+        removed
+    }
+}
+
 impl Removed {
     /// The tabs that come back with it.
     pub fn tabs(&self) -> Vec<&Tab> {
@@ -1506,5 +1608,35 @@ mod tests {
         let mut restored = restored;
         let b = restored.open_tab(u("https://b.test"));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn a_sync_plan_opens_closes_and_pins_in_the_background() {
+        use crate::sync::Action;
+        let mut ws = Workspace::new();
+        let shown = ws.open_tab(u("https://shown.test/"));
+        let other = ws.open_tab(u("https://other.test/"));
+        ws.activate_tab(shown);
+        let removed = ws.apply_sync(&[
+            Action::AddSpace { name: "Work".into(), color: "#2dd4bf".into() },
+            Action::Open { space: "work".into(), url: u("https://w.test/"), title: "W".into(), pinned: true },
+            Action::Open { space: "Personal".into(), url: u("https://new.test/"), title: String::new(), pinned: false },
+            Action::Open { space: "Personal".into(), url: u("https://shown.test/#x"), title: String::new(), pinned: false },
+            Action::SetPinned { space: "Personal".into(), url: u("https://other.test/"), pinned: true },
+            Action::Close { space: "Personal".into(), url: u("https://shown.test/") },
+            Action::Open { space: "Nowhere".into(), url: u("https://lost.test/"), title: String::new(), pinned: false },
+        ]);
+        assert_eq!(removed, vec![shown]);
+        assert_eq!(ws.active_space().name, "Personal", "the shown space stays");
+        assert!(ws.active_tab().is_some_and(|t| t.id != shown));
+        let work = ws.spaces().iter().find(|s| s.name == "Work").unwrap();
+        assert_eq!((work.color.as_str(), work.tabs.len(), work.tabs[0].pinned), ("#2dd4bf", 1, true));
+        let personal = ws.active_space();
+        assert!(personal.tabs[0].id == other && personal.tabs[0].pinned, "pinned first");
+        assert!(personal.tabs.iter().any(|t| t.url.as_str() == "https://new.test/" && t.title == "new.test"));
+        // The view the ledger reads back.
+        let view = ws.sync_view();
+        assert_eq!(view.len(), 2);
+        assert_eq!(view[0].tabs.len(), 2);
     }
 }
