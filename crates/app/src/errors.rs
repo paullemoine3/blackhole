@@ -2,6 +2,7 @@
 //! `domain::error_page`), and the exceptions the user grants from the shell's own menu —
 //! a refused certificate, a site without https, a blocked site — for this run only.
 
+use crate::i18n::{t, tf};
 use crate::{views, Running, PEEK_TAB};
 use blackhole_domain::error_page::{
     self, classify, classify_status, is_bare_error_body, is_engine_error_page, Bypasses, ErrorPage, Failure,
@@ -338,17 +339,17 @@ impl Running {
         let run = json!({"cmd": "error_proceed", "tab": tab.0});
         let items = match shown.page {
             ErrorPage::Blocked => vec![
-                json!({"head": "Shields"}),
-                json!({"icon": "shield", "label": format!("Allow {host} until BlackHole quits"), "run": run}),
+                json!({"head": t("menu.shields")}),
+                json!({"icon": "shield", "label": tf("menu.allow_until_quit", &[("host", &host)]), "run": run}),
             ],
             page if page.can_bypass() && !error_page::hsts_preloaded(&host) => {
                 let label = if page == ErrorPage::HttpOnly {
-                    format!("Open {host} over http (not secure)")
+                    tf("menu.open_over_http", &[("host", &host)])
                 } else {
-                    format!("Continue to {host} (not secure)")
+                    tf("menu.continue_insecure", &[("host", &host)])
                 };
                 vec![
-                    json!({"head": "Only until BlackHole quits"}),
+                    json!({"head": t("menu.until_quit")}),
                     json!({"icon": "close", "label": label, "run": run}),
                 ]
             }
@@ -380,7 +381,7 @@ impl Running {
             }
             ErrorPage::Certificate(_) | ErrorPage::ClockWrong => {
                 if !exceptions(|e| e.certs.allow(&host)) {
-                    self.toast("This site requires a secure connection (HSTS)");
+                    self.toast(&t("toast.hsts"));
                     return;
                 }
                 shown.url

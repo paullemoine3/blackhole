@@ -49,6 +49,8 @@ sleep 1
 
 cat > /tmp/bh_script.txt <<'S'
 wait 2000
+cmd {"cmd":"set_language","language":"en"}
+wait 300
 cmd {"cmd":"open","input":"http://127.0.0.1:47990/opener"}
 wait 3000
 eval content (window.__w = window.open('/popup', 'bhpopup', 'width=420,height=360'), window.__w ? 'opened' : 'blocked')

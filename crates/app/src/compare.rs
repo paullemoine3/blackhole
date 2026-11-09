@@ -2,6 +2,7 @@
 //! (`ui/compare.js`), then the command bar shows them side by side (`palette.html`, mode
 //! `compare`). Pages answer asynchronously: the table opens once all did, or after a moment.
 
+use crate::i18n::t;
 use crate::{views, Running, TabId};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -48,7 +49,7 @@ impl Running {
             .map(|t| (t.id, t.title.clone(), t.url.to_string()))
             .collect();
         if tabs.len() < 2 {
-            self.toast("Open at least two pages to compare them");
+            self.toast(&t("toast.compare_two"));
             return;
         }
         self.comparing.items.clear();
@@ -92,7 +93,7 @@ impl Running {
             .filter(|i| i.get("name").is_some())
             .collect();
         if items.len() < 2 {
-            self.toast("These pages could not be read for a comparison");
+            self.toast(&t("toast.compare_unreadable"));
             return;
         }
         self.comparing.result = json!({"items": items});

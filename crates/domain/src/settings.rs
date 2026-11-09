@@ -50,6 +50,8 @@ pub struct Settings {
     pub password_lock_minutes: u32,
     /// Sidebar sections folded by the user (`pinned`, `folders`). Remembered between launches.
     pub collapsed_sections: BTreeSet<String>,
+    /// Interface language: a code of `i18n::LANGUAGES`, or `i18n::SYSTEM` to follow the system.
+    pub language: String,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -114,6 +116,7 @@ impl Default for Settings {
             meeting_notes: true,
             password_lock_minutes: 15,
             collapsed_sections: BTreeSet::new(),
+            language: crate::i18n::SYSTEM.to_owned(),
         }
     }
 }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
@@ -398,25 +398,29 @@
 <p class="hint" id="hint2" hidden></p>
 <div class="actions" id="actions"></div>
 <details id="advanced" hidden>
-  <summary>Avancé</summary>
+  <summary></summary>
   <dl id="facts"></dl>
   <p class="warn" id="warn"></p>
   <div class="actions" id="risky"></div>
 </details>
 <script>
 // Everything that comes from the site (address, host, certificate names) is inserted with
-// textContent only.
+// textContent only. Texts come from the catalog of the interface language (`cfg.i18n`, keys
+// `error.*`, see crates/domain/i18n), with the host and status as parameters.
 const cfg = __BH_ERROR__;
 const target = cfg.url || '';
 const host = cfg.host || target;
 const $ = (id) => document.getElementById(id);
+const L = cfg.i18n || { lang: 'en', s: {} };
+const T = (key, p) => (L.s[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => (p && k in p ? String(p[k]) : m));
+document.documentElement.lang = L.lang;
 if (cfg.animations === false) document.body.classList.add('still');
 const retry = () => { location.href = target; };
 window.__bhRetry = retry;
 const back = () => { history.length > 1 ? history.back() : retry(); };
 const date = (secs) => {
   if (!secs) return '';
-  try { return new Date(secs * 1000).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }); } catch (_) { return ''; }
+  try { return new Date(secs * 1000).toLocaleString(L.lang, { dateStyle: 'long', timeStyle: 'short' }); } catch (_) { return ''; }
 };
 // The shell asks before anything risky: its own menu, not this page, grants the exception.
 const ask = (e) => {
@@ -424,31 +428,30 @@ const ask = (e) => {
   window.__bhipc && window.__bhipc.postMessage(JSON.stringify({ cmd: 'error_menu', x: r.left, y: r.bottom + 4 }));
 };
 const REASONS = {
-  expired: ['Le certificat a expiré', 'Le certificat de « {h} » a expiré : la connexion ne peut plus être garantie.'],
-  not_yet_valid: ['Le certificat n\'est pas encore valide', 'Le certificat de « {h} » n\'est pas encore entré en vigueur.'],
-  untrusted: ['Autorité inconnue', 'Le certificat de « {h} » vient d\'une autorité que ce système ne reconnaît pas.'],
-  self_signed: ['Certificat auto-signé', 'Le certificat de « {h} » est signé par lui-même : rien ne garantit l\'identité du serveur.'],
-  name_mismatch: ['Nom différent', 'Le certificat présenté n\'a pas été émis pour « {h} ».'],
-  revoked: ['Certificat révoqué', 'Le certificat de « {h} » a été révoqué par son émetteur.'],
-  invalid: ['Certificat invalide', 'Le certificat de « {h} » n\'a pas pu être vérifié.'],
+  expired: ['error.reason_expired', 'error.reason_expired_hint'],
+  not_yet_valid: ['error.reason_not_yet_valid', 'error.reason_not_yet_valid_hint'],
+  untrusted: ['error.reason_untrusted', 'error.reason_untrusted_hint'],
+  self_signed: ['error.reason_self_signed', 'error.reason_self_signed_hint'],
+  name_mismatch: ['error.reason_name_mismatch', 'error.reason_name_mismatch_hint'],
+  revoked: ['error.reason_revoked', 'error.reason_revoked_hint'],
+  invalid: ['error.reason_invalid', 'error.reason_invalid_hint'],
 };
-const fill = (text) => text.split('{h}').join(host);
 const PAGES = {
-  unreachable: { hole: true, title: 'Site injoignable', hint: 'La connexion s\'est perdue dans le vide. Vérifiez votre réseau ou le VPN, puis réessayez.', main: 'retry' },
-  offline: { tint: 'calm', title: 'Hors ligne', hint: 'Aucun signal : cet ordinateur n\'est relié à aucun réseau. La page se rechargera dès le retour de la connexion.', main: 'retry' },
-  not_found: { tint: 'green', title: 'Adresse introuvable', hint: 'Aucune balise ne répond au nom « {h} » (DNS). Vérifiez l\'orthographe de l\'adresse ou votre connexion.', main: 'retry' },
-  redirects: { title: 'Trop de redirections', hint: 'Ce site vous renvoie en boucle d\'une page à l\'autre. Effacer ses cookies règle souvent le problème.', main: 'retry' },
-  certificate: { tint: 'danger', title: 'Connexion non sécurisée', hint: '', main: 'back', risky: 'Continuer quand même (non sécurisé)' },
-  clock: { tint: 'amber', title: 'L\'horloge de l\'ordinateur est déréglée', hint: '', main: 'retry', risky: 'Continuer quand même (non sécurisé)' },
-  http_only: { tint: 'amber', title: 'Pas de version sécurisée', hint: '« {h} » ne répond pas en https. BlackHole passe toujours par une connexion chiffrée ; en http, ce que vous envoyez peut être lu sur le réseau.', main: 'back', risky: 'Continuer en http (non sécurisé)' },
-  unauthorized: { tint: 'amber', title: 'Connexion requise', hint: '« {h} » demande de vous identifier pour ouvrir cette page.', main: 'login' },
-  forbidden: { tint: 'danger', title: 'Accès refusé', hint: '« {h} » refuse l\'accès à cette page, même identifié : elle est peut-être réservée à certains comptes ou réseaux.', main: 'back', second: 'retry' },
-  server: { tint: 'danger', title: 'Le serveur a un problème', hint: '« {h} » a répondu par une erreur {s}. Le souci vient du site, pas de votre connexion : réessayez dans un instant.', main: 'retry' },
-  blocked: { tint: 'calm', title: 'Bloqué par les Shields', hint: '', main: 'back', allow: true },
+  unreachable: { hole: true, main: 'retry' },
+  offline: { tint: 'calm', main: 'retry' },
+  not_found: { tint: 'green', main: 'retry' },
+  redirects: { main: 'retry' },
+  certificate: { tint: 'danger', main: 'back', risky: 'error.continue_anyway' },
+  clock: { tint: 'amber', main: 'retry', risky: 'error.continue_anyway' },
+  http_only: { tint: 'amber', main: 'back', risky: 'error.continue_http' },
+  unauthorized: { tint: 'amber', main: 'login' },
+  forbidden: { tint: 'danger', main: 'back', second: 'retry' },
+  server: { tint: 'danger', main: 'retry' },
+  blocked: { tint: 'calm', main: 'back', allow: true },
 };
 const kind = PAGES[cfg.kind] ? cfg.kind : 'unreachable';
 const page = PAGES[kind];
-// One scene per kind; the black hole stays the backdrop of "Site injoignable".
+// One scene per kind; the black hole stays the backdrop of "Site unreachable".
 if (page.tint) document.body.classList.add(page.tint);
 // `hidden` is an attribute only on SVG elements (no property).
 document.querySelector('[data-art="' + kind + '"]').removeAttribute('hidden');
@@ -457,22 +460,22 @@ for (const el of document.querySelectorAll('.hole, .ring')) el.hidden = !page.ho
 const still = cfg.animations === false || matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (still) for (const svg of document.querySelectorAll('svg')) svg.pauseAnimations && svg.pauseAnimations();
 
-let hint = page.hint;
-let title = page.title;
+const params = { host, status: String(cfg.status || '') };
 const reason = REASONS[cfg.reason] || REASONS.invalid;
-if (cfg.kind === 'certificate') hint = reason[1];
-if (cfg.kind === 'clock') hint = 'L\'ordinateur indique le ' + date(Date.now() / 1000) + ' : le certificat de « {h} » ne peut pas être vérifié. Réglez la date et l\'heure, puis réessayez.';
-if (cfg.kind === 'blocked') hint = cfg.why === 'ad blocked'
-  ? '« {h} » est un serveur publicitaire bloqué par les Shields.'
-  : '« {h} » est un traqueur bloqué par les Shields : l\'ouvrir le laisserait suivre votre navigation.';
-if (cfg.kind === 'server' && cfg.status) title += ' (' + cfg.status + ')';
+let title = T('error.' + kind + '_title');
+let hint = kind === 'certificate' || kind === 'clock' || kind === 'blocked' ? '' : T('error.' + kind + '_hint', params);
+if (kind === 'certificate') hint = T(reason[1], params);
+if (kind === 'clock') hint = T('error.clock_hint', { host, date: date(Date.now() / 1000) });
+if (kind === 'blocked') hint = T(cfg.why === 'ad blocked' ? 'error.blocked_ad_hint' : 'error.blocked_tracker_hint', params);
+if (kind === 'server' && cfg.status) title = T('error.server_title_status', params);
 document.title = title;
 $('title').textContent = title;
 $('url').textContent = target;
-$('hint').textContent = fill(hint).split('{s}').join(String(cfg.status || ''));
-if (cfg.kind === 'certificate' || cfg.kind === 'clock') {
+$('hint').textContent = hint;
+$('advanced').querySelector('summary').textContent = T('error.advanced');
+if (kind === 'certificate' || kind === 'clock') {
   $('hint2').hidden = false;
-  $('hint2').textContent = 'Quelqu\'un pourrait tenter d\'intercepter ce que vous envoyez (mots de passe, messages, cartes bancaires).';
+  $('hint2').textContent = T('error.intercept_warning');
 }
 
 const button = (label, run, cls) => {
@@ -483,37 +486,37 @@ const button = (label, run, cls) => {
   return b;
 };
 const ACTIONS = {
-  retry: ['Réessayer', retry],
-  back: ['Retour en lieu sûr', back],
-  login: ['Se connecter', retry],
+  retry: ['error.retry', retry],
+  back: ['error.back', back],
+  login: ['error.login', retry],
 };
 const main = ACTIONS[page.main];
-$('actions').append(button(main[0], main[1]));
-if (page.second) $('actions').append(button(ACTIONS[page.second][0], ACTIONS[page.second][1], 'ghost'));
-if (page.main === 'back' && !page.second && cfg.kind !== 'blocked') $('actions').append(button('Réessayer', retry, 'ghost'));
-if (page.allow) $('actions').append(button('Autoriser ce site', ask, 'risky'));
+$('actions').append(button(T(main[0]), main[1]));
+if (page.second) $('actions').append(button(T(ACTIONS[page.second][0]), ACTIONS[page.second][1], 'ghost'));
+if (page.main === 'back' && !page.second && kind !== 'blocked') $('actions').append(button(T('error.retry'), retry, 'ghost'));
+if (page.allow) $('actions').append(button(T('error.allow_site'), ask, 'risky'));
 
 if (page.risky) {
   $('advanced').hidden = false;
-  const facts = [['Hôte', host]];
-  if (cfg.kind !== 'http_only') facts.push(['Raison', reason[0]]);
-  if (cfg.issuer) facts.push(['Émetteur', cfg.issuer]);
-  if (cfg.subject) facts.push(['Sujet', cfg.subject]);
-  if (cfg.from) facts.push(['Valide du', date(cfg.from)]);
-  if (cfg.to) facts.push(['Valide jusqu\'au', date(cfg.to)]);
+  const facts = [['error.fact_host', host]];
+  if (kind !== 'http_only') facts.push(['error.fact_reason', T(reason[0])]);
+  if (cfg.issuer) facts.push(['error.fact_issuer', cfg.issuer]);
+  if (cfg.subject) facts.push(['error.fact_subject', cfg.subject]);
+  if (cfg.from) facts.push(['error.fact_from', date(cfg.from)]);
+  if (cfg.to) facts.push(['error.fact_to', date(cfg.to)]);
   for (const [k, v] of facts) {
-    const dt = document.createElement('dt'); dt.textContent = k;
+    const dt = document.createElement('dt'); dt.textContent = T(k);
     const dd = document.createElement('dd'); dd.textContent = v;
     $('facts').append(dt, dd);
   }
   if (cfg.hsts) {
-    $('warn').textContent = '« ' + host + ' » impose une connexion sécurisée (HSTS) : impossible de continuer.';
+    $('warn').textContent = T('error.hsts', params);
   } else {
-    $('warn').textContent = 'L\'exception vaut pour ce site uniquement, jusqu\'à la fermeture de BlackHole.';
-    $('risky').append(button(page.risky, ask, 'risky'));
+    $('warn').textContent = T('error.exception_scope');
+    $('risky').append(button(T(page.risky), ask, 'risky'));
   }
 }
-if (cfg.kind === 'offline') window.addEventListener('online', retry);
+if (kind === 'offline') window.addEventListener('online', retry);
 </script>
 </body>
 </html>

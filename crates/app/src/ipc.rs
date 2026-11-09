@@ -22,6 +22,10 @@ pub enum UiCommand {
     SetAnimations {
         on: bool,
     },
+    /// Interface language: a code of `i18n::LANGUAGES` or "system".
+    SetLanguage {
+        language: String,
+    },
     SetHardwareAcceleration {
         on: bool,
     },

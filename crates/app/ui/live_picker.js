@@ -1,11 +1,14 @@
 // Injected on demand in the page in front: lets the user click the area to capture live.
 (() => {
   if (window.__bhPick) return;
+  // Texts in the interface language, set when the page's view is created (views::page_script).
+  const TEXT = __BH_TEXT__;
+  const T = (key) => TEXT[key] || key;
   const box = document.createElement('div');
   box.style.cssText =
     'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #7c5cff;background:rgba(124,92,255,.18);border-radius:3px;display:none';
   const tip = document.createElement('div');
-  tip.textContent = 'Click the area to capture live · Esc to cancel';
+  tip.textContent = T('page.pick_area');
   tip.style.cssText =
     'position:fixed;z-index:2147483647;left:50%;top:12px;transform:translateX(-50%);background:#16151f;color:#fff;font:13px system-ui;padding:6px 12px;border-radius:8px;pointer-events:none';
   document.documentElement.append(box, tip);

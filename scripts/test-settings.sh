@@ -11,6 +11,7 @@ rm -rf /tmp/bh_data /tmp/bh_shots
 P=${BH_PREFIX:-}
 {
   echo "wait 2500"
+  echo "cmd {\"cmd\":\"set_language\",\"language\":\"en\"}"
   echo "shot ${P}sidebar"
   for tab in general shortcuts extensions calendar devices passwords import privacy; do
     echo "cmd {\"cmd\":\"open_settings\",\"tab\":\"$tab\"}"

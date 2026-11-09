@@ -4,6 +4,7 @@
 //! only ever sent to `calendar.google.com` over https. The meetings kept are the ones with a
 //! Google Meet room.
 
+use blackhole_domain::i18n::message;
 use crate::store::Vault;
 use blackhole_domain::meetings::{self, find_meet_link, Meeting};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
@@ -87,7 +88,7 @@ impl CalendarSources {
     pub fn add(&self, raw: &str) -> Result<(), String> {
         let raw = raw.trim();
         if !is_valid_source(raw) {
-            return Err("Paste the calendar's secret address in iCal format (https://calendar.google.com/calendar/ical/…/basic.ics)".into());
+            return Err(message("msg.calendar_paste_ical", &[]));
         }
         let mut all = self.load();
         if !all.iter().any(|s| s == raw) {
@@ -110,14 +111,14 @@ impl CalendarSources {
 /// Downloads one calendar (https, `calendar.google.com` only, no redirect elsewhere, size cap).
 pub fn fetch(raw: &str) -> Result<String, String> {
     if !is_valid_source(raw) {
-        return Err("not a Google Calendar secret address".into());
+        return Err(message("msg.calendar_not_secret", &[]));
     }
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(20))
         .redirects(0)
         .build();
     let response = agent.get(raw).call().map_err(|e| match e {
-        ureq::Error::Status(404, _) => "address not found (reset or deleted?)".to_owned(),
+        ureq::Error::Status(404, _) => message("msg.calendar_not_found", &[]),
         ureq::Error::Status(code, _) => format!("HTTP {code}"),
         ureq::Error::Transport(t) => t.to_string(),
     })?;
@@ -128,7 +129,7 @@ pub fn fetch(raw: &str) -> Result<String, String> {
         .read_to_string(&mut text)
         .map_err(|e| e.to_string())?;
     if !text.trim_start().starts_with("BEGIN:VCALENDAR") {
-        return Err("this address did not return a calendar".into());
+        return Err(message("msg.calendar_not_ics", &[]));
     }
     Ok(text)
 }

@@ -69,25 +69,25 @@
 <header id="top">
   <div class="brand"><span class="logo"></span>Easels</div>
   <div class="win">
-    <button id="wmin" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
-    <button id="wmax" title="Maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
-    <button id="wclose" class="close" title="Close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+    <button id="wmin" data-i18n-title="window.minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+    <button id="wmax" data-i18n-title="window.maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>
+    <button id="wclose" class="close" data-i18n-title="window.close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
   </div>
 </header>
 <nav>
-  <button class="btn primary" id="new">+ New Easel</button>
+  <button class="btn primary" id="new" data-i18n="easel.new">+ New Easel</button>
   <div id="list"></div>
 </nav>
 <section>
   <header>
-    <input id="title" aria-label="Easel name" maxlength="80" spellcheck="false">
-    <button class="btn" id="note"><i data-icon="plus"></i>Note</button>
-    <button class="btn" id="capture" title="Clip the page open in the browser"><i data-icon="camera"></i>Capture page</button>
-    <button class="btn danger" id="delete">Delete</button>
-    <button class="btn only-tab" id="all" title="All your Easels, in their own window"><i data-icon="window"></i>All Easels</button>
-    <button class="btn only-tab icon" id="close" title="Close this Easel tab" aria-label="Close this Easel tab"><i data-icon="close"></i></button>
+    <input id="title" data-i18n-aria="easel.name" maxlength="80" spellcheck="false">
+    <button class="btn" id="note"><i data-icon="plus"></i><span data-i18n="easel.note">Note</span></button>
+    <button class="btn" id="capture" data-i18n-title="easel.capture_hint"><i data-icon="camera"></i><span data-i18n="easel.capture">Capture page</span></button>
+    <button class="btn danger" id="delete" data-i18n="easel.delete">Delete</button>
+    <button class="btn only-tab" id="all" data-i18n-title="easel.all_hint"><i data-icon="window"></i><span data-i18n="easel.all">All Easels</span></button>
+    <button class="btn only-tab icon" id="close" data-i18n-title="easel.close_tab" data-i18n-aria="easel.close_tab"><i data-icon="close"></i></button>
   </header>
-  <div id="board"><div id="surface"></div><div id="empty"><div>Nothing here yet.<br>Add a note, or capture a page from the browser (<span id="capkeys"></span>).</div></div></div>
+  <div id="board"><div id="surface"></div><div id="empty"><div><span data-i18n="easel.empty">Nothing here yet.</span><br><span id="capkeys"></span></div></div></div>
 </section>
 <div id="toast"></div>
 <script>
@@ -165,16 +165,16 @@ function card(item) {
   }
   const paint = el('button', 'tool');
   paint.append(bhIcon('paint', 'xs'));
-  paint.title = 'Color';
+  paint.title = bhT('easel.color');
   paint.onclick = () => c.classList.toggle('pick');
   const remove = el('button', 'tool remove');
   remove.append(bhIcon('close', 'xs'));
-  remove.title = 'Remove';
+  remove.title = bhT('easel.remove');
   remove.onclick = () => { pending.delete(item.id); send({ cmd: 'easel_remove', item: item.id }); };
-  const label = { clip: 'Clip', live: 'Live', note: 'Note' }[item.kind] || 'Note';
+  const label = bhT({ clip: 'easel.kind_clip', live: 'easel.kind_live' }[item.kind] || 'easel.note');
   const play = el('button', 'tool play');
   play.append(bhIcon(item.playing ? 'pause' : 'play', 'xs'));
-  play.title = item.playing ? 'Pause' : 'Play live';
+  play.title = bhT(item.playing ? 'easel.pause' : 'easel.play');
   play.onclick = () => send({ cmd: item.playing ? 'easel_live_stop' : 'easel_live_play', item: item.id });
   bar.append(el('span', 'kind', label), ...(item.kind === 'live' ? [play] : []), colors, paint, remove);
   bar.onpointerdown = drag(c, item, 'move');
@@ -186,7 +186,7 @@ function card(item) {
     c.append(link, el('div', 'host', host(item.url)));
   }
   if (item.kind === 'live') {
-    const slot = el('div', 'slot', item.playing ? 'Loading…' : 'Paused — press Play to show this area live');
+    const slot = el('div', 'slot', bhT(item.playing ? 'easel.loading' : 'easel.paused'));
     const foot = el('div', 'foot', item.title + ' · ' + host(item.url));
     foot.title = item.url;
     foot.style.cursor = 'pointer';
@@ -199,7 +199,7 @@ function card(item) {
   }
   const area = el('textarea');
   area.value = item.text;
-  area.placeholder = item.kind === 'clip' ? 'Add a comment…' : 'Write something…';
+  area.placeholder = bhT(item.kind === 'clip' ? 'easel.comment' : 'easel.write');
   area.oninput = () => { item.text = area.value; queueText(item.id, area.value); };
   area.onblur = flush;
   c.append(area);
@@ -290,15 +290,17 @@ $('note').onclick = () => send({ cmd: 'easel_add_note' });
 $('all').onclick = () => send({ cmd: 'open_easel', id: state.current });
 $('close').onclick = () => { flush(); send({ cmd: 'close_easel_tab' }); };
 $('capture').onclick = () => send({ cmd: 'capture_to_easel' });
-$('capkeys').textContent = bhKeys('mod+shift+s');
+const hint = () => { $('capkeys').textContent = bhT('easel.empty_hint', { keys: bhKeys('mod+shift+s') }); };
+hint();
+addEventListener('bhlang', () => { hint(); if (!arm) $('delete').textContent = bhT('easel.delete'); bh.render(state); });
 // Native webviews do not show confirm(): a second click within 3 s confirms.
 let arm = null;
 $('delete').onclick = () => {
   const e = current();
   if (!e) return;
-  if (arm) { clearTimeout(arm); arm = null; $('delete').textContent = 'Delete'; send({ cmd: 'delete_easel', id: e.id }); return; }
-  $('delete').textContent = 'Click again to delete';
-  arm = setTimeout(() => { arm = null; $('delete').textContent = 'Delete'; }, 3000);
+  if (arm) { clearTimeout(arm); arm = null; $('delete').textContent = bhT('easel.delete'); send({ cmd: 'delete_easel', id: e.id }); return; }
+  $('delete').textContent = bhT('easel.delete_confirm');
+  arm = setTimeout(() => { arm = null; $('delete').textContent = bhT('easel.delete'); }, 3000);
 };
 $('title').onchange = () => { const e = current(); if (e) send({ cmd: 'rename_easel', id: e.id, name: $('title').value }); };
 $('title').onkeydown = (ev) => { if (ev.key === 'Enter') ev.target.blur(); };

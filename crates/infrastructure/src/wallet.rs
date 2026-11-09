@@ -8,6 +8,7 @@
 //! device, KDF parameters, wrapped key) is authenticated with the content, so it cannot be
 //! swapped. The file is JSON text: it goes through `write_later` like the other user data.
 
+use blackhole_domain::i18n::message;
 use blackhole_domain::passwords::{generate, Entry, Kind, Passwords, Recipe};
 use chacha20poly1305::{
     aead::{rand_core::RngCore, Aead, KeyInit, OsRng, Payload},
@@ -49,8 +50,8 @@ pub enum OpenError {
 impl std::fmt::Display for OpenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Locked => f.write_str("Passwords are locked"),
-            Self::WrongPassword => f.write_str("Wrong master password"),
+            Self::Locked => f.write_str(&message("msg.passwords_locked", &[])),
+            Self::WrongPassword => f.write_str(&message("msg.wrong_master", &[])),
             Self::Other(e) => f.write_str(e),
         }
     }
@@ -338,7 +339,7 @@ impl Unlocked {
     /// From now on the data key is unlocked by `password` (new salt), not the keychain.
     pub fn protect_with_password(&mut self, password: &str) -> Result<(), String> {
         if password.chars().count() < 8 {
-            return Err("The master password needs at least 8 characters".into());
+            return Err(message("msg.master_too_short", &[]));
         }
         let (m, t, p) = KDF_COST;
         let k = Kdf {

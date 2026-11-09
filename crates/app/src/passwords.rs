@@ -7,6 +7,7 @@
 //! Secrets never go to a page otherwise, nor to the logs or a URL; the Settings page (a shell
 //! view) gets one password at a time, on an explicit click.
 
+use crate::i18n::{message, t, tf};
 use crate::{views, Running, TabId};
 use blackhole_domain::passwords::{display_host, origin_of, origin_of_saved, Draft, Entry, Kind, Offer, Recipe};
 use blackhole_domain::Settings;
@@ -256,7 +257,7 @@ impl Passwords {
             "state": state,
             "master": self.protection == Some(Protection::Password),
             "readOnly": self.read_only,
-            "status": self.status,
+            "status": crate::i18n::render(&self.status),
             "lockMinutes": settings.password_lock_minutes,
             "lockChoices": Settings::LOCK_CHOICES,
             "entries": entries,
@@ -421,8 +422,8 @@ impl Running {
         let username: String = username.chars().take(256).collect();
         let (update, verb) = match u.data.offer(&origin, &username, password.as_str()) {
             Offer::Nothing => return,
-            Offer::Save => (None, "Save"),
-            Offer::Update { id } => (Some(id), "Update"),
+            Offer::Save => (None, false),
+            Offer::Update { id } => (Some(id), true),
         };
         p.pending.insert(
             tab,
@@ -434,12 +435,17 @@ impl Running {
                 at: Instant::now(),
             },
         );
-        let who = if username.is_empty() { String::new() } else { format!(" for {username}") };
-        let message = format!("{verb} the password{who} on {}?", display_host(&origin));
+        let host = display_host(&origin);
+        let message = match (verb, username.is_empty()) {
+            (false, true) => tf("toast.pw_save", &[("host", &host)]),
+            (false, false) => tf("toast.pw_save_for", &[("host", &host), ("user", &username)]),
+            (true, true) => tf("toast.pw_update", &[("host", &host)]),
+            (true, false) => tf("toast.pw_update_for", &[("host", &host), ("user", &username)]),
+        };
         let run = |choice: &str| json!({"cmd": "passwords", "action": {"op": "offer", "tab": tab.0, "choice": choice}});
         let actions = json!([
-            {"label": verb, "run": run("save")},
-            {"label": "Never", "run": run("never")},
+            {"label": t(if verb { "toast.pw_update_button" } else { "toast.pw_save_button" }), "run": run("save")},
+            {"label": t("toast.pw_never"), "run": run("never")},
         ]);
         self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
     }
@@ -465,7 +471,7 @@ impl Running {
             && p.used.elapsed() >= Duration::from_secs(u64::from(minutes) * 60)
         {
             p.lock();
-            p.status = "Locked after a while without use".into();
+            p.status = message("settings.pw_locked_idle", &[]);
             changed = true;
         }
         p.pending.retain(|_, x| x.at.elapsed() < OFFER_FOR);
@@ -491,7 +497,7 @@ impl Running {
                         p.open = Some(u);
                     }
                     Ok(None) => p.protection = p.wallet.protection().ok().flatten(),
-                    Err(e) => p.status = format!("Passwords unavailable: {e}"),
+                    Err(e) => p.status = message("settings.pw_unavailable", &[("why", &e)]),
                 }
             }
             Done::Unlocked(result) => {
@@ -513,7 +519,7 @@ impl Running {
                 p.touch();
                 match result {
                     Ok(()) => {
-                        p.status = "Master password set".into();
+                        p.status = message("settings.pw_master_set", &[]);
                         p.persist();
                     }
                     Err(e) => p.status = e,
@@ -528,12 +534,12 @@ impl Running {
                             .map(|l| (l.url.as_str(), l.username.as_str(), l.password.as_str()))
                             .collect();
                         let added = u.data.import(&logins, wallet::new_id, now_ms(), &device);
-                        format!(
-                            "{added} passwords added ({} already saved or not for a website). Delete the CSV file: it holds your passwords in clear.",
-                            list.len() - added
+                        message(
+                            "settings.pw_imported",
+                            &[("n", &added.to_string()), ("skipped", &(list.len() - added).to_string())],
                         )
                     }
-                    _ => "Unlock Settings › Passwords first, then import again.".to_owned(),
+                    _ => message("settings.pw_unlock_first", &[]),
                 };
                 for l in &mut list {
                     l.password.zeroize();
@@ -564,7 +570,7 @@ impl Running {
                 let p = &mut self.passwords;
                 if p.protection == Some(Protection::Password) {
                     p.lock();
-                    p.status = "Locked".into();
+                    p.status = message("settings.pw_locked", &[]);
                 }
             }
             PasswordAction::Reveal { id } => {
@@ -590,15 +596,15 @@ impl Running {
                 match copy_text(&text, secret) {
                     Ok(()) => {
                         p.status = if secret {
-                            "Password copied: it is cleared from the clipboard in 30 s".into()
+                            message("settings.pw_copied", &[])
                         } else {
-                            "Username copied".into()
+                            message("settings.pw_user_copied", &[])
                         };
                         if secret {
                             p.clipboard = Some((Instant::now(), text));
                         }
                     }
-                    Err(e) => p.status = format!("Copy failed: {e}"),
+                    Err(e) => p.status = message("settings.pw_copy_failed", &[("why", &e.to_string())]),
                 }
                 p.touch();
             }
@@ -607,7 +613,7 @@ impl Running {
                 let typed = origin.trim();
                 let with_scheme = if typed.contains("://") { typed.to_owned() } else { format!("https://{typed}") };
                 let Some(origin) = origin_of_saved(&with_scheme) else {
-                    p.status = "Enter the website address (for example example.com)".into();
+                    p.status = message("settings.pw_enter_site", &[]);
                     return self.ui_settings();
                 };
                 let (Some(u), false) = (p.open.as_mut(), p.read_only) else { return };
@@ -625,7 +631,7 @@ impl Running {
                 } else if !u.data.edit(&id, &draft, now, &device) {
                     return;
                 }
-                p.status = "Saved".into();
+                p.status = message("settings.pw_saved", &[]);
                 p.touch();
                 p.persist();
             }
@@ -639,7 +645,7 @@ impl Running {
                 p.status.clear();
                 p.touch();
                 p.persist();
-                self.toast_action(&format!("Password for {host} deleted"), "Undo", json!({"cmd": "passwords", "action": {"op": "undo"}}));
+                self.toast_action(&tf("toast.pw_deleted", &[("host", &host)]), &t("toast.undo"), json!({"cmd": "passwords", "action": {"op": "undo"}}));
             }
             PasswordAction::Undo => {
                 let p = &mut self.passwords;
@@ -661,12 +667,12 @@ impl Running {
                     return;
                 }
                 if password.as_str().chars().count() < 8 {
-                    p.status = "The master password needs at least 8 characters".into();
+                    p.status = message("msg.master_too_short", &[]);
                     return self.ui_settings();
                 }
                 let Some(mut u) = p.open.take() else { return };
                 p.busy = true;
-                p.status = "Protecting the passwords…".into();
+                p.status = message("settings.pw_protecting", &[]);
                 let tx = p.tx.clone();
                 std::thread::spawn(move || {
                     let result = u.protect_with_password(password.as_str());
@@ -679,7 +685,7 @@ impl Running {
                 match u.protect_with_keychain(&p.wallet) {
                     Ok(()) => {
                         p.protection = Some(Protection::Keychain);
-                        p.status = "Master password removed: the system keychain protects the passwords".into();
+                        p.status = message("settings.pw_master_removed", &[]);
                         p.persist();
                     }
                     Err(e) => p.status = e,
@@ -708,7 +714,7 @@ impl Running {
                 p.touch();
                 p.persist();
                 if choice != "never" {
-                    self.toast("Password saved");
+                    self.toast(&t("toast.pw_saved"));
                 }
             }
         }

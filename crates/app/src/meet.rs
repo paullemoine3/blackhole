@@ -2,6 +2,7 @@
 //! access or of a folder), the next meeting in the sidebar, a reminder when one starts. The
 //! calendars are fetched on a thread; the UI thread only reads the results.
 
+use crate::i18n::{message, t, tf};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::meetings::{self, Meeting};
 use blackhole_infrastructure::calendar::{self, CalendarSources};
@@ -77,7 +78,7 @@ impl Running {
             return;
         }
         self.calendar.busy = true;
-        self.calendar.status = "Syncing…".to_owned();
+        self.calendar.status = message("settings.cal_syncing", &[]);
         let tx = self.calendar.tx.clone();
         std::thread::spawn(move || {
             let at = now();
@@ -88,7 +89,7 @@ impl Running {
                         let owner = calendar::source_label(&source);
                         all.extend(calendar::parse(&text, &owner, at - KEEP_BEFORE, at + KEEP_AFTER));
                     }
-                    Err(why) => errors.push(format!("{}: {why}", calendar::source_label(&source))),
+                    Err(why) => errors.push(message("settings.cal_error", &[("name", &calendar::source_label(&source)), ("why", &why)])),
                 }
             }
             let _ = tx.send((all, errors));
@@ -104,13 +105,12 @@ impl Running {
             self.calendar.meetings = meetings;
             let week = meetings::upcoming(&self.calendar.meetings, now(), KEEP_AFTER).len();
             self.calendar.status = if errors.is_empty() {
-                format!(
-                    "Synced at {} · {week} meeting{} with Google Meet this week",
-                    calendar::local_time(now()),
-                    if week == 1 { "" } else { "s" }
+                message(
+                    "settings.cal_synced",
+                    &[("time", &calendar::local_time(now())), ("n", &week.to_string())],
                 )
             } else {
-                errors.join(" · ")
+                errors.join("\n")
             };
             changed = true;
         }
@@ -125,8 +125,8 @@ impl Running {
         if self.svc.settings().meeting_reminders {
             for m in meetings::starting(&self.calendar.meetings, since, at) {
                 self.toast_action(
-                    &format!("{} starts now", m.title),
-                    "Join",
+                    &tf("toast.meeting_starts", &[("title", &m.title)]),
+                    &t("toast.join"),
                     json!({"cmd": "open_meet", "url": m.url}),
                 );
             }
@@ -156,8 +156,8 @@ impl Running {
             self.open_meeting_notes(&meeting);
         } else {
             self.toast_action(
-                &format!("Take notes for {}?", meeting.title),
-                "Take notes",
+                &tf("toast.take_notes_for", &[("title", &meeting.title)]),
+                &t("toast.take_notes"),
                 json!({"cmd": "meeting_notes", "url": meeting.url, "start": meeting.start}),
             );
         }
@@ -255,7 +255,7 @@ impl Running {
             Some(id) => id,
             None => {
                 let Some(id) = self.easels.create(&name) else {
-                    self.toast("Too many easels for the meeting notes");
+                    self.toast(&t("toast.too_many_easels_notes"));
                     return;
                 };
                 let when = format!(
@@ -300,14 +300,14 @@ impl Running {
 
     /// Command bar actions: a new meeting, and joining the meetings of the next hours.
     pub(crate) fn meeting_actions(&self) -> Vec<Value> {
-        let mut out = vec![json!({"id": "new_meet", "label": "New Google Meet", "hint": "Meet"})];
+        let mut out = vec![json!({"id": "new_meet", "label": t("palette.new_meet"), "hint": "Meet"})];
         out.extend(
             meetings::upcoming(&self.calendar.meetings, now(), JOIN_AHEAD)
                 .into_iter()
                 .map(|m| {
                     json!({
                         "id": format!("meet:{}", m.url),
-                        "label": format!("Join {} · {}", m.title, calendar::local_time(m.start)),
+                        "label": tf("palette.join_meeting", &[("title", &m.title), ("time", &calendar::local_time(m.start))]),
                         "hint": "Meet",
                     })
                 }),
@@ -320,7 +320,7 @@ impl Running {
         let settings = self.svc.settings();
         json!({
             "sources": self.calendar.sources.load().iter().map(|s| calendar::source_label(s)).collect::<Vec<_>>(),
-            "status": self.calendar.status,
+            "status": self.calendar.status.split('\n').map(crate::i18n::render).collect::<Vec<_>>().join(" · "),
             "busy": self.calendar.busy,
             "reminders": settings.meeting_reminders,
             "card": settings.meeting_card,
@@ -371,10 +371,10 @@ impl Running {
 /// The sidebar card of a meeting: its title, when, and the room to join.
 fn card_json(m: &Meeting, at: i64) -> Value {
     let when = if m.is_on(at) {
-        format!("Now · until {}", calendar::local_time(m.end))
+        tf("sidebar.meeting_now", &[("time", &calendar::local_time(m.end))])
     } else {
         let minutes = (m.start - at + 59) / 60;
-        format!("In {minutes} min · {}", calendar::local_time(m.start))
+        tf("sidebar.meeting_in", &[("n", &minutes.to_string()), ("time", &calendar::local_time(m.start))])
     };
     json!({"title": m.title, "url": m.url, "when": when, "on": m.is_on(at)})
 }

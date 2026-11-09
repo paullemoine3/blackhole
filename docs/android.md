@@ -72,6 +72,12 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   `Download/BlackHole/`, cookies du profil (jamais ceux du privé), carte de progression dans le
   tiroir.
 
+- **Langue** : l'interface mobile (`mobile.html`) reste en anglais, sans catalogue. La page
+  d'erreur partagée reçoit les chaînes anglaises du catalogue (`error.*`, `core::error_page`) et les
+  statuts des appareils sont rendus en anglais (`i18n::catalog("en").render`). Reste à faire pour
+  le français : brancher `ui/i18n.js` (ou son équivalent) dans `mobile.html`, transmettre la langue
+  du système depuis Kotlin (`Locale.getDefault()`), traduire les toasts de `core.rs`/`devices.rs`.
+
 ## Fonctionnalités (v1)
 
 Onglets (grille, balayer pour fermer, Undo 15 s, glisser la barre pour changer d'onglet),

@@ -8,6 +8,8 @@ cd "$(dirname "$0")/.."
 rm -rf /tmp/bh_data /tmp/bh_shots
 cat > /tmp/bh_script.txt <<'S'
 wait 2000
+cmd {"cmd":"set_language","language":"en"}
+wait 300
 cmd {"cmd":"open","input":"https://example.com"}
 wait 5000
 cmd {"cmd":"new_easel","name":"Ideas"}

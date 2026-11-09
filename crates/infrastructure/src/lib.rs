@@ -433,6 +433,11 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_notes: dto.meeting_notes,
             password_lock_minutes: dto.password_lock_minutes,
             collapsed_sections: dto.collapsed_sections.into_iter().collect(),
+            language: if blackhole_domain::i18n::is_choice(&dto.language) {
+                dto.language
+            } else {
+                blackhole_domain::i18n::SYSTEM.to_owned()
+            },
         }))
     }
 
@@ -466,6 +471,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_notes: settings.meeting_notes,
             password_lock_minutes: settings.password_lock_minutes,
             collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
+            language: settings.language.clone(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -570,6 +576,12 @@ struct SettingsDto {
     password_lock_minutes: u32,
     #[serde(default)]
     collapsed_sections: Vec<String>,
+    #[serde(default = "default_language")]
+    language: String,
+}
+
+fn default_language() -> String {
+    blackhole_domain::i18n::SYSTEM.to_owned()
 }
 
 fn default_true() -> bool {
@@ -723,6 +735,7 @@ mod tests {
             meeting_notes: false,
             password_lock_minutes: 5,
             collapsed_sections: ["pinned".to_owned()].into(),
+            language: "fr".to_owned(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -740,6 +753,7 @@ mod tests {
         assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);
         assert!(old.boosts.is_empty() && old.routes.is_empty());
         assert_eq!(old.last_seen_version, "");
+        assert_eq!(old.language, "system", "follows the system by default");
         assert!(!old.extensions_in_private);
         assert!(old.sidebar_open, "pinned open by default");
         assert!(old.tracker_blocking, "blocker on by default");

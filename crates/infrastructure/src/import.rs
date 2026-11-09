@@ -4,6 +4,7 @@
 //! Logins are only imported from the CSV export the user produced in the source browser: the
 //! encrypted stores of other browsers are never touched.
 
+use blackhole_domain::i18n::message;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -367,7 +368,7 @@ pub fn parse_logins_csv(data: &str) -> Result<Vec<Login>, String> {
         col(&["username", "login_username", "user"]),
         col(&["password", "login_password"]),
     ) else {
-        return Err("Colonnes url / username / password introuvables".into());
+        return Err(message("msg.csv_columns", &[]));
     };
     let mut out = Vec::new();
     for rec in rdr.records().flatten() {

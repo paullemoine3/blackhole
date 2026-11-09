@@ -111,7 +111,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
 - macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`,
   `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
-  `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures).
+  `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
+  `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`.
 
@@ -329,6 +330,35 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   Desktop : `app/src/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
   `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, historique, dossiers.
 - Test : `scripts\test-sync.ps1` (Windows devtools ↔ émulateur, ports `BH_HANDOFF_PORT`/`_PEER_PORT`).
+
+## Langues de l'interface (i18n)
+
+- Catalogues : `crates/domain/i18n/en.toml` (référence et repli) et `fr.toml`, TOML plat
+  (`[section]`, `clé = "texte"`), embarqués par `include_str!`. Logique pure dans
+  `domain/i18n.rs` : `resolve` (réglage, puis langues du système, puis anglais), `Catalog::get`
+  (repli anglais puis la clé), `format` (`{host}`, `{n}`), `plural` (`clé.one` / `clé.other` ;
+  français : 0 et 1 au singulier), `message` (texte d'une couche sans langue, rendu plus tard).
+- Réglage `Settings::language` (`"system"`, `"en"`, `"fr"`), Réglages > General, commande
+  `set_language`. App : `app/src/i18n.rs` (`t`, `tf`, `tn`, `render`), `language_changed` envoie
+  `bhI18n.set(catalogue)` à toutes les vues ouvertes (menus natifs et titres de fenêtres compris).
+- Pages : `ui/i18n.js` injecté comme `keys.js` (`bhT`, `bhTn`, `data-i18n`, `data-i18n-title`,
+  `-placeholder`, `-aria`, par `textContent`/attributs) ; une page qui dessine depuis un état écoute
+  `bhlang` et rejoue son dernier rendu. Page d'erreur : chaînes `error.*` dans sa config (prochaine
+  erreur). Scripts injectés dans les pages web (`find.js`, `autofill.js`, `live_picker.js`) :
+  `views::page_script`, textes fixés à la création de la vue. Raccourcis toujours par `bhKeys`.
+- Ajouter une chaîne : la même clé dans `en.toml` et `fr.toml` (mêmes `{paramètres}`), puis
+  `t("section.clé")` en Rust ou `bhT('section.clé')` / `data-i18n` en page. Les tests vérifient la
+  parité des catalogues et que toute clé écrite en dur existe. Texte français plus long : vérifier
+  qu'il n'est pas tronqué (barre latérale à 200 px). Couches internes : `i18n::message(clé, …)`.
+- Ajouter une langue : `crates/domain/i18n/<code>.toml` (toutes les clés), l'ajouter à `SOURCES`
+  et `LANGUAGES` (nom dans sa propre langue), règle de pluriel dans `plural_form` et `ui/i18n.js`,
+  taille du tableau `JSON` de `app/src/i18n.rs`.
+- Changelog (`domain/changelog.rs`) : reste en anglais (notes techniques datées, écrites une fois
+  à la livraison ; seul le cadre « Nouveautés » est traduit). Les noms (Easel, Boost, Air Traffic,
+  Meet, Shields) restent. Android : interface mobile en anglais ; page d'erreur partagée en anglais.
+- Scénarios : chaque script devtools fixe sa langue (`cmd {"cmd":"set_language",…}`) ;
+  `scripts/test-errors.sh` en français, les autres en anglais ; `scripts/test-i18n.sh` bascule en
+  direct et contrôle les textes.
 
 ## Livraison et entretien
 

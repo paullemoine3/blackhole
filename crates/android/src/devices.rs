@@ -300,6 +300,8 @@ impl Core {
                 Event::Delivered(name) => out.push(Self::toast(&format!("Opened on {name}"), false)),
                 Event::Snapshot { device, name, json } => out.extend(self.on_ledger(device, name, &json)),
                 Event::Status(status) => {
+                    // The mobile interface is in English for now (see docs/android.md).
+                    let status = blackhole_domain::i18n::catalog("en").render(&status);
                     out.push(Self::toast(&status, false));
                     if let Some(n) = &mut self.nearby {
                         n.status = status;

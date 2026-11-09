@@ -3,6 +3,9 @@
 // leaves the selection and the focus alone: typing goes on in the bar. Engines without it fall
 // back to `window.find`, which selects the match (and may take the focus, given back at once).
 (() => {
+  // Texts in the interface language, set when the page's view is created (views::page_script).
+  const TEXT = __BH_TEXT__;
+  const T = (key) => TEXT[key] || key;
   if (window.top !== window || window.__bhFind) return;
   const HL = !!(window.CSS && CSS.highlights && window.Highlight);
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'SELECT']);
@@ -60,7 +63,7 @@
     if (!HL) {
       const found = window.find(text, false, backwards, true, false, false, false);
       input.focus();
-      show(found ? '' : 'No match', found);
+      show(found ? '' : T('page.no_match'), found);
       return;
     }
     if (text !== last) {
@@ -73,7 +76,7 @@
     if (!ranges.length) {
       CSS.highlights.delete('bh-find');
       CSS.highlights.delete('bh-find-cur');
-      show('No match', false);
+      show(T('page.no_match'), false);
       return;
     }
     CSS.highlights.set('bh-find', new Highlight(...ranges));
@@ -126,14 +129,14 @@
       return el;
     };
     const bar = node('div', { class: 'bar' });
-    input = node('input', { placeholder: 'Find in page', spellcheck: 'false' });
+    input = node('input', { placeholder: T('palette.find'), spellcheck: 'false' });
     info = node('span', { class: 'n' });
     bar.append(
       input,
       info,
-      node('button', { 'data-d': '1', title: 'Previous' }, '\u2191'),
-      node('button', { 'data-d': '0', title: 'Next' }, '\u2193'),
-      node('button', { 'data-x': '', title: 'Close' }, '\u2715'),
+      node('button', { 'data-d': '1', title: T('page.previous') }, '\u2191'),
+      node('button', { 'data-d': '0', title: T('page.next') }, '\u2193'),
+      node('button', { 'data-x': '', title: T('window.close') }, '\u2715'),
     );
     root.appendChild(bar);
     input.addEventListener('input', () => {

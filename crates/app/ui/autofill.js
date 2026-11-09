@@ -4,6 +4,9 @@
 // form is submitted, its credentials (already the page's) are handed to the shell, which offers
 // to save them in the sidebar.
 (() => {
+  // Texts in the interface language, set when the page's view is created (views::page_script).
+  const TEXT = __BH_TEXT__;
+  const T = (key) => TEXT[key] || key;
   if (!window.__bhipc || window.top !== window || window.__bhAutofill) return;
   // Page scripts run after this one and may patch anything global: what carries the menu's
   // one-time token (the proof that the user picked an entry) is captured now. The shell only
@@ -111,13 +114,13 @@
     menu.replaceChildren();
     const h = document.createElement('div');
     h.className = 'h';
-    h.textContent = 'BlackHole · saved passwords';
+    h.textContent = T('page.saved_passwords');
     menu.append(h);
     for (let index = 0; index < list.length; index++) {
-      item(list[index] || '(no username)', { cmd: 'autofill_fill', index, token });
+      item(list[index] || T('settings.no_username'), { cmd: 'autofill_fill', index, token });
     }
-    if (m.locked) item('Unlock saved passwords…', { cmd: 'autofill_unlock', token });
-    if (m.generate) item('Use a strong password', { cmd: 'autofill_generate', token });
+    if (m.locked) item(T('page.unlock_passwords'), { cmd: 'autofill_unlock', token });
+    if (m.generate) item(T('page.strong_password'), { cmd: 'autofill_generate', token });
     menu.style.display = 'block';
     if (!host.isConnected) document.documentElement.append(host);
     place();
