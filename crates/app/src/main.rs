@@ -4768,6 +4768,7 @@ impl Running {
             }
             command @ (UiCommand::OpenMeet { .. }
             | UiCommand::MeetingNotes { .. }
+            | UiCommand::MeetingDismiss { .. }
             | UiCommand::CalendarAdd { .. }
             | UiCommand::CalendarRemove { .. }
             | UiCommand::CalendarSync

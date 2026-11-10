@@ -110,6 +110,11 @@
   #meet .mt.on { box-shadow: var(--bh-shadow-meet-live); animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards, meet-live var(--bh-duration-breathe) ease-in-out infinite; }
   @keyframes meet-live { 50% { box-shadow: 0 0 0 1px var(--bh-accent), 0 0 20px -2px var(--bh-accent-glow); } }
   #meet .mt svg { flex: none; width: var(--bh-icon-md); height: var(--bh-icon-md); fill: none; stroke: currentColor; stroke-width: var(--bh-icon-stroke); stroke-linecap: round; stroke-linejoin: round; opacity: var(--bh-opacity-soft); }
+  /* The meeting's icon is also its close button: a cross while it is hovered or focused. */
+  #meet button.ic { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin: 0 -2px; padding: 0; background: none; color: inherit; }
+  #meet button.ic:hover, #meet button.ic:focus-visible { background: var(--bh-fill-control-hover); }
+  #meet button.ic svg + svg, #meet button.ic:hover svg:first-child, #meet button.ic:focus-visible svg:first-child { display: none; }
+  #meet button.ic:hover svg + svg, #meet button.ic:focus-visible svg + svg { display: block; opacity: 1; }
   #meet .tx { flex: 1; min-width: 0; }
   #meet .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #meet .wh { opacity: var(--bh-opacity-secondary); font: var(--bh-text-caption); }
@@ -1058,11 +1063,16 @@ function renderMeeting(m) {
   const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   ico.setAttribute('viewBox', '0 0 16 16');
   ico.innerHTML = '<rect x="1.5" y="4" width="9" height="8" rx="1.8"/><path d="M10.5 7l4-2.2v6.4l-4-2.2"/>';
+  const hide = el('button', 'ic');
+  hide.title = bhT('sidebar.hide_meeting');
+  hide.setAttribute('aria-label', hide.title);
+  hide.append(ico, bhIcon('close'));
+  hide.onclick = () => send({ cmd: 'meeting_dismiss', url: m.url, start: m.start });
   const tx = el('div', 'tx');
   tx.append(el('div', 'nm', m.title), el('div', 'wh', m.when));
   const join = el('button', null, bhT('sidebar.join'));
   join.onclick = () => send({ cmd: 'open_meet', url: m.url });
-  card.replaceChildren(ico, tx, join);
+  card.replaceChildren(hide, tx, join);
   if (!card.parentNode) box.replaceChildren(card);
 }
 function renderMedia(s) {

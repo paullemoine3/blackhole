@@ -17,6 +17,8 @@ const KEEP_BEFORE: i64 = 12 * 3600;
 const KEEP_AFTER: i64 = 7 * 24 * 3600;
 /// The sidebar card shows a meeting from this long before it starts.
 const CARD_LEAD: i64 = 15 * 60;
+/// And until this long after its start: it does not stay for the whole meeting.
+const CARD_KEEP: i64 = 5 * 60;
 /// The command bar offers to join the meetings of the next hours.
 const JOIN_AHEAD: i64 = 12 * 3600;
 
@@ -34,6 +36,8 @@ pub struct Calendar {
     remind_since: i64,
     /// The sidebar card as last sent, to refresh it only when it changes.
     card: Value,
+    /// Meetings (room, start) whose card the user closed; not kept across launches.
+    hidden: Vec<(String, i64)>,
 }
 
 impl Calendar {
@@ -49,6 +53,7 @@ impl Calendar {
             rx,
             remind_since: now(),
             card: Value::Null,
+            hidden: Vec::new(),
         }
     }
 
@@ -132,7 +137,7 @@ impl Running {
             }
         }
         let card = if self.svc.settings().meeting_card {
-            meetings::next_soon(&self.calendar.meetings, at, CARD_LEAD)
+            meetings::next_soon(&self.calendar.meetings, at, CARD_LEAD, CARD_KEEP, &self.calendar.hidden)
                 .map_or(Value::Null, |m| card_json(&m, at))
         } else {
             Value::Null
@@ -339,6 +344,18 @@ impl Running {
         match command {
             UiCommand::OpenMeet { url } => self.open_meet(url),
             UiCommand::MeetingNotes { url, start } => self.take_meeting_notes(&url, start),
+            // The card's close button: that meeting only (the next one shows as usual).
+            UiCommand::MeetingDismiss { url, start } => {
+                let at = now();
+                let meetings = &self.calendar.meetings;
+                self.calendar
+                    .hidden
+                    .retain(|(u, s)| meetings.iter().any(|m| m.url == *u && m.start == *s && m.end > at));
+                if meetings.iter().any(|m| m.url == url && m.start == start) {
+                    self.calendar.hidden.push((url, start));
+                }
+                self.service_calendar();
+            }
             UiCommand::CalendarAdd { url } => {
                 match self.calendar.sources.add(&url) {
                     Ok(()) => {
@@ -377,5 +394,5 @@ fn card_json(m: &Meeting, at: i64) -> Value {
         let minutes = (m.start - at + 59) / 60;
         tf("sidebar.meeting_in", &[("n", &minutes.to_string()), ("time", &calendar::local_time(m.start))])
     };
-    json!({"title": m.title, "url": m.url, "when": when, "on": m.is_on(at)})
+    json!({"title": m.title, "url": m.url, "start": m.start, "when": when, "on": m.is_on(at)})
 }

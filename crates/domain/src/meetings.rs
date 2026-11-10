@@ -146,10 +146,13 @@ pub fn upcoming(meetings: &[Meeting], now: i64, horizon: i64) -> Vec<Meeting> {
     list
 }
 
-/// The meeting to show in the sidebar: one going on, else the next one starting within `lead`
-/// seconds.
-pub fn next_soon(meetings: &[Meeting], now: i64, lead: i64) -> Option<Meeting> {
-    upcoming(meetings, now, lead).into_iter().next()
+/// The meeting to show in the sidebar: the next one starting within `lead` seconds, or one that
+/// started less than `keep` seconds ago (its card does not stay for the whole meeting). `hidden`
+/// are the meetings (room, start) whose card the user closed.
+pub fn next_soon(meetings: &[Meeting], now: i64, lead: i64, keep: i64, hidden: &[(String, i64)]) -> Option<Meeting> {
+    upcoming(meetings, now, lead)
+        .into_iter()
+        .find(|m| now < m.start + keep && !hidden.iter().any(|(url, start)| *url == m.url && *start == m.start))
 }
 
 /// The meetings starting between `since` (excluded) and `now` (included): the ones to remind.
@@ -257,10 +260,29 @@ mod tests {
     #[test]
     fn the_sidebar_shows_the_meeting_going_on_or_starting_soon() {
         let list = [m("Now", 90, 150, "nnn-nnnn-nnn"), m("Later", 400, 500, "lll-llll-lll")];
-        assert_eq!(next_soon(&list, 100, 600).unwrap().title, "Now");
+        assert_eq!(next_soon(&list, 100, 600, 30, &[]).unwrap().title, "Now");
         assert!(list[0].is_on(100));
-        assert_eq!(next_soon(&list, 200, 600).unwrap().title, "Later");
-        assert_eq!(next_soon(&list, 200, 60), None);
+        assert_eq!(next_soon(&list, 200, 600, 30, &[]).unwrap().title, "Later");
+        assert_eq!(next_soon(&list, 200, 60, 30, &[]), None);
+    }
+
+    #[test]
+    fn the_card_of_a_meeting_leaves_a_while_after_its_start() {
+        let list = [m("Long", 100, 4_000, "nnn-nnnn-nnn"), m("Later", 400, 500, "lll-llll-lll")];
+        assert_eq!(next_soon(&list, 399, 600, 300, &[]).unwrap().title, "Long");
+        // Five minutes in, the meeting still goes on: the next one takes the card.
+        assert!(list[0].is_on(400));
+        assert_eq!(next_soon(&list, 400, 600, 300, &[]).unwrap().title, "Later");
+        assert_eq!(next_soon(&list, 400, 0, 300, &[]).unwrap().title, "Later");
+        assert_eq!(next_soon(&list, 700, 600, 300, &[]), None);
+    }
+
+    #[test]
+    fn a_card_the_user_closed_stays_closed_for_that_meeting_only() {
+        let list = [m("Weekly", 100, 200, "www-wwww-www"), m("Weekly", 1_000, 1_100, "www-wwww-www")];
+        let hidden = [(list[0].url.clone(), 100)];
+        assert_eq!(next_soon(&list, 90, 60, 300, &hidden), None);
+        assert_eq!(next_soon(&list, 90, 2_000, 300, &hidden).unwrap().start, 1_000);
     }
 
     #[test]
