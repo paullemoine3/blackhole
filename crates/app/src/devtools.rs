@@ -155,6 +155,9 @@ impl Running {
                 let ws = self.svc.workspace();
                 let state = serde_json::json!({
                     "active": ws.active_tab().map(|t| t.url.as_str()),
+                    "blocked": self.blocked.total(),
+                    "mediaHints": self.media_hint.len(),
+                    "mediaPlaying": self.media.lock().map_or(0, |m| m.values().filter(|p| p.playing).count()),
                     "easelSide": self.easel_side(),
                     "easelTab": self.easel_tab,
                     "easelWindow": self.easel.is_some(),

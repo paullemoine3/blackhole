@@ -47,6 +47,15 @@ pub enum PrivacyDecision {
     Block(&'static str),
 }
 
+/// Whether a request to `host` made by a page of `page_host` leaves the page's own site: the
+/// same host, or one above or under it, is first-party. Blocklists only apply to third parties
+/// (a listed site opened as the page itself is the navigation's business).
+pub fn is_third_party(host: &str, page_host: &str) -> bool {
+    let (host, page) = (host.to_ascii_lowercase(), page_host.to_ascii_lowercase());
+    let under = |a: &str, b: &str| a.strip_suffix(b).is_some_and(|rest| rest.ends_with('.'));
+    !(page.is_empty() && host.is_empty()) && host != page && !under(&host, &page) && !under(&page, &host)
+}
+
 /// Decides whether and how a navigation may proceed.
 #[derive(Debug, Clone)]
 pub struct PrivacyPolicy {
@@ -130,6 +139,30 @@ impl PrivacyPolicy {
             .filter(move |_| trackers)
             .chain(self.ad_domains.iter().filter(move |_| ads))
             .map(String::as_str)
+    }
+
+    /// The lists that are on, each under a stable name, for engines that block natively
+    /// (hosts sorted, so the same list always compiles to the same rules).
+    pub fn active_lists(&self) -> Vec<(&'static str, Vec<&str>)> {
+        fn sorted(set: &HashSet<String>) -> Vec<&str> {
+            let mut hosts: Vec<&str> = set.iter().map(String::as_str).collect();
+            hosts.sort_unstable();
+            hosts
+        }
+        let mut lists = Vec::new();
+        if self.is_blocking() {
+            lists.push(("trackers", sorted(&self.blocked_domains)));
+        }
+        if self.is_blocking_ads() {
+            lists.push(("ads", sorted(&self.ad_domains)));
+        }
+        lists
+    }
+
+    /// Every listed host, whatever the switches: for engines that register the hosts to watch
+    /// once and ask for the decision at each request.
+    pub fn listed_domains(&self) -> impl Iterator<Item = &str> {
+        self.blocked_domains.iter().chain(&self.ad_domains).map(String::as_str)
     }
 
     /// Why `host` (or a domain above it) is blocked, if it is.
@@ -391,6 +424,43 @@ mod tests {
         assert_eq!(privacy_grade(3, 4), 'C');
         assert_eq!(privacy_grade(10, 5), 'D');
         assert_eq!(privacy_grade(20, 0), 'E');
+    }
+
+    #[test]
+    fn a_request_to_the_page_s_own_site_is_not_third_party() {
+        assert!(is_third_party("stats.g.doubleclick.net", "news.example"));
+        assert!(is_third_party("doubleclick.net", ""));
+        assert!(!is_third_party("example.com", "example.com"));
+        assert!(!is_third_party("cdn.example.com", "example.com"));
+        assert!(!is_third_party("example.com", "www.example.com"));
+        assert!(!is_third_party("Example.com", "example.COM"));
+        assert!(is_third_party("notexample.com", "example.com"));
+    }
+
+    #[test]
+    fn listed_domains_ignore_the_switches() {
+        let p = PrivacyPolicy::with_ads(["t.example".to_owned()], ["ads.example".to_owned()]);
+        p.set_blocking(false);
+        p.set_ad_blocking(false);
+        let mut all: Vec<&str> = p.listed_domains().collect();
+        all.sort_unstable();
+        assert_eq!(all, ["ads.example", "t.example"]);
+    }
+
+    #[test]
+    fn active_lists_follow_the_switches_and_are_sorted() {
+        let p = PrivacyPolicy::with_ads(
+            ["z.example".to_owned(), "A.example".to_owned()],
+            ["ads.example".to_owned()],
+        );
+        assert_eq!(
+            p.active_lists(),
+            vec![("trackers", vec!["a.example", "z.example"]), ("ads", vec!["ads.example"])]
+        );
+        p.set_blocking(false);
+        assert_eq!(p.active_lists(), vec![("ads", vec!["ads.example"])]);
+        p.set_ad_blocking(false);
+        assert!(p.active_lists().is_empty());
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use objc2::{MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
+use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
 use objc2_foundation::{
   MainThreadMarker, NSError, NSObjectProtocol, NSURLAuthenticationChallenge, NSURLCredential,
   NSURLSessionAuthChallengeDisposition,
@@ -40,6 +40,7 @@ pub struct WryNavigationDelegateIvars {
   pub download_delegate: Option<Retained<WryDownloadDelegate>>,
   pub on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, Option<String>)>>,
   pub on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
+  pub content_blocked_handler: Option<Box<dyn Fn(String)>>,
   pub http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
   pub load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
   pub server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,
@@ -139,6 +140,30 @@ define_class!(
       web_content_process_did_terminate(self, webview);
     }
   }
+
+  /// BlackHole: `WKNavigationDelegatePrivate`. WebKit calls it, when the delegate has it, for
+  /// each request a content rule list acted on (`action` is a `_WKContentRuleListAction`).
+  impl WryNavigationDelegate {
+    #[unsafe(method(_webView:contentRuleListWithIdentifier:performedAction:forURL:))]
+    fn content_rule_list_action(
+      &self,
+      _webview: &WKWebView,
+      _identifier: &objc2_foundation::NSString,
+      action: &objc2::runtime::AnyObject,
+      url: &objc2_foundation::NSURL,
+    ) {
+      let Some(report) = &self.ivars().content_blocked_handler else {
+        return;
+      };
+      let blocked: bool = unsafe {
+        let known: bool = msg_send![action, respondsToSelector: objc2::sel!(blockedLoad)];
+        known && msg_send![action, blockedLoad]
+      };
+      if let (true, Some(url)) = (blocked, url.absoluteString()) {
+        report(url.to_string());
+      }
+    }
+  }
 );
 
 impl WryNavigationDelegate {
@@ -151,6 +176,7 @@ impl WryNavigationDelegate {
     download_delegate: Option<Retained<WryDownloadDelegate>>,
     on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, String)>>,
     on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
+    content_blocked_handler: Option<Box<dyn Fn(String)>>,
     http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
     load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
     server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,
@@ -191,6 +217,7 @@ impl WryNavigationDelegate {
         download_delegate,
         on_page_load_handler,
         on_web_content_process_terminate_handler,
+        content_blocked_handler,
         http_auth_handler,
         load_failure_handler,
         server_trust_handler,

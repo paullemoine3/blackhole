@@ -10,6 +10,20 @@
     } catch (_) {}
   };
 
+  // The shell only probes the tabs that say something may have changed (and those that play
+  // or are in a call): at most one message a second, the shell then looks for a few seconds.
+  let hinted = 0;
+  const hint = () => {
+    const now = Date.now();
+    if (now - hinted < 1000) return;
+    hinted = now;
+    post({ cmd: 'media' });
+  };
+  // Media events do not bubble, but they are seen on the way down.
+  for (const type of ['play', 'playing', 'pause', 'ended', 'emptied', 'volumechange', 'loadedmetadata', 'enterpictureinpicture']) {
+    document.addEventListener(type, hint, true);
+  }
+
   const tracks = new Set();
   const md = navigator.mediaDevices;
   if (md && md.getUserMedia) {
@@ -17,6 +31,7 @@
     md.getUserMedia = async (constraints) => {
       const stream = await original(constraints);
       stream.getTracks().forEach((t) => tracks.add(t));
+      hint();
       return stream;
     };
   }
@@ -61,6 +76,7 @@
       construct(target, args, newTarget) {
         const pc = Reflect.construct(target, args, newTarget);
         peers.add(pc);
+        hint();
         return pc;
       },
     });
@@ -100,6 +116,7 @@
     (e) => {
       const v = e.target;
       if (!(v instanceof HTMLVideoElement)) return;
+      hint();
       if (v.webkitPresentationMode === 'picture-in-picture') v.__bhPip = true;
       else if (v.__bhPip) {
         v.__bhPip = false;

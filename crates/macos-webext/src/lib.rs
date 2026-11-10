@@ -98,9 +98,45 @@ pub fn discover_in(roots: &[std::path::PathBuf]) -> Vec<AppExtension> {
 #[cfg(target_os = "macos")]
 mod host;
 #[cfg(target_os = "macos")]
+mod rules;
+#[cfg(target_os = "macos")]
 mod tabs;
 #[cfg(target_os = "macos")]
 pub use host::ExtensionHost;
+#[cfg(target_os = "macos")]
+pub use rules::{block_hosts, compile_hosts};
+
+/// The WebKit content rule list (JSON) that blocks the third-party requests to `hosts` and
+/// their subdomains, or `None` when no host is usable. Third-party only: a blocked site opened
+/// as the page itself is the navigation handler's business (the user may let it through).
+pub fn rules_json(hosts: &[&str]) -> Option<String> {
+    let mut hosts: Vec<&str> = hosts
+        .iter()
+        .copied()
+        .filter(|h| {
+            h.contains('.')
+                && !h.starts_with('.')
+                && !h.ends_with('.')
+                && h.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
+        })
+        .collect();
+    hosts.sort_unstable();
+    hosts.dedup();
+    if hosts.is_empty() {
+        return None;
+    }
+    let rules: Vec<String> = hosts
+        .iter()
+        .map(|host| {
+            // The regular expression is written inside a JSON string: `\\.` is `\.` there.
+            let host = host.replace('.', "\\\\.");
+            format!(
+                "{{\"trigger\":{{\"url-filter\":\"^[^:]+://([^/:]*\\\\.)?{host}[/:]\",\"load-type\":[\"third-party\"]}},\"action\":{{\"type\":\"block\"}}}}"
+            )
+        })
+        .collect();
+    Some(format!("[{}]", rules.join(",")))
+}
 
 /// Rounds the corners of a page view (a live `WKWebView`) with its Core Animation layer.
 #[cfg(target_os = "macos")]
@@ -119,7 +155,12 @@ pub fn round_view(view: std::ptr::NonNull<std::ffi::c_void>, radius: f64) {
             if (radius_now - radius).abs() > f64::EPSILON {
                 let _: () = msg_send![&*layer, setCornerRadius: radius];
             }
-            let _: () = msg_send![&*layer, setMasksToBounds: true];
+            // Re-applied several times a second (WebKit may reset the layer): only written
+            // when it changed, a write marks the layer tree dirty for nothing.
+            let masked: bool = msg_send![&*layer, masksToBounds];
+            if !masked {
+                let _: () = msg_send![&*layer, setMasksToBounds: true];
+            }
         }
     }
 }
@@ -217,7 +258,10 @@ pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
-pub use win::{app_is_active, frontmost_foreign_window, raise_view, round_view, set_view_background, ExtensionHost};
+pub use win::{
+    app_is_active, block_hosts, frontmost_foreign_window, on_renderer_gone, raise_view, round_view,
+    set_view_background, ExtensionHost,
+};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 mod stub {
@@ -262,6 +306,25 @@ pub use stub::ExtensionHost;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rule_lists_block_third_party_requests_to_the_hosts_and_their_subdomains() {
+        let json = rules_json(&["stats.example.com", "ads.test", "ads.test"]).unwrap();
+        assert_eq!(
+            json,
+            concat!(
+                r#"[{"trigger":{"url-filter":"^[^:]+://([^/:]*\\.)?ads\\.test[/:]","load-type":["third-party"]},"action":{"type":"block"}},"#,
+                r#"{"trigger":{"url-filter":"^[^:]+://([^/:]*\\.)?stats\\.example\\.com[/:]","load-type":["third-party"]},"action":{"type":"block"}}]"#
+            )
+        );
+    }
+
+    #[test]
+    fn hosts_that_could_break_the_expression_are_left_out() {
+        assert_eq!(rules_json(&[]), None);
+        assert_eq!(rules_json(&["localhost", "a b.com", "x\".com", "(a|b).com", ".com", "com."]), None);
+        assert!(rules_json(&["ok.example", "bad*.example"]).unwrap().matches("trigger").count() == 1);
+    }
 
     #[test]
     fn finds_safari_web_extensions_inside_apps() {

@@ -1,6 +1,22 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.5",
+        &[
+            "Lighter on heavy web apps (YouTube, Google Docs and Sheets, Meet): trackers and ads are now blocked by the engine itself (WebKit content rules on macOS, request filters on Windows) instead of a script that wrapped the page's own functions in every frame",
+            "Tabs that play nothing are no longer asked about their media every second and a half: a page tells the browser when something starts, stops or opens the camera or microphone",
+            "A page whose engine process stops (out of memory on a heavy document, a crash) is reloaded once instead of staying blank; a background tab reloads when you come back to it",
+            "A call is never moved to Picture in Picture when you switch tab or share your screen from another window",
+            "macOS: the rounded corners of the page are no longer re-applied to every tab several times a second",
+            "Picture in Picture on macOS: the floating window's back-to-tab button now shows the video's tab; its close button pauses the video and leaves you where you are",
+            "The sidebar player's close button also closes the floating video, and the card stays closed until the video plays again",
+            "Google can be picked as the search engine in Settings, on every platform; DuckDuckGo stays the default",
+            "A click on a download card in the sidebar opens Library > Downloads, and a finished download stays there 8 seconds",
+            "A tab opened only to download a file closes once the file is saved, instead of showing an error page",
+            "The Library and the sidebar's player, download, meeting and tidy-up cards are redesigned on the BlackHole design system, with the same animations as Settings",
+        ],
+    ),
+    (
         "0.8.4",
         &[
             "BlackHole for Android updates itself: once a day (or with Check now in Settings > Updates) it looks for a new release on GitHub, then downloads the APK signed like the installed app, checks it against the release checksums and hands it to the system installer",
@@ -10,12 +26,6 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Android: long press an image to open, download or copy it, and a link to download it; full screen videos, file uploads, and the camera, microphone or location for a site only after you allow it",
             "Android: text shared from another app, a web search or \"BlackHole\" in a text selection menu opens its address or searches it",
             "Android fixes: tapping the address bar no longer closes the sheet at once (the keyboard typed into a hidden field), the page no longer stays black when the system recreates the app, a long press on a linked image offers the link instead of the image, and pages without a mobile layout are fitted to the screen",
-            "Picture in Picture on macOS: the floating window's back-to-tab button now shows the video's tab; its close button pauses the video and leaves you where you are",
-            "The sidebar player's close button also closes the floating video, and the card stays closed until the video plays again",
-            "Google can be picked as the search engine in Settings, on every platform; DuckDuckGo stays the default",
-            "A click on a download card in the sidebar opens Library > Downloads, and a finished download stays there 8 seconds",
-            "A tab opened only to download a file closes once the file is saved, instead of showing an error page",
-            "The Library and the sidebar's player, download, meeting and tidy-up cards are redesigned on the BlackHole design system, with the same animations as Settings",
         ],
     ),
     (

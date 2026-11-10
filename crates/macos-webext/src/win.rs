@@ -12,7 +12,8 @@ use std::{
 };
 use webview2_com::{
     take_pwstr, BrowserExtensionRemoveCompletedHandler, Microsoft::Web::WebView2::Win32::*,
-    ProfileAddBrowserExtensionCompletedHandler, ProfileGetBrowserExtensionsCompletedHandler,
+    ProcessFailedEventHandler, ProfileAddBrowserExtensionCompletedHandler,
+    ProfileGetBrowserExtensionsCompletedHandler, WebResourceRequestedEventHandler,
 };
 use windows_core::{Interface, HSTRING, PWSTR};
 use wry::WebViewExtWindows;
@@ -29,6 +30,78 @@ pub fn set_view_background(view: &wry::WebView, background: bool) {
     };
     // SAFETY: plain COM call on the thread that owns the view.
     let _ = unsafe { core.SetMemoryUsageTargetLevel(level) };
+}
+
+/// Native request blocking: WebView2 asks `blocked(request_url, page_url)` for the requests of
+/// this view to `hosts` and their subdomains, and answers the refused ones itself (403, nothing
+/// reaches the network). Only those hosts are watched, so the other requests of the page cost
+/// nothing, and no function of the page is replaced.
+pub fn block_hosts(view: &wry::WebView, hosts: &[&str], blocked: impl Fn(&str, &str) -> bool + 'static) {
+    let (core, env) = (view.webview(), view.environment());
+    // SAFETY: plain COM calls on the thread that owns the view. The handler reads the page's
+    // address from its sender rather than holding the view (no reference cycle).
+    unsafe {
+        for host in hosts {
+            for pattern in [format!("*://{host}/*"), format!("*://*.{host}/*")] {
+                let _ = core.AddWebResourceRequestedFilter(
+                    &HSTRING::from(pattern),
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                );
+            }
+        }
+        let mut token = Default::default();
+        let _ = core.add_WebResourceRequested(
+            &WebResourceRequestedEventHandler::create(Box::new(move |sender, args| {
+                let (Some(sender), Some(args)) = (sender, args) else {
+                    return Ok(());
+                };
+                let request = {
+                    let mut uri = PWSTR::null();
+                    args.Request()?.Uri(&mut uri)?;
+                    take_pwstr(uri)
+                };
+                let page = {
+                    let mut uri = PWSTR::null();
+                    sender.Source(&mut uri)?;
+                    take_pwstr(uri)
+                };
+                if blocked(&request, &page) {
+                    let response = env.CreateWebResourceResponse(
+                        None,
+                        403,
+                        &HSTRING::from("Blocked"),
+                        &HSTRING::new(),
+                    )?;
+                    args.SetResponse(&response)?;
+                }
+                Ok(())
+            })),
+            &mut token,
+        );
+    }
+}
+
+/// Calls `gone` when the renderer process of a page view exits (crash, or killed for its
+/// memory use): the view then shows the engine's error page until it is reloaded.
+pub fn on_renderer_gone(view: &wry::WebView, gone: impl Fn() + 'static) {
+    // SAFETY: plain COM calls on the thread that owns the view.
+    unsafe {
+        let mut token = Default::default();
+        let _ = view.webview().add_ProcessFailed(
+            &ProcessFailedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else {
+                    return Ok(());
+                };
+                let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                args.ProcessFailedKind(&mut kind)?;
+                if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED {
+                    gone();
+                }
+                Ok(())
+            })),
+            &mut token,
+        );
+    }
 }
 
 /// Clips a page view to rounded corners with a window region. The region keeps the size it was

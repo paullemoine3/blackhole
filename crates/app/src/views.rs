@@ -51,6 +51,82 @@ fn shields_script(policy: &PrivacyPolicy) -> String {
     });
     SHIELDS_JS.replace("__SHIELDS__", &config.to_string())
 }
+/// The request guard of page views. macOS and Windows block in the engine (`block_natively`),
+/// so the script gets no host there and leaves the page's own functions alone.
+fn guard_script(policy: &PrivacyPolicy) -> String {
+    #[cfg(any(target_os = "macos", windows))]
+    let hosts: Vec<&str> = {
+        let _ = policy;
+        Vec::new()
+    };
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let hosts: Vec<&str> = policy.blocked_domains().collect();
+    PAGE_GUARD_JS.replace(
+        "__BLOCKED_HOSTS__",
+        &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
+    )
+}
+
+/// The name WebKit keeps a compiled blocklist under.
+#[cfg(target_os = "macos")]
+fn rule_list_id(name: &str) -> String {
+    format!("blackhole-{name}")
+}
+
+/// Compiles the blocklists ahead of the first page view (see `block_natively`).
+pub fn prepare_blocking(policy: &PrivacyPolicy) {
+    #[cfg(target_os = "macos")]
+    for (name, hosts) in policy.active_lists() {
+        blackhole_macos_webext::compile_hosts(&rule_list_id(name), &hosts);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = policy;
+}
+
+/// macOS: the blocklists that are on now are enforced by WebKit itself in this view (content
+/// rule lists: every frame and kind of request, no script in the page). Like the script
+/// elsewhere, a view keeps the lists of its creation time.
+#[cfg(target_os = "macos")]
+fn block_natively(view: &WebView, policy: &PrivacyPolicy) {
+    use wry::WebViewExtMacOS;
+    let native = view.webview();
+    let Some(ptr) = std::ptr::NonNull::new(std::ptr::from_ref(&*native).cast_mut().cast()) else {
+        return;
+    };
+    for (name, hosts) in policy.active_lists() {
+        blackhole_macos_webext::block_hosts(ptr, &rule_list_id(name), &hosts);
+    }
+}
+
+/// Windows: WebView2 asks the policy for each request of this view to a listed host (third
+/// parties only, live switches and the user's exceptions included) and refuses the blocked
+/// ones itself; `report` gets their host. No script in the page, nothing for other requests.
+#[cfg(windows)]
+fn block_natively(view: &WebView, policy: &PrivacyPolicy, report: impl Fn(String) + 'static) {
+    let hosts: Vec<&str> = policy.listed_domains().collect();
+    let policy = policy.clone();
+    blackhole_macos_webext::block_hosts(view, &hosts, move |raw, page| {
+        let Ok(target) = Url::parse(raw) else {
+            return false;
+        };
+        let host = target.host_str().unwrap_or_default();
+        let page_host = Url::parse(page).ok().and_then(|u| u.host_str().map(str::to_owned));
+        if !matches!(target.scheme(), "http" | "https")
+            || !blackhole_domain::is_third_party(host, page_host.as_deref().unwrap_or_default())
+        {
+            return false;
+        }
+        let stop = matches!(
+            crate::errors::with_exceptions(policy.evaluate(&target), &target),
+            PrivacyDecision::Block(_)
+        );
+        if stop {
+            report(host.to_owned());
+        }
+        stop
+    });
+}
+
 const DEBUG_LOG_JS: &str = include_str!("../ui/debug_log.js");
 const LIVE_CROP_JS: &str = include_str!("../ui/live_crop.js");
 const LIVE_PICKER_JS: &str = include_str!("../ui/live_picker.js");
@@ -201,11 +277,9 @@ pub fn live_view(
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
 ) -> wry::Result<WebView> {
-    let hosts: Vec<&str> = policy.blocked_domains().collect();
-    let guard = PAGE_GUARD_JS.replace(
-        "__BLOCKED_HOSTS__",
-        &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
-    );
+    let guard = guard_script(policy);
+    #[cfg(any(target_os = "macos", windows))]
+    let native_policy = policy.clone();
     let shields = shields_script(policy);
     let crop = LIVE_CROP_JS.replace(
         "__SELECTOR__",
@@ -213,7 +287,7 @@ pub fn live_view(
     );
     let (nav, popups) = (mailbox.clone(), mailbox.clone());
     let policy = policy.clone();
-    builder(ctx)
+    let view = builder(ctx)
         .with_url(url.as_str())
         .with_bounds(rect(0.0, 0.0, 1.0, 1.0))
         .with_visible(false)
@@ -243,7 +317,12 @@ pub fn live_view(
             }
             NewWindowResponse::Deny
         })
-        .build_as_child(window)
+        .build_as_child(window)?;
+    #[cfg(target_os = "macos")]
+    block_natively(&view, &native_policy);
+    #[cfg(windows)]
+    block_natively(&view, &native_policy, |_| {});
+    Ok(view)
 }
 
 /// Shows the autofill menu under the focused login field: `{names, locked, generate}`
@@ -376,11 +455,9 @@ fn build_tab(
     let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
     let (s_auth, auth) = (slot.clone(), mailbox.clone());
     let (s_fail, fail, s_trust, trust) = (slot.clone(), mailbox.clone(), slot.clone(), mailbox.clone());
-    let hosts: Vec<&str> = policy.blocked_domains().collect();
-    let guard = PAGE_GUARD_JS.replace(
-        "__BLOCKED_HOSTS__",
-        &serde_json::to_string(&hosts).unwrap_or_else(|_| "[]".to_owned()),
-    );
+    let guard = guard_script(policy);
+    #[cfg(any(target_os = "macos", windows))]
+    let native_policy = policy.clone();
     let shields = shields_script(policy);
     let (events, nav, popups, title, load) = (
         mailbox.clone(),
@@ -416,6 +493,32 @@ fn build_tab(
         let _ = wry::USER_AGENT_RESOLVER.set(user_agent_for);
         builder.with_user_agent(MACOS_USER_AGENT)
     };
+    // WebKit kills the process of a page that uses too much memory (heavy documents, long
+    // calls): without this the tab would stay blank until the user reloads it.
+    #[cfg(target_os = "macos")]
+    let builder = {
+        use wry::WebViewBuilderExtDarwin;
+        let (s_crash, crash) = (slot.clone(), mailbox.clone());
+        builder.with_on_web_content_process_terminate_handler(move || {
+            let tab = id(&s_crash);
+            if tab.0 != 0 {
+                crash.push(Msg::Crashed(tab));
+            }
+        })
+    };
+    // What the content rule lists block is counted like what `page_guard.js` blocks elsewhere.
+    #[cfg(target_os = "macos")]
+    let builder = {
+        use wry::WebViewBuilderExtDarwin;
+        let (s_blocked, blocked) = (slot.clone(), mailbox.clone());
+        builder.with_content_blocked_handler(move |raw| {
+            let tab = id(&s_blocked);
+            let host = Url::parse(&raw).ok().and_then(|u| u.host_str().map(str::to_owned));
+            if let (true, Some(host)) = (tab.0 != 0, host) {
+                blocked.push(Msg::Page(tab, PageEvent::Blocked { host }));
+            }
+        })
+    };
     #[cfg(not(target_os = "macos"))]
     let _ = host;
     // WebView2: one profile per space inside the shared environment (a private window already
@@ -441,7 +544,7 @@ fn build_tab(
         Some(url) => builder.with_url(url.as_str()),
         None => builder,
     };
-    builder
+    let view = builder
         .with_bounds(bounds)
         .with_visible(false)
         .with_background_color(PAGE_BG)
@@ -588,7 +691,28 @@ fn build_tab(
             }
             allowed
         })
-        .build_as_child(window)
+        .build_as_child(window)?;
+    #[cfg(target_os = "macos")]
+    block_natively(&view, &native_policy);
+    #[cfg(windows)]
+    {
+        let (s_blocked, blocked) = (slot.clone(), mailbox.clone());
+        block_natively(&view, &native_policy, move |host| {
+            let tab = id(&s_blocked);
+            if tab.0 != 0 {
+                blocked.push(Msg::Page(tab, PageEvent::Blocked { host }));
+            }
+        });
+        // The renderer of the page died: the shell reloads the tab (see `on_crashed`).
+        let (s_crash, crash) = (slot.clone(), mailbox.clone());
+        blackhole_macos_webext::on_renderer_gone(&view, move || {
+            let tab = id(&s_crash);
+            if tab.0 != 0 {
+                crash.push(Msg::Crashed(tab));
+            }
+        });
+    }
+    Ok(view)
 }
 
 /// Toolbar popup of an extension: a page of the extension itself, in the shared profile.
