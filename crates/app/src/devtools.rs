@@ -3,7 +3,7 @@
 //! The scratch directory is `/tmp` on macOS and the system temp dir elsewhere.
 //!
 //! Script lines: `wait MS`, `shot NAME`, `cmd JSON` (a `UiCommand`),
-//! `eval chrome|bar|home|palette|peek|settings|easel|live|content JS`, `shots NAME` (settings window),
+//! `eval chrome|bar|home|palette|peek|settings|easel|live|tabN|content JS`, `shots NAME` (settings window),
 //! `shote NAME` (easel window), `quit`.
 
 use super::*;
@@ -109,6 +109,17 @@ impl Running {
                     "home" => &self.home,
                     "palette" => &self.palette,
                     "peek" => self.peek.as_ref().map_or(&self.home, |p| &p.page),
+                    // `tabN`: the page of tab N, even in the background (PiP, media cards).
+                    t if t.starts_with("tab") => {
+                        let id = t[3..].parse().unwrap_or(0);
+                        match self.tabs.get(&TabId(id)) {
+                            Some(view) => view,
+                            None => {
+                                eprintln!("[dev] eval -> \"no tab {id}\"");
+                                return delay;
+                            }
+                        }
+                    }
                     _ => self.active_view(),
                 };
                 let result =

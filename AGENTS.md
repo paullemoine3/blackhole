@@ -67,7 +67,9 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   retire. Clic molette : veille pour un onglet d'accès rapide ou de dossier, fermeture sinon.
   Pas de bouton son sur les tuiles. La fonction « Lock URL » a été retirée (un ancien champ
   `locked` dans `workspace.json` est ignoré au chargement).
-- PiP : quitter la fenêtre flottante ne change jamais d'onglet (la page ne distingue pas
+- PiP : sur macOS, le bouton « retour à l'onglet » de la fenêtre flottante affiche l'onglet de la
+  vidéo (elle sort en lecture) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
+  `pip_left`). Sous WebView2, fermer ne met pas en pause : rien ne change d'onglet (la page ne distingue pas
   « fermer » de « retour à l'onglet ») ; la carte lecteur reste dans la barre latérale.
 - Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
   titre transparente sur macOS) ; leur page dessine la barre du haut (38 px, teinte de l'espace,
@@ -110,6 +112,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
 
 - macOS : `bash scripts/test-webext.sh`, `bash scripts/test-easel.sh`,
   `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
+  `bash scripts/test-pip.sh` (PiP et carte lecteur, vidéo CC0 de MDN),
+  `bash scripts/test-library.sh` (Bibliothèque, cartes de téléchargement, HOME jetable),
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
   `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
   `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),

@@ -8,6 +8,12 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A page whose engine process stops (out of memory on a heavy document, a crash) is reloaded once instead of staying blank; a background tab reloads when you come back to it",
             "A call is never moved to Picture in Picture when you switch tab or share your screen from another window",
             "macOS: the rounded corners of the page are no longer re-applied to every tab several times a second",
+            "Picture in Picture on macOS: the floating window's back-to-tab button now shows the video's tab; its close button pauses the video and leaves you where you are",
+            "The sidebar player's close button also closes the floating video, and the card stays closed until the video plays again",
+            "Google can be picked as the search engine in Settings, on every platform; DuckDuckGo stays the default",
+            "A click on a download card in the sidebar opens Library > Downloads, and a finished download stays there 8 seconds",
+            "A tab opened only to download a file closes once the file is saved, instead of showing an error page",
+            "The Library and the sidebar's player, download, meeting and tidy-up cards are redesigned on the BlackHole design system, with the same animations as Settings",
         ],
     ),
     (

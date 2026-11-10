@@ -12,6 +12,7 @@ pub mod i18n;
 pub mod meetings;
 pub mod omnibox;
 pub mod passwords;
+pub mod pip;
 pub mod popup;
 pub mod privacy;
 pub mod selection;
