@@ -1,5 +1,8 @@
-// Injected at document start in every frame of a page tab. The native engine exposes no
-// network-level hook, so the tracker blocklist is enforced on the requests a page can make.
+// Injected at document start in every frame of a page tab. Where the engine cannot block
+// requests itself (WebView2), the blocklist is enforced here, on the requests a page can make.
+// On macOS the list is empty (WebKit content rule lists do the blocking, see
+// `views::block_natively`) and none of the page's functions is replaced: wrapping
+// `setAttribute`, `fetch` or the `src` setters costs on every call of a heavy web app.
 (() => {
   const BLOCKED = new Set(__BLOCKED_HOSTS__);
   const post = (m) => {
@@ -46,6 +49,7 @@
     return true;
   };
 
+  if (BLOCKED.size) {
   const nativeFetch = window.fetch;
   window.fetch = function (input) {
     const url = typeof input === 'object' && input && 'url' in input ? input.url : input;
@@ -104,10 +108,9 @@
     check(node);
     if (node.firstElementChild) node.querySelectorAll(SELECTOR).forEach(check);
   };
-  if (BLOCKED.size) {
-    new MutationObserver((records) => {
-      for (const r of records) for (const n of r.addedNodes) sweep(n);
-    }).observe(document, { childList: true, subtree: true });
+  new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) sweep(n);
+  }).observe(document, { childList: true, subtree: true });
   }
 
   if (window.top !== window) return;

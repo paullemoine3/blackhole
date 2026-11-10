@@ -290,7 +290,8 @@ impl Running {
             .map(|t| t.id)
     }
 
-    fn in_call(&self, tab: TabId) -> bool {
+    /// Whether the last probe of a tab saw its camera or microphone open (a call).
+    pub(crate) fn in_call(&self, tab: TabId) -> bool {
         self.media
             .lock()
             .ok()

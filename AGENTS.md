@@ -112,7 +112,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
   `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
-  `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`).
+  `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),
+  `bash scripts/test-blocking.sh` (blocage natif et sonde média, serveur local, étape `state`).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`.
 
@@ -188,6 +189,19 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   cookies) appliqués par `ui/shields.js` à la création de la page ; réglages dans `Settings`
   (`ad_blocking`, `shields`), commande `SetShield`. Ne jamais mettre le domaine d'un site dans
   `adlist.txt` ; ne pas couper le son sur YouTube (la pub et la vidéo partagent le `<video>`).
+- Blocage des requêtes dans le moteur, tiers seulement (`domain::is_third_party`), par
+  `views::block_natively`. macOS : `WKContentRuleList` compilées par `macos-webext/rules.rs`,
+  décompte par la méthode privée `_webView:contentRuleListWithIdentifier:performedAction:forURL:`
+  de vendor/wry → `with_content_blocked_handler`. Windows : `win::block_hosts`, filtres
+  `AddWebResourceRequestedFilter` sur les seuls hôtes listés, décision par la politique à chaque
+  requête (interrupteurs et exceptions en direct), réponse 403. `page_guard.js` reçoit une liste
+  vide et ne remplace aucune fonction de la page (`fetch`, `setAttribute`, setters `src`) : ne pas
+  y revenir, ces enveloppes pèsent sur chaque appel des applis lourdes.
+- Sonde média : seuls les onglets qui l'ont signalé (`PageEvent::Media` de `media_devices.js`,
+  chargement, changement d'adresse), qui jouent ou sont en appel sont interrogés ; pas de script
+  périodique dans les onglets silencieux. Pas de PiP forcé sur un onglet en appel (`in_call`).
+- Renderer mort (`Msg::Crashed` ; macOS : gestionnaire de wry, Windows : `win::on_renderer_gone`,
+  `ProcessFailed`) : onglet affiché rechargé une fois (`CRASH_LOOP`), onglet caché libéré.
 - Capture en direct : la zone choisie attend dans `live_pending` ; un menu demande l'Easel
   (ou un nouveau) → `LiveCaptureTo`. Sans Easel dans l'espace, il est créé directement.
 - Barres de défilement des pages d'interface : `ui/theme.js`, injecté avec `keys.js`.

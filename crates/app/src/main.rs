@@ -110,6 +110,10 @@ const CONNECT_MAX: Duration = Duration::from_secs(20);
 const MEDIA_EVERY: Duration = Duration::from_millis(1500);
 /// How long a tab that was in a call or playing media is still treated as such.
 const BUSY_GRACE: Duration = Duration::from_secs(90);
+/// How long a tab is probed after it said its media may have changed.
+const MEDIA_HINT_FOR: Duration = Duration::from_secs(5);
+/// A page whose engine process dies again this soon after a reload is not reloaded again.
+const CRASH_LOOP: Duration = Duration::from_secs(30);
 /// Spare page views kept ready, and how long the app must stay quiet before building them.
 const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
@@ -406,6 +410,10 @@ struct Running {
     cards_rounded: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
     media_due: Instant,
+    /// When each tab last said its media may have changed (see `PageEvent::Media`).
+    media_hint: HashMap<u64, Instant>,
+    /// When the engine process of a tab last died, to reload it once and not in a loop.
+    crashed: HashMap<TabId, Instant>,
     media_seen: serde_json::Value,
     /// Last report with media per tab: a short gap in the probes keeps the card on screen.
     media_hold: media::Linger<MediaProbe>,
@@ -638,6 +646,7 @@ impl Running {
                 exts.map(|h| h.join().unwrap_or_default()),
             )
         });
+        views::prepare_blocking(svc.policy());
         // A private window has no extensions unless the main profile's settings allow them.
         let ext_src = if private_mode() {
             let shared = JsonWorkspaceRepository::new(profile.clone())
@@ -813,6 +822,8 @@ impl Running {
             cards_rounded: Instant::now(),
             media: Arc::default(),
             media_due: Instant::now(),
+            media_hint: HashMap::new(),
+            crashed: HashMap::new(),
             media_seen: serde_json::Value::Null,
             media_hold: media::Linger::new(media::LINGER),
             undo: None,
@@ -3115,9 +3126,28 @@ impl Running {
             if let Ok(mut probes) = self.media.lock() {
                 probes.retain(|id, _| self.tabs.contains_key(&TabId(*id)));
             }
+            // Only the tabs with something going on are asked: a script run in every live tab
+            // every second and a half kept the idle ones (documents, sheets) awake for nothing.
+            let now = Instant::now();
+            self.media_hint
+                .retain(|id, at| self.tabs.contains_key(&TabId(*id)) && now.duration_since(*at) < MEDIA_HINT_FOR);
+            let active: Vec<u64> = self.media.lock().map_or_else(
+                |_| Vec::new(),
+                |probes| {
+                    probes
+                        .iter()
+                        .filter(|(_, p)| p.playing || p.pip || p.cam || p.mic || p.call)
+                        .map(|(id, _)| *id)
+                        .collect()
+                },
+            );
+            let floating = self.pip_tab.map(|t| t.0);
             for (id, view) in &self.tabs {
                 let sink = Arc::clone(&self.media);
                 let id = id.0;
+                if !self.media_hint.contains_key(&id) && !active.contains(&id) && floating != Some(id) {
+                    continue;
+                }
                 let _ = view.evaluate_script_with_callback(views::MEDIA_PROBE_JS, move |raw| {
                     if let (Ok(probe), Ok(mut probes)) =
                         (serde_json::from_str::<MediaProbe>(&raw), sink.lock())
@@ -3176,6 +3206,7 @@ impl Running {
             _ => return,
         };
         let _ = view.evaluate_script(js);
+        self.media_hint.insert(id.0, Instant::now());
         self.media_due = Instant::now() + Duration::from_millis(250);
         if action == "close" {
             self.ui_state();
@@ -3429,7 +3460,8 @@ impl Running {
             // The other pane of a split stays on screen: its video keeps playing in place.
             let left = self.shown.filter(|id| Some(*id) != self.split_tab());
             if let Some(id) = left.filter(|id| self.tabs.contains_key(id)) {
-                if let Some(view) = self.tabs.get(&id) {
+                // Never during a call: the first video found there is some participant's tile.
+                if let Some(view) = self.tabs.get(&id).filter(|_| !self.in_call(id)) {
                     let _ = view.evaluate_script(views::PIP_ENTER_JS);
                 }
                 // A video already floating keeps its "back to tab" button working unless the
@@ -3544,6 +3576,10 @@ impl Running {
         }
         self.blur_due = None;
         let Some(id) = self.shown else { return };
+        // A call is left alone: sharing a screen is precisely working in another window.
+        if self.in_call(id) {
+            return;
+        }
         if let Some(view) = self.tabs.get(&id) {
             let _ = view.evaluate_script(views::PIP_ENTER_JS);
             self.pip_on_blur = Some(id);
@@ -3687,6 +3723,8 @@ impl Running {
             probes.remove(&id.0);
         }
         self.media_hold.forget(id.0);
+        self.media_hint.remove(&id.0);
+        self.crashed.remove(&id);
         if self.pip_tab == Some(id) {
             self.pip_tab = None;
             self.pip_seen = false;
@@ -3718,6 +3756,43 @@ impl Running {
         };
         if let Some(id) = target {
             self.handle_ui(UiCommand::Activate { id: id.0 });
+        }
+    }
+
+    /// The page says its media may have changed: it is probed soon, and for a few seconds.
+    fn media_hinted(&mut self, tab: TabId) {
+        if !self.tabs.contains_key(&tab) {
+            return;
+        }
+        let now = Instant::now();
+        self.media_hint.insert(tab.0, now);
+        self.media_due = self.media_due.min(now + Duration::from_millis(250));
+    }
+
+    /// The engine process of a page died. A tab on screen is reloaded once (a second death
+    /// within `CRASH_LOOP` leaves it alone, with a word to the user); a hidden one gives its
+    /// view back and loads again when it is shown.
+    fn on_crashed(&mut self, tab: TabId) {
+        if !self.tabs.contains_key(&tab) {
+            return;
+        }
+        let on_screen = self.shown == Some(tab) || self.split_tab() == Some(tab);
+        if !on_screen {
+            self.drop_view(tab);
+            self.ui_state();
+            return;
+        }
+        let now = Instant::now();
+        let again = self
+            .crashed
+            .insert(tab, now)
+            .is_some_and(|before| now.duration_since(before) < CRASH_LOOP);
+        self.loading.remove(&tab);
+        if again {
+            self.toast(&t("toast.page_crashed"));
+            self.ui_bar();
+        } else if let Some(view) = self.tabs.get(&tab) {
+            let _ = view.reload();
         }
     }
 
@@ -5286,7 +5361,10 @@ impl Running {
             Msg::Page(tab, PageEvent::LoginSubmitted { username, password }) => {
                 self.login_submitted(tab, &username, &password)
             }
-            Msg::Page(tab, PageEvent::Location) => self.refresh_url(tab),
+            Msg::Page(tab, PageEvent::Location) => {
+                self.media_hinted(tab);
+                self.refresh_url(tab)
+            }
             Msg::Page(tab, PageEvent::Favicon { url }) => {
                 let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
                 if let Some(page) = page.and_then(|raw| Url::parse(&raw).ok()) {
@@ -5309,6 +5387,7 @@ impl Running {
                 self.ui_bar();
             }
             Msg::Loaded(tab, url) => {
+                self.media_hinted(tab);
                 self.errors_loaded(tab, &url);
                 self.auth.loaded(tab);
                 self.loading.remove(&tab);
@@ -5325,6 +5404,8 @@ impl Running {
                 }
             }
             Msg::Failed(tab, url) => self.on_failed(tab, url),
+            Msg::Crashed(tab) => self.on_crashed(tab),
+            Msg::Page(tab, PageEvent::Media { .. }) => self.media_hinted(tab),
             Msg::LoadFailure(tab, failure) => self.on_load_failure(tab, failure),
             Msg::ServerTrust(tab, challenge) => self.on_server_trust(tab, challenge),
             Msg::Upgraded(tab, plain) => self.on_upgraded(tab, plain),
@@ -5593,7 +5674,8 @@ impl ApplicationHandler<Wake> for App {
             #[cfg(target_os = "macos")]
             if app.cards_rounded.elapsed() >= Duration::from_millis(300) {
                 app.cards_rounded = Instant::now();
-                app.round_cards(true);
+                // Only the cards on screen: the hidden tabs are rounded when they are shown.
+                app.round_cards(false);
             }
             app.discard_idle_tabs();
             if app.flush_raise(false) {

@@ -1,6 +1,16 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.5",
+        &[
+            "Lighter on heavy web apps (YouTube, Google Docs and Sheets, Meet): trackers and ads are now blocked by the engine itself (WebKit content rules on macOS, request filters on Windows) instead of a script that wrapped the page's own functions in every frame",
+            "Tabs that play nothing are no longer asked about their media every second and a half: a page tells the browser when something starts, stops or opens the camera or microphone",
+            "A page whose engine process stops (out of memory on a heavy document, a crash) is reloaded once instead of staying blank; a background tab reloads when you come back to it",
+            "A call is never moved to Picture in Picture when you switch tab or share your screen from another window",
+            "macOS: the rounded corners of the page are no longer re-applied to every tab several times a second",
+        ],
+    ),
+    (
         "0.8.4",
         &[
             "BlackHole for Android updates itself: once a day (or with Check now in Settings > Updates) it looks for a new release on GitHub, then downloads the APK signed like the installed app, checks it against the release checksums and hands it to the system installer",

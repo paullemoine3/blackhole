@@ -628,6 +628,9 @@ pub enum PageEvent {
     },
     /// A video left Picture in Picture (untrusted: only acted on for a tab the shell floated).
     PipLeft {},
+    /// Something about the page's audio, video, camera or microphone may have changed: the
+    /// shell probes this tab (it does not poll the tabs that stay silent).
+    Media {},
     /// The user clicked an area while the picker was armed (honoured only then; untrusted).
     LivePick {
         selector: String,
@@ -648,6 +651,9 @@ pub enum Msg {
     Loaded(TabId, Url),
     /// The page could not be reached: the tab shows the error page.
     Failed(TabId, Url),
+    /// The engine process of the page died (crash, or killed for its memory use).
+    #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+    Crashed(TabId),
     /// Why a navigation failed (before `Failed`), or its HTTP error status (before `Loaded`).
     LoadFailure(TabId, wry::LoadFailure),
     /// A certificate the engine refused (details for the error page).
