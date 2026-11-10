@@ -71,6 +71,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   vidéo (elle sort en lecture) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
   `pip_left`). Sous WebView2, fermer ne met pas en pause : rien ne change d'onglet (la page ne distingue pas
   « fermer » de « retour à l'onglet ») ; la carte lecteur reste dans la barre latérale.
+  `paused` = une pause vue pendant le PiP (`media_devices.js`), pas `video.paused` à la sortie :
+  WebKit met en pause une vidéo muette (tuiles d'un appel) qui revient dans un onglet masqué.
 - Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
   titre transparente sur macOS) ; leur page dessine la barre du haut (38 px, teinte de l'espace,
   boutons) et la pilote par `UiCommand::PanelWindow`.
@@ -164,6 +166,8 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Annuler : `Workspace::snapshot_space` / `snapshot_folder` avant suppression, puis `undo_removal`
   (toast « Undo », 15 s) ; les entrées d'archive correspondantes sont retirées.
 - Palette : une action `key:<raccourci>` rejoue le raccourci (`shortcut`), avec `keys` pour l'affichage.
+  Aucune ligne sélectionnée à l'ouverture (`sel = -1`) : Entrée sur l'adresse intacte recharge la
+  page (`submit`) ; la première ligne est sélectionnée dès qu'on tape.
 - Déplacer un onglet d'espace (`move_tab_to_space`) libère sa vue : elle est recréée sur le profil
   (cookies) du nouvel espace. « Copy link » passe par `execCommand('copy')` dans la palette.
 
@@ -215,7 +219,9 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   plafonnée) ; adresses secrètes chiffrées (`calendars.bin`, `Vault::named`). App : `meet.rs`
   (synchro en thread toutes les 10 min, carte « prochaine réunion », rappel, `open_meet` qui
   réutilise l'onglet Meet d'accès rapide ou de dossier sauf s'il est en appel). La page des
-  Réglages ne reçoit jamais l'adresse secrète, seulement le nom de l'agenda.
+  Réglages ne reçoit jamais l'adresse secrète, seulement le nom de l'agenda. La carte part
+  5 min après le début (`CARD_KEEP`, `next_soon`) ; son icône est une croix au survol
+  (`meeting_dismiss` : cette réunion seulement, en mémoire).
 - Outils de développement des pages : `with_devtools(true)` sur les onglets (feature `devtools`
   de wry, active en release), raccourci `devtools` (F12, Ctrl+Maj+I, ⌘⌥I) géré par
   `shortcuts.js` puisque les raccourcis natifs de WebView2 sont coupés.

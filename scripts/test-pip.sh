@@ -5,6 +5,8 @@
 # keeps playing) shows its tab, close (it pauses) switches nothing. The harness cannot click
 # the native window, so the page plays both: leaving PiP playing, or paused. A page posting
 # "pip_left" for a video the shell never floated switches nothing.
+# A call's tiles are muted live streams: WebKit pauses one that comes back into a hidden page,
+# which must still read as "back to tab" (call.html, a canvas stream).
 # A CC0 clip from MDN is served on 127.0.0.1:47995 (needs network access once per run).
 # Scratch profile /tmp/bh_data (wiped first); screenshots in /tmp/bh_shots/pip-*.png.
 set -euo pipefail
@@ -17,6 +19,14 @@ trap cleanup EXIT
 curl -sfL -o "$site/flower.mp4" https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4
 cat > "$site/video.html" <<'H'
 <!doctype html><title>bh video</title><body style="margin:0;background:#000"><video src="flower.mp4" loop playsinline style="width:100%"></video></body>
+H
+cat > "$site/call.html" <<'H'
+<!doctype html><title>bh call</title><body style="margin:0;background:#000"><canvas width="640" height="360" hidden></canvas><video muted playsinline style="width:100%"></video>
+<script>
+const c = document.querySelector('canvas'), x = c.getContext('2d'); let n = 0;
+setInterval(() => { x.fillStyle = 'hsl(' + (n++ % 360) + ',60%,50%)'; x.fillRect(0, 0, 640, 360); }, 50);
+document.querySelector('video').srcObject = c.captureStream(20);
+</script></body>
 H
 cat > "$site/other.html" <<'H'
 <!doctype html><title>bh other</title><p>other</p>
@@ -88,10 +98,26 @@ cmd {"cmd":"media_ctl","id":2,"action":"close"}
 wait 2000
 eval tab2 'card-close ' + $STATE
 $CARD
+cmd {"cmd":"open","input":"http://127.0.0.1:47995/call.html"}
+wait 4000
+eval content (() => { $V.play(); return 'live-play'; })()
+wait 1500
+cmd {"cmd":"activate","id":3}
+wait 4000
+eval tab4 'live-auto ' + $STATE
+eval tab4 (() => { $V.webkitSetPresentationMode('inline'); return 'live-back'; })()
+wait 3000
+$ACTIVE
+eval tab4 'live-after ' + $STATE
+cmd {"cmd":"activate","id":3}
+wait 4000
+eval tab4 (() => { const v = $V; v.pause(); v.webkitSetPresentationMode('inline'); return 'live-close'; })()
+wait 3000
+$ACTIVE
 eval chrome 'alive'
 quit
 S
-out=$(timeout 240 cargo run -q -p blackhole --features devtools 2>&1 | grep "dev\] eval ->" || true)
+out=$(timeout 300 cargo run -q -p blackhole --features devtools 2>&1 | grep "dev\] eval ->" || true)
 mapfile -t L <<<"$out"
 fail=0
 check() { if [[ "${L[$1]:-}" == *"$2"* ]]; then echo "ok   $3"; else echo "FAIL $3 (got: ${L[$1]:-none})"; fail=1; fi; }
@@ -118,7 +144,14 @@ check 19 'forged' "a page posts a pip_left of its own"
 check 20 'active=3' "a page cannot switch tabs with it"
 check 21 'card-close inline paused' "card close: pauses and closes the floating window"
 check 22 'card=false' "card close: the card goes away"
-check 23 'alive' "no crash: the app is still running"
+check 23 'live-play' "a muted live stream (a call's tile) plays"
+check 24 'live-auto pip playing' "live stream: leaving the tab floats it"
+check 25 'live-back' "live stream: back to tab"
+check 26 'active=4' "live stream: back to tab shows its tab"
+check 27 'live-after inline playing' "live stream: it goes on in its page"
+check 28 'live-close' "live stream: close (pauses, leaves)"
+check 29 'active=3' "live stream: close switches no tab"
+check 30 'alive' "no crash: the app is still running"
 for s in pip-auto pip-back; do
   [[ -f /tmp/bh_shots/$s.png ]] || { echo "FAIL screenshot $s missing"; fail=1; }
 done

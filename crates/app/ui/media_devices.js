@@ -104,23 +104,34 @@
     },
   };
 
-  // Paused: the window's close button. Playing: its "back to tab" button.
-  const left = (v) => post({ cmd: 'pip_left', paused: !!v.paused });
+  // Paused while it floats: the window's close button (it pauses the video first). Left playing:
+  // its "back to tab" button. `paused` read when it leaves cannot tell: WebKit pauses a muted
+  // video (the tiles of a call) that comes back into a page not on screen, on its way in, and
+  // that `pause` event only comes after the video has left. So pauses are noted as they happen.
+  const video = (e) => (e.target instanceof HTMLVideoElement ? e.target : null);
+  document.addEventListener('pause', (e) => { const v = video(e); if (v && v.__bhPip) v.__bhPaused = true; }, true);
+  document.addEventListener('play', (e) => { const v = video(e); if (v) v.__bhPaused = false; }, true);
   document.addEventListener(
     'leavepictureinpicture',
-    (e) => e.target instanceof HTMLVideoElement && left(e.target),
+    (e) => {
+      const v = video(e);
+      // WebKit already said so below; elsewhere this is the only event.
+      if (v && !('webkitPresentationMode' in v)) post({ cmd: 'pip_left', paused: !!v.paused });
+    },
     true
   );
   document.addEventListener(
     'webkitpresentationmodechanged',
     (e) => {
-      const v = e.target;
-      if (!(v instanceof HTMLVideoElement)) return;
+      const v = video(e);
+      if (!v) return;
       hint();
-      if (v.webkitPresentationMode === 'picture-in-picture') v.__bhPip = true;
-      else if (v.__bhPip) {
+      if (v.webkitPresentationMode === 'picture-in-picture') {
+        v.__bhPip = true;
+        v.__bhPaused = !!v.paused;
+      } else if (v.__bhPip) {
         v.__bhPip = false;
-        left(v);
+        post({ cmd: 'pip_left', paused: !!v.__bhPaused });
       }
     },
     true

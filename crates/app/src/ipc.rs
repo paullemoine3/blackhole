@@ -165,6 +165,11 @@ pub enum UiCommand {
         url: String,
         start: i64,
     },
+    /// The close button of the sidebar's meeting card: that meeting is no longer shown there.
+    MeetingDismiss {
+        url: String,
+        start: i64,
+    },
     /// Settings > Calendar: a secret iCal address of Google Calendar.
     CalendarAdd {
         url: String,
@@ -830,6 +835,12 @@ mod tests {
             UiCommand::MeetingNotes { start: 1_700_000_000, .. }
         ));
         assert!(serde_json::from_str::<PageEvent>(notes).is_err());
+        let dismiss = r#"{"cmd":"meeting_dismiss","url":"https://meet.google.com/abc-defg-hij","start":1700000000}"#;
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(dismiss).unwrap(),
+            UiCommand::MeetingDismiss { start: 1_700_000_000, .. }
+        ));
+        assert!(serde_json::from_str::<PageEvent>(dismiss).is_err());
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()

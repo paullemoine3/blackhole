@@ -14,6 +14,9 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A click on a download card in the sidebar opens Library > Downloads, and a finished download stays there 8 seconds",
             "A tab opened only to download a file closes once the file is saved, instead of showing an error page",
             "The Library and the sidebar's player, download, meeting and tidy-up cards are redesigned on the BlackHole design system, with the same animations as Settings",
+            "The sidebar's meeting card leaves 5 minutes after the meeting starts instead of staying until its end, and its icon turns into a cross to hide it at once",
+            "Command bar: nothing is selected when it opens, so Enter on the untouched address reloads the page instead of jumping to the first tab of the list; the first row is selected as soon as you type",
+            "Picture in Picture on macOS: back to tab also works for a call (Meet) and other muted videos, which WebKit pauses on their way back into a hidden tab",
         ],
     ),
     (
