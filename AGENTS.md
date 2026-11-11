@@ -378,6 +378,13 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   (`PackageInstaller`). Favicons (`icons.rs`, `icons.json`, jamais en privé), autorisations de site
   (`permissions.rs`, accordées seulement par la réponse de l'interface), site bureau, recherche dans
   la page, impression, raccourci d'écran d'accueil, partage reçu, plein écran vidéo, fichiers.
+- Rendu de `mobile.html` : sur place, comme les cartes du bureau. Chaque partie garde la signature
+  de ce qu'elle a dessiné (`changed`) et les listes passent par `sync` (nœuds gardés par clé,
+  animation d'entrée `.in` une seule fois) ; jamais de `replaceChildren` sur une liste tirée de
+  l'état (clignotement, toucher ou bouton armé perdus). Le compteur du bouclier voyage seul
+  (`NativeEvent::Blocked` → message `blocked`), pas avec tout l'état. `insets` sépare `bottom`
+  (barres système) et `keyboard` : le clavier de nos champs recouvre la barre (la page garde sa
+  taille), celui d'une page ou de la recherche dans la page la soulève (`--bb`).
 - Commandes : `cd android; .\gradlew.bat assembleDebug` (lance `cargo ndk`), `scripts\test-android.ps1
   [-Boot]` (adb, captures `%TEMP%h_android_shots`, contrôles nommés `bheval:` lus dans logcat).
   Toute nouvelle fonction d'interface mobile : un scénario et un `Check` dans ce script.

@@ -42,6 +42,26 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   régresser. Jetons de couleur et `@keyframes` (`spring`, `rowin`, `bloom`, `pop`, `rise`, `swirl`,
   splash de `home.html`) sont repris : **toucher l'un sans l'autre fait diverger les deux apps**.
 
+### Rendu de l'interface
+
+Le cœur envoie tout l'état (`state`) à chaque événement de page (adresse, titre, vue libérée…).
+L'interface ne redessine que ce qui a changé :
+
+- chaque partie garde la signature de ce qu'elle a dessiné (`changed`) ; un état identique au
+  précédent est ignoré dès sa réception ;
+- les listes (onglets du tiroir, grille, suggestions, historique, appareils, téléchargements)
+  passent par `sync` : le nœud d'une clé encore présente est gardé et mis à jour, seuls les
+  nouveaux jouent leur animation d'entrée (classe `.in`). Un toucher en cours, la position de
+  défilement et un bouton armé (« Tap again to confirm ») survivent donc au message ;
+- le compteur du bouclier voyage seul (`NativeEvent::Blocked` → `blocked`), une vignette ne
+  touche que sa carte, `surface` n'est envoyé à la coque que s'il change ;
+- clavier : `insets` donne les barres système (`bottom`) et le clavier (`keyboard`) à part. Le
+  clavier de nos champs (adresse, historique, code d'appairage) recouvre la barre et la page
+  garde sa taille ; celui d'une page, ou de la recherche dans la page, soulève la barre.
+
+Ne pas revenir à `replaceChildren` sur une liste tirée de l'état : c'est ce qui faisait clignoter
+l'interface à chaque frappe et à chaque fermeture d'onglet.
+
 ### Protocole et sécurité
 
 - Interface → shell : `WebViewCompat.addWebMessageListener(shell, "bh", {origine des assets})`,
@@ -214,7 +234,8 @@ extras d'intent réservés aux builds debug (`bh_cmd64` : un message d'interface
 dans logcat (contrôles **nommés**, pas indexés) et range les captures dans
 `%TEMP%\bh_android_shots`. Il couvre l'accueil, l'ouverture d'adresses, la palette et les
 suggestions, le tiroir (état intermédiaire compris), la grille, le rapport Shields, le privé,
-une page d'erreur, le refus d'un traqueur, les réglages (thème clair), le mode animations
+la frappe réelle dans la barre (clavier, suggestions gardées), la fermeture d'un onglet dans
+la grille (cartes gardées), une page d'erreur, le refus d'un traqueur, les réglages (thème clair), le mode animations
 coupées, l'historique, le retour système, Undo, et la sortie par le retour. Réseau requis.
 
 AVD de test : `avdmanager create avd -n bh_test -k "system-images;android-35;google_apis;x86_64" -d pixel_7`
