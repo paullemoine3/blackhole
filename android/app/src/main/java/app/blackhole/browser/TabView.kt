@@ -8,10 +8,13 @@ import android.net.Uri
 import android.net.http.SslError
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.util.Base64
 import android.view.View
 import android.webkit.GeolocationPermissions
+import android.webkit.HttpAuthHandler
 import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -63,6 +66,13 @@ class TabView(
         /** A request of [tab] was refused (any thread): the shield's count changed. */
         fun blocked(tab: Long)
         fun download(url: String, userAgent: String, disposition: String, mime: String, profile: String)
+        /**
+         * The page opens a window on a user gesture. `true`: the core wants it as a popup, whose
+         * view the shell creates and hands to [window] (a `WebViewTransport`) a moment later.
+         */
+        fun newWindow(tab: Long, sized: Boolean, window: Message): Boolean
+        /** A server asks for a name and password: [handler] is answered once, by the core. */
+        fun askAuth(tab: Long, host: String, realm: String, handler: HttpAuthHandler)
         fun isOnline(): Boolean
     }
 
@@ -85,6 +95,14 @@ class TabView(
         WebSettings.getDefaultUserAgent(context).replace("; wv)", ")").replace(Regex("""Version/[\d.]+ """), "")
     }
 
+    /**
+     * The main frame's answer when it is an error one (401, 403, 5xx): its address and status.
+     * Forgotten when the next main-frame request leaves (network thread): the WebView calls
+     * `onPageStarted` again for its own error page, so that callback cannot reset it.
+     */
+    @Volatile
+    private var httpError: Pair<String, Int>? = null
+
     /** `requestFocusNodeHref` answers here: the link and the image of a linked image. */
     private val hrefs = Handler(Looper.getMainLooper()) { msg ->
         host.linkMenu(tab, msg.data.getString("url"), msg.data.getString("src"))
@@ -101,7 +119,10 @@ class TabView(
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            setSupportMultipleWindows(false)
+            // Windows asked by pages reach the core (`onCreateWindow`): a sign-in popup keeps
+            // its opener, anything else loads in the tab. Never without a user gesture.
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = false
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
@@ -200,6 +221,11 @@ class TabView(
     }
 
     companion object {
+        /** What an error answer looks like (the desktop's probe): read by the core only. */
+        private const val PROBE = "(()=>{const b=document.body;return JSON.stringify({href:location.href,title:document.title||''," +
+            "text:b?b.innerText.slice(0,400):'',rich:!!document.querySelector('a[href],form,img,video,iframe," +
+            "canvas,svg,object,embed,input,button')})})()"
+
         /** The JPEG `data:` URL of a [snapshot], which is recycled (any thread). */
         fun encode(picture: Bitmap): String? = try {
             val out = ByteArrayOutputStream()
@@ -235,8 +261,33 @@ class TabView(
         }
 
         override fun onPageFinished(view: WebView, url: String) {
-            ev("finished", "url" to url, "title" to (view.title ?: ""))
+            // (The engine's own page for an empty error answer has a title that is not the site's.)
+            val failed = httpError?.first == url
+            ev("finished", "url" to url, "title" to (if (failed) "" else view.title ?: ""))
             host.navigated(tab)
+            // An error answer with nothing to show gets our page: the core judges what the
+            // page looks like (a server's own error page stays).
+            val status = httpError?.takeIf { it.first == url }?.second ?: 0
+            if (status != 0) httpError = null
+            if (status != 0) view.evaluateJavascript(PROBE) { probe ->
+                if (debug) android.util.Log.d("BlackHole", "http status $status for $url (page $pageUrl): $probe")
+                if (pageUrl == url) ev("http_status", "url" to url, "status" to status, "probe" to (probe ?: ""))
+            }
+        }
+
+        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+            val status = response.statusCode
+            if (request.isForMainFrame && (status == 401 || status == 403 || status in 500..599)) httpError = request.url.toString() to status
+        }
+
+        override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String?, realm: String?) {
+            this@TabView.host.askAuth(tab, host ?: "", realm ?: "", handler)
+        }
+
+        /** The renderer died: this view is unusable; the core drops it and decides what follows. */
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            ev("crashed")
+            return true
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -265,6 +316,7 @@ class TabView(
                 // Set here, on the network thread: `onPageStarted` reaches the UI thread after the
                 // page's first subresource requests, which would be counted for the previous page.
                 pageUrl = url
+                httpError = null
                 return null
             }
             if (!url.startsWith("http")) return null
@@ -285,13 +337,20 @@ class TabView(
         }
 
         override fun onReceivedTitle(view: WebView, title: String?) {
-            if (!title.isNullOrBlank()) ev("title", "title" to title)
+            if (!title.isNullOrBlank() && httpError == null) ev("title", "title" to title)
         }
 
         override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
             icon ?: return
             pageIcon = icon
             iconData(icon)?.let { ev("favicon", "data" to it) }
+        }
+
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean =
+            isUserGesture && host.newWindow(tab, isDialog, resultMsg)
+
+        override fun onCloseWindow(window: WebView) {
+            ev("closed_window")
         }
 
         override fun onShowCustomView(view: View, callback: WebChromeClient.CustomViewCallback) = host.fullscreen(view, callback)

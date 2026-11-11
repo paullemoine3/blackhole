@@ -665,3 +665,367 @@ fn the_go_suggestion_shows_the_whole_address_typed() {
     let out = c.command(C::Suggest { text: "example.org".into() });
     assert_eq!(ui(&out, "suggest").unwrap()["items"][0]["title"], "example.org");
 }
+
+#[test]
+fn a_dead_renderer_is_reloaded_once_on_screen_and_only_dropped_when_hidden() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let hidden = go(&mut c, "https://one.example/");
+    let shown = go(&mut c, "https://two.example/");
+    // Hidden: the view goes, nothing else (it loads again when the tab is shown).
+    assert_eq!(c.event(E::Crashed { tab: hidden }), vec![Effect::Drop { tab: hidden }]);
+    assert!(opened(&c.command(C::Activate { tab: hidden })).is_some());
+    c.command(C::Activate { tab: shown });
+    // On screen: a new view on the same address.
+    let out = c.event(E::Crashed { tab: shown });
+    assert_eq!(out[0], Effect::Drop { tab: shown });
+    assert_eq!(opened(&out).map(|o| (o.0, o.1)), Some((shown, "https://two.example/".to_owned())));
+    // Dead again at once: the start page, with a word about it.
+    let out = c.event(E::Crashed { tab: shown });
+    assert!(opened(&out).is_none());
+    assert!(out.contains(&Effect::Show { tab: None }));
+    assert!(has_toast(&out, "This page keeps crashing"));
+}
+
+#[test]
+fn an_empty_error_answer_gets_our_page_and_a_page_of_the_server_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://api.example/");
+    c.event(E::Started {
+        tab,
+        url: "https://api.example/".into(),
+    });
+    let probe = |title: &str, text: &str, rich: bool| {
+        json!({"href": "https://api.example/", "title": title, "text": text, "rich": rich}).to_string()
+    };
+    let status = |c: &mut Core, status: u16, probe: String| {
+        c.event(E::HttpStatus {
+            tab,
+            url: "https://api.example/".into(),
+            status,
+            probe: serde_json::to_string(&probe).unwrap(),
+        })
+    };
+    // The server's own page (a title, or a form) is shown as sent; a 404 is never ours.
+    assert!(status(&mut c, 403, probe("Access denied", "Ask your administrator", false)).is_empty());
+    assert!(status(&mut c, 500, probe("", "", true)).is_empty());
+    assert!(status(&mut c, 404, probe("", "", false)).is_empty());
+    // Another address than the tab's: ignored.
+    assert!(c
+        .event(E::HttpStatus {
+            tab,
+            url: "https://other.example/".into(),
+            status: 403,
+            probe: serde_json::to_string(&probe("", "", false)).unwrap(),
+        })
+        .is_empty());
+    // The engine's own page for an empty answer is no page of the server.
+    let engine = json!({"href": "chrome-error://chromewebdata/", "title": "Webpage not available", "text": "", "rich": true}).to_string();
+    let out = status(&mut c, 502, engine);
+    assert_eq!(html_kind(&out).as_deref(), Some("server"));
+    c.command(C::Reload);
+    c.event(E::Started { tab, url: "https://api.example/".into() });
+    let out = status(&mut c, 403, probe("", "403 Forbidden", false));
+    assert_eq!(html_kind(&out).as_deref(), Some("forbidden"));
+    assert_eq!(ui(&out, "state").unwrap()["error"], json!("forbidden"));
+}
+
+#[test]
+fn a_server_gets_credentials_only_from_the_interface_for_the_tab_on_screen() {
+    use crate::bridge::Secret;
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let nas = go(&mut c, "http://nas.example/");
+    let other = go(&mut c, "https://other.example/");
+    // A hidden tab waits; the question comes when it is shown.
+    assert!(c.event(E::Auth { id: 7, tab: nas, host: "NAS.example".into(), realm: r#"Basic realm="Box""#.into() }).is_empty());
+    let out = c.command(C::Activate { tab: nas });
+    let ask = ui(&out, "auth").unwrap();
+    assert_eq!((ask["host"].clone(), ask["realm"].clone()), (json!("nas.example"), json!("Box")));
+    // (The address typed in plain http was upgraded: the password would travel encrypted.)
+    assert_eq!((ask["secure"].clone(), ask["retry"].clone()), (json!(true), json!(false)));
+    // A second challenge of the same realm (a sub-resource) asks nothing more…
+    assert!(c.event(E::Auth { id: 8, tab: nas, host: "nas.example".into(), realm: "Box".into() }).is_empty());
+    // …and one answer serves both.
+    let out = c.command(C::AuthAnswer { id: ask["id"].as_u64().unwrap(), user: "me".into(), password: Secret("pw".into()) });
+    for id in [7, 8] {
+        assert!(out.contains(&Effect::HttpAuth { id, user: Some("me".into()), password: Some(Secret("pw".into())) }));
+    }
+    // Asked again before the page loaded: the credentials were refused.
+    let again = ui(&c.event(E::Auth { id: 9, tab: nas, host: "nas.example".into(), realm: "Box".into() }), "auth").unwrap();
+    assert_eq!(again["retry"], json!(true));
+    // Closing the question cancels; closing the tab cancels what is left.
+    let out = c.command(C::AuthCancel { id: again["id"].as_u64().unwrap() });
+    assert!(out.contains(&Effect::HttpAuth { id: 9, user: None, password: None }));
+    c.event(E::Auth { id: 10, tab: nas, host: "nas.example".into(), realm: "Box".into() });
+    let out = c.command(C::Close { tab: nas });
+    assert!(out.contains(&Effect::HttpAuth { id: 10, user: None, password: None }));
+    assert!(ui(&out, "auth_gone").is_some());
+    // A tab that does not exist is refused at once; a password never shows in a debug print.
+    assert_eq!(c.event(E::Auth { id: 11, tab: other + 99, host: "x.example".into(), realm: String::new() }),
+        vec![Effect::HttpAuth { id: 11, user: None, password: None }]);
+    assert!(!format!("{:?}", Secret("hunter2".into())).contains("hunter2"));
+    // A page cannot answer for the user.
+    assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"auth_answer","id":1,"user":"a","password":"b"}"#).is_err());
+}
+
+fn popup_of(out: &[Effect]) -> Option<(u64, u64, String)> {
+    out.iter().find_map(|e| match e {
+        Effect::Popup { tab, opener, profile, .. } => Some((*tab, *opener, profile.clone())),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_sign_in_popup_keeps_its_opener_and_a_plain_window_loads_in_the_tab() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let other = go(&mut c, "https://other.example/");
+    let app = go(&mut c, "https://app.example/");
+    // Only the page on screen opens a window.
+    assert!(c.event(E::NewWindow { tab: other, sized: true }).is_empty());
+    let out = c.event(E::NewWindow { tab: app, sized: false });
+    let (popup, opener, profile) = popup_of(&out).unwrap();
+    assert_eq!((opener, profile.as_str()), (app, "Default"));
+    assert!(out.contains(&Effect::Show { tab: Some(popup) }));
+    let state = ui(&out, "state").unwrap();
+    assert_eq!((state["popup"].clone(), state["private"].clone()), (json!(true), json!(false)));
+    // Never listed with the tabs, and a popup opens no popup.
+    assert_eq!(state["tabs"].as_array().unwrap().len(), 2);
+    assert!(c.event(E::NewWindow { tab: popup, sized: true }).is_empty());
+    // A known sign-in page stays in the popup; it leaves no history.
+    let url = "https://accounts.google.com/o/oauth2/auth?client_id=x";
+    assert!(c.event(E::Navigating { tab: popup, url: url.into() }).is_empty());
+    c.event(E::Finished { tab: popup, url: url.into(), title: "Sign in".into() });
+    let h = ui(&c.command(C::History { query: "accounts".into() }), "history").unwrap();
+    assert_eq!(h["items"], json!([]));
+    // `window.close()`: the opener is back, its view was never dropped.
+    let out = c.event(E::ClosedWindow { tab: popup });
+    assert!(out.contains(&Effect::Drop { tab: popup }) && out.contains(&Effect::Show { tab: Some(app) }));
+    assert!(opened(&out).is_none());
+    assert_eq!(ui(&out, "state").unwrap()["popup"], json!(false));
+
+    // A plain `target=_blank` link: no popup is kept, the address loads in the tab that asked.
+    let (popup, ..) = popup_of(&c.event(E::NewWindow { tab: app, sized: false })).unwrap();
+    let out = c.event(E::Navigating { tab: popup, url: "http://news.example/a?utm_source=x".into() });
+    assert_eq!(out[0], Effect::Cancel);
+    assert!(out.contains(&Effect::Drop { tab: popup }) && out.contains(&Effect::Show { tab: Some(app) }));
+    assert!(out.contains(&Effect::Load { tab: app, url: "https://news.example/a".into() }));
+    // A script address never gets a window; a blank or sized one is a popup.
+    let (popup, ..) = popup_of(&c.event(E::NewWindow { tab: app, sized: false })).unwrap();
+    let out = c.event(E::Started { tab: popup, url: "javascript:alert(1)".into() });
+    assert!(out.contains(&Effect::Drop { tab: popup }) && !out.iter().any(|e| matches!(e, Effect::Load { .. })));
+    let (popup, ..) = popup_of(&c.event(E::NewWindow { tab: app, sized: true })).unwrap();
+    assert!(c.event(E::Started { tab: popup, url: "about:blank".into() }).is_empty());
+    assert!(c.event(E::Navigating { tab: popup, url: "https://shop.example/pay".into() }).is_empty());
+    // Back with nothing left closes it; showing another tab drops one left behind.
+    assert!(c.event(E::BackExhausted).contains(&Effect::Show { tab: Some(app) }));
+    let (popup, ..) = popup_of(&c.event(E::NewWindow { tab: app, sized: true })).unwrap();
+    assert!(c.command(C::Activate { tab: other }).contains(&Effect::Drop { tab: popup }));
+    assert!(c.event(E::ClosedWindow { tab: popup }).is_empty());
+    // The popup of a private tab is private, on the private profile.
+    let out = c.command(C::Navigate { input: "https://secret.example/".into(), new_tab: true, private: true });
+    let private = opened(&out).unwrap().0;
+    let out = c.event(E::NewWindow { tab: private, sized: true });
+    assert_eq!(popup_of(&out).unwrap().2, "private");
+    assert_eq!(ui(&out, "state").unwrap()["private"], json!(true));
+    let out = c.command(C::ClosePrivate);
+    assert!(out.contains(&Effect::Show { tab: None }));
+    assert_eq!(ui(&out, "state").unwrap()["popup"], json!(false));
+}
+
+#[test]
+fn the_interface_follows_the_language_setting_then_the_system() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let texts = ui(&c.command(C::Ready), "i18n").unwrap();
+    assert_eq!((texts["lang"].clone(), texts["s"]["mobile.tab_closed"].clone()), (json!("en"), json!("Tab closed")));
+    // The system's first known language, when the setting says "system".
+    assert!(c.event(E::Locale { tags: vec!["de-DE".into(), "en-US".into()] }).is_empty());
+    let out = c.event(E::Locale { tags: vec!["de-DE".into(), "fr-FR".into()] });
+    assert_eq!(ui(&out, "i18n").unwrap()["s"]["mobile.tab_closed"], json!("Onglet fermé"));
+    let tab = go(&mut c, "https://example.org/");
+    assert!(has_toast(&c.command(C::Close { tab }), "Onglet fermé"));
+    // The core's own messages and the error page follow.
+    assert!(has_toast(
+        &c.command(C::Navigate { input: "https://ads.example/".into(), new_tab: true, private: false }),
+        "Shields : publicité bloquée"
+    ));
+    let tab = go(&mut c, "https://down.example/");
+    let out = c.event(E::Failed { tab, url: "https://down.example/".into(), code: -6, online: true });
+    assert!(out.iter().any(|e| matches!(e, Effect::Html { html, .. } if html.contains(r#""lang":"fr""#))));
+    // The setting wins over the system, and is kept.
+    let out = c.command(C::SetLanguage { language: "en".into() });
+    assert_eq!(ui(&out, "i18n").unwrap()["lang"], json!("en"));
+    assert_eq!(ui(&out, "state").unwrap()["settings"]["language"], json!("en"));
+    assert!(c.command(C::SetLanguage { language: "xx".into() }).is_empty());
+    drop(c);
+    let mut c = core(&dir);
+    c.event(E::Locale { tags: vec!["fr-FR".into()] });
+    assert_eq!(ui(&c.command(C::Ready), "i18n").unwrap()["lang"], json!("en"));
+}
+
+/// Every text the mobile interface, the core and the shell ask for exists in the catalog (the
+/// domain's tests check that French has the same keys). Keys are found by their spelling:
+/// `T('…')`, `Tn('…')`, `data-i18n…="…"` in the page, `t("…")`, `tf("…")`, `tn("…")`,
+/// `text_f(lang, "…")`, `text_n(lang, "…")` in Rust, `toastKey("…")` in Kotlin.
+#[test]
+fn every_text_asked_for_is_in_the_catalog() {
+    let en = blackhole_domain::i18n::catalog("en").merged();
+    let has = |key: &str| en.contains_key(&*format!("mobile.{key}")) || en.contains_key(&*format!("mobile.{key}.other"));
+    let root = env!("CARGO_MANIFEST_DIR");
+    let mut files = vec![format!("{root}/ui/mobile.html")];
+    for dir in [format!("{root}/src"), format!("{root}/../../android/app/src/main/java/app/blackhole/browser")] {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            files.push(entry.unwrap().path().to_string_lossy().into_owned());
+        }
+    }
+    let marks = [
+        "T('", "Tn('", "data-i18n=\"", "data-i18n-ph=\"", "data-i18n-aria=\"", ".t(\"", ".tf(\"", ".tn(\"",
+        "text_f(lang, \"", "text_n(lang, \"", "toastKey(\"",
+    ];
+    let (mut used, mut missing) = (0, Vec::new());
+    for file in files.iter().filter(|f| !f.ends_with("tests.rs")) {
+        let text = std::fs::read_to_string(file).unwrap();
+        for mark in marks {
+            for (at, _) in text.match_indices(mark) {
+                // `T(` must not be the tail of another name (`el.setAttribute('…`).
+                if mark.starts_with('T') && text[..at].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                    continue;
+                }
+                let key: String = text[at + mark.len()..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').collect();
+                used += 1;
+                if !has(&key) {
+                    missing.push(format!("{file}: {key}"));
+                }
+            }
+        }
+    }
+    assert!(used > 150, "only {used} keys found: the scan is broken");
+    assert!(missing.is_empty(), "texts missing from the catalog: {missing:#?}");
+}
+
+fn tab_of(state: &Value, id: u64) -> Option<Value> {
+    state["tabs"].as_array().unwrap().iter().find(|t| t["id"] == json!(id)).cloned()
+}
+
+#[test]
+fn tabs_are_renamed_filed_into_folders_and_a_folder_goes_with_its_tabs_until_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let news = go(&mut c, "https://news.example/");
+    let mail = go(&mut c, "https://mail.example/");
+    c.event(E::Finished { tab: news, url: "https://news.example/".into(), title: "The News".into() });
+    // A name of the user's own is not replaced by the page's title; a blank one hands it back.
+    let state = ui(&c.command(C::RenameTab { tab: news, name: "  Morning   read ".into() }), "state").unwrap();
+    assert_eq!(tab_of(&state, news).unwrap()["title"], json!("Morning read"));
+    c.event(E::Title { tab: news, title: "Breaking".into() });
+    let state = ui(&c.command(C::RenameTab { tab: news, name: String::new() }), "state").unwrap();
+    assert_eq!(tab_of(&state, news).unwrap()["title"], json!("Breaking"));
+    // A new folder takes the tab; it is listed with the space's folders.
+    let state = ui(&c.command(C::AddFolder { name: "Reading".into(), tab: Some(news) }), "state").unwrap();
+    let folder = state["folders"][0]["id"].as_u64().unwrap();
+    assert_eq!(state["folders"][0]["name"], json!("Reading"));
+    assert_eq!(tab_of(&state, news).unwrap()["folder"], json!(folder));
+    let state = ui(&c.command(C::ToggleFolder { folder }), "state").unwrap();
+    assert_eq!(state["folders"][0]["collapsed"], json!(true));
+    let state = ui(&c.command(C::RenameFolder { folder, name: "Later".into() }), "state").unwrap();
+    assert_eq!(state["folders"][0]["name"], json!("Later"));
+    // "Closing" a folder tab puts it to sleep: it keeps its place.
+    c.command(C::Activate { tab: news });
+    let out = c.command(C::Close { tab: news });
+    assert!(out.contains(&Effect::Drop { tab: news }));
+    let state = ui(&out, "state").unwrap();
+    assert_eq!(tab_of(&state, news).unwrap()["live"], json!(false));
+    // Out of the folder and back in, then the folder is deleted with what it holds.
+    let state = ui(&c.command(C::MoveTabToFolder { tab: news, folder: None }), "state").unwrap();
+    assert_eq!(tab_of(&state, news).unwrap()["folder"], Value::Null);
+    c.command(C::MoveTabToFolder { tab: news, folder: Some(folder) });
+    c.command(C::Activate { tab: news });
+    let out = c.command(C::DeleteFolder { folder });
+    assert!(out.contains(&Effect::Drop { tab: news }) && out.contains(&Effect::Show { tab: Some(mail) }));
+    let said = ui(&out, "toast").unwrap();
+    assert_eq!((said["text"].clone(), said["action"].clone()), (json!("Folder “Later” deleted"), json!("undo_removal")));
+    let state = ui(&out, "state").unwrap();
+    assert!(tab_of(&state, news).is_none() && state["folders"].as_array().unwrap().is_empty());
+    let state = ui(&c.command(C::UndoRemoval), "state").unwrap();
+    assert_eq!(tab_of(&state, news).unwrap()["folder"], json!(folder));
+    // Nothing of this for a private tab.
+    let private = opened(&c.command(C::Navigate { input: "https://secret.example/".into(), new_tab: true, private: true })).unwrap().0;
+    assert!(c.command(C::RenameTab { tab: private, name: "x".into() }).is_empty());
+    assert!(c.command(C::MoveTabToFolder { tab: private, folder: Some(folder) }).is_empty());
+}
+
+#[test]
+fn a_tab_moves_to_another_space_and_a_space_is_deleted_until_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let keep = go(&mut c, "https://keep.example/");
+    let moved = go(&mut c, "https://moved.example/");
+    let state = ui(&c.command(C::AddSpace { name: "Work".into(), color: "#2dd4bf".into() }), "state").unwrap();
+    let work = state["space"]["id"].as_u64().unwrap();
+    let home = state["spaces"][0]["id"].as_u64().unwrap();
+    // The only space with tabs comes back on screen; the last space is never deleted later.
+    c.command(C::SwitchSpace { space: home });
+    c.command(C::Activate { tab: moved });
+    let out = c.command(C::MoveTabToSpace { tab: moved, space: work });
+    // Its view goes (other cookies there) and the tab seen before takes over.
+    assert!(out.contains(&Effect::Drop { tab: moved }) && out.contains(&Effect::Show { tab: Some(keep) }));
+    assert!(has_toast(&out, "Moved to Work"));
+    assert!(tab_of(&ui(&out, "state").unwrap(), moved).is_none());
+    c.command(C::SwitchSpace { space: work });
+    let out = c.command(C::Activate { tab: moved });
+    assert_eq!(opened(&out).map(|o| (o.0, o.2)), Some((moved, format!("space-{work}"))));
+    let state = ui(&c.command(C::RenameSpace { space: work, name: "Office".into() }), "state").unwrap();
+    assert_eq!(state["space"]["name"], json!("Office"));
+    // Deleting the space on screen: its views go, another space shows, Undo brings it back.
+    let out = c.command(C::DeleteSpace { space: work });
+    assert!(out.contains(&Effect::Drop { tab: moved }));
+    assert!(has_toast(&out, "Space “Office” deleted"));
+    let state = ui(&out, "state").unwrap();
+    assert_eq!((state["spaces"].as_array().unwrap().len(), state["space"]["id"].clone()), (1, json!(home)));
+    assert!(c.command(C::DeleteSpace { space: home }).is_empty());
+    let state = ui(&c.command(C::UndoRemoval), "state").unwrap();
+    assert_eq!(state["spaces"].as_array().unwrap().len(), 2);
+    // Undo works once.
+    assert_eq!(ui(&c.command(C::UndoRemoval), "state").unwrap()["spaces"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn other_tabs_close_at_once_and_loose_tabs_are_tidied_by_site() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let mut tabs = Vec::new();
+    for address in ["a.shop.example/1", "b.shop.example/2", "shop.example/3", "docs.example/a", "docs.example/b", "solo.example/"] {
+        tabs.push(go(&mut c, &format!("https://{address}")));
+    }
+    let pinned = tabs[5];
+    c.command(C::Pin { tab: pinned });
+    // Five loose tabs: no card yet. A sixth one, and the site with three tabs is offered.
+    assert_eq!(ui(&c.command(C::Ready), "state").unwrap()["tidy"], Value::Null);
+    let extra = go(&mut c, "https://docs.example/c");
+    let state = ui(&c.command(C::Ready), "state").unwrap();
+    assert_eq!(state["tidy"], json!({"tabs": 6, "folders": 2}));
+    let out = c.command(C::Tidy);
+    let said = ui(&out, "toast").unwrap();
+    assert_eq!((said["text"].clone(), said["action"].clone()), (json!("6 tabs tidied up"), json!("untidy")));
+    let state = ui(&out, "state").unwrap();
+    assert_eq!(state["folders"].as_array().unwrap().len(), 2);
+    assert!(tab_of(&state, tabs[0]).unwrap()["folder"].is_u64());
+    assert_eq!(state["tidy"], Value::Null);
+    let state = ui(&c.command(C::Untidy), "state").unwrap();
+    assert!(state["folders"].as_array().unwrap().is_empty());
+    // Dismissed: the card stays away.
+    assert_eq!(ui(&c.command(C::DismissTidy), "state").unwrap()["tidy"], Value::Null);
+    // Close the others: the loose tabs but this one; quick access stays.
+    c.command(C::Activate { tab: tabs[0] });
+    let out = c.command(C::CloseOtherTabs { tab: extra });
+    assert!(out.contains(&Effect::Show { tab: Some(extra) }));
+    assert!(has_toast(&out, "5 tabs closed"));
+    assert_eq!(out.iter().filter(|e| matches!(e, Effect::Ui { msg } if msg["type"] == "state")).count(), 1);
+    let state = ui(&out, "state").unwrap();
+    let left: Vec<u64> = state["tabs"].as_array().unwrap().iter().map(|t| t["id"].as_u64().unwrap()).collect();
+    assert_eq!(left.len(), 2);
+    assert!(left.contains(&pinned) && left.contains(&extra));
+}

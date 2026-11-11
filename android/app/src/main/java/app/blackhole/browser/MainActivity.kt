@@ -36,6 +36,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.webkit.CookieManager
+import android.webkit.HttpAuthHandler
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -130,6 +131,12 @@ class MainActivity : ComponentActivity(), TabView.Host {
     /** Site permission requests waiting for the core (the user's answer): id → (kinds, answer). */
     private val permissions = HashMap<Long, Pair<List<String>, (Boolean) -> Unit>>()
     private var permissionSeq = 0L
+
+    /** Windows pages asked for, until their view exists: opener → the engine's request. */
+    private val windows = HashMap<Long, android.os.Message>()
+
+    /** Servers waiting for a name and password (the core's answer): id → handler. */
+    private val authRequests = HashMap<Long, HttpAuthHandler>()
     private var runtimeAnswer: (() -> Unit)? = null
     private val askRuntime = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val answer = runtimeAnswer
@@ -187,8 +194,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
             main.postDelayed({ refresh.isRefreshing = false }, 1500)
         }
         root.addView(refresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        shell = ShellView(this)
-        root.addView(shell, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        addShell()
         setContentView(root)
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, all ->
@@ -218,11 +224,35 @@ class MainActivity : ComponentActivity(), TabView.Host {
         // (the emulator reaching BlackHole on its host, see scripts/test-android.ps1).
         val peer = if (debuggable) intent?.getStringExtra("bh_peer").orEmpty() else ""
         apply(Native.init(File(filesDir, "profile").absolutePath, KeyVault.devicesKeyHex(this), deviceName(), peer))
+        // The interface follows the system's languages unless its own setting says otherwise.
+        val locales = resources.configuration.locales
+        val tags = JSONArray((0 until locales.size()).map { locales[it].toLanguageTag() })
+        apply(Native.event(JSONObject().put("ev", "locale").put("tags", tags).toString()))
         handleIntent(intent)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = back()
         })
+    }
+
+    private fun addShell() {
+        shell = ShellView(this)
+        root.addView(shell, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    /**
+     * Every WebView of the app shares one renderer: when it dies, the interface's view dies with
+     * the tabs' (which report it themselves). A new one is loaded; it asks the core for the state.
+     */
+    private fun rebuildShell() {
+        if (destroyed) return
+        val dead = shell
+        ui = null
+        pendingUi.clear()
+        root.removeView(dead)
+        dead.destroy()
+        addShell()
+        setUpShell()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -243,6 +273,11 @@ class MainActivity : ComponentActivity(), TabView.Host {
 
             // The interface never navigates anywhere.
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
+
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                main.post { rebuildShell() }
+                return true
+            }
         }
         if (debuggable) {
             // The test script reads `bheval:` lines of the interface's console from logcat.
@@ -357,7 +392,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
             "open_downloads" -> try {
                 startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
             } catch (e: ActivityNotFoundException) {
-                toast("No app shows downloads")
+                toastKey("shell_no_downloads_app")
             }
             "find" -> currentView()?.findAllAsync(msg.optString("text").take(500))
             "find_next" -> currentView()?.findNext(msg.optBoolean("forward", true))
@@ -382,7 +417,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
         val url = view.url ?: return
         if (!URLUtil.isNetworkUrl(url)) return
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this)) {
-            toast("Your home screen does not accept shortcuts")
+            toastKey("shell_no_shortcuts")
             return
         }
         val label = view.title?.takeIf { it.isNotBlank() } ?: Uri.parse(url).host ?: "BlackHole"
@@ -415,7 +450,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
         val roles = getSystemService(RoleManager::class.java)
         if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
             if (roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                toast("BlackHole is already your default browser")
+                toastKey("shell_already_default")
             } else {
                 roleRequest.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
             }
@@ -424,12 +459,13 @@ class MainActivity : ComponentActivity(), TabView.Host {
         try {
             startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
         } catch (e: ActivityNotFoundException) {
-            toast("Choose the default browser in the system settings")
+            toastKey("shell_choose_default")
         }
     }
 
-    private fun toast(text: String) =
-        postUi(JSONObject().put("type", "toast").put("text", text).toString())
+    /** A message of the shell: `key` is a `mobile.*` text of the catalogs, said by the interface. */
+    private fun toastKey(key: String) =
+        postUi(JSONObject().put("type", "toast").put("key", key).toString())
 
     /** Runs the core's effects in order. */
     private fun apply(json: String) {
@@ -454,6 +490,19 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 }
                 view.setDesktop(e.optBoolean("desktop"), reload = false)
                 view.loadUrl(e.optString("url"))
+            }
+            "popup" -> windows.remove(e.optLong("opener"))?.let { window ->
+                val view = TabView(this, tab, e.optString("profile"), e.optString("script"), this).also {
+                    it.visibility = View.GONE
+                    it.setBackgroundColor(pageBackground)
+                    it.settings.textZoom = textZoom
+                    tabsLayer.addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    tabs[tab] = it
+                }
+                view.setDesktop(e.optBoolean("desktop"), reload = false)
+                // The engine loads what the page asked in this view, as that page's window.
+                (window.obj as? WebView.WebViewTransport)?.webView = view
+                window.sendToTarget()
             }
             "show" -> show(if (e.isNull("tab")) null else tab)
             "load" -> tabs[tab]?.loadUrl(e.optString("url"))
@@ -482,6 +531,11 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 tabs.values.forEach { it.settings.textZoom = textZoom }
             }
             "permission" -> answerPermission(e.optLong("id"), e.optBoolean("allow"))
+            "http_auth" -> authRequests.remove(e.optLong("id"))?.let { handler ->
+                // Handed to the WebView once; never kept here.
+                if (e.isNull("user") || e.isNull("password")) handler.cancel()
+                else handler.proceed(e.optString("user"), e.optString("password"))
+            }
             // "Download link" of the long press menu (the page's own downloads go through download()).
             "download" -> enqueue(
                 e.optString("url"), WebSettings.getDefaultUserAgent(this), e.optString("disposition"),
@@ -606,9 +660,9 @@ class MainActivity : ComponentActivity(), TabView.Host {
             }
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {
-            toast("No app can open this link")
+            toastKey("shell_no_app_for_link")
         } catch (e: java.net.URISyntaxException) {
-            toast("This link is malformed")
+            toastKey("shell_bad_link")
         }
     }
 
@@ -685,7 +739,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
             true
         } catch (e: ActivityNotFoundException) {
             fileCallback = null
-            toast("No app can pick a file")
+            toastKey("shell_no_file_picker")
             false
         }
     }
@@ -695,6 +749,20 @@ class MainActivity : ComponentActivity(), TabView.Host {
         permissions[id] = kinds to answer
         val json = JSONObject().put("ev", "permission").put("id", id).put("tab", tab).put("origin", origin).put("kinds", JSONArray(kinds))
         event(json)
+    }
+
+    override fun newWindow(tab: Long, sized: Boolean, window: android.os.Message): Boolean {
+        windows[tab] = window
+        val effects = event(JSONObject().put("ev", "new_window").put("tab", tab).put("sized", sized))
+        val wanted = (0 until effects.length()).any { effects.optJSONObject(it)?.optString("do") == "popup" }
+        if (!wanted) windows.remove(tab)
+        return wanted
+    }
+
+    override fun askAuth(tab: Long, host: String, realm: String, handler: HttpAuthHandler) {
+        val id = ++permissionSeq
+        authRequests[id] = handler
+        event(JSONObject().put("ev", "auth").put("id", id).put("tab", tab).put("host", host).put("realm", realm))
     }
 
     private fun systemPermissions(kind: String): List<String> = when (kind) {
@@ -1034,6 +1102,8 @@ class MainActivity : ComponentActivity(), TabView.Host {
             fun decode(key: String) = intent.getStringExtra(key)?.let { String(android.util.Base64.decode(it, android.util.Base64.DEFAULT)) }
             decode("bh_cmd64")?.let { main.postDelayed({ fromUi(it) }, 50) }
             decode("bh_eval64")?.let { js -> main.postDelayed({ shell.evaluateJavascript(js, null) }, 50) }
+            // `--ez bh_crash true`: kills the renderer of the page on screen.
+            if (intent.getBooleanExtra("bh_crash", false)) main.postDelayed({ currentView()?.loadUrl("chrome://crash") }, 50)
         }
     }
 
@@ -1063,6 +1133,8 @@ class MainActivity : ComponentActivity(), TabView.Host {
         pictures.shutdown()
         fileCallback?.onReceiveValue(null)
         fileCallback = null
+        authRequests.values.forEach { it.cancel() }
+        authRequests.clear()
         tabs.values.forEach { it.destroy() }
         tabs.clear()
         shell.destroy()

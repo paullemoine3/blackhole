@@ -6,12 +6,15 @@
 //! pages `PageEvent`s (untrusted), the shell `NativeEvent`s, and the core answers `Effect`s.
 //! Everything but [`jni`] builds and is tested on the host.
 
+mod auth;
 pub mod bridge;
 mod core;
 pub mod devices;
 mod icons;
 mod live;
+mod organize;
 mod permissions;
+mod popups;
 mod update;
 
 pub use crate::core::{error_page, Blocker, Core, MobilePrefs, MAX_LIVE};
