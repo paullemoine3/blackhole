@@ -98,6 +98,9 @@ class MainActivity : ComponentActivity(), TabView.Host {
     private var barPx = 0
     private var animations = true
     private var slide = 0
+    /** Theme of the interface: what shows behind a page that has not drawn yet. */
+    private var dark = true
+    private val pageBackground get() = if (dark) 0xFF0C0B12.toInt() else 0xFFF4F3F8.toInt()
     private var insets = JSONObject()
 
     private val downloads = ArrayList<Long>()
@@ -137,6 +140,9 @@ class MainActivity : ComponentActivity(), TabView.Host {
 
     /** Network and file work of the updater, one task at a time, off the main thread. */
     private val io = Executors.newSingleThreadExecutor()
+    /** JPEG encoding of the tab grid's pictures, off the main thread. */
+    private val pictures = Executors.newSingleThreadExecutor()
+    private var destroyed = false
     /** The APK downloaded for the update, checked by the core before it is installed. */
     private var updateFile: File? = null
     private val density get() = resources.displayMetrics.density
@@ -191,12 +197,17 @@ class MainActivity : ComponentActivity(), TabView.Host {
             insets = JSONObject()
                 .put("type", "insets")
                 .put("top", bars.top / density)
-                .put("bottom", maxOf(bars.bottom, ime.bottom) / density)
+                // The keyboard apart from the system bars: the interface decides what it lifts
+                // (the bar under a page's keyboard, nothing under its own address field).
+                .put("bottom", bars.bottom / density)
                 .put("left", bars.left / density)
                 .put("right", bars.right / density)
-                .put("keyboard", ime.bottom > 0)
-            (refresh.layoutParams as FrameLayout.LayoutParams).topMargin = bars.top
-            refresh.requestLayout()
+                .put("keyboard", ime.bottom / density)
+            val params = refresh.layoutParams as FrameLayout.LayoutParams
+            if (params.topMargin != bars.top) {
+                params.topMargin = bars.top
+                refresh.requestLayout()
+            }
             postUi(insets.toString())
             all
         }
@@ -302,14 +313,24 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 overlay = msg.optBoolean("overlay", false)
                 animations = msg.optBoolean("animations", true)
                 barPx = (msg.optDouble("bottom", 0.0) * density).toInt()
-                (refresh.layoutParams as FrameLayout.LayoutParams).bottomMargin = barPx
-                refresh.requestLayout()
-                val dark = msg.optBoolean("dark", true)
-                WindowCompat.getInsetsController(window, root).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
+                // A page is laid out again only when the bar's height really changed.
+                val params = refresh.layoutParams as FrameLayout.LayoutParams
+                if (params.bottomMargin != barPx) {
+                    params.bottomMargin = barPx
+                    refresh.requestLayout()
                 }
-                tabsLayer.visibility = if (msg.optBoolean("cover", false)) View.INVISIBLE else View.VISIBLE
+                val nowDark = msg.optBoolean("dark", true)
+                WindowCompat.getInsetsController(window, root).apply {
+                    if (isAppearanceLightStatusBars == nowDark) isAppearanceLightStatusBars = !nowDark
+                    if (isAppearanceLightNavigationBars == nowDark) isAppearanceLightNavigationBars = !nowDark
+                }
+                if (nowDark != dark) {
+                    dark = nowDark
+                    root.setBackgroundColor(pageBackground)
+                    tabs.values.forEach { it.setBackgroundColor(pageBackground) }
+                }
+                val visibility = if (msg.optBoolean("cover", false)) View.INVISIBLE else View.VISIBLE
+                if (tabsLayer.visibility != visibility) tabsLayer.visibility = visibility
             }
             "thumbs" -> tabs.values.filter { it.isShown }.forEach { postThumb(it) }
             "peek" -> current?.let { tabs[it] }?.let { v ->
@@ -426,6 +447,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
             "open" -> {
                 val view = tabs[tab] ?: TabView(this, tab, e.optString("profile"), e.optString("script"), this).also {
                     it.visibility = View.GONE
+                    it.setBackgroundColor(pageBackground)
                     it.settings.textZoom = textZoom
                     tabsLayer.addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                     tabs[tab] = it
@@ -492,6 +514,9 @@ class MainActivity : ComponentActivity(), TabView.Host {
             v.translationX = 0f
             v.alpha = 1f
         }
+        // The bar's progress line belongs to the page on screen: without this, the line of a
+        // page left while loading stayed on the next one.
+        postProgress(tab, next?.progress ?: 100)
         if (next == null) {
             before?.visibility = View.GONE
             return
@@ -515,9 +540,20 @@ class MainActivity : ComponentActivity(), TabView.Host {
         navigated(next.tab)
     }
 
+    /** The page is drawn here (it must be), then compressed and encoded on another thread. */
     private fun postThumb(view: TabView) {
-        val data = view.thumbnail() ?: return
-        postUi(JSONObject().put("type", "thumb").put("tab", view.tab).put("data", data).toString())
+        val picture = view.snapshot() ?: return
+        val tab = view.tab
+        pictures.execute {
+            val data = TabView.encode(picture) ?: return@execute
+            main.post {
+                if (!destroyed) postUi(JSONObject().put("type", "thumb").put("tab", tab).put("data", data).toString())
+            }
+        }
+    }
+
+    private fun postProgress(tab: Long?, value: Int) {
+        postUi(JSONObject().put("type", "progress").put("tab", tab ?: JSONObject.NULL).put("value", value).toString())
     }
 
     private fun back() {
@@ -600,7 +636,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
 
     override fun progress(tab: Long, value: Int) {
         if (tab != current) return
-        postUi(JSONObject().put("type", "progress").put("tab", tab).put("value", value).toString())
+        postProgress(tab, value)
         if (value >= 100) refresh.isRefreshing = false
     }
 
@@ -689,7 +725,11 @@ class MainActivity : ComponentActivity(), TabView.Host {
         postUi(JSONObject().put("type", "nav").put("tab", tab).put("back", v.canGoBack()).put("forward", v.canGoForward()).toString())
     }
 
-    private val refreshState = Runnable { apply(Native.command("""{"cmd":"ready"}""")) }
+    /** The tab whose shield count is due (see [blocked]). */
+    private var blockedTab = -1L
+    private val refreshBlocked = Runnable {
+        apply(Native.event(JSONObject().put("ev", "blocked").put("tab", blockedTab).toString()))
+    }
 
     /** What the paired devices sent, a few times a second while the app is on screen. */
     private val tick = object : Runnable {
@@ -711,9 +751,13 @@ class MainActivity : ComponentActivity(), TabView.Host {
             ?: android.os.Build.MODEL ?: "Android"
 
     override fun blocked(tab: Long) {
-        // At most one state refresh every half second, however many requests are refused.
+        // At most one count every half second, however many requests are refused; the count
+        // alone, not the whole state (and every site icon) the interface would draw again.
         main.post {
-            if (tab == current && !main.hasCallbacks(refreshState)) main.postDelayed(refreshState, 500)
+            if (tab == current && !main.hasCallbacks(refreshBlocked)) {
+                blockedTab = tab
+                main.postDelayed(refreshBlocked, 500)
+            }
         }
     }
 
@@ -938,6 +982,7 @@ class MainActivity : ComponentActivity(), TabView.Host {
                 running = running || active
                 items.put(
                     JSONObject()
+                        .put("id", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)))
                         .put("name", c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)))
                         .put("done", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)))
                         .put("total", c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)))
@@ -1011,8 +1056,11 @@ class MainActivity : ComponentActivity(), TabView.Host {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        main.removeCallbacks(refreshBlocked)
         unregisterReceiver(installStatus)
         io.shutdown()
+        pictures.shutdown()
         fileCallback?.onReceiveValue(null)
         fileCallback = null
         tabs.values.forEach { it.destroy() }

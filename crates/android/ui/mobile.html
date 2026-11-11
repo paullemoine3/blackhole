@@ -12,7 +12,8 @@
     --bg: #0c0b12; --panel: #13121b; --ink: #eceaf5; --mute: rgba(236,234,245,.55);
     --line: rgba(255,255,255,.09); --fill: rgba(255,255,255,.06); --fill2: rgba(255,255,255,.1);
     --accent: #7c5cff; --glow: rgba(124,92,255,.35); --amber: #ffb020; --ok: #8ff0b4; --bad: #ff6070;
-    --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --bar: 64px;
+    /* Safe areas; --kb: the keyboard's height; --bb: what the bar stands on (the keyboard of a page, else --sb). */
+    --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --kb: 0px; --bb: 0px; --bar: 64px;
     --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.3,1.15);
   }
   :root[data-theme="light"] {
@@ -68,7 +69,7 @@
   .empty { color: var(--mute); font-size: 13px; padding: 4px; }
 
   /* Bottom bar */
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 8px calc(10px + var(--sr)) calc(8px + var(--sb)) calc(10px + var(--sl));
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 8px calc(10px + var(--sr)) calc(8px + var(--bb)) calc(10px + var(--sl));
     background: radial-gradient(280px 120px at 8% 100%, var(--glow), transparent 70%), var(--bg); border-top: 1px solid var(--line);
     transition: transform .3s var(--ease); touch-action: pan-y; }
   #bar.private { background: radial-gradient(280px 120px at 8% 100%, rgba(160,60,255,.4), transparent 70%), #120c1e; color: #eceaf5; }
@@ -126,7 +127,8 @@
   .trow .tile { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
   .trow span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .trow .live { width: 6px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 6px var(--accent); flex: none; }
-  .dl { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 12.5px; animation: rise .4s var(--ease) both; }
+  .dl { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 12.5px; }
+  .dl.in { animation: rise .4s var(--ease) both; }
   .dl .pb { height: 4px; border-radius: 2px; background: var(--fill2); margin-top: 7px; overflow: hidden; }
   .dl .pb i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--amber)); transition: width .4s ease; }
 
@@ -143,7 +145,9 @@
   .pill { padding: 8px 14px; border-radius: 12px; font-size: 13px; background: var(--fill2); }
   .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tc { height: 200px; border-radius: 16px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); position: relative; touch-action: pan-y;
-    animation: pop .45s var(--spring) both; transition: transform .25s var(--ease), opacity .25s; text-align: left; }
+    transition: transform .25s var(--ease), opacity .25s; text-align: left; }
+  /* Entry animations play once, on the nodes that are new (class `in`, see `enter`). */
+  .tc.in { animation: pop .45s var(--spring) both; }
   .tc.cur { box-shadow: 0 0 0 2px var(--accent), 0 0 20px var(--glow); }
   .tc .h { display: flex; align-items: center; gap: 6px; padding: 7px 6px 7px 9px; font-size: 12px; background: var(--fill2); position: relative; z-index: 1; }
   .tc .h span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -156,7 +160,7 @@
 
   /* Bottom sheet (the desktop palette) */
   #sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 86vh; display: flex; flex-direction: column;
-    padding: 10px calc(14px + var(--sr)) calc(14px + var(--sb)) calc(14px + var(--sl)); border-radius: 24px 24px 0 0;
+    padding: 10px calc(14px + var(--sr)) calc(14px + max(var(--sb), var(--kb))) calc(14px + var(--sl)); border-radius: 24px 24px 0 0;
     background: radial-gradient(300px 180px at 50% 0%, var(--glow), transparent 70%), var(--panel); border-top: 1px solid var(--line);
     transform: translateY(110%); transition: transform .42s var(--spring); box-shadow: 0 -20px 50px rgba(0,0,0,.35); will-change: transform; }
   #sheet.on { transform: none; }
@@ -168,7 +172,8 @@
   #q::placeholder { color: var(--mute); }
   #list { overflow-y: auto; margin-top: 8px; overscroll-behavior: contain; }
   .act { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 13px; font-size: 14.5px; width: 100%; text-align: left;
-    animation: rowin .35s var(--ease) both; min-width: 0; }
+    min-width: 0; }
+  .act.in { animation: rowin .35s var(--ease) both; }
   .act:active, .act.hot { background: rgba(124,92,255,.2); }
   .act .ic { width: 32px; height: 32px; border-radius: 10px; background: var(--fill2); display: grid; place-items: center; flex: none; }
   .act .ic svg { width: 17px; height: 17px; }
@@ -196,7 +201,7 @@
   @keyframes slidebar { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
   /* Report / menus (bloom from their anchor) */
-  .pop { position: fixed; left: calc(10px + var(--sl)); right: calc(10px + var(--sr)); bottom: calc(var(--bar) + var(--sb) + 10px); z-index: 31; border-radius: 22px;
+  .pop { position: fixed; left: calc(10px + var(--sl)); right: calc(10px + var(--sr)); bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 10px); z-index: 31; border-radius: 22px;
     padding: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.5);
     animation: bloom .45s var(--spring) both; transform-origin: 20% 100%; max-height: 70vh; overflow-y: auto; }
   .grade { width: 56px; height: 56px; border-radius: 17px; display: grid; place-items: center; font-size: 28px; font-weight: 800; flex: none; }
@@ -214,8 +219,8 @@
 
   /* Full pages: settings and history */
   .page { position: fixed; inset: 0; z-index: 40; background: radial-gradient(420px 260px at 50% 0%, var(--glow), transparent 70%), var(--bg);
-    padding: calc(var(--st) + 8px) calc(14px + var(--sr)) calc(var(--sb) + 20px) calc(14px + var(--sl)); overflow-y: auto; overscroll-behavior: contain;
-    transform: translateX(100%); transition: transform .38s var(--ease); }
+    padding: calc(var(--st) + 8px) calc(14px + var(--sr)) calc(max(var(--sb), var(--kb)) + 20px) calc(14px + var(--sl)); overflow-y: auto; overscroll-behavior: contain;
+    scroll-padding-bottom: calc(max(var(--sb), var(--kb)) + 20px); transform: translateX(100%); transition: transform .38s var(--ease); }
   .page.on { transform: none; }
   .page .top { display: flex; align-items: center; gap: 6px; font-size: 19px; font-weight: 600; position: sticky; z-index: 2;
     top: calc(-8px - var(--st)); margin: calc(-8px - var(--st)) calc(-14px - var(--sr)) 12px calc(-14px - var(--sl));
@@ -260,7 +265,7 @@
   #hq { width: 100%; height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--fill2); padding: 0 14px; outline: 0; margin-bottom: 12px; }
 
   /* Toast */
-  #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + var(--sb) + 14px); z-index: 50; transform: translate(-50%, 20px); opacity: 0;
+  #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 14px); z-index: 50; transform: translate(-50%, 20px); opacity: 0;
     display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px; border-radius: 14px; background: #1f1d2b; color: #eceaf5;
     box-shadow: 0 12px 30px rgba(0,0,0,.4); font-size: 14px; pointer-events: none; transition: transform .35s var(--spring), opacity .25s; max-width: 92vw; }
   #toast.on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
@@ -307,7 +312,7 @@
   <section class="card" id="updcard" hidden><div class="upd"><span class="ring2"><svg class="i"><use href="#i-down"/></svg></span>
     <div class="meta"><span id="upd-t"></span><small id="upd-s"></small></div><button class="btn" id="upd-go">Install</button></div><div class="upbar" id="upd-bar" hidden><i></i></div></section>
   <section class="card" id="favcard"><h2>Quick access</h2><div class="favs" id="favs"></div></section>
-  <section class="card" id="recentcard"><h2>Recent</h2><div id="recent"></div></section>
+  <section class="card" id="recentcard"><h2>Recent</h2><div id="recent"></div><p class="empty" id="recent-empty" hidden>Pages you visit show up here.</p></section>
   <section class="card"><h2>Shields this session</h2><div class="stats"><div><b id="st-total">0</b>blocked</div><div><b id="st-trk">On</b>trackers</div><div><b id="st-ads">On</b>ads</div></div></section>
 </main>
 
@@ -326,6 +331,7 @@
   <div class="qa" id="qa"></div>
   <div class="lbl" id="tabs-lbl">Tabs</div>
   <div id="dtabs"></div>
+  <p class="empty" id="dtabs-empty" hidden>No open tabs.</p>
   <div class="lbl">Library</div>
   <button class="trow" data-go="history"><svg class="i"><use href="#i-clock"/></svg><span>History</span></button>
   <button class="trow" data-go="downloads"><svg class="i"><use href="#i-down"/></svg><span>Downloads</span></button>
@@ -371,7 +377,7 @@
 <div id="pop" class="pop" hidden></div>
 
 <section class="page" id="settings">
-  <div class="top"><button class="ib" data-close="settings"><svg class="i"><use href="#i-left"/></svg></button>Settings</div>
+  <div class="top"><button class="ib" data-close="settings" aria-label="Back"><svg class="i"><use href="#i-left"/></svg></button>Settings</div>
   <div class="grp"><h3>Browsing</h3>
     <div class="opt"><div>Search engine</div></div>
     <div class="opt" style="padding-top:0"><div class="chips" id="engines" style="margin-left:0;justify-content:flex-start"></div></div>
@@ -393,6 +399,7 @@
   </div>
   <div class="grp" id="devices"><h3>Devices</h3>
     <div id="devlist"></div>
+    <p class="note" id="dev-empty" hidden>No device paired yet.</p>
     <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note" style="text-align:center">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes.</p>
       <div class="pair" style="justify-content:center"><button class="mini" id="devcancel">Cancel</button></div></div>
     <button class="opt" id="devshow"><div>Show a pairing code</div><span class="v">›</span></button>
@@ -414,12 +421,13 @@
 </section>
 
 <section class="page" id="history">
-  <div class="top"><button class="ib" data-close="history"><svg class="i"><use href="#i-left"/></svg></button>History</div>
-  <input id="hq" type="search" placeholder="Search history" autocomplete="off">
+  <div class="top"><button class="ib" data-close="history" aria-label="Back"><svg class="i"><use href="#i-left"/></svg></button>History</div>
+  <input id="hq" type="search" placeholder="Search history" aria-label="Search history" autocomplete="off">
+  <p class="empty" id="h-empty" hidden></p>
   <div id="hlist"></div>
 </section>
 
-<div id="toast"><span id="toast-t"></span><button id="toast-undo" hidden>Undo</button><button id="toast-act" hidden></button></div>
+<div id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button id="toast-undo" hidden>Undo</button><button id="toast-act" hidden></button></div>
 
 <svg width="0" height="0" style="position:absolute">
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
@@ -477,6 +485,8 @@ let nav = { back: false, forward: false };
 let showPrivateGrid = false;
 const thumbs = new Map();
 const icons = new Map();      // site (host without www.) -> PNG data: URL, from the core
+const iconStamp = new Map();  // site -> revision of its icon (a tile is redrawn when it changes)
+let iconsRev = 0;
 let loading = false;          // the page on screen is loading (Reload becomes Stop)
 let finding = false;          // find in page bar shown
 let findTab = null;
@@ -500,7 +510,68 @@ function tile(name, url, cls) {
   t.style.background = `hsl(${hue(host)} 62% 48%)`;
   return t;
 }
+function setIcon(host, data) {
+  if (icons.get(host) === data) return false;
+  if (data == null) icons.delete(host); else icons.set(host, data);
+  iconStamp.set(host, ++iconsRev);
+  return true;
+}
+// The tile of (name, url) as the first child of `holder`; the one already there stays when it
+// would look the same (an image that is not replaced does not blink).
+function putTile(holder, name, url, cls) {
+  const host = hostOf(url).toLowerCase();
+  const sig = host + '\n' + (icons.has(host) ? 'i' + iconStamp.get(host) : ((name || host || '?').trim()[0] || '?').toUpperCase());
+  if (holder.__tile === sig) return;
+  holder.__tile = sig;
+  const t = tile(name, url, cls);
+  if (holder.__tileEl) holder.__tileEl.replaceWith(t); else holder.prepend(t);
+  holder.__tileEl = t;
+}
 const stillNow = () => document.body.classList.contains('still');
+
+// --- drawing only what changed ------------------------------------------------------------------
+// A state message comes for every page event (address, title, a view put to sleep…). Each part
+// of the interface remembers what it last drew and is left alone while that is the same; lists
+// keep the nodes whose key is still there. So nothing blinks, no entry animation plays twice,
+// and a touch, a scroll position or an armed button outlives the message.
+const drawn = {};
+function changed(part, deps) {
+  const sig = JSON.stringify(deps);
+  if (drawn[part] === sig) return false;
+  drawn[part] = sig;
+  return true;
+}
+// Entry animation of a new node (`.in` rules of the style sheet), once.
+function enter(n, delay) {
+  n.classList.add('in');
+  if (delay) n.style.animationDelay = delay + 's';
+  const done = (e) => {
+    if (e.target !== n) return;
+    n.removeEventListener('animationend', done); n.classList.remove('in'); n.style.animationDelay = '';
+  };
+  n.addEventListener('animationend', done);
+  return n;
+}
+// Makes the children of `box` match `items`, in order: the node of a key that is still there is
+// kept and updated in place, `make()` builds the missing ones (`anim`: with their entry
+// animation), the others go. A node's handlers read its current item from `node.__it`.
+function sync(box, items, key, make, update, anim) {
+  const old = new Map();
+  for (const n of [...box.children]) { if (n.__k != null && !old.has(n.__k)) old.set(n.__k, n); else n.remove(); }
+  let prev = null, fresh = 0;
+  items.forEach((it, i) => {
+    const k = String(key(it, i));
+    let n = old.get(k);
+    if (n) old.delete(k);
+    else { n = make(it); n.__k = k; if (anim) enter(n, fresh++ * 0.03); }
+    n.__it = it;
+    update(n, it, i);
+    const at = prev ? prev.nextSibling : box.firstChild;
+    if (at !== n) box.insertBefore(n, at);
+    prev = n;
+  });
+  for (const n of old.values()) n.remove();
+}
 function applyMotion() {
   const off = env.reduced || (S && S.settings.animations === false) || matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.body.classList.toggle('still', !!off);
@@ -525,19 +596,22 @@ function toast(text, undo, action) {
 }
 
 // --- surface: tells the shell which touches are ours --------------------------------------
+let surfaceSent = '';
 function surface() {
   const overlay = open.drawer || open.grid || open.sheet || open.pop || open.settings || open.history;
   const home = !S || S.current == null;
   const barH = $('#bar').getBoundingClientRect().height;
   // Find in page leaves the page usable (not full) but takes the system back gesture.
-  if (bridge) send({ cmd: 'surface', full: overlay || home, overlay: overlay || finding, bottom: barH, dark: theme(), animations: !stillNow(), cover: open.grid || open.settings || open.history });
+  // Sent only when it changed: the shell lays the page out again on each of these.
+  const msg = JSON.stringify({ cmd: 'surface', full: overlay || home, overlay: overlay || finding, bottom: barH, dark: theme(), animations: !stillNow(), cover: open.grid || open.settings || open.history });
+  if (bridge && msg !== surfaceSent) { surfaceSent = msg; bridge.postMessage(msg); }
   $('#scrim').classList.toggle('on', open.drawer || open.sheet || open.pop);
 }
 function setOpen(name, on) {
   if (on) for (const k of Object.keys(open)) if (k !== name && !(name === 'pop' && k === 'sheet')) close(k);
   open[name] = on;
   if (name === 'drawer') { $('#drawer').classList.toggle('on', on); $('#drawer').style.transform = ''; }
-  if (name === 'grid') { $('#grid').classList.toggle('on', on); if (on) { send({ cmd: 'thumbs' }); renderGrid(); } }
+  if (name === 'grid') { $('#grid').classList.toggle('on', on); if (on) { send({ cmd: 'thumbs' }); drawn.grid = null; $('#cards').replaceChildren(); renderGrid(); } }
   if (on) openedAt = performance.now();
   if (name === 'sheet') {
     $('#sheet').classList.toggle('on', on); $('#sheet').style.transform = '';
@@ -562,15 +636,27 @@ function list() { return S ? (S.private ? S.private_tabs : S.tabs) : []; }
 function render() {
   if (!S) return;
   applyMotion();
-  const sp = S.space || {};
-  document.documentElement.style.setProperty('--accent', sp.color || '#7c5cff');
-  document.documentElement.style.setProperty('--glow', (sp.color || '#7c5cff') + '59');
+  const color = (S.space || {}).color || '#7c5cff';
   const home = S.current == null;
-  $('#home').hidden = !home;
-  $('#home').classList.toggle('private', !!S.private);
-  $('#bar').classList.toggle('private', !!S.private);
-  $('#strip').hidden = home;
-  // Bar: the site (its icon, host, then the path in grey), like the desktop's bar.
+  if (changed('frame', [color, home, !!S.private])) {
+    document.documentElement.style.setProperty('--accent', color);
+    document.documentElement.style.setProperty('--glow', color + '59');
+    $('#home').hidden = !home;
+    $('#home').classList.toggle('private', !!S.private);
+    $('#bar').classList.toggle('private', !!S.private);
+    $('#strip').hidden = home;
+  }
+  renderBar(home);
+  if (finding && S.current !== findTab) endFind();
+  renderShield();
+  const count = $('#count'); const c = String((S.tabs || []).filter((t) => !t.pinned || t.live).length + (S.private_tabs || []).length);
+  if (count.textContent !== c) { count.textContent = c; count.classList.remove('bump'); void count.offsetWidth; count.classList.add('bump'); }
+  renderHome(); renderDrawer(); if (open.grid) renderGrid(); renderSettings(); renderUpdate(); renderDots(); surface();
+}
+// Bar: the site (its icon, host, then the path in grey), like the desktop's bar.
+function renderBar(home) {
+  const host = S.url ? hostOf(S.url).toLowerCase() : '';
+  if (!changed('bar', [S.url, home, S.error, !!S.private, S.title, iconStamp.get(host) || 0])) return;
   const url = $('#url'); url.replaceChildren();
   const site = $('#site'); site.replaceChildren();
   if (S.url && !home) {
@@ -579,26 +665,26 @@ function render() {
     const rest = u && !S.error ? (u.pathname.length > 1 ? u.pathname : '') + (u.search ? '?…' : '') : '';
     if (rest) url.append(el('span', 'p', rest));
     url.classList.remove('ph');
-    const known = icons.has(hostOf(S.url).toLowerCase());
+    const known = icons.has(host);
     site.hidden = !known || !!S.error;
     if (known) site.append(tile(S.title, S.url));
   } else { url.textContent = S.private ? 'Private search or address' : 'Search or enter address'; url.classList.add('ph'); site.hidden = true; }
-  if (finding && S.current !== findTab) endFind();
+}
+function renderShield() {
+  const home = S.current == null, plain = !!S.url && !S.secure, n = S.blocked ? S.blocked.site : 0;
+  if (!changed('shield', [home, plain, n])) return;
   const sh = $('#shield');
   sh.hidden = home;
-  sh.classList.toggle('warn', !!S.url && !S.secure);
-  sh.firstElementChild.firstElementChild.setAttribute('href', S.url && !S.secure ? '#i-warn' : '#i-shield');
-  const n = S.blocked ? S.blocked.site : 0;
+  sh.classList.toggle('warn', plain);
+  sh.firstElementChild.firstElementChild.setAttribute('href', plain ? '#i-warn' : '#i-shield');
   $('#shield-n').hidden = !n; $('#shield-n').textContent = n > 99 ? '99+' : String(n);
-  const count = $('#count'); const c = String((S.tabs || []).filter((t) => !t.pinned || t.live).length + (S.private_tabs || []).length);
-  if (count.textContent !== c) { count.textContent = c; count.classList.remove('bump'); void count.offsetWidth; count.classList.add('bump'); }
-  renderHome(); renderDrawer(); if (open.grid) renderGrid(); renderSettings(); renderUpdate(); renderDots(); surface();
 }
 
 // --- updates (start page card and Settings > Updates) ----------------------------------------
 const install = () => send({ cmd: 'install_update' });
 function renderUpdate() {
   const u = S.update || { status: 'idle' };
+  if (!changed('update', [u, !!S.private])) return;
   if (u.status !== 'downloading') upProgress = null;
   const busy = ['checking', 'downloading', 'installing'].includes(u.status);
   const retry = u.status === 'failed' && u.retry;
@@ -662,94 +748,143 @@ $('#f-prev').onclick = () => send({ cmd: 'find_next', forward: false });
 $('#f-close').onclick = () => endFind();
 
 function renderHome() {
-  $('#brand').textContent = S.private ? 'Private' : 'BlackHole';
-  $('#privnote').hidden = !S.private;
-  $('#favcard').hidden = !!S.private; $('#recentcard').hidden = !!S.private;
-  const favs = $('#favs'); favs.replaceChildren();
-  for (const f of S.favorites || []) {
-    const b = el('button', 'fav'); b.append(tile(f.name, f.url), el('span', null, f.name));
-    b.onclick = () => f.tab != null ? send({ cmd: 'activate', tab: f.tab }) : send({ cmd: 'navigate', input: f.url, new_tab: true });
-    favs.append(b);
+  const priv = !!S.private;
+  if (changed('homehead', priv)) {
+    $('#brand').textContent = priv ? 'Private' : 'BlackHole';
+    $('#privnote').hidden = !priv;
+    $('#favcard').hidden = priv; $('#recentcard').hidden = priv;
   }
-  const rec = $('#recent'); rec.replaceChildren();
-  if (!(S.recent || []).length) rec.append(el('p', 'empty', 'Pages you visit show up here.'));
-  for (const h of S.recent || []) {
-    const b = el('button', 'row'); const m = el('div', 'meta');
-    m.append(el('div', 't', h.title || hostOf(h.url)), el('div', 's', hostOf(h.url)));
-    b.append(tile(h.title, h.url), m);
-    b.onclick = () => send({ cmd: 'navigate', input: h.url, new_tab: true });
-    rec.append(b);
+  const favs = S.favorites || [];
+  if (changed('favs', [favs, iconsRev])) sync($('#favs'), favs, (f) => f.url + '\n' + f.name, () => {
+    const b = el('button', 'fav'); b.append(el('span'));
+    b.onclick = () => { const f = b.__it; if (f.tab != null) send({ cmd: 'activate', tab: f.tab }); else send({ cmd: 'navigate', input: f.url, new_tab: true }); };
+    return b;
+  }, (b, f) => { putTile(b, f.name, f.url); b.lastElementChild.textContent = f.name; });
+  const recent = S.recent || [];
+  if (changed('recent', [recent, iconsRev])) {
+    $('#recent-empty').hidden = !!recent.length;
+    sync($('#recent'), recent, (h) => h.url, () => {
+      const b = el('button', 'row'); const m = el('div', 'meta'); m.append(el('div', 't'), el('div', 's')); b.append(m);
+      b.onclick = () => send({ cmd: 'navigate', input: b.__it.url, new_tab: true });
+      return b;
+    }, (b, h) => {
+      putTile(b, h.title, h.url);
+      const m = b.lastElementChild; m.firstElementChild.textContent = h.title || hostOf(h.url); m.lastElementChild.textContent = hostOf(h.url);
+    });
   }
-  $('#st-total').textContent = String(S.blocked ? S.blocked.total : 0);
+  renderStats();
+}
+function renderStats() {
+  const total = S.blocked ? S.blocked.total : 0;
+  if (!changed('stats', [total, S.settings.trackers, S.settings.ads])) return;
+  $('#st-total').textContent = String(total);
   $('#st-trk').textContent = S.settings.trackers ? 'On' : 'Off';
   $('#st-ads').textContent = S.settings.ads ? 'On' : 'Off';
 }
 
+const SPACE_COLORS = [['Violet', '#7c5cff'], ['Rose', '#ff6b8a'], ['Teal', '#2dd4bf'], ['Amber', '#ffb020'], ['Blue', '#3b82f6']];
+const newSpaceMenu = () => menu('New space', SPACE_COLORS.map(([name, color]) => (
+  { label: name + ' space', icon: 'plus', color, run: () => send({ cmd: 'add_space', name, color }) })));
 function renderDrawer() {
-  const sps = $('#spaces'); sps.replaceChildren();
-  for (const s of S.spaces || []) {
-    const b = el('button', 'sp' + (s.id === S.space.id ? ' on' : ''), s.icon || (s.name || '?')[0].toUpperCase());
-    if (s.id === S.space.id) b.style.background = s.color;
-    b.setAttribute('aria-label', s.name);
-    b.onclick = () => { send({ cmd: 'switch_space', space: s.id }); };
-    sps.append(b);
-  }
-  const add = el('button', 'sp'); add.append(icon('plus', 16)); add.onclick = () => menu('New space', [
-    ...['#7c5cff', '#ff6b8a', '#2dd4bf', '#ffb020', '#3b82f6'].map((col, i) => ({ label: ['Violet', 'Rose', 'Teal', 'Amber', 'Blue'][i] + ' space', icon: 'plus', color: col,
-      run: () => send({ cmd: 'add_space', name: ['Violet', 'Rose', 'Teal', 'Amber', 'Blue'][i], color: col }) })),
-  ]);
-  sps.append(add);
-  const qa = $('#qa'); qa.replaceChildren();
+  const spaces = S.spaces || [];
+  if (changed('spaces', [spaces, S.space.id])) sync($('#spaces'), [...spaces, null], (s) => s ? s.id : '+', (s) => {
+    const b = el('button', 'sp');
+    if (!s) { b.append(icon('plus', 16)); b.setAttribute('aria-label', 'New space'); b.onclick = newSpaceMenu; }
+    else b.onclick = () => send({ cmd: 'switch_space', space: b.__it.id });
+    return b;
+  }, (b, s) => {
+    if (!s) return;
+    const on = s.id === S.space.id;
+    b.classList.toggle('on', on); b.textContent = s.icon || (s.name || '?')[0].toUpperCase();
+    b.style.background = on ? s.color : ''; b.setAttribute('aria-label', s.name);
+  });
   const pinned = (S.tabs || []).filter((t) => t.pinned);
-  qa.hidden = !pinned.length;
-  for (const t of pinned) {
-    const b = el('button', t.live ? '' : 'sleep'); b.append(tile(t.title, t.url)); b.setAttribute('aria-label', t.title);
-    b.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('drawer'); };
-    qa.append(b);
+  if (changed('qa', [pinned, iconsRev])) {
+    $('#qa').hidden = !pinned.length;
+    sync($('#qa'), pinned, (t) => t.id, () => {
+      const b = el('button'); b.onclick = () => { send({ cmd: 'activate', tab: b.__it.id }); close('drawer'); };
+      return b;
+    }, (b, t) => { b.classList.toggle('sleep', !t.live); putTile(b, t.title, t.url); b.setAttribute('aria-label', t.title); });
   }
-  $('#tabs-lbl').textContent = S.private ? 'Private tabs' : (S.space.name || 'Tabs');
-  const d = $('#dtabs'); d.replaceChildren();
-  const rows = S.private ? S.private_tabs : (S.tabs || []).filter((t) => !t.pinned);
-  if (!rows.length) d.append(el('p', 'empty', 'No open tabs.'));
-  for (const t of rows) {
-    const b = el('button', 'trow' + (t.id === S.current ? ' on' : ''));
-    b.append(tile(t.title, t.url), el('span', null, t.title || t.host));
-    if (t.live) b.append(el('i', 'live'));
-    b.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('drawer'); };
-    d.append(b);
+  const rows = (S.private ? S.private_tabs : (S.tabs || []).filter((t) => !t.pinned)) || [];
+  if (changed('dtabs', [rows, S.current, !!S.private, S.space.name, iconsRev])) {
+    $('#tabs-lbl').textContent = S.private ? 'Private tabs' : (S.space.name || 'Tabs');
+    $('#dtabs-empty').hidden = !!rows.length;
+    sync($('#dtabs'), rows, (t) => t.id, () => {
+      const b = el('button', 'trow'); b.append(el('span'));
+      b.onclick = () => { send({ cmd: 'activate', tab: b.__it.id }); close('drawer'); };
+      return b;
+    }, (b, t) => {
+      b.classList.toggle('on', t.id === S.current);
+      putTile(b, t.title, t.url);
+      b.querySelector('span').textContent = t.title || t.host;
+      const dot = b.querySelector('.live');
+      if (t.live && !dot) b.append(el('i', 'live')); else if (!t.live && dot) dot.remove();
+    });
   }
 }
 
+const THUMB_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 function renderGrid() {
+  const tabs = (showPrivateGrid ? S.private_tabs : S.tabs) || [];
+  if (!changed('grid', [tabs, S.current, showPrivateGrid, iconsRev])) return;
   $('#g-normal').classList.toggle('on', !showPrivateGrid);
   $('#g-private').classList.toggle('on', showPrivateGrid);
-  const tabs = showPrivateGrid ? S.private_tabs : S.tabs;
-  const cards = $('#cards'); cards.replaceChildren();
   $('#g-empty').hidden = !!tabs.length;
-  tabs.forEach((t, i) => {
-    const c = el('div', 'tc' + (t.id === S.current ? ' cur' : ''));
-    c.setAttribute('role', 'button');
-    c.style.animationDelay = (i * 0.03) + 's';
-    const h = el('div', 'h'); const x = el('button', 'x'); x.append(icon('x')); x.setAttribute('aria-label', 'Close tab');
-    h.append(tile(t.title, t.url), el('span', null, t.title || t.host), x);
-    const shot = el('div', 'shot');
-    const img = thumbs.get(t.id);
-    if (img && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(img)) shot.style.backgroundImage = `url("${img}")`; else shot.append(tile(t.title, t.url));
-    c.append(h, shot);
-    if (t.pinned) c.append(el('span', 'pin', t.live ? 'quick access' : 'asleep'));
-    x.onclick = (e) => { e.stopPropagation(); flyAway(c, 1, t.id); };
-    c.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('grid'); };
-    swipeToClose(c, t.id);
-    cards.append(c);
-  });
+  const cards = $('#cards');
+  // The cards that stay glide to their new place when one leaves.
+  const from = stillNow() ? [] : [...cards.children].map((c) => [c, c.offsetLeft, c.offsetTop]);
+  sync(cards, tabs, (t) => t.id, makeCard, drawCard, true);
+  for (const [c, x, y] of from) {
+    if (!c.isConnected) continue;
+    const dx = x - c.offsetLeft, dy = y - c.offsetTop;
+    if (dx || dy) c.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
 }
-function flyAway(card, dir, tab) {
+function makeCard() {
+  const c = el('div', 'tc'); c.setAttribute('role', 'button');
+  const h = el('div', 'h'); const x = el('button', 'x'); x.append(icon('x')); x.setAttribute('aria-label', 'Close tab');
+  h.append(el('span'), x);
+  const shot = el('div', 'shot'); const pin = el('span', 'pin'); pin.hidden = true;
+  c.append(h, shot, pin); c.__p = { h, shot, pin };
+  x.onclick = (e) => { e.stopPropagation(); flyAway(c, 1); };
+  c.onclick = () => { send({ cmd: 'activate', tab: c.__it.id }); close('grid'); };
+  swipeToClose(c);
+  return c;
+}
+function landCard(c) { c.__fly = null; c.style.transition = c.style.transform = c.style.opacity = ''; }
+function drawCard(c, t) {
+  const p = c.__p;
+  // A quick access tile that is "closed" goes to sleep and stays in the grid: its card comes back.
+  if (c.__fly === 'sent') landCard(c);
+  c.classList.toggle('cur', t.id === S.current);
+  putTile(p.h, t.title, t.url);
+  p.h.querySelector('span').textContent = t.title || t.host;
+  p.pin.hidden = !t.pinned; p.pin.textContent = t.live ? 'quick access' : 'asleep';
+  drawShot(c);
+}
+// The page's picture, or its tile while there is none.
+function drawShot(c) {
+  const t = c.__it, shot = c.__p.shot, img = thumbs.get(t.id);
+  if (img && THUMB_RE.test(img)) {
+    if (shot.__img === img) return;
+    shot.__img = img; shot.style.backgroundImage = `url("${img}")`;
+    if (shot.__tileEl) { shot.__tileEl.remove(); shot.__tileEl = shot.__tile = null; }
+  } else { shot.__img = null; shot.style.backgroundImage = ''; putTile(shot, t.title, t.url); }
+}
+function flyAway(card, dir) {
+  const tab = card.__it.id;
+  card.__fly = 'going';
   card.style.transition = 'transform .25s ease-in, opacity .25s';
   card.style.transform = `translateX(${dir * 120}%) rotate(${dir * 8}deg)`;
   card.style.opacity = '0';
-  setTimeout(() => send({ cmd: 'close', tab }), stillNow() ? 0 : 200);
+  setTimeout(() => {
+    card.__fly = 'sent'; send({ cmd: 'close', tab });
+    // Nothing changed for the core (a tile already asleep): the card comes back on its own.
+    setTimeout(() => { if (card.isConnected && card.__fly === 'sent') landCard(card); }, 600);
+  }, stillNow() ? 0 : 200);
 }
-function swipeToClose(card, tab) {
+function swipeToClose(card) {
   let x0 = null, y0 = 0, dx = 0, lock = null;
   card.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; dx = 0; lock = null; });
   card.addEventListener('pointermove', (e) => {
@@ -765,43 +900,47 @@ function swipeToClose(card, tab) {
   const end = () => {
     if (x0 == null) return; x0 = null;
     if (lock !== 'x') return;
-    if (Math.abs(dx) > card.offsetWidth * .35) { flyAway(card, Math.sign(dx), tab); }
+    if (Math.abs(dx) > card.offsetWidth * .35) { flyAway(card, Math.sign(dx)); }
     else { card.style.transition = ''; card.style.transform = ''; card.style.opacity = ''; }
-    card.addEventListener('click', (e) => e.stopPropagation(), { capture: true, once: true });
+    // The click that may follow the swipe is not a tap on the card (and none may come at all:
+    // the card is kept now, so the guard must not wait for the next real tap).
+    const stop = (e) => e.stopPropagation();
+    card.addEventListener('click', stop, { capture: true, once: true });
+    setTimeout(() => card.removeEventListener('click', stop, { capture: true }), 350);
   };
   card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
 }
 
 function renderDots() {
-  const d = $('#dots'); d.replaceChildren();
   const l = list();
-  if (S.current == null || l.length < 2 || l.length > 12) return;
-  for (const t of l) d.append(el('i', t.id === S.current ? 'on' : ''));
+  const show = S.current != null && l.length >= 2 && l.length <= 12;
+  if (!changed('dots', show ? [l.map((t) => t.id), S.current] : null)) return;
+  sync($('#dots'), show ? l : [], (t) => t.id, () => el('i'), (n, t) => n.classList.toggle('on', t.id === S.current));
 }
 
 const THEMES = [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']];
-const COLORS = ['#7c5cff', '#ff6b8a', '#2dd4bf', '#ffb020', '#3b82f6'];
+const COLORS = SPACE_COLORS.map((c) => c[1]);
 function chips(box, items, value, onpick) {
-  box.replaceChildren();
-  for (const [id, label] of items) {
-    const b = el('button', id === value ? 'on' : '', label);
-    b.onclick = () => onpick(id);
-    box.append(b);
-  }
+  box.__pick = onpick;
+  sync(box, items, (it) => it[0], () => { const b = el('button'); b.onclick = () => box.__pick(b.__it[0]); return b; }, (b, it) => {
+    b.textContent = it[1]; b.classList.toggle('on', it[0] === value); b.setAttribute('aria-pressed', String(it[0] === value));
+  });
 }
 function renderSettings() {
   const st = S.settings;
+  if (!changed('settings', [st, S.space, S.devices, S.version, env])) return;
   chips($('#engines'), st.engines.map((e) => [e.id, e.label]), st.engine, (id) => send({ cmd: 'set_setting', name: 'engine', value: id }));
   chips($('#themes'), THEMES, st.theme, (id) => send({ cmd: 'set_setting', name: 'theme', value: id }));
-  for (const b of document.querySelectorAll('[data-set]')) b.querySelector('.sw').classList.toggle('on', !!st[b.dataset.set]);
-  $('#spacename').textContent = S.space.name;
-  const sw = $('#swatches'); sw.replaceChildren();
-  for (const col of COLORS) {
-    const b = el('button', col.toLowerCase() === (S.space.color || '').toLowerCase() ? 'on' : '');
-    b.style.background = col; b.setAttribute('aria-label', col);
-    b.onclick = () => send({ cmd: 'set_space_color', space: S.space.id, color: col });
-    sw.append(b);
+  for (const b of document.querySelectorAll('[data-set]')) {
+    const on = !!st[b.dataset.set];
+    b.querySelector('.sw').classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
   }
+  $('#spacename').textContent = S.space.name;
+  const color = (S.space.color || '').toLowerCase();
+  sync($('#swatches'), COLORS, (col) => col, () => {
+    const b = el('button'); b.onclick = () => send({ cmd: 'set_space_color', space: S.space.id, color: b.__it });
+    return b;
+  }, (b, col) => { b.classList.toggle('on', col.toLowerCase() === color); b.style.background = col; b.setAttribute('aria-label', col); });
   chips($('#zooms'), (st.text_zooms || [100]).map((z) => [z, z + '%']), st.text_zoom, (z) => send({ cmd: 'set_setting', name: 'text_zoom', value: z }));
   $('#defstate').textContent = env.default_browser ? 'BlackHole opens the links of other apps' : 'Open the links of other apps in BlackHole';
   renderDevices(S.devices || { available: false, list: [] });
@@ -810,22 +949,25 @@ function renderSettings() {
 
 // Paired devices (their keys never reach this page).
 function renderDevices(d) {
-  const list = $('#devlist'); list.replaceChildren();
   $('#devices').hidden = !d.available;
   if (!d.available) return;
-  if (!d.list.length) list.append(el('p', 'note', 'No device paired yet.'));
-  for (const dev of d.list) {
+  $('#dev-empty').hidden = !!d.list.length;
+  sync($('#devlist'), d.list, (dev) => dev.id, () => {
     const row = el('div', 'dev');
-    const nm = el('div', 'nm', dev.name); nm.append(el('small', null, dev.online ? 'On this network' : 'Not seen lately'));
-    const forget = el('button', 'mini', 'Forget'); armed(forget, () => send({ cmd: 'device_forget', id: dev.id }));
+    const dot = el('span', 'dot'); const nm = el('div', 'nm'); const name = document.createTextNode(''); const seen = el('small'); nm.append(name, seen);
+    const forget = el('button', 'mini', 'Forget'); armed(forget, () => send({ cmd: 'device_forget', id: row.__it.id }));
     const line = el('div', 'row3'); const ch = el('div', 'chips');
-    chips(ch, [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']], dev.sync, (mode) => send({ cmd: 'device_sync', id: dev.id, mode }));
-    const now = el('button', 'mini', 'Sync now'); now.disabled = !dev.online || dev.sync === 'off';
-    now.onclick = () => send({ cmd: 'device_sync_now', id: dev.id });
+    const now = el('button', 'mini', 'Sync now'); now.onclick = () => send({ cmd: 'device_sync_now', id: row.__it.id });
     line.append(el('span', 'v', 'Tab sync'), ch, now);
-    row.append(el('span', 'dot' + (dev.online ? ' on' : '')), nm, forget, line);
-    list.append(row);
-  }
+    row.append(dot, nm, forget, line); row.__p = { dot, name, seen, ch, now };
+    return row;
+  }, (row, dev) => {
+    const p = row.__p;
+    p.dot.classList.toggle('on', !!dev.online); p.name.data = dev.name;
+    p.seen.textContent = dev.online ? 'On this network' : 'Not seen lately';
+    chips(p.ch, [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']], dev.sync, (mode) => send({ cmd: 'device_sync', id: row.__it.id, mode }));
+    p.now.disabled = !dev.online || dev.sync === 'off';
+  });
   $('#devcode').hidden = !d.code;
   $('#devshow').hidden = !!d.code;
   $('#devcodetext').textContent = d.code || '';
@@ -841,13 +983,19 @@ $('#devinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#d
 function openSheet(focus, edit) {
   $('#q').value = edit && S && S.current != null && S.url ? S.url : '';
   setOpen('sheet', true);
-  $('#k-back').disabled = !nav.back || S.current == null;
-  $('#k-fwd').disabled = !nav.forward || S.current == null;
-  $('#k-reload').disabled = $('#k-share').disabled = S.current == null;
-  $('#k-reload').replaceChildren(icon(loading ? 'stop' : 'reload'), document.createTextNode(loading ? 'Stop' : 'Reload'));
+  navButtons();
   $('#quick').hidden = false;
   actions();
   if (focus) setTimeout(() => { $('#q').focus(); if ($('#q').value) $('#q').select(); }, stillNow() ? 0 : 120);
+}
+// Back, Forward and Reload / Stop of the sheet follow the page while the sheet is open.
+function navButtons() {
+  const none = !S || S.current == null;
+  $('#k-back').disabled = !nav.back || none;
+  $('#k-fwd').disabled = !nav.forward || none;
+  $('#k-reload').disabled = $('#k-share').disabled = none;
+  if (!changed('reload', loading)) return;
+  $('#k-reload').replaceChildren(icon(loading ? 'stop' : 'reload'), document.createTextNode(loading ? 'Stop' : 'Reload'));
 }
 function row(label, ic, run, extra) {
   const b = el('button', 'act' + (extra && extra.cls ? ' ' + extra.cls : ''));
@@ -859,8 +1007,8 @@ function row(label, ic, run, extra) {
   return b;
 }
 function actions() {
-  const l = $('#list'); l.replaceChildren();
-  const add = (label, ic, run, extra) => l.append(row(label, ic, run, extra));
+  const l = $('#list'); l.__suggest = false; l.replaceChildren();
+  const add = (label, ic, run, extra) => l.append(enter(row(label, ic, run, extra)));
   const p = S && S.private;
   add(p ? 'New private tab' : 'New tab', 'plus', () => newTab('new'));
   add(p ? 'Leave private browsing' : 'New private tab', 'mask', () => { if (p) { close('sheet'); send({ cmd: 'close_private' }); } else newTab('private'); });
@@ -906,19 +1054,31 @@ function go(input) {
   send({ cmd: 'navigate', input, new_tab: S.current == null || mode != null, private: priv });
   close('sheet');
 }
+// What is typed changes the list in place: a row that is still suggested does not move or
+// blink, the first one (search, or the address about to open) only changes its text.
 function suggestions(m) {
   if (!open.sheet || m.text !== $('#q').value.trim()) return;
-  const l = $('#list'); l.replaceChildren();
-  m.items.forEach((it, i) => {
-    let b;
-    if (it.kind === 'search') b = row(it.title, 'search', () => go(it.title), { k: it.engine });
-    else if (it.kind === 'go') b = row(it.title, 'globe', () => go(it.url), { k: 'go' });
-    else if (it.kind === 'tab') b = row(it.title || hostOf(it.url), tile(it.title, it.url), () => { close('sheet'); send({ cmd: 'activate', tab: it.tab }); }, { k: 'tab' });
-    else b = row(it.title || hostOf(it.url), tile(it.title, it.url), () => go(it.url), { k: it.kind === 'favorite' ? 'quick access' : hostOf(it.url) });
-    if (i === 0) b.classList.add('hot');
-    b.style.animationDelay = (i * 0.03) + 's';
-    l.append(b);
-  });
+  const l = $('#list');
+  const first = !l.__suggest; l.__suggest = true;
+  const site = (it) => it.kind !== 'search' && it.kind !== 'go';
+  sync(l, m.items, (it) => site(it) ? it.kind + '\n' + (it.tab != null ? it.tab : it.url) : 'top', () => {
+    const b = el('button', 'act'); const ic = el('span', 'ic'); const label = el('span'); const k = el('span', 'k');
+    b.append(ic, label, k); b.__p = { ic, label, k };
+    b.onclick = () => {
+      const it = b.__it;
+      if (it.kind === 'search') go(it.title);
+      else if (it.kind === 'tab') { close('sheet'); send({ cmd: 'activate', tab: it.tab }); }
+      else go(it.url);
+    };
+    return b;
+  }, (b, it, i) => {
+    const p = b.__p;
+    p.label.textContent = site(it) ? (it.title || hostOf(it.url)) : it.title;
+    p.k.textContent = it.kind === 'search' ? it.engine : it.kind === 'go' ? 'go' : it.kind === 'tab' ? 'tab' : it.kind === 'favorite' ? 'quick access' : hostOf(it.url);
+    if (site(it)) putTile(p.ic, it.title, it.url);
+    else if (p.ic.__kind !== it.kind) { p.ic.__kind = it.kind; p.ic.replaceChildren(icon(it.kind === 'search' ? 'search' : 'globe')); }
+    b.classList.toggle('hot', i === 0);
+  }, first);
 }
 // Drag the grab handle down to close the sheet.
 (() => {
@@ -994,7 +1154,7 @@ function menu(title, items, dismiss) {
   if (title) p.append(el('div', 'ttl', title));
   for (const it of items) {
     const ic = it.color ? (() => { const d = el('span'); d.style.cssText = `width:16px;height:16px;border-radius:50%;background:${it.color}`; return d; })() : it.icon;
-    p.append(row(it.label, ic, () => { popDismiss = null; close('pop'); it.run(); }, { cls: it.danger ? 'danger' : '' }));
+    p.append(enter(row(it.label, ic, () => { popDismiss = null; close('pop'); it.run(); }, { cls: it.danger ? 'danger' : '' })));
   }
   popDismiss = dismiss || null;
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
@@ -1012,7 +1172,7 @@ function report(m) {
     if (!m.hosts.length) p.append(el('div', 'bl', 'Nothing tried to follow you here.'));
     for (const h of m.hosts.slice(0, 10)) { const r = el('div', 'bl'); r.append(el('span', null, h.host), el('em', null, (h.ad ? 'ad · ' : 'tracker · ') + h.count)); p.append(r); }
   }
-  const set = row('Shields settings', 'gear', () => { close('pop'); setOpen('settings', true); });
+  const set = enter(row('Shields settings', 'gear', () => { close('pop'); setOpen('settings', true); }));
   set.style.marginTop = '8px'; p.append(set);
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
   close('sheet'); setOpen('pop', true);
@@ -1021,20 +1181,30 @@ function openHistory() { $('#hq').value = ''; setOpen('history', true); send({ c
 let hTimer = 0;
 $('#hq').addEventListener('input', () => { clearTimeout(hTimer); hTimer = setTimeout(() => send({ cmd: 'history', query: $('#hq').value }), 120); });
 function history(m) {
-  const l = $('#hlist'); l.replaceChildren();
-  if (!m.items.length) { l.append(el('p', 'empty', m.query ? 'Nothing matches.' : 'No history yet.')); return; }
-  let day = '';
+  $('#h-empty').hidden = !!m.items.length;
+  $('#h-empty').textContent = m.query ? 'Nothing matches.' : 'No history yet.';
+  const rows = []; let day = '';
   for (const h of m.items) {
     const d = new Date(h.at * 1000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-    if (d !== day) { day = d; l.append(el('div', 'lbl', d)); }
-    const b = el('div', 'row'); const meta = el('div', 'meta');
-    meta.append(el('div', 't', h.title || hostOf(h.url)), el('div', 's', hostOf(h.url)));
-    const x = el('button', 'x'); x.append(icon('x', 16)); x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'forget_history', url: h.url }); };
-    b.append(tile(h.title, h.url), meta, x);
-    b.onclick = () => { close('history'); send({ cmd: 'navigate', input: h.url, new_tab: true }); };
-    l.append(b);
+    if (d !== day) { day = d; rows.push({ day: d }); }
+    rows.push(h);
   }
-  const clear = el('button', 'opt danger', 'Clear all history'); armed(clear, () => send({ cmd: 'clear_history' })); l.append(clear);
+  if (m.items.length) rows.push({ clear: true });
+  // In place: forgetting a visit removes its row, the others (and the scroll position) stay.
+  sync($('#hlist'), rows, (r) => r.day ? 'd' + r.day : r.clear ? 'clear' : 'h' + r.at + '\n' + r.url, (r) => {
+    if (r.day) return el('div', 'lbl', r.day);
+    if (r.clear) { const b = el('button', 'opt danger', 'Clear all history'); armed(b, () => send({ cmd: 'clear_history' })); return b; }
+    const b = el('div', 'row'); const meta = el('div', 'meta'); meta.append(el('div', 't'), el('div', 's'));
+    const x = el('button', 'x'); x.append(icon('x', 16)); x.setAttribute('aria-label', 'Forget this visit');
+    x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'forget_history', url: b.__it.url, query: $('#hq').value }); };
+    b.append(meta, x); b.__meta = meta;
+    b.onclick = () => { close('history'); send({ cmd: 'navigate', input: b.__it.url, new_tab: true }); };
+    return b;
+  }, (b, r) => {
+    if (r.day || r.clear) return;
+    putTile(b, r.title, r.url);
+    b.__meta.firstElementChild.textContent = r.title || hostOf(r.url); b.__meta.lastElementChild.textContent = hostOf(r.url);
+  });
 }
 // Irreversible: two taps within 3 s.
 function armed(b, run) {
@@ -1045,13 +1215,38 @@ function armed(b, run) {
   };
 }
 function downloads(m) {
-  const box = $('#dls'); box.replaceChildren();
-  for (const d of m.items.slice(-3)) {
-    const c = el('div', 'dl'); c.append(el('div', null, d.name + (d.status === 'done' ? ' · done' : d.status === 'failed' ? ' · failed' : '')));
-    const pb = el('div', 'pb'); const i = el('i'); i.style.width = (d.total > 0 ? Math.round(100 * d.done / d.total) : d.status === 'done' ? 100 : 8) + '%'; pb.append(i); c.append(pb);
-    box.append(c);
-  }
+  sync($('#dls'), m.items.slice(-3), (d) => d.id != null ? d.id : d.name, () => {
+    const c = el('div', 'dl'); const pb = el('div', 'pb'); pb.append(el('i')); c.append(el('div'), pb);
+    return c;
+  }, (c, d) => {
+    c.firstElementChild.textContent = d.name + (d.status === 'done' ? ' · done' : d.status === 'failed' ? ' · failed' : '');
+    c.lastElementChild.firstElementChild.style.width = (d.total > 0 ? Math.round(100 * d.done / d.total) : d.status === 'done' ? 100 : 8) + '%';
+  }, true);
 }
+
+// --- keyboard ---------------------------------------------------------------------------------
+// The keyboard of our own fields (address, history search, pairing code) covers the bar:
+// nothing moves under it and the page keeps its size. The keyboard of a page, or of find in
+// page (which lives in the bar), lifts the bar, and the page ends above it.
+let bars = 0, kb = 0, kbOurs = false, kbTimer = 0;
+const ownField = () => { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.id !== 'fq' && document.hasFocus(); };
+function layoutBottom() {
+  const r = document.documentElement.style;
+  r.setProperty('--sb', bars + 'px'); r.setProperty('--kb', kb + 'px');
+  r.setProperty('--bb', (kb && !kbOurs ? Math.max(bars, kb) : bars) + 'px');
+}
+function keyboard(height) {
+  const was = kb; kb = height;
+  if (!kb) kbOurs = false; else if (ownField()) kbOurs = true; else if (!was) kbOurs = false;
+  layoutBottom();
+  const a = document.activeElement;
+  if (kb && a && a.closest && a.closest('.page')) a.scrollIntoView({ block: 'nearest' });
+}
+// Our field lost the focus and the keyboard stayed: a page took it over.
+document.addEventListener('focusout', () => {
+  clearTimeout(kbTimer);
+  kbTimer = setTimeout(() => { if (kb && kbOurs && !ownField()) { kbOurs = false; layoutBottom(); } }, 500);
+});
 
 // --- buttons -----------------------------------------------------------------------------------
 $('#b-menu').onclick = () => setOpen('drawer', !open.drawer);
@@ -1069,7 +1264,10 @@ $('#defbrowser').onclick = () => send({ cmd: 'default_browser' });
 $('#k-share').onclick = () => { send({ cmd: 'share', url: S.url || '' }); close('sheet'); };
 $('#toast-undo').onclick = () => { send({ cmd: 'undo_close' }); $('#toast').classList.remove('on'); };
 for (const b of document.querySelectorAll('[data-close]')) b.onclick = () => close(b.dataset.close);
-for (const b of document.querySelectorAll('[data-set]')) b.onclick = () => send({ cmd: 'set_setting', name: b.dataset.set, value: !S.settings[b.dataset.set] });
+for (const b of document.querySelectorAll('[data-set]')) {
+  b.setAttribute('role', 'switch');
+  b.onclick = () => send({ cmd: 'set_setting', name: b.dataset.set, value: !S.settings[b.dataset.set] });
+}
 for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => {
   const go = b.dataset.go; close('drawer');
   if (go === 'history') openHistory();
@@ -1091,22 +1289,38 @@ function receive(m) {
     case 'env': env = m; applyMotion(); if (S) renderSettings(); break;
     case 'insets': {
       const r = document.documentElement.style;
-      r.setProperty('--st', m.top + 'px'); r.setProperty('--sb', m.bottom + 'px');
+      r.setProperty('--st', m.top + 'px');
       r.setProperty('--sl', m.left + 'px'); r.setProperty('--sr', m.right + 'px');
+      bars = +m.bottom || 0; keyboard(+m.keyboard || 0);
       requestAnimationFrame(surface); break;
     }
+    // The shield's count alone: refused requests come by the dozen while a page loads.
+    case 'blocked': if (S) { S.blocked = { total: m.total, site: m.site }; renderShield(); renderStats(); } break;
     case 'progress': {
-      loading = m.value < 100;
+      loading = m.value < 100; if (open.sheet) navButtons();
       const p = $('#progress'); p.classList.toggle('on', m.value < 100); p.style.width = m.value + '%';
       if (m.value >= 100) setTimeout(() => { if (!p.classList.contains('on')) p.style.width = '0'; }, 700);
       break;
     }
-    case 'nav': if (S && m.tab === S.current) nav = m; break;
-    case 'thumb': thumbs.set(m.tab, m.data); if (open.grid) renderGrid(); break;
+    case 'nav': if (S && m.tab === S.current) { nav = m; if (open.sheet) navButtons(); } break;
+    case 'thumb': {
+      // The newest pictures only, and the card of that tab alone is touched.
+      thumbs.delete(m.tab); thumbs.set(m.tab, m.data);
+      if (thumbs.size > 24) thumbs.delete(thumbs.keys().next().value);
+      const card = open.grid && [...$('#cards').children].find((c) => c.__k === String(m.tab));
+      if (card) drawShot(card);
+      break;
+    }
     case 'dropped': break;
     case 'toast': toast(m.text, m.undo, m.action === 'install_update' ? { label: 'Install', run: install } : null); break;
-    case 'icons': icons.clear(); for (const [k, v] of Object.entries(m.icons || {})) icons.set(k, v); if (S) render(); break;
-    case 'icon': icons.set(m.host, m.data); if (S) render(); break;
+    case 'icons': {
+      const next = m.icons || {}; let any = false;
+      for (const k of [...icons.keys()]) if (!(k in next)) any = setIcon(k, null) || any;
+      for (const [k, v] of Object.entries(next)) any = setIcon(k, v) || any;
+      if (any && S) render();
+      break;
+    }
+    case 'icon': if (setIcon(m.host, m.data) && S) render(); break;
     case 'found': if (finding) $('#fcount').textContent = m.count ? `${m.active}/${m.count}` : ($('#fq').value ? '0/0' : ''); break;
     case 'update_progress': upProgress = m; updateBars(); break;
     case 'permission': {
@@ -1154,7 +1368,12 @@ function receive(m) {
   }
 }
 if (bridge) {
-  bridge.onmessage = (e) => { try { receive(JSON.parse(e.data)); } catch (_) {} };
+  // The same state again (a page event that changed nothing shown here): nothing to do.
+  let stateRaw = '';
+  bridge.onmessage = (e) => {
+    if (e.data === stateRaw) return;
+    try { const m = JSON.parse(e.data); if (m.type === 'state') stateRaw = e.data; receive(m); } catch (_) {}
+  };
   send({ cmd: 'ready' });
 } else {
   setTimeout(() => demo({ cmd: 'ready' }), 0);

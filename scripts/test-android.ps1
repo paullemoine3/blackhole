@@ -109,6 +109,21 @@ Wait 1200
 Cmd ('{"cmd":"navigate","input":"' + $base + '/b"}')
 Wait 4000
 Eval second "S.url + ' ' + S.tabs.length"
+# A real tap on the bar, real typing: our keyboard covers the bar (it does not climb, so the
+# page under it keeps its size) and the address field keeps what is typed.
+Adb shell settings put secure show_ime_with_hard_keyboard 1 | Out-Null
+$wm = "$(Adb shell wm size)"
+if ($wm -match '(\d+)x(\d+)\s*$') { $sw = [int]$Matches[1]; $sh = [int]$Matches[2] } else { $sw = 1080; $sh = 2400 }
+Eval barbefore "Math.round(document.querySelector('#bar').getBoundingClientRect().height)"
+Adb shell input tap ([int]($sw / 2)) ($sh - 200) | Out-Null
+Wait 1800
+Adb shell input text 'alp' | Out-Null
+Wait 1200
+Shot '22-typing'
+Eval typing "open.sheet + ' ' + document.querySelector('#q').value + ' ' + (kb > 0) + ' ' + kbOurs"
+Eval barafter "Math.round(document.querySelector('#bar').getBoundingClientRect().height)"
+Run "close('sheet')"
+Wait 900
 Run "openSheet(true, true)"
 Wait 900
 Shot '03-palette'
@@ -118,6 +133,10 @@ Run "document.querySelector('#q').value='page'; document.querySelector('#q').dis
 Wait 900
 Shot '04-suggest'
 Eval suggest "document.querySelectorAll('#list .act').length"
+# Typing on: the rows still suggested are the same nodes, and no entry animation plays again.
+Run "window.__rows = [...document.querySelectorAll('#list .act')]; document.querySelector('#q').value='pag'; document.querySelector('#q').dispatchEvent(new Event('input'))"
+Wait 700
+Eval keeprows "window.__rows.filter((n) => n.isConnected).length + ' ' + document.querySelectorAll('#list .act.in').length"
 # Intermediate frame: the page freezes the drawer's transition 150 ms in.
 Run "close('sheet'); setOpen('drawer', true); setTimeout(() => document.getAnimations().forEach((a) => a.pause()), 150)"
 Wait 1500
@@ -219,6 +238,20 @@ Eval undo "!document.querySelector('#toast-undo').hidden"
 Cmd '{"cmd":"undo_close"}'
 Wait 1500
 Eval after "S.tabs.length"
+# Closing a tab in the grid: its card leaves, the others are the same nodes (no rebuild).
+Cmd ('{"cmd":"navigate","input":"' + $base + '/a","new_tab":true}')
+Wait 3000
+Run "setOpen('grid', true)"
+Wait 1500
+Run "window.__cards = [...document.querySelectorAll('#cards .tc')]; flyAway(window.__cards[0], 1)"
+Wait 1500
+Shot '23-grid-closed'
+Eval gridkeep "window.__cards.length + ' ' + window.__cards.slice(1).every((n) => n.isConnected) + ' ' + window.__cards[0].isConnected + ' ' + document.querySelectorAll('#cards .tc.in').length"
+# A state that changes nothing in a part leaves its nodes alone (drawer rows).
+Run "window.__row = document.querySelector('#dtabs .trow'); send({ cmd: 'set_setting', name: 'pull_refresh', value: false })"
+Wait 700
+Eval samerow "window.__row === document.querySelector('#dtabs .trow') && S.settings.pull_refresh === false"
+Run "close('grid')"
 Cmd '{"cmd":"home"}'
 Wait 800
 Key 'KEYCODE_BACK'
@@ -245,6 +278,11 @@ Check ((V desktop) -eq 'true') 'desktop site on the tab'
 Check ((V sheet) -eq 'true') 'palette sheet opens'
 Check ((V editurl) -match '127\.0\.0\.1:\d+/b') 'tapping the bar puts its address in the field'
 Check ([int]((V suggest) -replace '\D', '0') -ge 2) 'suggestions listed'
+Check ((V typing) -eq '"true alp true true"') 'tapping the bar and typing: our keyboard, the field keeps the text'
+Check ((V barafter) -eq (V barbefore) -and (V barbefore) -ne '<missing>') 'the bar does not climb over our keyboard (the page keeps its size)'
+Check ((V keeprows) -match '^"[2-9] 0"$') 'typing keeps the suggestion rows (no rebuild, no animation again)'
+Check ((V gridkeep) -match '^"[2-9] true false 0"$') 'closing a tab in the grid removes its card only'
+Check ((V samerow) -eq 'true') 'an unrelated state leaves the drawer rows alone'
 Check ((V moving) -match 'matrix\(1, 0, 0, 1, -\d') 'drawer caught mid-slide'
 Check ((V drawer) -match 'none|matrix\(1, 0, 0, 1, 0, 0\)') 'drawer slides in'
 Check ((V grid) -eq '1') 'tab grid shows the tab'

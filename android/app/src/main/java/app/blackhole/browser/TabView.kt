@@ -181,8 +181,8 @@ class TabView(
         null
     }
 
-    /** A small JPEG of the page for the tab grid, as a `data:` URL. */
-    fun thumbnail(): String? {
+    /** A small picture of the page for the tab grid (main thread); [encode] makes it a `data:` URL. */
+    fun snapshot(): Bitmap? {
         if (width <= 0 || height <= 0) return null
         val scale = 0.33f
         val w = (width * scale).toInt().coerceAtLeast(1)
@@ -193,12 +193,22 @@ class TabView(
             canvas.scale(scale, scale)
             canvas.translate(-scrollX.toFloat(), -scrollY.toFloat())
             draw(canvas)
+            bitmap
+        } catch (e: RuntimeException) {
+            null
+        }
+    }
+
+    companion object {
+        /** The JPEG `data:` URL of a [snapshot], which is recycled (any thread). */
+        fun encode(picture: Bitmap): String? = try {
             val out = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 55, out)
-            bitmap.recycle()
+            picture.compress(Bitmap.CompressFormat.JPEG, 55, out)
             "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
         } catch (e: RuntimeException) {
             null
+        } finally {
+            picture.recycle()
         }
     }
 
