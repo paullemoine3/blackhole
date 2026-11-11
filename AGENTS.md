@@ -385,6 +385,16 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   (`NativeEvent::Blocked` → message `blocked`), pas avec tout l'état. `insets` sépare `bottom`
   (barres système) et `keyboard` : le clavier de nos champs recouvre la barre (la page garde sa
   taille), celui d'une page ou de la recherche dans la page la soulève (`--bb`).
+- Textes de l'interface mobile : section `[mobile]` des catalogues (`en.toml` et `fr.toml`),
+  jamais en dur. `data-i18n*` et `T('clé')` / `Tn('clé', n)` dans `mobile.html`, `self.t` / `tf` /
+  `tn` dans le cœur, `toastKey("clé")` dans la coque ; le test `every_text_asked_for_is_in_the_catalog`
+  lit ces écritures littérales. Langue : `Settings::language`, sinon `NativeEvent::Locale`.
+- Un seul renderer pour toutes les WebViews : `onRenderProcessGone` doit rester géré sur les
+  onglets (`NativeEvent::Crashed`) et sur la vue d'interface (`rebuildShell`), sinon l'app tombe.
+- Popups (`popups.rs`) : ids à partir de `POPUP_BASE`, jamais dans le workspace ; `is_private`
+  vaut pour tout onglet de session (privé ou popup), `in_private` pour la navigation privée.
+  Authentification HTTP (`auth.rs`) : les identifiants ne passent que par `Effect::HttpAuth`.
+  Menus, dossiers et rangement : `organize.rs` (rien pour un onglet privé ou une popup).
 - Commandes : `cd android; .\gradlew.bat assembleDebug` (lance `cargo ndk`), `scripts\test-android.ps1
   [-Boot]` (adb, captures `%TEMP%h_android_shots`, contrôles nommés `bheval:` lus dans logcat).
   Toute nouvelle fonction d'interface mobile : un scénario et un `Check` dans ce script.
@@ -427,7 +437,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   taille du tableau `JSON` de `app/src/i18n.rs`.
 - Changelog (`domain/changelog.rs`) : reste en anglais (notes techniques datées, écrites une fois
   à la livraison ; seul le cadre « Nouveautés » est traduit). Les noms (Easel, Boost, Air Traffic,
-  Meet, Shields) restent. Android : interface mobile en anglais ; page d'erreur partagée en anglais.
+  Meet, Shields) restent. Android : mêmes catalogues (section `[mobile]`), voir la section Android.
 - Scénarios : chaque script devtools fixe sa langue (`cmd {"cmd":"set_language",…}`) ;
   `scripts/test-errors.sh` en français, les autres en anglais ; `scripts/test-i18n.sh` bascule en
   direct et contrôle les textes.
