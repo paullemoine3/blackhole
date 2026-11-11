@@ -9,6 +9,24 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zeroize::Zeroize;
+
+/// A password on its way to the WebView: never printed, wiped when dropped.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(pub String);
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(…)")
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 /// Requests of the shell interface. Unknown or malformed messages are ignored.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -92,6 +110,9 @@ pub enum MobileCommand {
     },
     ForgetHistory {
         url: String,
+        /// What the history page is filtered by: the list sent back keeps that filter.
+        #[serde(default)]
+        query: String,
     },
     ClearHistory,
     /// Cookies, storage and cache of every profile.
@@ -108,6 +129,72 @@ pub enum MobileCommand {
     /// A `intent:`, `mailto:`, `tel:`… link the user confirmed.
     OpenExternal {
         url: String,
+    },
+    /// Language of the interface: `system`, `en` or `fr`.
+    SetLanguage {
+        language: String,
+    },
+    /// The user's own title for a tab; a blank one hands the title back to the page.
+    RenameTab {
+        tab: u64,
+        name: String,
+    },
+    /// Moves a tab of the space on screen to another space (it loads again on its cookies).
+    MoveTabToSpace {
+        tab: u64,
+        space: u64,
+    },
+    /// Files a tab into a folder, or takes it out (`null`).
+    MoveTabToFolder {
+        tab: u64,
+        #[serde(default)]
+        folder: Option<u64>,
+    },
+    /// Closes the loose tabs of the space but this one.
+    CloseOtherTabs {
+        tab: u64,
+    },
+    RenameSpace {
+        space: u64,
+        name: String,
+    },
+    /// Deletes a space and its tabs (never the last one); `UndoRemoval` brings it back.
+    DeleteSpace {
+        space: u64,
+    },
+    /// Puts back the space or folder deleted a moment ago.
+    UndoRemoval,
+    /// A new folder in the space on screen, with `tab` filed into it when given.
+    AddFolder {
+        name: String,
+        #[serde(default)]
+        tab: Option<u64>,
+    },
+    RenameFolder {
+        folder: u64,
+        name: String,
+    },
+    /// Folds or unfolds a folder.
+    ToggleFolder {
+        folder: u64,
+    },
+    /// Deletes a folder and the tabs it holds; `UndoRemoval` brings them back.
+    DeleteFolder {
+        folder: u64,
+    },
+    /// Files the loose tabs into folders by site (the card of the drawer); `Untidy` undoes it.
+    Tidy,
+    Untidy,
+    DismissTidy,
+    /// The answer to a server's request for a name and password (`auth` message).
+    AuthAnswer {
+        id: u64,
+        user: String,
+        password: Secret,
+    },
+    /// The question was closed: the server's own 401 page shows.
+    AuthCancel {
+        id: u64,
     },
     /// Settings > Devices: shows a pairing code, or pairs with the other device's code.
     DeviceShowCode,
@@ -194,6 +281,47 @@ pub enum NativeEvent {
         tab: u64,
         url: String,
     },
+    /// Requests of `tab` were refused by the Shields: its count changed (the interface gets the
+    /// two numbers, not the whole state).
+    Blocked {
+        tab: u64,
+    },
+    /// The system's preferred languages (`fr-FR`, `en-US`…), most wanted first.
+    Locale {
+        tags: Vec<String>,
+    },
+    /// The renderer of the tab's view died (`onRenderProcessGone`): the view is unusable.
+    Crashed {
+        tab: u64,
+    },
+    /// The main frame was answered 401, 403 or 5xx and finished loading: `probe` is what the
+    /// page looks like (JSON of `href`, `title`, `text`, `rich`, as a JSON string).
+    HttpStatus {
+        tab: u64,
+        url: String,
+        status: u16,
+        #[serde(default)]
+        probe: String,
+    },
+    /// The page of `tab` opens a window on a user gesture (`onCreateWindow`); `sized`: it asked
+    /// for a size or a position. Answered by `Effect::Popup`, or by nothing (nothing opens).
+    NewWindow {
+        tab: u64,
+        #[serde(default)]
+        sized: bool,
+    },
+    /// The page of `tab` called `window.close()`.
+    ClosedWindow {
+        tab: u64,
+    },
+    /// A server asks for a name and password (`id` is the shell's request).
+    Auth {
+        id: u64,
+        tab: u64,
+        host: String,
+        #[serde(default)]
+        realm: String,
+    },
     /// Back pressed with nothing left in the tab's history and no overlay open.
     BackExhausted,
     Download {
@@ -270,6 +398,15 @@ pub enum Effect {
         /// Desktop site (desktop user agent).
         desktop: bool,
     },
+    /// Creates the view of a window a page opened and hands it to the engine as that window
+    /// (`window.opener` is kept); it loads what the page asked by itself.
+    Popup {
+        tab: u64,
+        opener: u64,
+        profile: String,
+        script: String,
+        desktop: bool,
+    },
     /// Puts the tab on screen; `None`: the start page.
     Show {
         tab: Option<u64>,
@@ -332,6 +469,12 @@ pub enum Effect {
     Permission {
         id: u64,
         allow: bool,
+    },
+    /// The answer to `NativeEvent::Auth`: the credentials, or none to cancel.
+    HttpAuth {
+        id: u64,
+        user: Option<String>,
+        password: Option<Secret>,
     },
     /// Follows `url` (the releases page) and reports where it led (`NativeEvent::UpdateLatest`).
     UpdateProbe {

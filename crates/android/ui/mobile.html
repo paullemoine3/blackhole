@@ -12,7 +12,8 @@
     --bg: #0c0b12; --panel: #13121b; --ink: #eceaf5; --mute: rgba(236,234,245,.55);
     --line: rgba(255,255,255,.09); --fill: rgba(255,255,255,.06); --fill2: rgba(255,255,255,.1);
     --accent: #7c5cff; --glow: rgba(124,92,255,.35); --amber: #ffb020; --ok: #8ff0b4; --bad: #ff6070;
-    --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --bar: 64px;
+    /* Safe areas; --kb: the keyboard's height; --bb: what the bar stands on (the keyboard of a page, else --sb). */
+    --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --kb: 0px; --bb: 0px; --bar: 64px;
     --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.3,1.15);
   }
   :root[data-theme="light"] {
@@ -68,7 +69,7 @@
   .empty { color: var(--mute); font-size: 13px; padding: 4px; }
 
   /* Bottom bar */
-  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 8px calc(10px + var(--sr)) calc(8px + var(--sb)) calc(10px + var(--sl));
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 8px calc(10px + var(--sr)) calc(8px + var(--bb)) calc(10px + var(--sl));
     background: radial-gradient(280px 120px at 8% 100%, var(--glow), transparent 70%), var(--bg); border-top: 1px solid var(--line);
     transition: transform .3s var(--ease); touch-action: pan-y; }
   #bar.private { background: radial-gradient(280px 120px at 8% 100%, rgba(160,60,255,.4), transparent 70%), #120c1e; color: #eceaf5; }
@@ -126,7 +127,17 @@
   .trow .tile { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
   .trow span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .trow .live { width: 6px; height: 6px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 6px var(--accent); flex: none; }
-  .dl { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 12.5px; animation: rise .4s var(--ease) both; }
+  /* Folders of the drawer: a row that folds, its tabs indented under it. */
+  .trow.fold svg.chev { width: 14px; height: 14px; opacity: .6; transition: transform .2s var(--ease); }
+  .trow.fold.open svg.chev { transform: rotate(90deg); }
+  .trow.fold svg.fi { width: 18px; height: 18px; }
+  .trow.fold > span:nth-child(2) { flex: none; display: grid; place-items: center; width: 22px; }
+  .trow .k { flex: none; color: var(--mute); font-size: 12px; }
+  .tidy { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 13px; }
+  .tidy .askbtns { margin-top: 10px; }
+  .act.armed { background: rgba(255,90,90,.18); }
+  .dl { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 12.5px; }
+  .dl.in { animation: rise .4s var(--ease) both; }
   .dl .pb { height: 4px; border-radius: 2px; background: var(--fill2); margin-top: 7px; overflow: hidden; }
   .dl .pb i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--amber)); transition: width .4s ease; }
 
@@ -143,7 +154,9 @@
   .pill { padding: 8px 14px; border-radius: 12px; font-size: 13px; background: var(--fill2); }
   .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .tc { height: 200px; border-radius: 16px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); position: relative; touch-action: pan-y;
-    animation: pop .45s var(--spring) both; transition: transform .25s var(--ease), opacity .25s; text-align: left; }
+    transition: transform .25s var(--ease), opacity .25s; text-align: left; }
+  /* Entry animations play once, on the nodes that are new (class `in`, see `enter`). */
+  .tc.in { animation: pop .45s var(--spring) both; }
   .tc.cur { box-shadow: 0 0 0 2px var(--accent), 0 0 20px var(--glow); }
   .tc .h { display: flex; align-items: center; gap: 6px; padding: 7px 6px 7px 9px; font-size: 12px; background: var(--fill2); position: relative; z-index: 1; }
   .tc .h span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -156,7 +169,7 @@
 
   /* Bottom sheet (the desktop palette) */
   #sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 86vh; display: flex; flex-direction: column;
-    padding: 10px calc(14px + var(--sr)) calc(14px + var(--sb)) calc(14px + var(--sl)); border-radius: 24px 24px 0 0;
+    padding: 10px calc(14px + var(--sr)) calc(14px + max(var(--sb), var(--kb))) calc(14px + var(--sl)); border-radius: 24px 24px 0 0;
     background: radial-gradient(300px 180px at 50% 0%, var(--glow), transparent 70%), var(--panel); border-top: 1px solid var(--line);
     transform: translateY(110%); transition: transform .42s var(--spring); box-shadow: 0 -20px 50px rgba(0,0,0,.35); will-change: transform; }
   #sheet.on { transform: none; }
@@ -168,7 +181,8 @@
   #q::placeholder { color: var(--mute); }
   #list { overflow-y: auto; margin-top: 8px; overscroll-behavior: contain; }
   .act { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 13px; font-size: 14.5px; width: 100%; text-align: left;
-    animation: rowin .35s var(--ease) both; min-width: 0; }
+    min-width: 0; }
+  .act.in { animation: rowin .35s var(--ease) both; }
   .act:active, .act.hot { background: rgba(124,92,255,.2); }
   .act .ic { width: 32px; height: 32px; border-radius: 10px; background: var(--fill2); display: grid; place-items: center; flex: none; }
   .act .ic svg { width: 17px; height: 17px; }
@@ -196,7 +210,7 @@
   @keyframes slidebar { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
   /* Report / menus (bloom from their anchor) */
-  .pop { position: fixed; left: calc(10px + var(--sl)); right: calc(10px + var(--sr)); bottom: calc(var(--bar) + var(--sb) + 10px); z-index: 31; border-radius: 22px;
+  .pop { position: fixed; left: calc(10px + var(--sl)); right: calc(10px + var(--sr)); bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 10px); z-index: 31; border-radius: 22px;
     padding: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.5);
     animation: bloom .45s var(--spring) both; transform-origin: 20% 100%; max-height: 70vh; overflow-y: auto; }
   .grade { width: 56px; height: 56px; border-radius: 17px; display: grid; place-items: center; font-size: 28px; font-weight: 800; flex: none; }
@@ -209,13 +223,13 @@
   .bl { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 2px; border-top: 1px solid var(--line); }
   .bl span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bl em { font-style: normal; color: var(--mute); flex: none; }
-  .warnline { color: #ffb3bd; font-size: 13px; margin: 0 0 10px; }
+  .warnline { color: var(--bad); font-size: 13px; margin: 0 4px 10px; }
   .pop .ttl { font-size: 13px; color: var(--mute); margin: 0 4px 8px; word-break: break-all; }
 
   /* Full pages: settings and history */
   .page { position: fixed; inset: 0; z-index: 40; background: radial-gradient(420px 260px at 50% 0%, var(--glow), transparent 70%), var(--bg);
-    padding: calc(var(--st) + 8px) calc(14px + var(--sr)) calc(var(--sb) + 20px) calc(14px + var(--sl)); overflow-y: auto; overscroll-behavior: contain;
-    transform: translateX(100%); transition: transform .38s var(--ease); }
+    padding: calc(var(--st) + 8px) calc(14px + var(--sr)) calc(max(var(--sb), var(--kb)) + 20px) calc(14px + var(--sl)); overflow-y: auto; overscroll-behavior: contain;
+    scroll-padding-bottom: calc(max(var(--sb), var(--kb)) + 20px); transform: translateX(100%); transition: transform .38s var(--ease); }
   .page.on { transform: none; }
   .page .top { display: flex; align-items: center; gap: 6px; font-size: 19px; font-weight: 600; position: sticky; z-index: 2;
     top: calc(-8px - var(--st)); margin: calc(-8px - var(--st)) calc(-14px - var(--sr)) 12px calc(-14px - var(--sl));
@@ -257,10 +271,15 @@
   .pair input { flex: 1; min-width: 0; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--fill2); padding: 0 12px; outline: 0;
     font: 15px ui-monospace, Consolas, monospace; text-transform: uppercase; }
   .note { font-size: 12.5px; color: var(--mute); padding: 4px 14px 12px; }
+  /* A question with fields, in a menu's place (name and password of a server, a new name). */
+  .field { display: block; width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--fill2); padding: 0 12px; outline: 0;
+    margin-bottom: 8px; font-size: 15px; user-select: text; -webkit-user-select: text; }
+  .field:focus { border-color: var(--accent); box-shadow: 0 0 12px var(--glow); }
+  .askbtns { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
   #hq { width: 100%; height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--fill2); padding: 0 14px; outline: 0; margin-bottom: 12px; }
 
   /* Toast */
-  #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + var(--sb) + 14px); z-index: 50; transform: translate(-50%, 20px); opacity: 0;
+  #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 14px); z-index: 50; transform: translate(-50%, 20px); opacity: 0;
     display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px; border-radius: 14px; background: #1f1d2b; color: #eceaf5;
     box-shadow: 0 12px 30px rgba(0,0,0,.4); font-size: 14px; pointer-events: none; transition: transform .35s var(--spring), opacity .25s; max-width: 92vw; }
   #toast.on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
@@ -303,21 +322,21 @@
 <div id="splash"><div class="core"><div class="disc"></div><div class="ring"></div></div><div class="word">BlackHole</div></div>
 
 <main id="home">
-  <div class="brand"><div class="hole"><div class="disc"></div><div class="ring"></div></div><h1 id="brand">BlackHole</h1><p id="privnote" hidden>Private tabs leave no history. Their cookies and storage vanish when the last one closes.</p></div>
+  <div class="brand"><div class="hole"><div class="disc"></div><div class="ring"></div></div><h1 id="brand">BlackHole</h1><p id="privnote" hidden data-i18n="private_note">Private tabs leave no history. Their cookies and storage vanish when the last one closes.</p></div>
   <section class="card" id="updcard" hidden><div class="upd"><span class="ring2"><svg class="i"><use href="#i-down"/></svg></span>
     <div class="meta"><span id="upd-t"></span><small id="upd-s"></small></div><button class="btn" id="upd-go">Install</button></div><div class="upbar" id="upd-bar" hidden><i></i></div></section>
-  <section class="card" id="favcard"><h2>Quick access</h2><div class="favs" id="favs"></div></section>
-  <section class="card" id="recentcard"><h2>Recent</h2><div id="recent"></div></section>
-  <section class="card"><h2>Shields this session</h2><div class="stats"><div><b id="st-total">0</b>blocked</div><div><b id="st-trk">On</b>trackers</div><div><b id="st-ads">On</b>ads</div></div></section>
+  <section class="card" id="favcard"><h2 data-i18n="quick_access">Quick access</h2><div class="favs" id="favs"></div></section>
+  <section class="card" id="recentcard"><h2 data-i18n="recent">Recent</h2><div id="recent"></div><p class="empty" id="recent-empty" hidden data-i18n="recent_empty">Pages you visit show up here.</p></section>
+  <section class="card"><h2 data-i18n="shields_session">Shields this session</h2><div class="stats"><div><b id="st-total">0</b><span data-i18n="stat_blocked">blocked</span></div><div><b id="st-trk">On</b><span data-i18n="stat_trackers">trackers</span></div><div><b id="st-ads">On</b><span data-i18n="stat_ads">ads</span></div></div></section>
 </main>
 
 <div id="grid">
   <div class="top">
-    <div class="seg"><button id="g-normal" class="on">Tabs</button><button id="g-private" class="priv">Private</button></div>
-    <div style="display:flex;gap:8px"><button class="pill" id="g-new">+ New</button><button class="pill" id="g-done">Done</button></div>
+    <div class="seg"><button id="g-normal" class="on" data-i18n="tabs">Tabs</button><button id="g-private" class="priv" data-i18n="private">Private</button></div>
+    <div style="display:flex;gap:8px"><button class="pill" id="g-new" data-i18n="new_plus">+ New</button><button class="pill" id="g-done" data-i18n="done">Done</button></div>
   </div>
   <div class="tgrid" id="cards"></div>
-  <p class="empty" id="g-empty" hidden>No tabs here.</p>
+  <p class="empty" id="g-empty" hidden data-i18n="no_tabs_here">No tabs here.</p>
 </div>
 
 <div id="scrim"></div>
@@ -326,44 +345,46 @@
   <div class="qa" id="qa"></div>
   <div class="lbl" id="tabs-lbl">Tabs</div>
   <div id="dtabs"></div>
-  <div class="lbl">Library</div>
-  <button class="trow" data-go="history"><svg class="i"><use href="#i-clock"/></svg><span>History</span></button>
-  <button class="trow" data-go="downloads"><svg class="i"><use href="#i-down"/></svg><span>Downloads</span></button>
-  <button class="trow" data-go="devices"><svg class="i"><use href="#i-share"/></svg><span>Devices</span></button>
-  <button class="trow" data-go="settings"><svg class="i"><use href="#i-gear"/></svg><span>Settings</span></button>
+  <p class="empty" id="dtabs-empty" hidden data-i18n="no_open_tabs">No open tabs.</p>
+  <div class="tidy" id="tidy" hidden><span id="tidy-t"></span><div class="askbtns"><button class="mini" id="tidy-no" data-i18n="dismiss">Dismiss</button><button class="btn" id="tidy-go" data-i18n="tidy_up">Tidy up</button></div></div>
+  <div class="lbl" data-i18n="library">Library</div>
+  <button class="trow" data-go="history"><svg class="i"><use href="#i-clock"/></svg><span data-i18n="history">History</span></button>
+  <button class="trow" data-go="downloads"><svg class="i"><use href="#i-down"/></svg><span data-i18n="downloads">Downloads</span></button>
+  <button class="trow" data-go="devices"><svg class="i"><use href="#i-share"/></svg><span data-i18n="devices">Devices</span></button>
+  <button class="trow" data-go="settings"><svg class="i"><use href="#i-gear"/></svg><span data-i18n="settings">Settings</span></button>
   <div id="dls"></div>
 </aside>
 
 <nav id="bar">
   <div id="dots"></div>
   <div class="row2">
-    <button class="ib" id="b-menu" aria-label="Sidebar"><svg class="i"><use href="#i-menu"/></svg></button>
-    <div id="omni" role="button" aria-label="Address">
+    <button class="ib" id="b-menu" aria-label="Sidebar" data-i18n-aria="sidebar"><svg class="i"><use href="#i-menu"/></svg></button>
+    <div id="omni" role="button" aria-label="Address" data-i18n-aria="address">
       <span id="shield" hidden><svg class="i" style="width:18px;height:18px"><use href="#i-shield"/></svg><b id="shield-n" hidden></b></span>
       <span id="site" hidden></span>
       <span class="u ph" id="url">Search or enter address</span>
       <i id="progress"></i>
     </div>
-    <button class="ib" id="b-tabs" aria-label="Tabs"><span class="count" id="count">0</span></button>
-    <button class="ib" id="b-more" aria-label="Menu"><svg class="i"><use href="#i-dots"/></svg></button>
+    <button class="ib" id="b-tabs" aria-label="Tabs" data-i18n-aria="tabs"><span class="count" id="count">0</span></button>
+    <button class="ib" id="b-more" aria-label="Menu" data-i18n-aria="menu"><svg class="i"><use href="#i-dots"/></svg></button>
   </div>
   <div id="findrow" hidden>
-    <input id="fq" type="search" placeholder="Find in page" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    <input id="fq" type="search" placeholder="Find in page" data-i18n-ph="find_in_page" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
     <span id="fcount"></span>
-    <button class="ib" id="f-prev" aria-label="Previous match"><svg class="i"><use href="#i-up"/></svg></button>
-    <button class="ib" id="f-next" aria-label="Next match"><svg class="i"><use href="#i-downc"/></svg></button>
-    <button class="ib" id="f-close" aria-label="Close find"><svg class="i"><use href="#i-x"/></svg></button>
+    <button class="ib" id="f-prev" aria-label="Previous match" data-i18n-aria="find_previous"><svg class="i"><use href="#i-up"/></svg></button>
+    <button class="ib" id="f-next" aria-label="Next match" data-i18n-aria="find_next"><svg class="i"><use href="#i-downc"/></svg></button>
+    <button class="ib" id="f-close" aria-label="Close find" data-i18n-aria="find_close"><svg class="i"><use href="#i-x"/></svg></button>
   </div>
 </nav>
 
 <section id="sheet">
   <div id="grabzone"><div class="grab"></div></div>
-  <label id="search"><svg class="i" style="width:19px;height:19px;opacity:.7"><use href="#i-search"/></svg><input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="Search or enter address"></label>
+  <label id="search"><svg class="i" style="width:19px;height:19px;opacity:.7"><use href="#i-search"/></svg><input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="Search or enter address" data-i18n-ph="search_or_address"></label>
   <div class="quick" id="quick">
-    <button id="k-back"><svg class="i"><use href="#i-left"/></svg>Back</button>
-    <button id="k-fwd"><svg class="i"><use href="#i-right"/></svg>Forward</button>
+    <button id="k-back"><svg class="i"><use href="#i-left"/></svg><span data-i18n="back">Back</span></button>
+    <button id="k-fwd"><svg class="i"><use href="#i-right"/></svg><span data-i18n="forward">Forward</span></button>
     <button id="k-reload"><svg class="i"><use href="#i-reload"/></svg>Reload</button>
-    <button id="k-share"><svg class="i"><use href="#i-share"/></svg>Share</button>
+    <button id="k-share"><svg class="i"><use href="#i-share"/></svg><span data-i18n="share">Share</span></button>
   </div>
   <div id="list"></div>
 </section>
@@ -371,55 +392,58 @@
 <div id="pop" class="pop" hidden></div>
 
 <section class="page" id="settings">
-  <div class="top"><button class="ib" data-close="settings"><svg class="i"><use href="#i-left"/></svg></button>Settings</div>
-  <div class="grp"><h3>Browsing</h3>
-    <div class="opt"><div>Search engine</div></div>
+  <div class="top"><button class="ib" data-close="settings" aria-label="Back" data-i18n-aria="back"><svg class="i"><use href="#i-left"/></svg></button><span data-i18n="settings">Settings</span></div>
+  <div class="grp"><h3 data-i18n="browsing">Browsing</h3>
+    <div class="opt"><div data-i18n="search_engine">Search engine</div></div>
     <div class="opt" style="padding-top:0"><div class="chips" id="engines" style="margin-left:0;justify-content:flex-start"></div></div>
-    <div class="opt"><div>Space color<small id="spacename"></small></div><div class="swatches" id="swatches"></div></div>
-    <button class="opt" data-set="pull_refresh"><div>Pull to refresh<small>Pull down at the top of a page to reload it</small></div><span class="sw"></span></button>
-    <button class="opt" id="defbrowser"><div>Default browser<small id="defstate"></small></div><span class="v">›</span></button>
+    <div class="opt"><div><span data-i18n="space_color">Space color</span><small id="spacename"></small></div><div class="swatches" id="swatches"></div></div>
+    <button class="opt" data-set="pull_refresh"><div><span data-i18n="pull_refresh">Pull to refresh</span><small data-i18n="pull_refresh_hint">Pull down at the top of a page to reload it</small></div><span class="sw"></span></button>
+    <button class="opt" id="defbrowser"><div><span data-i18n="default_browser">Default browser</span><small id="defstate"></small></div><span class="v">›</span></button>
   </div>
-  <div class="grp"><h3>Appearance</h3>
-    <div class="opt"><div>Theme</div><div class="chips" id="themes"></div></div>
-    <div class="opt"><div>Text size</div><div class="chips" id="zooms"></div></div>
-    <button class="opt" data-set="animations"><div>Animations<small>Off as well when the system removes animations</small></div><span class="sw"></span></button>
+  <div class="grp"><h3 data-i18n="appearance">Appearance</h3>
+    <div class="opt"><div data-i18n="language">Language</div><div class="chips" id="langs"></div></div>
+    <div class="opt"><div data-i18n="theme">Theme</div><div class="chips" id="themes"></div></div>
+    <div class="opt"><div data-i18n="text_size">Text size</div><div class="chips" id="zooms"></div></div>
+    <button class="opt" data-set="animations"><div><span data-i18n="animations">Animations</span><small data-i18n="animations_hint">Off as well when the system removes animations</small></div><span class="sw"></span></button>
   </div>
-  <div class="grp"><h3>Shields</h3>
-    <button class="opt" data-set="trackers"><div>Block trackers</div><span class="sw"></span></button>
-    <button class="opt" data-set="ads"><div>Block ads</div><span class="sw"></span></button>
-    <button class="opt" data-set="hide_ads"><div>Hide ad slots</div><span class="sw"></span></button>
-    <button class="opt" data-set="video_ads"><div>Skip video ads</div><span class="sw"></span></button>
-    <button class="opt" data-set="cookie_banners"><div>Hide cookie banners</div><span class="sw"></span></button>
+  <div class="grp"><h3 data-i18n="shields">Shields</h3>
+    <button class="opt" data-set="trackers"><div data-i18n="block_trackers">Block trackers</div><span class="sw"></span></button>
+    <button class="opt" data-set="ads"><div data-i18n="block_ads">Block ads</div><span class="sw"></span></button>
+    <button class="opt" data-set="hide_ads"><div data-i18n="hide_ads">Hide ad slots</div><span class="sw"></span></button>
+    <button class="opt" data-set="video_ads"><div data-i18n="skip_video_ads">Skip video ads</div><span class="sw"></span></button>
+    <button class="opt" data-set="cookie_banners"><div data-i18n="hide_cookie_banners">Hide cookie banners</div><span class="sw"></span></button>
   </div>
-  <div class="grp" id="devices"><h3>Devices</h3>
+  <div class="grp" id="devices"><h3 data-i18n="devices">Devices</h3>
     <div id="devlist"></div>
-    <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note" style="text-align:center">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes.</p>
-      <div class="pair" style="justify-content:center"><button class="mini" id="devcancel">Cancel</button></div></div>
-    <button class="opt" id="devshow"><div>Show a pairing code</div><span class="v">›</span></button>
-    <div class="pair"><input id="devinput" placeholder="ABCD-EFGH-JKMN" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20"><button class="mini" id="devjoin">Pair</button></div>
+    <p class="note" id="dev-empty" hidden data-i18n="no_device">No device paired yet.</p>
+    <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note" style="text-align:center" data-i18n="pair_code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes.</p>
+      <div class="pair" style="justify-content:center"><button class="mini" id="devcancel" data-i18n="cancel">Cancel</button></div></div>
+    <button class="opt" id="devshow"><div data-i18n="show_pair_code">Show a pairing code</div><span class="v">›</span></button>
+    <div class="pair"><input id="devinput" placeholder="ABCD-EFGH-JKMN" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20"><button class="mini" id="devjoin" data-i18n="pair">Pair</button></div>
     <p class="note" id="devstatus"></p>
-    <p class="note">Same Wi-Fi network, no server, no account. Continue on sends the address of a tab; tab sync keeps quick access, open tabs and spaces the same on both devices (Ask proposes, Always merges on its own). Private tabs stay here.</p>
+    <p class="note" data-i18n="devices_note">Same Wi-Fi network, no server, no account. Continue on sends the address of a tab; tab sync keeps quick access, open tabs and spaces the same on both devices (Ask proposes, Always merges on its own). Private tabs stay here.</p>
   </div>
-  <div class="grp"><h3>Data</h3>
-    <button class="opt danger" id="clear-history"><div>Clear history</div></button>
-    <button class="opt danger" id="clear-data"><div>Clear cookies and site data<small>Every space; you will be signed out of sites</small></div></button>
-    <button class="opt" data-go="downloads"><div>Downloads<small>Download/BlackHole</small></div><span class="v">›</span></button>
+  <div class="grp"><h3 data-i18n="data">Data</h3>
+    <button class="opt danger" id="clear-history"><div data-i18n="clear_history">Clear history</div></button>
+    <button class="opt danger" id="clear-data"><div><span data-i18n="clear_site_data">Clear cookies and site data</span><small data-i18n="clear_site_data_hint">Every space; you will be signed out of sites</small></div></button>
+    <button class="opt" data-go="downloads"><div><span data-i18n="downloads">Downloads</span><small>Download/BlackHole</small></div><span class="v">›</span></button>
   </div>
-  <div class="grp" id="updates"><h3>Updates</h3>
-    <div class="opt"><div>BlackHole for Android<small id="about"></small></div></div>
+  <div class="grp" id="updates"><h3 data-i18n="updates">Updates</h3>
+    <div class="opt"><div><span data-i18n="app_name">BlackHole for Android</span><small id="about"></small></div></div>
     <div class="opt"><div><span id="up-state">Not checked yet</span><small id="up-detail"></small><div class="upbar" id="up-bar" hidden><i></i></div></div>
       <button class="btn" id="up-go">Check now</button></div>
-    <button class="opt" data-set="auto_update"><div>Check automatically<small>Once a day, from the GitHub releases</small></div><span class="sw"></span></button>
+    <button class="opt" data-set="auto_update"><div><span data-i18n="check_auto">Check automatically</span><small data-i18n="check_auto_hint">Once a day, from the GitHub releases</small></div><span class="sw"></span></button>
   </div>
 </section>
 
 <section class="page" id="history">
-  <div class="top"><button class="ib" data-close="history"><svg class="i"><use href="#i-left"/></svg></button>History</div>
-  <input id="hq" type="search" placeholder="Search history" autocomplete="off">
+  <div class="top"><button class="ib" data-close="history" aria-label="Back" data-i18n-aria="back"><svg class="i"><use href="#i-left"/></svg></button><span data-i18n="history">History</span></div>
+  <input id="hq" type="search" placeholder="Search history" aria-label="Search history" data-i18n-ph="search_history" data-i18n-aria="search_history" autocomplete="off">
+  <p class="empty" id="h-empty" hidden></p>
   <div id="hlist"></div>
 </section>
 
-<div id="toast"><span id="toast-t"></span><button id="toast-undo" hidden>Undo</button><button id="toast-act" hidden></button></div>
+<div id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button id="toast-undo" hidden data-i18n="undo">Undo</button><button id="toast-act" hidden></button></div>
 
 <svg width="0" height="0" style="position:absolute">
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
@@ -453,6 +477,10 @@
   <symbol id="i-addhome" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 9v6M9 12h6"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20 16l-5-5-7 8"/></symbol>
   <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
   <symbol id="i-pinmap" viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></symbol>
 </svg>
 
@@ -472,11 +500,35 @@ const bridge = window.bh;
 const send = (o) => { if (bridge) bridge.postMessage(JSON.stringify(o)); else demo(o); };
 
 let S = null;               // core state
+// Texts: the `mobile.*` keys of the catalogs, sent by the core in the interface's language.
+// Without them (a desktop browser preview) the markup keeps its English and a key reads as words.
+let I18N = {}, LANG = 'en';
+const fill = (s, p) => (p ? s.replace(/\{(\w+)\}/g, (m, k) => (k in p ? p[k] : m)) : s);
+function T(key, params) {
+  const s = I18N['mobile.' + key];
+  if (s != null) return fill(s, params);
+  const words = key.replace(/\.(one|other)$/, '').replace(/_/g, ' ');
+  return words[0].toUpperCase() + words.slice(1);
+}
+// `key.one` / `key.other` for `n` (French: 0 and 1 are singular), with `{n}`.
+function Tn(key, n, params) {
+  const one = LANG === 'fr' ? n < 2 : n === 1;
+  return T(key + (one ? '.one' : '.other'), Object.assign({ n }, params));
+}
+function applyTexts() {
+  document.documentElement.lang = LANG;
+  const text = (k) => I18N['mobile.' + k];
+  for (const e of document.querySelectorAll('[data-i18n]')) { const s = text(e.dataset.i18n); if (s != null) e.textContent = s; }
+  for (const e of document.querySelectorAll('[data-i18n-ph]')) { const s = text(e.dataset.i18nPh); if (s != null) e.placeholder = s; }
+  for (const e of document.querySelectorAll('[data-i18n-aria]')) { const s = text(e.dataset.i18nAria); if (s != null) e.setAttribute('aria-label', s); }
+}
 let env = { reduced: false, profiles: true };
 let nav = { back: false, forward: false };
 let showPrivateGrid = false;
 const thumbs = new Map();
 const icons = new Map();      // site (host without www.) -> PNG data: URL, from the core
+const iconStamp = new Map();  // site -> revision of its icon (a tile is redrawn when it changes)
+let iconsRev = 0;
 let loading = false;          // the page on screen is loading (Reload becomes Stop)
 let finding = false;          // find in page bar shown
 let findTab = null;
@@ -500,7 +552,68 @@ function tile(name, url, cls) {
   t.style.background = `hsl(${hue(host)} 62% 48%)`;
   return t;
 }
+function setIcon(host, data) {
+  if (icons.get(host) === data) return false;
+  if (data == null) icons.delete(host); else icons.set(host, data);
+  iconStamp.set(host, ++iconsRev);
+  return true;
+}
+// The tile of (name, url) as the first child of `holder`; the one already there stays when it
+// would look the same (an image that is not replaced does not blink).
+function putTile(holder, name, url, cls) {
+  const host = hostOf(url).toLowerCase();
+  const sig = host + '\n' + (icons.has(host) ? 'i' + iconStamp.get(host) : ((name || host || '?').trim()[0] || '?').toUpperCase());
+  if (holder.__tile === sig) return;
+  holder.__tile = sig;
+  const t = tile(name, url, cls);
+  if (holder.__tileEl) holder.__tileEl.replaceWith(t); else holder.prepend(t);
+  holder.__tileEl = t;
+}
 const stillNow = () => document.body.classList.contains('still');
+
+// --- drawing only what changed ------------------------------------------------------------------
+// A state message comes for every page event (address, title, a view put to sleep…). Each part
+// of the interface remembers what it last drew and is left alone while that is the same; lists
+// keep the nodes whose key is still there. So nothing blinks, no entry animation plays twice,
+// and a touch, a scroll position or an armed button outlives the message.
+const drawn = {};
+function changed(part, deps) {
+  const sig = JSON.stringify(deps);
+  if (drawn[part] === sig) return false;
+  drawn[part] = sig;
+  return true;
+}
+// Entry animation of a new node (`.in` rules of the style sheet), once.
+function enter(n, delay) {
+  n.classList.add('in');
+  if (delay) n.style.animationDelay = delay + 's';
+  const done = (e) => {
+    if (e.target !== n) return;
+    n.removeEventListener('animationend', done); n.classList.remove('in'); n.style.animationDelay = '';
+  };
+  n.addEventListener('animationend', done);
+  return n;
+}
+// Makes the children of `box` match `items`, in order: the node of a key that is still there is
+// kept and updated in place, `make()` builds the missing ones (`anim`: with their entry
+// animation), the others go. A node's handlers read its current item from `node.__it`.
+function sync(box, items, key, make, update, anim) {
+  const old = new Map();
+  for (const n of [...box.children]) { if (n.__k != null && !old.has(n.__k)) old.set(n.__k, n); else n.remove(); }
+  let prev = null, fresh = 0;
+  items.forEach((it, i) => {
+    const k = String(key(it, i));
+    let n = old.get(k);
+    if (n) old.delete(k);
+    else { n = make(it); n.__k = k; if (anim) enter(n, fresh++ * 0.03); }
+    n.__it = it;
+    update(n, it, i);
+    const at = prev ? prev.nextSibling : box.firstChild;
+    if (at !== n) box.insertBefore(n, at);
+    prev = n;
+  });
+  for (const n of old.values()) n.remove();
+}
 function applyMotion() {
   const off = env.reduced || (S && S.settings.animations === false) || matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.body.classList.toggle('still', !!off);
@@ -521,27 +634,31 @@ function toast(text, undo, action) {
   if (action) { a.textContent = action.label; a.onclick = () => { $('#toast').classList.remove('on'); action.run(); }; }
   $('#toast').classList.add('on');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('#toast').classList.remove('on'), undo ? 15000 : action ? 8000 : 3200);
+  toastTimer = setTimeout(() => $('#toast').classList.remove('on'), undo || (action && action.long) ? 15000 : action ? 8000 : 3200);
 }
 
 // --- surface: tells the shell which touches are ours --------------------------------------
+let surfaceSent = '';
 function surface() {
   const overlay = open.drawer || open.grid || open.sheet || open.pop || open.settings || open.history;
   const home = !S || S.current == null;
   const barH = $('#bar').getBoundingClientRect().height;
   // Find in page leaves the page usable (not full) but takes the system back gesture.
-  if (bridge) send({ cmd: 'surface', full: overlay || home, overlay: overlay || finding, bottom: barH, dark: theme(), animations: !stillNow(), cover: open.grid || open.settings || open.history });
+  // Sent only when it changed: the shell lays the page out again on each of these.
+  const msg = JSON.stringify({ cmd: 'surface', full: overlay || home, overlay: overlay || finding, bottom: barH, dark: theme(), animations: !stillNow(), cover: open.grid || open.settings || open.history });
+  if (bridge && msg !== surfaceSent) { surfaceSent = msg; bridge.postMessage(msg); }
   $('#scrim').classList.toggle('on', open.drawer || open.sheet || open.pop);
 }
 function setOpen(name, on) {
-  if (on) for (const k of Object.keys(open)) if (k !== name && !(name === 'pop' && k === 'sheet')) close(k);
+  // A menu or a question opens over the sheet, the drawer or the grid it was asked from.
+  if (on) for (const k of Object.keys(open)) if (k !== name && !(name === 'pop' && (k === 'sheet' || k === 'drawer' || k === 'grid'))) close(k);
   open[name] = on;
   if (name === 'drawer') { $('#drawer').classList.toggle('on', on); $('#drawer').style.transform = ''; }
-  if (name === 'grid') { $('#grid').classList.toggle('on', on); if (on) { send({ cmd: 'thumbs' }); renderGrid(); } }
+  if (name === 'grid') { $('#grid').classList.toggle('on', on); if (on) { send({ cmd: 'thumbs' }); drawn.grid = null; $('#cards').replaceChildren(); renderGrid(); } }
   if (on) openedAt = performance.now();
   if (name === 'sheet') {
     $('#sheet').classList.toggle('on', on); $('#sheet').style.transform = '';
-    if (!on) { $('#q').blur(); mode = null; $('#q').placeholder = 'Search or enter address'; }
+    if (!on) { $('#q').blur(); mode = null; $('#q').placeholder = T('search_or_address'); }
   }
   if (name === 'pop') { if (!on) { $('#pop').hidden = true; dismissPop(); } }
   if (name === 'settings' || name === 'history') $('#' + name).classList.toggle('on', on);
@@ -562,15 +679,28 @@ function list() { return S ? (S.private ? S.private_tabs : S.tabs) : []; }
 function render() {
   if (!S) return;
   applyMotion();
-  const sp = S.space || {};
-  document.documentElement.style.setProperty('--accent', sp.color || '#7c5cff');
-  document.documentElement.style.setProperty('--glow', (sp.color || '#7c5cff') + '59');
+  const color = (S.space || {}).color || '#7c5cff';
   const home = S.current == null;
-  $('#home').hidden = !home;
-  $('#home').classList.toggle('private', !!S.private);
-  $('#bar').classList.toggle('private', !!S.private);
-  $('#strip').hidden = home;
-  // Bar: the site (its icon, host, then the path in grey), like the desktop's bar.
+  if (changed('frame', [color, home, !!S.private])) {
+    document.documentElement.style.setProperty('--accent', color);
+    document.documentElement.style.setProperty('--glow', color + '59');
+    $('#home').hidden = !home;
+    $('#home').classList.toggle('private', !!S.private);
+    $('#bar').classList.toggle('private', !!S.private);
+    $('#strip').hidden = home;
+  }
+  renderBar(home);
+  if (finding && S.current !== findTab) endFind();
+  renderShield();
+  // Quick access tiles and folder tabs count while they are awake.
+  const count = $('#count'); const c = String((S.tabs || []).filter((t) => (!t.pinned && t.folder == null) || t.live).length + (S.private_tabs || []).length);
+  if (count.textContent !== c) { count.textContent = c; count.classList.remove('bump'); void count.offsetWidth; count.classList.add('bump'); }
+  renderHome(); renderDrawer(); if (open.grid) renderGrid(); renderSettings(); renderUpdate(); renderDots(); surface();
+}
+// Bar: the site (its icon, host, then the path in grey), like the desktop's bar.
+function renderBar(home) {
+  const host = S.url ? hostOf(S.url).toLowerCase() : '';
+  if (!changed('bar', [S.url, home, S.error, !!S.private, S.title, iconStamp.get(host) || 0])) return;
   const url = $('#url'); url.replaceChildren();
   const site = $('#site'); site.replaceChildren();
   if (S.url && !home) {
@@ -579,26 +709,26 @@ function render() {
     const rest = u && !S.error ? (u.pathname.length > 1 ? u.pathname : '') + (u.search ? '?…' : '') : '';
     if (rest) url.append(el('span', 'p', rest));
     url.classList.remove('ph');
-    const known = icons.has(hostOf(S.url).toLowerCase());
+    const known = icons.has(host);
     site.hidden = !known || !!S.error;
     if (known) site.append(tile(S.title, S.url));
-  } else { url.textContent = S.private ? 'Private search or address' : 'Search or enter address'; url.classList.add('ph'); site.hidden = true; }
-  if (finding && S.current !== findTab) endFind();
+  } else { url.textContent = S.private ? T('private_search') : T('search_or_address'); url.classList.add('ph'); site.hidden = true; }
+}
+function renderShield() {
+  const home = S.current == null, plain = !!S.url && !S.secure, n = S.blocked ? S.blocked.site : 0;
+  if (!changed('shield', [home, plain, n])) return;
   const sh = $('#shield');
   sh.hidden = home;
-  sh.classList.toggle('warn', !!S.url && !S.secure);
-  sh.firstElementChild.firstElementChild.setAttribute('href', S.url && !S.secure ? '#i-warn' : '#i-shield');
-  const n = S.blocked ? S.blocked.site : 0;
+  sh.classList.toggle('warn', plain);
+  sh.firstElementChild.firstElementChild.setAttribute('href', plain ? '#i-warn' : '#i-shield');
   $('#shield-n').hidden = !n; $('#shield-n').textContent = n > 99 ? '99+' : String(n);
-  const count = $('#count'); const c = String((S.tabs || []).filter((t) => !t.pinned || t.live).length + (S.private_tabs || []).length);
-  if (count.textContent !== c) { count.textContent = c; count.classList.remove('bump'); void count.offsetWidth; count.classList.add('bump'); }
-  renderHome(); renderDrawer(); if (open.grid) renderGrid(); renderSettings(); renderUpdate(); renderDots(); surface();
 }
 
 // --- updates (start page card and Settings > Updates) ----------------------------------------
 const install = () => send({ cmd: 'install_update' });
 function renderUpdate() {
   const u = S.update || { status: 'idle' };
+  if (!changed('update', [u, !!S.private])) return;
   if (u.status !== 'downloading') upProgress = null;
   const busy = ['checking', 'downloading', 'installing'].includes(u.status);
   const retry = u.status === 'failed' && u.retry;
@@ -606,19 +736,19 @@ function renderUpdate() {
   card.hidden = !!S.private || !(['available', 'downloading', 'installing'].includes(u.status) || retry);
   if (!card.hidden) {
     $('#upd-t').textContent = 'BlackHole ' + (u.version || '');
-    $('#upd-s').textContent = { available: 'A new version is ready to install', downloading: 'Downloading…', installing: 'Confirm in the system installer', failed: u.error || '' }[u.status] || '';
-    $('#upd-go').textContent = retry ? 'Retry' : 'Install';
+    $('#upd-s').textContent = { available: T('up_ready'), downloading: T('up_downloading_short'), installing: T('up_installing'), failed: u.error || '' }[u.status] || '';
+    $('#upd-go').textContent = retry ? T('retry') : T('install');
     $('#upd-go').disabled = busy;
   }
   $('#up-state').textContent = {
-    idle: 'Not checked yet', checking: 'Checking…', latest: 'BlackHole is up to date', available: `Version ${u.version} is available`,
-    downloading: `Downloading ${u.version}…`, installing: 'Confirm in the system installer', failed: 'The update failed',
+    idle: T('up_idle'), checking: T('up_checking'), latest: T('up_latest'), available: T('up_available', { version: u.version }),
+    downloading: T('up_downloading', { version: u.version }), installing: T('up_installing'), failed: T('up_failed'),
   }[u.status] || '';
   $('#up-detail').textContent = u.status === 'failed' ? (u.error || '')
-    : u.checked ? 'Last check ' + new Date(u.checked * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    : u.checked ? T('last_check', { when: new Date(u.checked * 1000).toLocaleString(LANG, { dateStyle: 'medium', timeStyle: 'short' }) }) : '';
   const go = $('#up-go');
   const installable = u.status === 'available' || retry;
-  go.textContent = installable ? (retry ? 'Retry' : 'Install') : 'Check now';
+  go.textContent = installable ? (retry ? T('retry') : T('install')) : T('check_now');
   go.onclick = installable ? install : () => send({ cmd: 'check_update', manual: true });
   go.disabled = busy;
   $('#up-bar').hidden = !busy;
@@ -662,94 +792,243 @@ $('#f-prev').onclick = () => send({ cmd: 'find_next', forward: false });
 $('#f-close').onclick = () => endFind();
 
 function renderHome() {
-  $('#brand').textContent = S.private ? 'Private' : 'BlackHole';
-  $('#privnote').hidden = !S.private;
-  $('#favcard').hidden = !!S.private; $('#recentcard').hidden = !!S.private;
-  const favs = $('#favs'); favs.replaceChildren();
-  for (const f of S.favorites || []) {
-    const b = el('button', 'fav'); b.append(tile(f.name, f.url), el('span', null, f.name));
-    b.onclick = () => f.tab != null ? send({ cmd: 'activate', tab: f.tab }) : send({ cmd: 'navigate', input: f.url, new_tab: true });
-    favs.append(b);
+  const priv = !!S.private;
+  if (changed('homehead', priv)) {
+    $('#brand').textContent = priv ? T('private') : 'BlackHole';
+    $('#privnote').hidden = !priv;
+    $('#favcard').hidden = priv; $('#recentcard').hidden = priv;
   }
-  const rec = $('#recent'); rec.replaceChildren();
-  if (!(S.recent || []).length) rec.append(el('p', 'empty', 'Pages you visit show up here.'));
-  for (const h of S.recent || []) {
-    const b = el('button', 'row'); const m = el('div', 'meta');
-    m.append(el('div', 't', h.title || hostOf(h.url)), el('div', 's', hostOf(h.url)));
-    b.append(tile(h.title, h.url), m);
-    b.onclick = () => send({ cmd: 'navigate', input: h.url, new_tab: true });
-    rec.append(b);
+  const favs = S.favorites || [];
+  if (changed('favs', [favs, iconsRev])) sync($('#favs'), favs, (f) => f.url + '\n' + f.name, () => {
+    const b = el('button', 'fav'); b.append(el('span'));
+    b.onclick = () => { const f = b.__it; if (f.tab != null) send({ cmd: 'activate', tab: f.tab }); else send({ cmd: 'navigate', input: f.url, new_tab: true }); };
+    return b;
+  }, (b, f) => { putTile(b, f.name, f.url); b.lastElementChild.textContent = f.name; });
+  const recent = S.recent || [];
+  if (changed('recent', [recent, iconsRev])) {
+    $('#recent-empty').hidden = !!recent.length;
+    sync($('#recent'), recent, (h) => h.url, () => {
+      const b = el('button', 'row'); const m = el('div', 'meta'); m.append(el('div', 't'), el('div', 's')); b.append(m);
+      b.onclick = () => send({ cmd: 'navigate', input: b.__it.url, new_tab: true });
+      return b;
+    }, (b, h) => {
+      putTile(b, h.title, h.url);
+      const m = b.lastElementChild; m.firstElementChild.textContent = h.title || hostOf(h.url); m.lastElementChild.textContent = hostOf(h.url);
+    });
   }
-  $('#st-total').textContent = String(S.blocked ? S.blocked.total : 0);
-  $('#st-trk').textContent = S.settings.trackers ? 'On' : 'Off';
-  $('#st-ads').textContent = S.settings.ads ? 'On' : 'Off';
+  renderStats();
+}
+function renderStats() {
+  const total = S.blocked ? S.blocked.total : 0;
+  if (!changed('stats', [total, S.settings.trackers, S.settings.ads])) return;
+  $('#st-total').textContent = String(total);
+  $('#st-trk').textContent = S.settings.trackers ? T('on') : T('off');
+  $('#st-ads').textContent = S.settings.ads ? T('on') : T('off');
 }
 
+const SPACE_COLORS = [['#7c5cff', () => T('color_violet')], ['#ff6b8a', () => T('color_rose')], ['#2dd4bf', () => T('color_teal')],
+  ['#ffb020', () => T('color_amber')], ['#3b82f6', () => T('color_blue')]];
+const newSpaceMenu = () => menu(T('new_space'), SPACE_COLORS.map(([color, name]) => (
+  { label: T('space_named', { name: name() }), icon: 'plus', color, run: () => send({ cmd: 'add_space', name: name(), color }) })));
+
+// --- long press: the menu of a tab, a space or a folder ------------------------------------------
+// `run` after 480 ms without moving; the click that ends the press does nothing.
+function hold(n, run) {
+  let timer = 0, x = 0, y = 0;
+  const stop = () => { clearTimeout(timer); timer = 0; };
+  n.addEventListener('pointerdown', (e) => {
+    x = e.clientX; y = e.clientY; stop(); n.__held = false;
+    timer = setTimeout(() => { timer = 0; n.__held = true; run(); }, 480);
+  });
+  n.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 10) stop(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) n.addEventListener(ev, stop);
+  n.addEventListener('click', (e) => { if (n.__held) { n.__held = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  n.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+const askName = (title, value, ok, run) => ask(title, [{ name: 'name', label: T('name'), value, max: 40 }], ok, (v) => run(v.name.trim()));
+function tabMenu(t) {
+  // Private tabs and popups are not organized: they only close.
+  if (S.private || S.popup || !(S.tabs || []).some((x) => x.id === t.id)) return;
+  const sleeps = t.pinned || t.folder != null;
+  const items = [{ label: t.pinned ? T('remove_quick_access') : T('add_quick_access'), icon: 'pin', run: () => send({ cmd: 'pin', tab: t.id }) },
+    { label: T('rename'), icon: 'pencil', run: () => askName(T('rename_tab'), t.renamed ? t.title : '', T('save'), (name) => send({ cmd: 'rename_tab', tab: t.id, name })) }];
+  if (!t.pinned) items.push({ label: T('move_to_folder'), icon: 'folder', run: () => folderPick(t) });
+  const others = (S.spaces || []).filter((s) => s.id !== S.space.id);
+  if (others.length) items.push({ label: T('move_to_space'), icon: 'right', run: () => menu(T('move_to_space'), others.map((s) => (
+    { label: s.name, color: s.color, run: () => send({ cmd: 'move_tab_to_space', tab: t.id, space: s.id }) }))) });
+  if (!sleeps) items.push({ label: T('close_others'), icon: 'x', danger: true, confirm: true, run: () => send({ cmd: 'close_other_tabs', tab: t.id }) });
+  if (!sleeps) items.push({ label: T('close_tab'), icon: 'x', run: () => send({ cmd: 'close', tab: t.id }) });
+  else if (t.live) items.push({ label: T('put_to_sleep'), icon: 'moon', run: () => send({ cmd: 'close', tab: t.id }) });
+  menu(t.title || t.host, items);
+}
+function folderPick(t) {
+  const items = (S.folders || []).filter((f) => f.id !== t.folder).map((f) => (
+    { label: f.name, icon: 'folder', run: () => send({ cmd: 'move_tab_to_folder', tab: t.id, folder: f.id }) }));
+  if (t.folder != null) items.push({ label: T('move_out_of_folder'), icon: 'left', run: () => send({ cmd: 'move_tab_to_folder', tab: t.id, folder: null }) });
+  items.push({ label: T('new_folder'), icon: 'plus', run: () => askName(T('new_folder'), '', T('create'), (name) => send({ cmd: 'add_folder', name, tab: t.id })) });
+  menu(T('move_to_folder'), items);
+}
+function folderMenu(f) {
+  menu(f.name, [
+    { label: T('rename'), icon: 'pencil', run: () => askName(T('rename_folder'), f.name, T('save'), (name) => { if (name) send({ cmd: 'rename_folder', folder: f.id, name }); }) },
+    { label: T('delete_folder'), icon: 'trash', danger: true, confirm: true, run: () => send({ cmd: 'delete_folder', folder: f.id }) }]);
+}
+function spaceMenu(s) {
+  const items = [
+    { label: T('rename'), icon: 'pencil', run: () => askName(T('rename_space'), s.name, T('save'), (name) => { if (name) send({ cmd: 'rename_space', space: s.id, name }); }) },
+    { label: T('space_color'), icon: 'plus', color: s.color, run: () => menu(T('space_color'), SPACE_COLORS.map(([color, name]) => (
+      { label: name(), color, run: () => send({ cmd: 'set_space_color', space: s.id, color }) }))) }];
+  if ((S.spaces || []).length > 1) items.push({ label: T('delete_space'), icon: 'trash', danger: true, confirm: true, run: () => send({ cmd: 'delete_space', space: s.id }) });
+  menu(s.name, items);
+}
+// The drawer's list: folders (their tabs under them while they are open), then the loose tabs.
+function drawerRows() {
+  if (S.private) return (S.private_tabs || []).map((tab) => ({ tab, depth: 0 }));
+  const tabs = (S.tabs || []).filter((t) => !t.pinned);
+  const folders = S.folders || [];
+  const known = (t) => t.folder != null && folders.some((f) => f.id === t.folder);
+  const rows = [];
+  const walk = (parent, depth) => {
+    for (const f of folders.filter((x) => (x.parent == null ? null : x.parent) === parent)) {
+      const inside = tabs.filter((t) => t.folder === f.id);
+      rows.push({ folder: f, depth, count: inside.length });
+      if (f.collapsed || depth > 6) continue;
+      walk(f.id, depth + 1);
+      for (const tab of inside) rows.push({ tab, depth: depth + 1 });
+    }
+  };
+  walk(null, 0);
+  for (const tab of tabs.filter((t) => !known(t))) rows.push({ tab, depth: 0 });
+  return rows;
+}
 function renderDrawer() {
-  const sps = $('#spaces'); sps.replaceChildren();
-  for (const s of S.spaces || []) {
-    const b = el('button', 'sp' + (s.id === S.space.id ? ' on' : ''), s.icon || (s.name || '?')[0].toUpperCase());
-    if (s.id === S.space.id) b.style.background = s.color;
-    b.setAttribute('aria-label', s.name);
-    b.onclick = () => { send({ cmd: 'switch_space', space: s.id }); };
-    sps.append(b);
-  }
-  const add = el('button', 'sp'); add.append(icon('plus', 16)); add.onclick = () => menu('New space', [
-    ...['#7c5cff', '#ff6b8a', '#2dd4bf', '#ffb020', '#3b82f6'].map((col, i) => ({ label: ['Violet', 'Rose', 'Teal', 'Amber', 'Blue'][i] + ' space', icon: 'plus', color: col,
-      run: () => send({ cmd: 'add_space', name: ['Violet', 'Rose', 'Teal', 'Amber', 'Blue'][i], color: col }) })),
-  ]);
-  sps.append(add);
-  const qa = $('#qa'); qa.replaceChildren();
+  const spaces = S.spaces || [];
+  if (changed('spaces', [spaces, S.space.id])) sync($('#spaces'), [...spaces, null], (s) => s ? s.id : '+', (s) => {
+    const b = el('button', 'sp');
+    if (!s) { b.append(icon('plus', 16)); b.onclick = newSpaceMenu; }
+    else { b.onclick = () => send({ cmd: 'switch_space', space: b.__it.id }); hold(b, () => spaceMenu(b.__it)); }
+    return b;
+  }, (b, s) => {
+    if (!s) { b.setAttribute('aria-label', T('new_space')); return; }
+    const on = s.id === S.space.id;
+    b.classList.toggle('on', on); b.textContent = s.icon || (s.name || '?')[0].toUpperCase();
+    b.style.background = on ? s.color : ''; b.setAttribute('aria-label', s.name);
+  });
   const pinned = (S.tabs || []).filter((t) => t.pinned);
-  qa.hidden = !pinned.length;
-  for (const t of pinned) {
-    const b = el('button', t.live ? '' : 'sleep'); b.append(tile(t.title, t.url)); b.setAttribute('aria-label', t.title);
-    b.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('drawer'); };
-    qa.append(b);
+  if (changed('qa', [pinned, iconsRev])) {
+    $('#qa').hidden = !pinned.length;
+    sync($('#qa'), pinned, (t) => t.id, () => {
+      const b = el('button'); b.onclick = () => { send({ cmd: 'activate', tab: b.__it.id }); close('drawer'); };
+      hold(b, () => tabMenu(b.__it));
+      return b;
+    }, (b, t) => { b.classList.toggle('sleep', !t.live); putTile(b, t.title, t.url); b.setAttribute('aria-label', t.title); });
   }
-  $('#tabs-lbl').textContent = S.private ? 'Private tabs' : (S.space.name || 'Tabs');
-  const d = $('#dtabs'); d.replaceChildren();
-  const rows = S.private ? S.private_tabs : (S.tabs || []).filter((t) => !t.pinned);
-  if (!rows.length) d.append(el('p', 'empty', 'No open tabs.'));
-  for (const t of rows) {
-    const b = el('button', 'trow' + (t.id === S.current ? ' on' : ''));
-    b.append(tile(t.title, t.url), el('span', null, t.title || t.host));
-    if (t.live) b.append(el('i', 'live'));
-    b.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('drawer'); };
-    d.append(b);
+  const rows = drawerRows();
+  if (changed('dtabs', [rows, S.current, !!S.private, S.space.name, iconsRev])) {
+    $('#tabs-lbl').textContent = S.private ? T('private_tabs') : (S.space.name || T('tabs'));
+    $('#dtabs-empty').hidden = !!rows.length;
+    sync($('#dtabs'), rows, (r) => (r.folder ? 'f' + r.folder.id : 't' + r.tab.id), (r) => {
+      if (r.folder) {
+        const b = el('button', 'trow fold'); const chev = icon('right'); chev.classList.add('chev');
+        const fi = el('span'); const k = el('span', 'k');
+        b.append(chev, fi, el('span'), k); b.__p = { fi, k };
+        b.onclick = () => send({ cmd: 'toggle_folder', folder: b.__it.folder.id });
+        hold(b, () => folderMenu(b.__it.folder));
+        return b;
+      }
+      const b = el('button', 'trow'); b.append(el('span'));
+      b.onclick = () => { send({ cmd: 'activate', tab: b.__it.tab.id }); close('drawer'); };
+      hold(b, () => tabMenu(b.__it.tab));
+      return b;
+    }, (b, r) => {
+      b.style.paddingLeft = (8 + r.depth * 18) + 'px';
+      if (r.folder) {
+        const f = r.folder, p = b.__p;
+        b.classList.toggle('open', !f.collapsed); b.setAttribute('aria-expanded', String(!f.collapsed));
+        // An emoji the user chose on the desktop, else the folder glyph.
+        if (p.fi.__icon !== f.icon) { p.fi.__icon = f.icon; if (f.icon) p.fi.replaceChildren(f.icon); else { const g = icon('folder'); g.classList.add('fi'); p.fi.replaceChildren(g); } }
+        b.children[2].textContent = f.name; p.k.textContent = Tn('folder_tabs', r.count);
+        return;
+      }
+      const t = r.tab;
+      b.classList.toggle('on', t.id === S.current);
+      putTile(b, t.title, t.url);
+      b.querySelector('span').textContent = t.title || t.host;
+      const dot = b.querySelector('.live');
+      if (t.live && !dot) b.append(el('i', 'live')); else if (!t.live && dot) dot.remove();
+    });
+  }
+  const tidy = S.private ? null : S.tidy;
+  if (changed('tidy', tidy)) {
+    $('#tidy').hidden = !tidy;
+    if (tidy) $('#tidy-t').textContent = Tn('tidy_ask', tidy.folders, { tabs: tidy.tabs });
   }
 }
+$('#tidy-go').onclick = () => send({ cmd: 'tidy' });
+$('#tidy-no').onclick = () => send({ cmd: 'dismiss_tidy' });
 
+const THUMB_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 function renderGrid() {
+  const tabs = (showPrivateGrid ? S.private_tabs : S.tabs) || [];
+  if (!changed('grid', [tabs, S.current, showPrivateGrid, iconsRev])) return;
   $('#g-normal').classList.toggle('on', !showPrivateGrid);
   $('#g-private').classList.toggle('on', showPrivateGrid);
-  const tabs = showPrivateGrid ? S.private_tabs : S.tabs;
-  const cards = $('#cards'); cards.replaceChildren();
   $('#g-empty').hidden = !!tabs.length;
-  tabs.forEach((t, i) => {
-    const c = el('div', 'tc' + (t.id === S.current ? ' cur' : ''));
-    c.setAttribute('role', 'button');
-    c.style.animationDelay = (i * 0.03) + 's';
-    const h = el('div', 'h'); const x = el('button', 'x'); x.append(icon('x')); x.setAttribute('aria-label', 'Close tab');
-    h.append(tile(t.title, t.url), el('span', null, t.title || t.host), x);
-    const shot = el('div', 'shot');
-    const img = thumbs.get(t.id);
-    if (img && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(img)) shot.style.backgroundImage = `url("${img}")`; else shot.append(tile(t.title, t.url));
-    c.append(h, shot);
-    if (t.pinned) c.append(el('span', 'pin', t.live ? 'quick access' : 'asleep'));
-    x.onclick = (e) => { e.stopPropagation(); flyAway(c, 1, t.id); };
-    c.onclick = () => { send({ cmd: 'activate', tab: t.id }); close('grid'); };
-    swipeToClose(c, t.id);
-    cards.append(c);
-  });
+  const cards = $('#cards');
+  // The cards that stay glide to their new place when one leaves.
+  const from = stillNow() ? [] : [...cards.children].map((c) => [c, c.offsetLeft, c.offsetTop]);
+  sync(cards, tabs, (t) => t.id, makeCard, drawCard, true);
+  for (const [c, x, y] of from) {
+    if (!c.isConnected) continue;
+    const dx = x - c.offsetLeft, dy = y - c.offsetTop;
+    if (dx || dy) c.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
 }
-function flyAway(card, dir, tab) {
+function makeCard() {
+  const c = el('div', 'tc'); c.setAttribute('role', 'button');
+  const h = el('div', 'h'); const x = el('button', 'x'); x.append(icon('x')); x.setAttribute('aria-label', T('close_tab'));
+  h.append(el('span'), x);
+  const shot = el('div', 'shot'); const pin = el('span', 'pin'); pin.hidden = true;
+  c.append(h, shot, pin); c.__p = { h, shot, pin };
+  x.onclick = (e) => { e.stopPropagation(); flyAway(c, 1); };
+  c.onclick = () => { send({ cmd: 'activate', tab: c.__it.id }); close('grid'); };
+  swipeToClose(c);
+  hold(c, () => tabMenu(c.__it));
+  return c;
+}
+function landCard(c) { c.__fly = null; c.style.transition = c.style.transform = c.style.opacity = ''; }
+function drawCard(c, t) {
+  const p = c.__p;
+  // A quick access tile that is "closed" goes to sleep and stays in the grid: its card comes back.
+  if (c.__fly === 'sent') landCard(c);
+  c.classList.toggle('cur', t.id === S.current);
+  putTile(p.h, t.title, t.url);
+  p.h.querySelector('span').textContent = t.title || t.host;
+  p.pin.hidden = !(t.pinned || (t.folder != null && !t.live)); p.pin.textContent = t.pinned && t.live ? T('kind_quick_access') : T('asleep');
+  drawShot(c);
+}
+// The page's picture, or its tile while there is none.
+function drawShot(c) {
+  const t = c.__it, shot = c.__p.shot, img = thumbs.get(t.id);
+  if (img && THUMB_RE.test(img)) {
+    if (shot.__img === img) return;
+    shot.__img = img; shot.style.backgroundImage = `url("${img}")`;
+    if (shot.__tileEl) { shot.__tileEl.remove(); shot.__tileEl = shot.__tile = null; }
+  } else { shot.__img = null; shot.style.backgroundImage = ''; putTile(shot, t.title, t.url); }
+}
+function flyAway(card, dir) {
+  const tab = card.__it.id;
+  card.__fly = 'going';
   card.style.transition = 'transform .25s ease-in, opacity .25s';
   card.style.transform = `translateX(${dir * 120}%) rotate(${dir * 8}deg)`;
   card.style.opacity = '0';
-  setTimeout(() => send({ cmd: 'close', tab }), stillNow() ? 0 : 200);
+  setTimeout(() => {
+    card.__fly = 'sent'; send({ cmd: 'close', tab });
+    // Nothing changed for the core (a tile already asleep): the card comes back on its own.
+    setTimeout(() => { if (card.isConnected && card.__fly === 'sent') landCard(card); }, 600);
+  }, stillNow() ? 0 : 200);
 }
-function swipeToClose(card, tab) {
+function swipeToClose(card) {
   let x0 = null, y0 = 0, dx = 0, lock = null;
   card.addEventListener('pointerdown', (e) => { x0 = e.clientX; y0 = e.clientY; dx = 0; lock = null; });
   card.addEventListener('pointermove', (e) => {
@@ -765,67 +1044,76 @@ function swipeToClose(card, tab) {
   const end = () => {
     if (x0 == null) return; x0 = null;
     if (lock !== 'x') return;
-    if (Math.abs(dx) > card.offsetWidth * .35) { flyAway(card, Math.sign(dx), tab); }
+    if (Math.abs(dx) > card.offsetWidth * .35) { flyAway(card, Math.sign(dx)); }
     else { card.style.transition = ''; card.style.transform = ''; card.style.opacity = ''; }
-    card.addEventListener('click', (e) => e.stopPropagation(), { capture: true, once: true });
+    // The click that may follow the swipe is not a tap on the card (and none may come at all:
+    // the card is kept now, so the guard must not wait for the next real tap).
+    const stop = (e) => e.stopPropagation();
+    card.addEventListener('click', stop, { capture: true, once: true });
+    setTimeout(() => card.removeEventListener('click', stop, { capture: true }), 350);
   };
   card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
 }
 
 function renderDots() {
-  const d = $('#dots'); d.replaceChildren();
   const l = list();
-  if (S.current == null || l.length < 2 || l.length > 12) return;
-  for (const t of l) d.append(el('i', t.id === S.current ? 'on' : ''));
+  const show = S.current != null && l.length >= 2 && l.length <= 12;
+  if (!changed('dots', show ? [l.map((t) => t.id), S.current] : null)) return;
+  sync($('#dots'), show ? l : [], (t) => t.id, () => el('i'), (n, t) => n.classList.toggle('on', t.id === S.current));
 }
 
-const THEMES = [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']];
-const COLORS = ['#7c5cff', '#ff6b8a', '#2dd4bf', '#ffb020', '#3b82f6'];
+const COLORS = SPACE_COLORS.map((c) => c[0]);
 function chips(box, items, value, onpick) {
-  box.replaceChildren();
-  for (const [id, label] of items) {
-    const b = el('button', id === value ? 'on' : '', label);
-    b.onclick = () => onpick(id);
-    box.append(b);
-  }
+  box.__pick = onpick;
+  sync(box, items, (it) => it[0], () => { const b = el('button'); b.onclick = () => box.__pick(b.__it[0]); return b; }, (b, it) => {
+    b.textContent = it[1]; b.classList.toggle('on', it[0] === value); b.setAttribute('aria-pressed', String(it[0] === value));
+  });
 }
 function renderSettings() {
   const st = S.settings;
+  if (!changed('settings', [st, S.space, S.devices, S.version, env])) return;
   chips($('#engines'), st.engines.map((e) => [e.id, e.label]), st.engine, (id) => send({ cmd: 'set_setting', name: 'engine', value: id }));
-  chips($('#themes'), THEMES, st.theme, (id) => send({ cmd: 'set_setting', name: 'theme', value: id }));
-  for (const b of document.querySelectorAll('[data-set]')) b.querySelector('.sw').classList.toggle('on', !!st[b.dataset.set]);
-  $('#spacename').textContent = S.space.name;
-  const sw = $('#swatches'); sw.replaceChildren();
-  for (const col of COLORS) {
-    const b = el('button', col.toLowerCase() === (S.space.color || '').toLowerCase() ? 'on' : '');
-    b.style.background = col; b.setAttribute('aria-label', col);
-    b.onclick = () => send({ cmd: 'set_space_color', space: S.space.id, color: col });
-    sw.append(b);
+  chips($('#langs'), [['system', T('language_system')], ...(st.languages || []).map((l) => [l.id, l.label])], st.language || 'system',
+    (id) => send({ cmd: 'set_language', language: id }));
+  chips($('#themes'), [['system', T('theme_system')], ['dark', T('theme_dark')], ['light', T('theme_light')]], st.theme,
+    (id) => send({ cmd: 'set_setting', name: 'theme', value: id }));
+  for (const b of document.querySelectorAll('[data-set]')) {
+    const on = !!st[b.dataset.set];
+    b.querySelector('.sw').classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
   }
+  $('#spacename').textContent = S.space.name;
+  const color = (S.space.color || '').toLowerCase();
+  sync($('#swatches'), COLORS, (col) => col, () => {
+    const b = el('button'); b.onclick = () => send({ cmd: 'set_space_color', space: S.space.id, color: b.__it });
+    return b;
+  }, (b, col) => { b.classList.toggle('on', col.toLowerCase() === color); b.style.background = col; b.setAttribute('aria-label', col); });
   chips($('#zooms'), (st.text_zooms || [100]).map((z) => [z, z + '%']), st.text_zoom, (z) => send({ cmd: 'set_setting', name: 'text_zoom', value: z }));
-  $('#defstate').textContent = env.default_browser ? 'BlackHole opens the links of other apps' : 'Open the links of other apps in BlackHole';
+  $('#defstate').textContent = env.default_browser ? T('default_yes') : T('default_no');
   renderDevices(S.devices || { available: false, list: [] });
-  $('#about').textContent = 'Version ' + S.version + (env.profiles ? '' : ' · this WebView has no separate profiles: spaces and private tabs share cookies');
+  $('#about').textContent = T('version', { version: S.version }) + (env.profiles ? '' : ' · ' + T('no_profiles'));
 }
 
 // Paired devices (their keys never reach this page).
 function renderDevices(d) {
-  const list = $('#devlist'); list.replaceChildren();
   $('#devices').hidden = !d.available;
   if (!d.available) return;
-  if (!d.list.length) list.append(el('p', 'note', 'No device paired yet.'));
-  for (const dev of d.list) {
+  $('#dev-empty').hidden = !!d.list.length;
+  sync($('#devlist'), d.list, (dev) => dev.id, () => {
     const row = el('div', 'dev');
-    const nm = el('div', 'nm', dev.name); nm.append(el('small', null, dev.online ? 'On this network' : 'Not seen lately'));
-    const forget = el('button', 'mini', 'Forget'); armed(forget, () => send({ cmd: 'device_forget', id: dev.id }));
+    const dot = el('span', 'dot'); const nm = el('div', 'nm'); const name = document.createTextNode(''); const seen = el('small'); nm.append(name, seen);
+    const forget = el('button', 'mini', T('forget')); armed(forget, () => send({ cmd: 'device_forget', id: row.__it.id }));
     const line = el('div', 'row3'); const ch = el('div', 'chips');
-    chips(ch, [['ask', 'Ask'], ['auto', 'Always'], ['off', 'Off']], dev.sync, (mode) => send({ cmd: 'device_sync', id: dev.id, mode }));
-    const now = el('button', 'mini', 'Sync now'); now.disabled = !dev.online || dev.sync === 'off';
-    now.onclick = () => send({ cmd: 'device_sync_now', id: dev.id });
-    line.append(el('span', 'v', 'Tab sync'), ch, now);
-    row.append(el('span', 'dot' + (dev.online ? ' on' : '')), nm, forget, line);
-    list.append(row);
-  }
+    const now = el('button', 'mini', T('sync_now')); now.onclick = () => send({ cmd: 'device_sync_now', id: row.__it.id });
+    line.append(el('span', 'v', T('tab_sync')), ch, now);
+    row.append(dot, nm, forget, line); row.__p = { dot, name, seen, ch, now };
+    return row;
+  }, (row, dev) => {
+    const p = row.__p;
+    p.dot.classList.toggle('on', !!dev.online); p.name.data = dev.name;
+    p.seen.textContent = dev.online ? T('on_network') : T('not_seen');
+    chips(p.ch, [['ask', T('sync_ask')], ['auto', T('sync_always')], ['off', T('sync_off')]], dev.sync, (mode) => send({ cmd: 'device_sync', id: row.__it.id, mode }));
+    p.now.disabled = !dev.online || dev.sync === 'off';
+  });
   $('#devcode').hidden = !d.code;
   $('#devshow').hidden = !!d.code;
   $('#devcodetext').textContent = d.code || '';
@@ -841,13 +1129,19 @@ $('#devinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#d
 function openSheet(focus, edit) {
   $('#q').value = edit && S && S.current != null && S.url ? S.url : '';
   setOpen('sheet', true);
-  $('#k-back').disabled = !nav.back || S.current == null;
-  $('#k-fwd').disabled = !nav.forward || S.current == null;
-  $('#k-reload').disabled = $('#k-share').disabled = S.current == null;
-  $('#k-reload').replaceChildren(icon(loading ? 'stop' : 'reload'), document.createTextNode(loading ? 'Stop' : 'Reload'));
+  navButtons();
   $('#quick').hidden = false;
   actions();
   if (focus) setTimeout(() => { $('#q').focus(); if ($('#q').value) $('#q').select(); }, stillNow() ? 0 : 120);
+}
+// Back, Forward and Reload / Stop of the sheet follow the page while the sheet is open.
+function navButtons() {
+  const none = !S || S.current == null;
+  $('#k-back').disabled = !nav.back || none;
+  $('#k-fwd').disabled = !nav.forward || none;
+  $('#k-reload').disabled = $('#k-share').disabled = none;
+  if (!changed('reload', [loading, LANG])) return;
+  $('#k-reload').replaceChildren(icon(loading ? 'stop' : 'reload'), el('span', null, loading ? T('stop') : T('reload')));
 }
 function row(label, ic, run, extra) {
   const b = el('button', 'act' + (extra && extra.cls ? ' ' + extra.cls : ''));
@@ -859,33 +1153,33 @@ function row(label, ic, run, extra) {
   return b;
 }
 function actions() {
-  const l = $('#list'); l.replaceChildren();
-  const add = (label, ic, run, extra) => l.append(row(label, ic, run, extra));
+  const l = $('#list'); l.__suggest = false; l.replaceChildren();
+  const add = (label, ic, run, extra) => l.append(enter(row(label, ic, run, extra)));
   const p = S && S.private;
-  add(p ? 'New private tab' : 'New tab', 'plus', () => newTab('new'));
-  add(p ? 'Leave private browsing' : 'New private tab', 'mask', () => { if (p) { close('sheet'); send({ cmd: 'close_private' }); } else newTab('private'); });
+  add(p ? T('new_private_tab') : T('new_tab'), 'plus', () => newTab('new'));
+  add(p ? T('leave_private') : T('new_private_tab'), 'mask', () => { if (p) { close('sheet'); send({ cmd: 'close_private' }); } else newTab('private'); });
   if (S && S.current != null) {
     const cur = list().find((t) => t.id === S.current);
-    if (!p && cur) add(cur.pinned ? 'Remove from quick access' : 'Add to quick access', 'pin', () => { send({ cmd: 'pin', tab: S.current }); close('sheet'); });
+    if (!p && cur) add(cur.pinned ? T('remove_quick_access') : T('add_quick_access'), 'pin', () => { send({ cmd: 'pin', tab: S.current }); close('sheet'); });
     if (!p) for (const dev of (S.devices && S.devices.list) || []) {
-      add('Continue on ' + dev.name, 'share', () => { close('sheet'); send({ cmd: 'continue_on', device: dev.id }); }, { k: dev.online ? 'nearby' : 'away' });
+      add(T('continue_on', { name: dev.name }), 'share', () => { close('sheet'); send({ cmd: 'continue_on', device: dev.id }); }, { k: dev.online ? T('nearby') : T('away') });
     }
-    add('Find in page', 'find', () => { close('sheet'); startFind(); });
-    add('Desktop site', 'desktop', () => { close('sheet'); send({ cmd: 'desktop_site', tab: S.current }); }, { check: !!S.desktop });
-    add('Privacy report', 'shield', () => send({ cmd: 'privacy_report' }));
-    add('Copy link', 'link', () => { send({ cmd: 'copy', text: S.url || '' }); close('sheet'); toast('Link copied'); });
-    add('Add to home screen', 'addhome', () => { close('sheet'); send({ cmd: 'add_to_home' }); });
-    add('Print or save as PDF', 'printer', () => { close('sheet'); send({ cmd: 'print' }); });
-    add('Close tab', 'x', () => { close('sheet'); send({ cmd: 'close', tab: S.current }); });
+    add(T('find_in_page'), 'find', () => { close('sheet'); startFind(); });
+    add(T('desktop_site'), 'desktop', () => { close('sheet'); send({ cmd: 'desktop_site', tab: S.current }); }, { check: !!S.desktop });
+    add(T('privacy_report'), 'shield', () => send({ cmd: 'privacy_report' }));
+    add(T('copy_link'), 'link', () => { send({ cmd: 'copy', text: S.url || '' }); close('sheet'); toast(T('link_copied')); });
+    add(T('add_to_home'), 'addhome', () => { close('sheet'); send({ cmd: 'add_to_home' }); });
+    add(T('print'), 'printer', () => { close('sheet'); send({ cmd: 'print' }); });
+    add(T('close_tab'), 'x', () => { close('sheet'); send({ cmd: 'close', tab: S.current }); });
   }
-  add('History', 'clock', () => { close('sheet'); openHistory(); });
-  add('Settings', 'gear', () => { close('sheet'); setOpen('settings', true); });
+  add(T('history'), 'clock', () => { close('sheet'); openHistory(); });
+  add(T('settings'), 'gear', () => { close('sheet'); setOpen('settings', true); });
 }
 // 'new' or 'private': what the next address opens (a new tab), until the sheet closes.
 let mode = null;
 function newTab(m) {
   openSheet(true); mode = m;
-  $('#q').placeholder = m === 'private' || (S && S.private) ? 'Private search or address' : 'Search or enter address';
+  $('#q').placeholder = m === 'private' || (S && S.private) ? T('private_search') : T('search_or_address');
   $('#quick').hidden = true;
 }
 let suggestTimer = 0;
@@ -906,19 +1200,31 @@ function go(input) {
   send({ cmd: 'navigate', input, new_tab: S.current == null || mode != null, private: priv });
   close('sheet');
 }
+// What is typed changes the list in place: a row that is still suggested does not move or
+// blink, the first one (search, or the address about to open) only changes its text.
 function suggestions(m) {
   if (!open.sheet || m.text !== $('#q').value.trim()) return;
-  const l = $('#list'); l.replaceChildren();
-  m.items.forEach((it, i) => {
-    let b;
-    if (it.kind === 'search') b = row(it.title, 'search', () => go(it.title), { k: it.engine });
-    else if (it.kind === 'go') b = row(it.title, 'globe', () => go(it.url), { k: 'go' });
-    else if (it.kind === 'tab') b = row(it.title || hostOf(it.url), tile(it.title, it.url), () => { close('sheet'); send({ cmd: 'activate', tab: it.tab }); }, { k: 'tab' });
-    else b = row(it.title || hostOf(it.url), tile(it.title, it.url), () => go(it.url), { k: it.kind === 'favorite' ? 'quick access' : hostOf(it.url) });
-    if (i === 0) b.classList.add('hot');
-    b.style.animationDelay = (i * 0.03) + 's';
-    l.append(b);
-  });
+  const l = $('#list');
+  const first = !l.__suggest; l.__suggest = true;
+  const site = (it) => it.kind !== 'search' && it.kind !== 'go';
+  sync(l, m.items, (it) => site(it) ? it.kind + '\n' + (it.tab != null ? it.tab : it.url) : 'top', () => {
+    const b = el('button', 'act'); const ic = el('span', 'ic'); const label = el('span'); const k = el('span', 'k');
+    b.append(ic, label, k); b.__p = { ic, label, k };
+    b.onclick = () => {
+      const it = b.__it;
+      if (it.kind === 'search') go(it.title);
+      else if (it.kind === 'tab') { close('sheet'); send({ cmd: 'activate', tab: it.tab }); }
+      else go(it.url);
+    };
+    return b;
+  }, (b, it, i) => {
+    const p = b.__p;
+    p.label.textContent = site(it) ? (it.title || hostOf(it.url)) : it.title;
+    p.k.textContent = it.kind === 'search' ? it.engine : it.kind === 'go' ? T('kind_go') : it.kind === 'tab' ? T('kind_tab') : it.kind === 'favorite' ? T('kind_quick_access') : hostOf(it.url);
+    if (site(it)) putTile(p.ic, it.title, it.url);
+    else if (p.ic.__kind !== it.kind) { p.ic.__kind = it.kind; p.ic.replaceChildren(icon(it.kind === 'search' ? 'search' : 'globe')); }
+    b.classList.toggle('hot', i === 0);
+  }, first);
 }
 // Drag the grab handle down to close the sheet.
 (() => {
@@ -994,25 +1300,67 @@ function menu(title, items, dismiss) {
   if (title) p.append(el('div', 'ttl', title));
   for (const it of items) {
     const ic = it.color ? (() => { const d = el('span'); d.style.cssText = `width:16px;height:16px;border-radius:50%;background:${it.color}`; return d; })() : it.icon;
-    p.append(row(it.label, ic, () => { popDismiss = null; close('pop'); it.run(); }, { cls: it.danger ? 'danger' : '' }));
+    const b = enter(row(it.label, ic, null, { cls: it.danger ? 'danger' : '' }));
+    b.onclick = () => {
+      // `confirm`: irreversible, two taps within 3 s.
+      if (it.confirm && !b.classList.contains('armed')) {
+        b.classList.add('armed'); b.children[1].textContent = T('tap_again');
+        setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.children[1].textContent = it.label; } }, 3000);
+        return;
+      }
+      popDismiss = null; close('pop'); it.run();
+    };
+    p.append(b);
   }
   popDismiss = dismiss || null;
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
   setOpen('pop', true);
 }
+// A question with fields in the menu's place. `fields`: [{ name, label, type, value }]; `run`
+// gets their values; closing it any other way calls `opts.dismiss`. The fields are emptied as
+// soon as they are read (a password does not stay in the page).
+function ask(title, fields, ok, run, opts) {
+  dismissPop();
+  const p = $('#pop'); p.replaceChildren();
+  p.append(el('div', 'ttl', title));
+  for (const w of (opts && opts.warn) || []) p.append(el('p', 'warnline', w));
+  const inputs = fields.map((f) => {
+    const i = el('input', 'field'); i.type = f.type || 'text'; i.name = f.name; i.placeholder = f.label; i.value = f.value || '';
+    i.setAttribute('aria-label', f.label); i.autocomplete = 'off'; i.autocapitalize = 'off'; i.spellcheck = false;
+    if (f.max) i.maxLength = f.max;
+    return i;
+  });
+  const submit = () => {
+    const v = {}; for (const i of inputs) { v[i.name] = i.value; i.value = ''; }
+    popDismiss = null; close('pop'); run(v);
+  };
+  inputs.forEach((i, n) => {
+    i.enterKeyHint = n === inputs.length - 1 ? 'done' : 'next';
+    i.addEventListener('keydown', (e) => { if (e.key !== 'Enter') return; e.preventDefault(); if (inputs[n + 1]) inputs[n + 1].focus(); else submit(); });
+  });
+  const btns = el('div', 'askbtns'); const cancel = el('button', 'mini', T('cancel')); const go = el('button', 'btn', ok);
+  cancel.onclick = () => close('pop'); go.onclick = submit;
+  btns.append(cancel, go); p.append(...inputs, btns);
+  popDismiss = (opts && opts.dismiss) || null;
+  p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
+  setOpen('pop', true);
+  setTimeout(() => { inputs[0].focus(); inputs[0].select(); }, stillNow() ? 0 : 120);
+}
+// The server question on screen (its id), to close it when its tab goes.
+let authAsked = null;
 function report(m) {
   dismissPop();
   const p = $('#pop'); p.replaceChildren();
-  if (!m.site) { p.append(el('div', 'ttl', 'This session'), el('div', 'bl', `${m.total} requests blocked`)); }
+  if (!m.site) { p.append(el('div', 'ttl', T('this_session')), el('div', 'bl', Tn('requests_blocked', m.total))); }
   else {
     const hd = el('div', 'hd'); const g = el('div', 'grade g-' + m.grade, m.grade); const t = el('div');
-    t.append(el('b', null, m.site), el('span', null, `${m.trackers} tracker · ${m.ads} ad requests blocked`));
+    t.append(el('b', null, m.site), el('span', null, T('report_counts', { trackers: m.trackers, ads: m.ads })));
     hd.append(g, t); p.append(hd);
-    if (m.insecure) p.append(el('p', 'warnline', 'Not secure: this page is not encrypted.'));
-    if (!m.hosts.length) p.append(el('div', 'bl', 'Nothing tried to follow you here.'));
-    for (const h of m.hosts.slice(0, 10)) { const r = el('div', 'bl'); r.append(el('span', null, h.host), el('em', null, (h.ad ? 'ad · ' : 'tracker · ') + h.count)); p.append(r); }
+    if (m.insecure) p.append(el('p', 'warnline', T('not_secure')));
+    if (!m.hosts.length) p.append(el('div', 'bl', T('nothing_followed')));
+    for (const h of m.hosts.slice(0, 10)) { const r = el('div', 'bl'); r.append(el('span', null, h.host), el('em', null, h.ad ? T('host_ad', { n: h.count }) : T('host_tracker', { n: h.count }))); p.append(r); }
   }
-  const set = row('Shields settings', 'gear', () => { close('pop'); setOpen('settings', true); });
+  const set = enter(row(T('shields_settings'), 'gear', () => { close('pop'); setOpen('settings', true); }));
   set.style.marginTop = '8px'; p.append(set);
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
   close('sheet'); setOpen('pop', true);
@@ -1021,37 +1369,72 @@ function openHistory() { $('#hq').value = ''; setOpen('history', true); send({ c
 let hTimer = 0;
 $('#hq').addEventListener('input', () => { clearTimeout(hTimer); hTimer = setTimeout(() => send({ cmd: 'history', query: $('#hq').value }), 120); });
 function history(m) {
-  const l = $('#hlist'); l.replaceChildren();
-  if (!m.items.length) { l.append(el('p', 'empty', m.query ? 'Nothing matches.' : 'No history yet.')); return; }
-  let day = '';
+  $('#h-empty').hidden = !!m.items.length;
+  $('#h-empty').textContent = m.query ? T('nothing_matches') : T('no_history');
+  const rows = []; let day = '';
   for (const h of m.items) {
-    const d = new Date(h.at * 1000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-    if (d !== day) { day = d; l.append(el('div', 'lbl', d)); }
-    const b = el('div', 'row'); const meta = el('div', 'meta');
-    meta.append(el('div', 't', h.title || hostOf(h.url)), el('div', 's', hostOf(h.url)));
-    const x = el('button', 'x'); x.append(icon('x', 16)); x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'forget_history', url: h.url }); };
-    b.append(tile(h.title, h.url), meta, x);
-    b.onclick = () => { close('history'); send({ cmd: 'navigate', input: h.url, new_tab: true }); };
-    l.append(b);
+    const d = new Date(h.at * 1000).toLocaleDateString(LANG, { weekday: 'long', day: 'numeric', month: 'long' });
+    if (d !== day) { day = d; rows.push({ day: d }); }
+    rows.push(h);
   }
-  const clear = el('button', 'opt danger', 'Clear all history'); armed(clear, () => send({ cmd: 'clear_history' })); l.append(clear);
+  if (m.items.length) rows.push({ clear: true });
+  // In place: forgetting a visit removes its row, the others (and the scroll position) stay.
+  sync($('#hlist'), rows, (r) => r.day ? 'd' + r.day : r.clear ? 'clear' : 'h' + r.at + '\n' + r.url, (r) => {
+    if (r.day) return el('div', 'lbl', r.day);
+    if (r.clear) { const b = el('button', 'opt danger', T('clear_all_history')); armed(b, () => send({ cmd: 'clear_history' })); return b; }
+    const b = el('div', 'row'); const meta = el('div', 'meta'); meta.append(el('div', 't'), el('div', 's'));
+    const x = el('button', 'x'); x.append(icon('x', 16)); x.setAttribute('aria-label', T('forget_visit'));
+    x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'forget_history', url: b.__it.url, query: $('#hq').value }); };
+    b.append(meta, x); b.__meta = meta;
+    b.onclick = () => { close('history'); send({ cmd: 'navigate', input: b.__it.url, new_tab: true }); };
+    return b;
+  }, (b, r) => {
+    if (r.day || r.clear) return;
+    putTile(b, r.title, r.url);
+    b.__meta.firstElementChild.textContent = r.title || hostOf(r.url); b.__meta.lastElementChild.textContent = hostOf(r.url);
+  });
 }
 // Irreversible: two taps within 3 s.
 function armed(b, run) {
   b.onclick = () => {
     if (b.classList.contains('armed')) { b.classList.remove('armed'); run(); return; }
-    b.classList.add('armed'); toast('Tap again to confirm');
+    b.classList.add('armed'); toast(T('tap_again'));
     setTimeout(() => b.classList.remove('armed'), 3000);
   };
 }
 function downloads(m) {
-  const box = $('#dls'); box.replaceChildren();
-  for (const d of m.items.slice(-3)) {
-    const c = el('div', 'dl'); c.append(el('div', null, d.name + (d.status === 'done' ? ' · done' : d.status === 'failed' ? ' · failed' : '')));
-    const pb = el('div', 'pb'); const i = el('i'); i.style.width = (d.total > 0 ? Math.round(100 * d.done / d.total) : d.status === 'done' ? 100 : 8) + '%'; pb.append(i); c.append(pb);
-    box.append(c);
-  }
+  sync($('#dls'), m.items.slice(-3), (d) => d.id != null ? d.id : d.name, () => {
+    const c = el('div', 'dl'); const pb = el('div', 'pb'); pb.append(el('i')); c.append(el('div'), pb);
+    return c;
+  }, (c, d) => {
+    c.firstElementChild.textContent = d.status === 'done' ? T('dl_done', { name: d.name }) : d.status === 'failed' ? T('dl_failed', { name: d.name }) : d.name;
+    c.lastElementChild.firstElementChild.style.width = (d.total > 0 ? Math.round(100 * d.done / d.total) : d.status === 'done' ? 100 : 8) + '%';
+  }, true);
 }
+
+// --- keyboard ---------------------------------------------------------------------------------
+// The keyboard of our own fields (address, history search, pairing code) covers the bar:
+// nothing moves under it and the page keeps its size. The keyboard of a page, or of find in
+// page (which lives in the bar), lifts the bar, and the page ends above it.
+let bars = 0, kb = 0, kbOurs = false, kbTimer = 0;
+const ownField = () => { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.id !== 'fq' && document.hasFocus(); };
+function layoutBottom() {
+  const r = document.documentElement.style;
+  r.setProperty('--sb', bars + 'px'); r.setProperty('--kb', kb + 'px');
+  r.setProperty('--bb', (kb && !kbOurs ? Math.max(bars, kb) : bars) + 'px');
+}
+function keyboard(height) {
+  const was = kb; kb = height;
+  if (!kb) kbOurs = false; else if (ownField()) kbOurs = true; else if (!was) kbOurs = false;
+  layoutBottom();
+  const a = document.activeElement;
+  if (kb && a && a.closest && a.closest('.page')) a.scrollIntoView({ block: 'nearest' });
+}
+// Our field lost the focus and the keyboard stayed: a page took it over.
+document.addEventListener('focusout', () => {
+  clearTimeout(kbTimer);
+  kbTimer = setTimeout(() => { if (kb && kbOurs && !ownField()) { kbOurs = false; layoutBottom(); } }, 500);
+});
 
 // --- buttons -----------------------------------------------------------------------------------
 $('#b-menu').onclick = () => setOpen('drawer', !open.drawer);
@@ -1069,7 +1452,10 @@ $('#defbrowser').onclick = () => send({ cmd: 'default_browser' });
 $('#k-share').onclick = () => { send({ cmd: 'share', url: S.url || '' }); close('sheet'); };
 $('#toast-undo').onclick = () => { send({ cmd: 'undo_close' }); $('#toast').classList.remove('on'); };
 for (const b of document.querySelectorAll('[data-close]')) b.onclick = () => close(b.dataset.close);
-for (const b of document.querySelectorAll('[data-set]')) b.onclick = () => send({ cmd: 'set_setting', name: b.dataset.set, value: !S.settings[b.dataset.set] });
+for (const b of document.querySelectorAll('[data-set]')) {
+  b.setAttribute('role', 'switch');
+  b.onclick = () => send({ cmd: 'set_setting', name: b.dataset.set, value: !S.settings[b.dataset.set] });
+}
 for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => {
   const go = b.dataset.go; close('drawer');
   if (go === 'history') openHistory();
@@ -1088,73 +1474,117 @@ new ResizeObserver(() => surface()).observe($('#bar'));
 function receive(m) {
   switch (m.type) {
     case 'state': S = m; render(); break;
+    case 'i18n': {
+      I18N = m.s || {}; LANG = m.lang || 'en';
+      applyTexts();
+      // Everything drawn from the state is drawn again in the new language.
+      for (const k of Object.keys(drawn)) delete drawn[k];
+      if (S) render();
+      if (open.sheet && !$('#q').value.trim()) actions();
+      break;
+    }
     case 'env': env = m; applyMotion(); if (S) renderSettings(); break;
     case 'insets': {
       const r = document.documentElement.style;
-      r.setProperty('--st', m.top + 'px'); r.setProperty('--sb', m.bottom + 'px');
+      r.setProperty('--st', m.top + 'px');
       r.setProperty('--sl', m.left + 'px'); r.setProperty('--sr', m.right + 'px');
+      bars = +m.bottom || 0; keyboard(+m.keyboard || 0);
       requestAnimationFrame(surface); break;
     }
+    // The shield's count alone: refused requests come by the dozen while a page loads.
+    case 'blocked': if (S) { S.blocked = { total: m.total, site: m.site }; renderShield(); renderStats(); } break;
     case 'progress': {
-      loading = m.value < 100;
+      loading = m.value < 100; if (open.sheet) navButtons();
       const p = $('#progress'); p.classList.toggle('on', m.value < 100); p.style.width = m.value + '%';
       if (m.value >= 100) setTimeout(() => { if (!p.classList.contains('on')) p.style.width = '0'; }, 700);
       break;
     }
-    case 'nav': if (S && m.tab === S.current) nav = m; break;
-    case 'thumb': thumbs.set(m.tab, m.data); if (open.grid) renderGrid(); break;
+    case 'nav': if (S && m.tab === S.current) { nav = m; if (open.sheet) navButtons(); } break;
+    case 'thumb': {
+      // The newest pictures only, and the card of that tab alone is touched.
+      thumbs.delete(m.tab); thumbs.set(m.tab, m.data);
+      if (thumbs.size > 24) thumbs.delete(thumbs.keys().next().value);
+      const card = open.grid && [...$('#cards').children].find((c) => c.__k === String(m.tab));
+      if (card) drawShot(card);
+      break;
+    }
     case 'dropped': break;
-    case 'toast': toast(m.text, m.undo, m.action === 'install_update' ? { label: 'Install', run: install } : null); break;
-    case 'icons': icons.clear(); for (const [k, v] of Object.entries(m.icons || {})) icons.set(k, v); if (S) render(); break;
-    case 'icon': icons.set(m.host, m.data); if (S) render(); break;
+    // `key`: a message of the shell, said in the interface's language. `action`: a button.
+    case 'toast': toast(m.key ? T(m.key) : m.text, m.undo, m.action === 'install_update' ? { label: T('install'), run: install }
+      : m.action === 'undo_removal' || m.action === 'untidy' ? { label: T('undo'), long: true, run: () => send({ cmd: m.action }) } : null); break;
+    case 'icons': {
+      const next = m.icons || {}; let any = false;
+      for (const k of [...icons.keys()]) if (!(k in next)) any = setIcon(k, null) || any;
+      for (const [k, v] of Object.entries(next)) any = setIcon(k, v) || any;
+      if (any && S) render();
+      break;
+    }
+    case 'icon': if (setIcon(m.host, m.data) && S) render(); break;
     case 'found': if (finding) $('#fcount').textContent = m.count ? `${m.active}/${m.count}` : ($('#fq').value ? '0/0' : ''); break;
     case 'update_progress': upProgress = m; updateBars(); break;
     case 'permission': {
-      const names = { camera: 'camera', microphone: 'microphone', location: 'location', protected_media: 'protected content' };
+      const names = { camera: T('perm_camera'), microphone: T('perm_microphone'), location: T('perm_location'), protected_media: T('perm_protected_media') };
       const what = m.kinds.map((k) => names[k] || k);
-      const text = what.length > 1 ? what.slice(0, -1).join(', ') + ' and ' + what[what.length - 1] : what[0];
+      const text = what.length > 1 ? T('and', { a: what.slice(0, -1).join(', '), b: what[what.length - 1] }) : what[0];
       let answered = false;
       const answer = (allow) => { if (!answered) { answered = true; send({ cmd: 'permission_answer', id: m.id, allow }); } };
-      menu(`${m.host} wants to use your ${text}`, [
-        { label: 'Allow', icon: m.kinds.includes('location') ? 'pinmap' : 'camera', run: () => answer(true) },
-        { label: 'Block', icon: 'x', run: () => answer(false) }], () => answer(false));
+      menu(T('perm_ask', { host: m.host, what: text }), [
+        { label: T('allow'), icon: m.kinds.includes('location') ? 'pinmap' : 'camera', run: () => answer(true) },
+        { label: T('block'), icon: 'x', run: () => answer(false) }], () => answer(false));
       break;
     }
+    case 'auth': {
+      let done = false; authAsked = m.id;
+      const warn = [];
+      if (m.retry) warn.push(T('auth_refused'));
+      if (!m.secure) warn.push(T('auth_plain'));
+      ask(T('auth_ask', { host: m.host }) + (m.realm ? ` (${m.realm})` : ''),
+        [{ name: 'user', label: T('name') }, { name: 'password', label: T('password'), type: 'password' }], T('sign_in'),
+        (v) => { done = true; authAsked = null; send({ cmd: 'auth_answer', id: m.id, user: v.user, password: v.password }); },
+        { warn, dismiss: () => { if (!done) { done = true; authAsked = null; send({ cmd: 'auth_cancel', id: m.id }); } } });
+      break;
+    }
+    case 'auth_gone': if (authAsked === m.id) { authAsked = null; popDismiss = null; close('pop'); } break;
     case 'suggest': suggestions(m); break;
     case 'history': if (open.history) history(m); break;
     case 'report': report(m); break;
     case 'downloads': downloads(m); break;
     case 'back': closeTop(); break;
     case 'error_menu': menu(m.host, m.hsts
-      ? [{ label: 'This site requires a secure connection', icon: 'lock', run: () => {} }]
-      : [{ label: 'Continue anyway (not secure)', icon: 'warn', danger: true, run: () => send({ cmd: 'error_proceed', tab: m.tab }) },
-         { label: 'Go back', icon: 'left', run: () => send({ cmd: 'back' }) }]); break;
-    case 'sync_offer': menu(`Synchronize tabs with ${m.name}? ${m.text}`, [
-      { label: 'Merge', icon: 'reload', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'merge' }) },
-      { label: 'Always with ' + m.name, icon: 'check', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'always' }) },
-      { label: 'Later', icon: 'clock', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'later' }) }]); break;
-    case 'external': menu('Open in another app?', [
-      { label: 'Open ' + (m.url.split(':')[0] || 'link'), icon: 'share', run: () => send({ cmd: 'open_external', url: m.url }) },
-      { label: 'Stay here', icon: 'x', run: () => {} }]); break;
+      ? [{ label: T('requires_secure'), icon: 'lock', run: () => {} }]
+      : [{ label: T('continue_anyway'), icon: 'warn', danger: true, run: () => send({ cmd: 'error_proceed', tab: m.tab }) },
+         { label: T('go_back'), icon: 'left', run: () => send({ cmd: 'back' }) }]); break;
+    case 'sync_offer': menu(T('sync_offer', { name: m.name, what: m.text }), [
+      { label: T('merge'), icon: 'reload', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'merge' }) },
+      { label: T('always_with', { name: m.name }), icon: 'check', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'always' }) },
+      { label: T('later'), icon: 'clock', run: () => send({ cmd: 'sync_answer', id: m.id, answer: 'later' }) }]); break;
+    case 'external': menu(T('open_external_ask'), [
+      { label: T('open_external', { scheme: m.url.split(':')[0] || '' }), icon: 'share', run: () => send({ cmd: 'open_external', url: m.url }) },
+      { label: T('stay_here'), icon: 'x', run: () => {} }]); break;
     case 'link_menu': {
       const items = [];
       if (m.url) items.push(
-        { label: 'Open in new tab', icon: 'plus', run: () => send({ cmd: 'open_link', url: m.url }) },
-        { label: 'Open in private tab', icon: 'mask', run: () => send({ cmd: 'open_link', url: m.url, private: true }) },
-        { label: 'Copy link', icon: 'link', run: () => { send({ cmd: 'copy', text: m.url }); toast('Link copied'); } },
-        { label: 'Share link', icon: 'share', run: () => send({ cmd: 'share', url: m.url }) },
-        { label: 'Download link', icon: 'down', run: () => send({ cmd: 'download_url', url: m.url }) });
+        { label: T('open_in_new_tab'), icon: 'plus', run: () => send({ cmd: 'open_link', url: m.url }) },
+        { label: T('open_in_private_tab'), icon: 'mask', run: () => send({ cmd: 'open_link', url: m.url, private: true }) },
+        { label: T('copy_link'), icon: 'link', run: () => { send({ cmd: 'copy', text: m.url }); toast(T('link_copied')); } },
+        { label: T('share_link'), icon: 'share', run: () => send({ cmd: 'share', url: m.url }) },
+        { label: T('download_link'), icon: 'down', run: () => send({ cmd: 'download_url', url: m.url }) });
       if (m.image) items.push(
-        { label: 'Open image in new tab', icon: 'image', run: () => send({ cmd: 'open_link', url: m.image }) },
-        { label: 'Download image', icon: 'down', run: () => send({ cmd: 'download_url', url: m.image }) },
-        { label: 'Copy image address', icon: 'link', run: () => { send({ cmd: 'copy', text: m.image }); toast('Image address copied'); } });
+        { label: T('open_image'), icon: 'image', run: () => send({ cmd: 'open_link', url: m.image }) },
+        { label: T('download_image'), icon: 'down', run: () => send({ cmd: 'download_url', url: m.image }) },
+        { label: T('copy_image_address'), icon: 'link', run: () => { send({ cmd: 'copy', text: m.image }); toast(T('image_address_copied')); } });
       menu(m.url || m.image, items);
       break;
     }
   }
 }
 if (bridge) {
-  bridge.onmessage = (e) => { try { receive(JSON.parse(e.data)); } catch (_) {} };
+  // The same state again (a page event that changed nothing shown here): nothing to do.
+  let stateRaw = '';
+  bridge.onmessage = (e) => {
+    if (e.data === stateRaw) return;
+    try { const m = JSON.parse(e.data); if (m.type === 'state') stateRaw = e.data; receive(m); } catch (_) {}
+  };
   send({ cmd: 'ready' });
 } else {
   setTimeout(() => demo({ cmd: 'ready' }), 0);

@@ -4,7 +4,7 @@
 //! Android Keystore (`keyring` has no store on Android). Private tabs never travel.
 
 use crate::bridge::{Effect, MobileCommand};
-use crate::core::Core;
+use crate::core::{Core, text_f, text_n};
 use blackhole_domain::handoff::{can_continue, resume_url};
 use blackhole_domain::TabId;
 use blackhole_infrastructure::handoff::{self, DeviceInfo, DeviceStore, Event, Handle, Request};
@@ -64,10 +64,6 @@ impl Nearby {
     }
 }
 
-fn plural(n: usize, word: &str) -> String {
-    format!("{n} {word}{}", if n == 1 { "" } else { "s" })
-}
-
 impl Core {
     /// Starts the paired-devices service. `key` seals the pairing keys (Android Keystore).
     pub fn enable_devices(&mut self, key: [u8; 32], name: &str, network: Network) {
@@ -98,7 +94,7 @@ impl Core {
     pub(crate) fn device_command(&mut self, command: MobileCommand) -> Vec<Effect> {
         use MobileCommand as C;
         if self.nearby.is_none() {
-            return vec![Self::toast("Devices are not available", false)];
+            return vec![Self::toast(&self.t("devices_unavailable"), false)];
         }
         match command {
             C::DeviceShowCode => self.request(Request::ShowCode),
@@ -121,7 +117,7 @@ impl Core {
                     n.later.remove(&id);
                 }
                 self.send_ledger(&id, false, true);
-                return vec![Self::toast("Synchronizing…", false)];
+                return vec![Self::toast(&self.t("synchronizing"), false)];
             }
             C::SyncAnswer { id, answer } => return self.sync_answer(&id, &answer),
             C::ContinueOn { device } => return self.continue_on(device),
@@ -132,10 +128,10 @@ impl Core {
 
     fn continue_on(&mut self, device: String) -> Vec<Effect> {
         let Some(tab) = self.current.filter(|t| !Self::is_private(*t)) else {
-            return vec![Self::toast("Private tabs stay on this device", false)];
+            return vec![Self::toast(&self.t("private_stay"), false)];
         };
         let Some(url) = self.current_page().filter(can_continue) else {
-            return vec![Self::toast("Only web pages can continue on another device", false)];
+            return vec![Self::toast(&self.t("only_web_continue"), false)];
         };
         let title = self.pages.get(&tab).map(|p| p.1.clone()).unwrap_or_default();
         self.request(Request::Send {
@@ -163,7 +159,7 @@ impl Core {
             });
         }
         let mut out = self.apply_ledger(id, &received);
-        out.push(Self::toast(&format!("Tabs synchronized with {name}"), false));
+        out.push(Self::toast(&self.tf("tabs_synced", &[("name", &name)]), false));
         out
     }
 
@@ -207,6 +203,7 @@ impl Core {
         let Some(received) = SyncEngine::parse(json) else {
             return Vec::new();
         };
+        let lang = self.lang;
         let Some(n) = &mut self.nearby else { return Vec::new() };
         let mode = n
             .devices
@@ -224,7 +221,7 @@ impl Core {
                 let quiet = received.reply;
                 let mut out = self.apply_ledger(&device, &received);
                 if !quiet {
-                    out.push(Self::toast(&format!("Tabs synchronized with {name}"), false));
+                    out.push(Self::toast(&text_f(lang, "tabs_synced", &[("name", &name)]), false));
                 }
                 out
             }
@@ -234,13 +231,13 @@ impl Core {
                 }
                 let mut what = Vec::new();
                 if opens > 0 {
-                    what.push(format!("{} to open", plural(opens, "tab")));
+                    what.push(text_n(lang, "sync_open", opens));
                 }
                 if closes > 0 {
-                    what.push(format!("{closes} to close"));
+                    what.push(text_f(lang, "sync_close", &[("n", &closes.to_string())]));
                 }
                 if changes > 0 {
-                    what.push(plural(changes, "change"));
+                    what.push(text_n(lang, "sync_change", changes));
                 }
                 n.proposals.insert(device.clone(), (name.clone(), received));
                 vec![Effect::Ui {
@@ -285,19 +282,20 @@ impl Core {
                     state = true;
                 }
                 Event::Paired(name) => {
+                    let said = self.tf("paired_with", &[("name", &name)]);
                     if let Some(n) = &mut self.nearby {
-                        n.status = format!("Paired with {name}");
+                        n.status.clone_from(&said);
                     }
-                    out.push(Self::toast(&format!("Paired with {name}"), false));
+                    out.push(Self::toast(&said, false));
                     state = true;
                 }
                 Event::Received { from, url, position, .. } => {
                     if let Ok(url) = Url::parse(&url).map(|u| resume_url(&u, position)) {
                         out.extend(self.navigate(url.as_str(), true, false));
-                        out.push(Self::toast(&format!("Continued from {from}"), false));
+                        out.push(Self::toast(&self.tf("continued_from", &[("name", &from)]), false));
                     }
                 }
-                Event::Delivered(name) => out.push(Self::toast(&format!("Opened on {name}"), false)),
+                Event::Delivered(name) => out.push(Self::toast(&self.tf("opened_on", &[("name", &name)]), false)),
                 // Wormhole: the lite version shows a text it receives and takes no file (the
                 // sender is told at once rather than left waiting).
                 Event::BeamOffer { device, beam, .. } => {
@@ -307,13 +305,12 @@ impl Core {
                 }
                 Event::BeamText { from, text } => {
                     let short: String = text.chars().take(120).collect();
-                    out.push(Self::toast(&format!("From {from}: {short}"), false));
+                    out.push(Self::toast(&self.tf("beam_text", &[("name", &from), ("text", &short)]), false));
                 }
                 Event::BeamFile { .. } | Event::BeamSent { .. } => {}
                 Event::Snapshot { device, name, json } => out.extend(self.on_ledger(device, name, &json)),
                 Event::Status(status) => {
-                    // The mobile interface is in English for now (see docs/android.md).
-                    let status = blackhole_domain::i18n::catalog("en").render(&status);
+                    let status = blackhole_domain::i18n::catalog(self.lang).render(&status);
                     out.push(Self::toast(&status, false));
                     if let Some(n) = &mut self.nearby {
                         n.status = status;

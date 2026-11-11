@@ -99,10 +99,10 @@ impl Core {
         }
         let Some(tag) = updater::tag_of_latest(url).map(str::to_owned) else {
             // No release published (the redirect leads to the release list).
-            return self.update_done(Phase::Latest, Some("BlackHole is up to date".into()));
+            return self.update_done(Phase::Latest, Some(self.t("up_latest")));
         };
         if !updater::is_newer(&tag, VERSION) {
-            return self.update_done(Phase::Latest, Some("BlackHole is up to date".into()));
+            return self.update_done(Phase::Latest, Some(self.t("up_latest")));
         }
         match updater::sums_url(&tag) {
             Some(url) => vec![Effect::UpdateSums { tag, url }],
@@ -122,7 +122,7 @@ impl Core {
                 // Said even after the automatic check (it is what the check is for), with a button.
                 let toast = Effect::Ui {
                     msg: json!({
-                        "type": "toast", "text": format!("BlackHole {} is available", r.version),
+                        "type": "toast", "text": self.tf("update_available", &[("version", &r.version)]),
                         "undo": false, "action": "install_update",
                     }),
                 };
@@ -131,7 +131,7 @@ impl Core {
                 vec![toast, self.state()]
             }
             None => {
-                let why = format!("Release {tag} has no APK signed like this app");
+                let why = self.tf("update_no_apk", &[("tag", tag)]);
                 self.update_done(Phase::Failed(why.clone()), Some(why))
             }
         }
@@ -167,7 +167,7 @@ impl Core {
             self.update.phase = Phase::Installing(r);
             return vec![Effect::UpdateInstall, self.state()];
         }
-        let why = "The download does not match the release checksum".to_owned();
+        let why = self.t("update_checksum");
         let mut out = vec![Effect::UpdateDiscard];
         out.extend(self.update_done(Phase::Failed(why.clone()), Some(why)));
         out
@@ -178,7 +178,7 @@ impl Core {
             return Vec::new();
         }
         let why = short(error);
-        self.update_done(Phase::Failed(why.clone()), Some(format!("Update: {why}")))
+        self.update_done(Phase::Failed(why.clone()), Some(self.tf("update_error", &[("why", &why)])))
     }
 
     pub(crate) fn update_json(&self) -> Value {

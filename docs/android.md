@@ -42,6 +42,26 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   régresser. Jetons de couleur et `@keyframes` (`spring`, `rowin`, `bloom`, `pop`, `rise`, `swirl`,
   splash de `home.html`) sont repris : **toucher l'un sans l'autre fait diverger les deux apps**.
 
+### Rendu de l'interface
+
+Le cœur envoie tout l'état (`state`) à chaque événement de page (adresse, titre, vue libérée…).
+L'interface ne redessine que ce qui a changé :
+
+- chaque partie garde la signature de ce qu'elle a dessiné (`changed`) ; un état identique au
+  précédent est ignoré dès sa réception ;
+- les listes (onglets du tiroir, grille, suggestions, historique, appareils, téléchargements)
+  passent par `sync` : le nœud d'une clé encore présente est gardé et mis à jour, seuls les
+  nouveaux jouent leur animation d'entrée (classe `.in`). Un toucher en cours, la position de
+  défilement et un bouton armé (« Tap again to confirm ») survivent donc au message ;
+- le compteur du bouclier voyage seul (`NativeEvent::Blocked` → `blocked`), une vignette ne
+  touche que sa carte, `surface` n'est envoyé à la coque que s'il change ;
+- clavier : `insets` donne les barres système (`bottom`) et le clavier (`keyboard`) à part. Le
+  clavier de nos champs (adresse, historique, code d'appairage) recouvre la barre et la page
+  garde sa taille ; celui d'une page, ou de la recherche dans la page, soulève la barre.
+
+Ne pas revenir à `replaceChildren` sur une liste tirée de l'état : c'est ce qui faisait clignoter
+l'interface à chaque frappe et à chaque fermeture d'onglet.
+
 ### Protocole et sécurité
 
 - Interface → shell : `WebViewCompat.addWebMessageListener(shell, "bh", {origine des assets})`,
@@ -82,11 +102,14 @@ crates/android/          « blackhole-android » (cdylib + rlib)
   `Download/BlackHole/`, cookies du profil (jamais ceux du privé), carte de progression dans le
   tiroir.
 
-- **Langue** : l'interface mobile (`mobile.html`) reste en anglais, sans catalogue. La page
-  d'erreur partagée reçoit les chaînes anglaises du catalogue (`error.*`, `core::error_page`) et les
-  statuts des appareils sont rendus en anglais (`i18n::catalog("en").render`). Reste à faire pour
-  le français : brancher `ui/i18n.js` (ou son équivalent) dans `mobile.html`, transmettre la langue
-  du système depuis Kotlin (`Locale.getDefault()`), traduire les toasts de `core.rs`/`devices.rs`.
+- **Langue** : anglais et français, sur les catalogues du bureau (`crates/domain/i18n/*.toml`,
+  section `[mobile]`). La coque donne les langues du système (`NativeEvent::Locale`), le cœur
+  choisit (`Settings::language`, sinon la première langue connue du système, sinon l'anglais) et
+  envoie les textes à l'interface (`i18n`) : balisage `data-i18n`, `data-i18n-ph`,
+  `data-i18n-aria`, `T('clé')` / `Tn('clé', n)` dans le script, `self.t` / `tf` / `tn` dans le
+  cœur, `toastKey("clé")` dans la coque. La page d'erreur partagée et les statuts des appareils
+  suivent. Réglages > Apparence > Langue change tout en direct. Un test du cœur vérifie que
+  chaque clé demandée existe ; ceux du domaine, que le français a les mêmes.
 
 ## Mises à jour
 
@@ -143,9 +166,39 @@ suivent une ouverture (le clic du toucher refermait la feuille, clavier ouvert s
 Liens d'une image dans une image : l'appui long passe par `requestFocusNodeHref` (le lien et
 l'image), et non plus par l'adresse de l'image prise pour celle du lien.
 
-À plus tard : authentification HTTP, mots de passe, pages
-d'erreur des statuts 401/403/5xx sans corps, masquage de la barre au défilement, ouverture du
-tiroir par le bord de l'écran (en conflit avec le geste retour). Exclus : Easel, extensions,
+Ajoutés en 0.8.6, avec les règles du bureau :
+
+- **Renderer mort** (`onRenderProcessGone`) : toutes les WebViews de l'app partagent un
+  renderer. Les vues d'onglets sont détruites, celle affichée est rechargée une fois (page
+  d'accueil si elle retombe en moins de 30 s, `CRASH_LOOP`), et la vue d'interface est
+  reconstruite (`rebuildShell`) ; elle redemande l'état au cœur.
+- **Réponses 401 / 403 / 5xx sans page** (`onReceivedHttpError` puis sonde de la page à
+  `onPageFinished`, `NativeEvent::HttpStatus`) : notre page d'erreur si le corps est vide (le
+  WebView affiche alors sa propre page `chrome-error:`) ou une simple ligne de statut ; une
+  page du serveur reste affichée.
+- **Authentification HTTP** (`onReceivedHttpAuthRequest`, `crates/android/src/auth.rs`,
+  `domain::http_auth`) : question dans l'interface pour l'onglet affiché seulement, une réponse
+  pour tous les défis du même onglet, hôte et realm, nouvel essai signalé, avertissement en
+  http. Identifiants remis une fois au WebView (`Effect::HttpAuth`, `Secret` jamais imprimé),
+  jamais gardés. Fermer la question annule.
+- **Popups de connexion** (`onCreateWindow` sur geste de l'utilisateur, `popups.rs`,
+  `domain::popup::new_window`) : la première adresse décide. Page de connexion connue, fenêtre
+  vide ou dimensionnée → vue à part sur le profil de l'ouvrant, `window.opener` gardé, hors de
+  la liste d'onglets, de l'historique et des icônes ; elle part avec `window.close()`, le
+  retour, ou dès qu'un autre onglet est affiché. Tout le reste (`target=_blank`,
+  `window.open(url)`) se charge dans l'onglet, comme avant. Jamais de popup d'une popup.
+- **Menus par appui long** (`organize.rs`) : onglet (accès rapide, renommer, déplacer dans un
+  dossier ou un autre espace, fermer les autres, fermer ou mettre en veille), espace (renommer,
+  couleur, supprimer sauf le dernier), dossier (renommer, supprimer). Une entrée irréversible
+  demande un second toucher ; supprimer un espace ou un dossier propose Undo (15 s). « Dupliquer »
+  n'existe pas : une adresse déjà ouverte dans l'espace est réutilisée, comme sur le bureau.
+- **Dossiers et rangement** : les dossiers du bureau dans le tiroir (repliables, onglets en
+  retrait, emoji du dossier s'il en a un) ; un onglet de dossier « fermé » est mis en veille.
+  Carte « Tidy up » dès 6 onglets libres et un site à 3 onglets, avec Undo.
+
+À plus tard : mots de passe, masquage de la barre au défilement, ouverture du tiroir par le
+bord de l'écran (en conflit avec le geste retour), création de sous-dossiers et glisser-déposer
+des onglets, icône d'espace ou de dossier, réordonner les espaces. Exclus : Easel, extensions,
 outils de développement, PiP, split view, calendrier, comparateur, veille de zone.
 
 ## Appareils appairés : « Continuer sur » et synchro des onglets
@@ -214,7 +267,11 @@ extras d'intent réservés aux builds debug (`bh_cmd64` : un message d'interface
 dans logcat (contrôles **nommés**, pas indexés) et range les captures dans
 `%TEMP%\bh_android_shots`. Il couvre l'accueil, l'ouverture d'adresses, la palette et les
 suggestions, le tiroir (état intermédiaire compris), la grille, le rapport Shields, le privé,
-une page d'erreur, le refus d'un traqueur, les réglages (thème clair), le mode animations
+la frappe réelle dans la barre (clavier, suggestions gardées), la fermeture d'un onglet dans
+la grille (cartes gardées), le français, le menu d'un onglet, les dossiers (créer, replier,
+supprimer, Undo), la carte de rangement, une réponse 403 vide, l'authentification HTTP
+(identifiants de test `scripts/fixtures/http-auth.json`), une popup qui répond à son ouvrant
+et se ferme, un renderer tué (`--ez bh_crash true`, builds debug), une page d'erreur, le refus d'un traqueur, les réglages (thème clair), le mode animations
 coupées, l'historique, le retour système, Undo, et la sortie par le retour. Réseau requis.
 
 AVD de test : `avdmanager create avd -n bh_test -k "system-images;android-35;google_apis;x86_64" -d pixel_7`

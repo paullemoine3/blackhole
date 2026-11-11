@@ -40,8 +40,11 @@ Adb shell am start -W -n "$pkg/.MainActivity" | Out-Null
 $port = 18420
 Adb reverse "tcp:$port" "tcp:$port" | Out-Null
 $base = "http://127.0.0.1:$port"
-$server = Start-Job -ArgumentList $port -ScriptBlock {
-    param($port)
+# Test-only credentials of the local HTTP authentication page (not a real account).
+$cred = Get-Content (Join-Path $PSScriptRoot 'fixtures\http-auth.json') -Raw | ConvertFrom-Json
+$basic = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($cred.user):$($cred.password)"))
+$server = Start-Job -ArgumentList $port, $basic -ScriptBlock {
+    param($port, $basic)
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
     $listener.Start()
     $deadline = (Get-Date).AddMinutes(8)
@@ -52,17 +55,28 @@ $server = Start-Job -ArgumentList $port -ScriptBlock {
             $stream = $client.GetStream()
             $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
             $path = (($reader.ReadLine()) -split ' ')[1]
-            while ($reader.ReadLine()) {}
+            $auth = ''
+            while ($line = $reader.ReadLine()) { if ($line -like 'Authorization:*') { $auth = $line.Substring(14).Trim() } }
             $status = '200 OK'
+            $extra = ''
             # A 1x1 PNG as the page icon: the shell hands it to the core (favicons).
             $icon = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
             $page = { param($t, $c) "<!doctype html><meta name=viewport content='width=device-width'><link rel=icon href='$icon'><title>$t</title><body style='font:18px sans-serif;margin:24px;background:$c'><h1>$t</h1><p>BlackHole Android test page.</p>" }
             if ($path -like '/a*') { $body = (& $page 'Alpha page' '#fdf3e7') + "<img src='https://stats.g.doubleclick.net/pixel.gif' width=1 height=1><p>" + ('Lorem ipsum dolor sit amet. ' * 40) }
             elseif ($path -like '/b*') { $body = & $page 'Beta page' '#e8f4fd' }
+            elseif ($path -like '/pop*') { $body = '<!doctype html><meta name=viewport content="width=device-width"><title>Pop</title><body style="margin:0;height:100vh;background:#fde7f3" onclick="opener.postMessage(&quot;done&quot;,&quot;*&quot;);window.close()"><h1>Finish</h1>' }
             elseif ($path -like '/p*') { $body = & $page 'Private page' '#f1e8fd' }
+            # An error answer with nothing to show, a page behind a name and password, and a
+            # page that opens a sized window (a sign-in popup) and hears back from it.
+            elseif ($path -like '/e403*') { $status = '403 Forbidden'; $body = '' }
+            elseif ($path -like '/login*') {
+                if ($auth -eq $basic) { $body = & $page 'Secret page' '#e7fde8' }
+                else { $status = '401 Unauthorized'; $extra = "WWW-Authenticate: Basic realm=`"Test box`"`r`n"; $body = '' }
+            }
+            elseif ($path -like '/o*') { $body = '<!doctype html><meta name=viewport content="width=device-width"><title>Opener</title><body style="margin:0;height:100vh;background:#e7fde8" onclick="window.open(&quot;/pop&quot;,&quot;bhpop&quot;,&quot;width=300,height=400&quot;)"><h1>Open</h1><script>addEventListener("message",function(e){document.title="Got "+e.data})</script>' }
             else { $status = '404 Not Found'; $body = '' }
             $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-            $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n")
+            $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($bytes.Length)`r`n${extra}Connection: close`r`n`r`n")
             $stream.Write($head, 0, $head.Length); $stream.Write($bytes, 0, $bytes.Length); $stream.Flush()
         } catch {} finally { $client.Close() }
     }
@@ -109,6 +123,21 @@ Wait 1200
 Cmd ('{"cmd":"navigate","input":"' + $base + '/b"}')
 Wait 4000
 Eval second "S.url + ' ' + S.tabs.length"
+# A real tap on the bar, real typing: our keyboard covers the bar (it does not climb, so the
+# page under it keeps its size) and the address field keeps what is typed.
+Adb shell settings put secure show_ime_with_hard_keyboard 1 | Out-Null
+$wm = "$(Adb shell wm size)"
+if ($wm -match '(\d+)x(\d+)\s*$') { $sw = [int]$Matches[1]; $sh = [int]$Matches[2] } else { $sw = 1080; $sh = 2400 }
+Eval barbefore "Math.round(document.querySelector('#bar').getBoundingClientRect().height)"
+Adb shell input tap ([int]($sw / 2)) ($sh - 200) | Out-Null
+Wait 1800
+Adb shell input text 'alp' | Out-Null
+Wait 1200
+Shot '22-typing'
+Eval typing "open.sheet + ' ' + document.querySelector('#q').value + ' ' + (kb > 0) + ' ' + kbOurs"
+Eval barafter "Math.round(document.querySelector('#bar').getBoundingClientRect().height)"
+Run "close('sheet')"
+Wait 900
 Run "openSheet(true, true)"
 Wait 900
 Shot '03-palette'
@@ -118,6 +147,10 @@ Run "document.querySelector('#q').value='page'; document.querySelector('#q').dis
 Wait 900
 Shot '04-suggest'
 Eval suggest "document.querySelectorAll('#list .act').length"
+# Typing on: the rows still suggested are the same nodes, and no entry animation plays again.
+Run "window.__rows = [...document.querySelectorAll('#list .act')]; document.querySelector('#q').value='pag'; document.querySelector('#q').dispatchEvent(new Event('input'))"
+Wait 700
+Eval keeprows "window.__rows.filter((n) => n.isConnected).length + ' ' + document.querySelectorAll('#list .act.in').length"
 # Intermediate frame: the page freezes the drawer's transition 150 ms in.
 Run "close('sheet'); setOpen('drawer', true); setTimeout(() => document.getAnimations().forEach((a) => a.pause()), 150)"
 Wait 1500
@@ -219,6 +252,92 @@ Eval undo "!document.querySelector('#toast-undo').hidden"
 Cmd '{"cmd":"undo_close"}'
 Wait 1500
 Eval after "S.tabs.length"
+# Closing a tab in the grid: its card leaves, the others are the same nodes (no rebuild).
+Cmd ('{"cmd":"navigate","input":"' + $base + '/a","new_tab":true}')
+Wait 3000
+Run "setOpen('grid', true)"
+Wait 1500
+Run "window.__cards = [...document.querySelectorAll('#cards .tc')]; flyAway(window.__cards[0], 1)"
+Wait 1500
+Shot '23-grid-closed'
+Eval gridkeep "window.__cards.length + ' ' + window.__cards.slice(1).every((n) => n.isConnected) + ' ' + window.__cards[0].isConnected + ' ' + document.querySelectorAll('#cards .tc.in').length"
+# A state that changes nothing in a part leaves its nodes alone (drawer rows).
+Run "window.__row = document.querySelector('#dtabs .trow'); send({ cmd: 'set_setting', name: 'pull_refresh', value: false })"
+Wait 700
+Eval samerow "window.__row === document.querySelector('#dtabs .trow') && S.settings.pull_refresh === false"
+Run "close('grid')"
+# French: the markup, what is drawn from the state and the core's own messages follow, live.
+Cmd '{"cmd":"set_language","language":"fr"}'
+Wait 900
+Run "setOpen('settings', true)"
+Wait 900
+Shot '28-settings-fr'
+Eval french "document.documentElement.lang + '|' + document.querySelector('#settings .top span').textContent + '|' + document.querySelector('#g-done').textContent + '|' + document.querySelector('#themes button').textContent + '|' + document.querySelector('#q').placeholder"
+Cmd '{"cmd":"set_language","language":"en"}'
+Wait 900
+Eval english "document.documentElement.lang + '|' + document.querySelector('#settings .top span').textContent + '|' + S.settings.language"
+Run "close('settings')"
+# A long press on a tab of the drawer opens its menu, over the drawer.
+Run "setOpen('drawer', true)"
+Wait 900
+Run "document.querySelector('#dtabs .trow:not(.fold)').dispatchEvent(new PointerEvent('pointerdown', { clientX: 60, clientY: 60, bubbles: true }))"
+Wait 900
+Shot '29-tab-menu'
+Eval tabmenu "!document.querySelector('#pop').hidden && open.drawer && [...document.querySelectorAll('#pop .act span:nth-child(2)')].map((n) => n.textContent).join('|')"
+# A new folder takes the tab; it folds, goes with its tab, and Undo brings both back.
+Run "close('pop'); send({ cmd: 'add_folder', name: 'Reading', tab: S.tabs.find((t) => !t.pinned).id })"
+Wait 900
+Shot '30-folder'
+Eval folder "document.querySelectorAll('#dtabs .trow.fold.open').length + ' ' + document.querySelector('#dtabs .trow.fold .k').textContent + ' ' + S.tabs.filter((t) => t.folder != null).length"
+Run "window.__rows = document.querySelectorAll('#dtabs .trow').length; document.querySelector('#dtabs .trow.fold').click()"
+Wait 700
+Eval folded "S.folders[0].collapsed + ' ' + (window.__rows - document.querySelectorAll('#dtabs .trow').length)"
+Run "window.__tabs = S.tabs.length; send({ cmd: 'delete_folder', folder: S.folders[0].id })"
+Wait 900
+Eval folderdel "S.folders.length + ' ' + (window.__tabs - S.tabs.length) + ' ' + document.querySelector('#toast-act').textContent"
+Run "document.querySelector('#toast-act').click()"
+Wait 900
+Eval folderundo "S.folders.length + ' ' + S.tabs.length + ' ' + window.__tabs"
+# The menu of a space (its only one cannot be deleted) and the card that offers to tidy up.
+Run "spaceMenu(S.space)"
+Wait 700
+Eval spacemenu "document.querySelectorAll('#pop .act').length"
+Run "close('pop'); S.tidy = { tabs: 6, folders: 2 }; renderDrawer()"
+Wait 500
+Shot '31-tidy'
+Eval tidy "!document.querySelector('#tidy').hidden && document.querySelector('#tidy-t').textContent"
+Run "S.tidy = null; renderDrawer(); close('drawer')"
+Wait 500
+# An empty 403 answer gets our page.
+Cmd ('{"cmd":"navigate","input":"' + $base + '/e403","new_tab":true}')
+Wait 3500
+Shot '24-forbidden'
+Eval httpstatus "S.error"
+# A server asking for a name and password: asked in the interface, answered once.
+Cmd ('{"cmd":"navigate","input":"' + $base + '/login"}')
+Wait 3000
+Shot '25-auth'
+Eval authask "!document.querySelector('#pop').hidden && document.querySelectorAll('#pop .field').length + ' ' + document.querySelector('#pop .ttl').textContent"
+Run ("const f = document.querySelectorAll('#pop .field'); f[0].value = '" + $cred.user + "'; f[1].value = '" + $cred.password + "'; document.querySelector('#pop .btn').click()")
+Wait 3500
+Eval authed "S.title + ' ' + document.querySelector('#pop').hidden"
+# A page opens a sized window: a popup over it that keeps its opener, closes itself and
+# leaves the page it told the result.
+Cmd ('{"cmd":"navigate","input":"' + $base + '/o"}')
+Wait 3500
+Adb shell input tap ([int]($sw / 2)) ([int]($sh / 3)) | Out-Null
+Wait 2500
+Shot '26-popup'
+Eval popup "S.popup + ' ' + S.title + ' ' + S.tabs.some((t) => t.title === 'Pop')"
+Adb shell input tap ([int]($sw / 2)) ([int]($sh / 3)) | Out-Null
+Wait 2500
+Eval popupback "S.popup + ' ' + S.title"
+# The renderer of the page on screen dies: the tab is reloaded, the app lives on.
+Eval crashtab "S.current"
+Adb shell am start -n "$pkg/.MainActivity" --ez bh_crash true | Out-Null
+Wait 5000
+Shot '27-after-crash'
+Eval crashed "S.current + ' ' + !!(S.tabs.find((t) => t.id === S.current) || {}).live"
 Cmd '{"cmd":"home"}'
 Wait 800
 Key 'KEYCODE_BACK'
@@ -245,6 +364,11 @@ Check ((V desktop) -eq 'true') 'desktop site on the tab'
 Check ((V sheet) -eq 'true') 'palette sheet opens'
 Check ((V editurl) -match '127\.0\.0\.1:\d+/b') 'tapping the bar puts its address in the field'
 Check ([int]((V suggest) -replace '\D', '0') -ge 2) 'suggestions listed'
+Check ((V typing) -eq '"true alp true true"') 'tapping the bar and typing: our keyboard, the field keeps the text'
+Check ((V barafter) -eq (V barbefore) -and (V barbefore) -ne '<missing>') 'the bar does not climb over our keyboard (the page keeps its size)'
+Check ((V keeprows) -match '^"[2-9] 0"$') 'typing keeps the suggestion rows (no rebuild, no animation again)'
+Check ((V gridkeep) -match '^"[2-9] true false 0"$') 'closing a tab in the grid removes its card only'
+Check ((V samerow) -eq 'true') 'an unrelated state leaves the drawer rows alone'
 Check ((V moving) -match 'matrix\(1, 0, 0, 1, -\d') 'drawer caught mid-slide'
 Check ((V drawer) -match 'none|matrix\(1, 0, 0, 1, 0, 0\)') 'drawer slides in'
 Check ((V grid) -eq '1') 'tab grid shows the tab'
@@ -264,6 +388,22 @@ Check ((V offer) -eq 'true') 'the sync proposal shows Merge / Always / Later'
 Check ((V still) -match '^"true (none|matrix\(1, 0, 0, 1, 0, 0\))"$') 'animations off: drawer opens at once'
 Check ([int]((V history) -replace '\D', '0') -ge 2) 'history lists visits'
 Check ((V backclose) -eq 'false') 'system back closes the history page'
+# (Accented letters are matched loosely: this file and logcat need not agree on an encoding.)
+Check ((V french) -match '^"fr\|R.{1,2}glages\|OK\|Syst.{1,2}me\|Rechercher ou saisir une adresse"$') 'French: markup, settings and fields follow the language'
+Check ((V english) -eq '"en|Settings|en"') 'back to English, the choice is kept'
+Check ((V tabmenu) -match '^"Add to quick access\|Rename\|Move to a folder\|Close other tabs\|Close tab"$') 'a long press on a tab opens its menu over the drawer'
+Check ((V folder) -eq '"1 1 tab 1"') 'a new folder takes the tab'
+Check ((V folded) -eq '"true 1"') 'a folder folds its tabs away'
+Check ((V folderdel) -eq '"0 1 Undo"') 'a folder is deleted with its tab, with Undo'
+Check ((V folderundo) -match '^"1 (\d+) \1"$') 'Undo brings the folder and its tab back'
+Check ((V spacemenu) -eq '2') 'the menu of the only space: rename and color'
+Check ((V tidy) -eq '"Tidy up 6 tabs into 2 folders?"') 'the tidy card'
+Check ((V httpstatus) -eq '"forbidden"') 'an empty 403 answer gets our error page'
+Check ((V authask) -match '^"2 127\.0\.0\.1 asks for a name and password \(Test box\)"$') 'a server asks for a name and password in the interface'
+Check ((V authed) -eq '"Secret page true"') 'the credentials open the page'
+Check ((V popup) -eq '"true Pop false"') 'a sized window opens as a popup, out of the tab list'
+Check ((V popupback) -eq '"false Got done"') 'the popup told its opener and closed itself'
+Check ((V crashed) -eq ('"' + (V crashtab) + ' true"') -and (V crashtab) -match '^\d+$') 'a dead renderer: the tab is reloaded'
 Check ((V undo) -eq 'true') 'closing offers undo'
 Check ((V after) -eq (V before)) 'undo brings the tab back'
 Check ("$focus" -notmatch $pkg) 'back on the start page leaves the app'

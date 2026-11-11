@@ -5,7 +5,9 @@
 use crate::bridge::{self, Effect, MobileCommand, NativeEvent, PageEvent};
 use crate::live::Live;
 use blackhole_application::{BrowserService, NavigationOutcome};
-use blackhole_domain::error_page::{self, classify, Bypasses, ErrorPage, Failure};
+use blackhole_domain::error_page::{
+    self, classify, classify_status, is_bare_error_body, is_engine_error_page, Bypasses, ErrorPage, Failure,
+};
 use blackhole_domain::{
     privacy_grade, resolve_input, BlockLog, PrivacyDecision, PrivacyPolicy, SearchEngine, SpaceId,
     TabId,
@@ -32,6 +34,8 @@ const PRIVATE_BASE: u64 = 1 << 48;
 pub const MAX_LIVE: usize = 4;
 /// Closed tabs that "Undo" can bring back.
 const MAX_CLOSED: usize = 10;
+/// A page on screen that dies again this soon after its reload is left alone (seconds).
+const CRASH_LOOP: i64 = 30;
 const THEMES: [&str; 3] = ["system", "dark", "light"];
 
 /// Preferences of the phone only, next to the shared `settings.json`.
@@ -137,12 +141,36 @@ pub struct Core {
     pub(crate) permissions: crate::permissions::Permissions,
     /// Tabs showing the desktop site.
     pub(crate) desktop: HashSet<u64>,
+    /// When the page of a tab was last reloaded after its renderer died (Unix seconds).
+    pub(crate) crashes: HashMap<u64, i64>,
+    pub(crate) auth: crate::auth::Auth,
+    /// Windows opened by pages (sign-in popups), over their opener.
+    pub(crate) popups: Vec<crate::popups::Popup>,
+    pub(crate) next_popup: u64,
+    pub(crate) organize: crate::organize::Organize,
+    /// Language of the interface (`en`, `fr`): the setting, else the system's.
+    pub(crate) lang: &'static str,
+    /// The system's preferred languages, as the shell reported them.
+    pub(crate) system: Vec<String>,
 }
 
 pub(crate) fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
+/// A text of the mobile interface (`mobile.*` of the catalogs) in `lang`.
+pub(crate) fn text(lang: &str, key: &str) -> String {
+    blackhole_domain::i18n::catalog(lang).get(&format!("mobile.{key}")).to_owned()
+}
+
+pub(crate) fn text_f(lang: &str, key: &str, params: &[(&str, &str)]) -> String {
+    blackhole_domain::i18n::catalog(lang).format(&format!("mobile.{key}"), params)
+}
+
+pub(crate) fn text_n(lang: &str, key: &str, n: usize) -> String {
+    blackhole_domain::i18n::catalog(lang).plural(&format!("mobile.{key}"), n as u64, &[])
 }
 
 fn host_of(url: &Url) -> String {
@@ -171,11 +199,16 @@ pub(crate) fn shared_target(text: &str, engine: SearchEngine) -> Option<Url> {
 }
 
 /// The shell's error page for `config` (`<` escaped so no text of the site closes the script).
-/// Its texts come from the catalog (`error.*`), in English like the rest of the mobile interface.
+/// Its texts come from the catalog (`error.*`), in English.
 pub fn error_page(config: &Value) -> String {
+    error_page_in(config, "en")
+}
+
+/// The error page in the interface's language.
+pub(crate) fn error_page_in(config: &Value, lang: &str) -> String {
     let mut config = config.clone();
-    let strings = blackhole_domain::i18n::catalog("en").with_prefix("error.");
-    config["i18n"] = serde_json::json!({"lang": "en", "s": strings});
+    let strings = blackhole_domain::i18n::catalog(lang).with_prefix("error.");
+    config["i18n"] = serde_json::json!({"lang": lang, "s": strings});
     let literal = config.to_string().replace('<', "\\u003c");
     ERROR_HTML.replace("__BH_ERROR__", &literal)
 }
@@ -199,6 +232,7 @@ impl Core {
             .ok()
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
+        let lang = blackhole_domain::i18n::resolve::<&str>(&svc.settings().language, &[]);
         Self {
             svc,
             blocker: Arc::new(Blocker {
@@ -221,12 +255,56 @@ impl Core {
             icons: crate::icons::Icons::load(data),
             permissions: crate::permissions::Permissions::default(),
             desktop: HashSet::new(),
+            crashes: HashMap::new(),
+            auth: crate::auth::Auth::default(),
+            popups: Vec::new(),
+            next_popup: crate::popups::POPUP_BASE,
+            organize: crate::organize::Organize::default(),
+            lang,
+            system: Vec::new(),
         }
     }
 
     pub(crate) fn save_prefs(&self) {
         if let Ok(raw) = serde_json::to_string(&self.prefs) {
             write_later(self.data.join("mobile.json"), raw);
+        }
+    }
+
+    pub(crate) fn t(&self, key: &str) -> String {
+        text(self.lang, key)
+    }
+
+    pub(crate) fn tf(&self, key: &str, params: &[(&str, &str)]) -> String {
+        text_f(self.lang, key, params)
+    }
+
+    pub(crate) fn tn(&self, key: &str, n: usize) -> String {
+        text_n(self.lang, key, n)
+    }
+
+    /// Follows the language setting and the system's languages; `true` when it changed.
+    fn relang(&mut self) -> bool {
+        let lang = blackhole_domain::i18n::resolve(&self.svc.settings().language, &self.system);
+        let changed = lang != self.lang;
+        self.lang = lang;
+        changed
+    }
+
+    /// The interface's texts in the current language.
+    fn i18n_message(&self) -> Effect {
+        let strings = blackhole_domain::i18n::catalog(self.lang).with_prefix("mobile.");
+        Effect::Ui {
+            msg: json!({"type": "i18n", "lang": self.lang, "s": strings}),
+        }
+    }
+
+    /// Why the Shields refused an address the user asked for.
+    fn shields_text(&self, why: &str) -> String {
+        match why {
+            "ad blocked" => self.t("shields_ad"),
+            "tracker blocked" => self.t("shields_tracker"),
+            _ => format!("Shields: {why}"),
         }
     }
 
@@ -255,6 +333,10 @@ impl Core {
     pub fn boot(&mut self) -> Vec<Effect> {
         self.live = Live::default();
         self.errors.clear();
+        if self.current.is_some_and(Self::is_popup) {
+            self.current = self.current.and_then(|tab| self.opener_of(tab));
+        }
+        self.popups.clear();
         let mut out = vec![self.web_prefs()];
         out.extend(match self.current.filter(|&tab| self.exists(tab)) {
             Some(tab) => self.show(tab, None),
@@ -279,8 +361,15 @@ impl Core {
         bridge::to_json(&effects)
     }
 
+    /// A session tab that leaves no trace (history, icons, sync): a private tab, or a popup.
     pub(crate) fn is_private(tab: u64) -> bool {
         tab >= PRIVATE_BASE
+    }
+
+    /// Private browsing proper: a private tab, or the popup of one.
+    pub(crate) fn in_private(&self, tab: u64) -> bool {
+        let tab = self.opener_of(tab).unwrap_or(tab);
+        Self::is_private(tab) && !Self::is_popup(tab)
     }
 
     pub(crate) fn tab_url(&self, tab: u64) -> Option<Url> {
@@ -297,11 +386,15 @@ impl Core {
     }
 
     pub(crate) fn exists(&self, tab: u64) -> bool {
+        if Self::is_popup(tab) {
+            return self.opener_of(tab).is_some();
+        }
         self.tab_url(tab).is_some()
     }
 
     /// WebView profile of a tab: one per space (the first is the default profile).
-    fn profile_of(&self, tab: u64) -> String {
+    pub(crate) fn profile_of(&self, tab: u64) -> String {
+        let tab = self.opener_of(tab).unwrap_or(tab);
         if Self::is_private(tab) {
             return "private".into();
         }
@@ -319,7 +412,7 @@ impl Core {
         }
     }
 
-    fn page_script(&self) -> String {
+    pub(crate) fn page_script(&self) -> String {
         let shields = self.svc.policy().shields();
         let config = json!({
             "hide_ads": shields.hide_ads,
@@ -331,7 +424,7 @@ impl Core {
 
     /// Puts `tab` on screen, creating its view (at `load`, or its saved address) when needed.
     pub(crate) fn show(&mut self, tab: u64, load: Option<Url>) -> Vec<Effect> {
-        let mut out = Vec::new();
+        let mut out = self.drop_popups(Some(tab));
         let alive = self.live.contains(tab);
         let url = load.clone().or_else(|| self.tab_url(tab));
         if let Some(url) = url {
@@ -340,7 +433,7 @@ impl Core {
                     tab,
                     url: url.to_string(),
                     profile: self.profile_of(tab),
-                    private: Self::is_private(tab),
+                    private: self.in_private(tab),
                     script: self.page_script(),
                     desktop: self.desktop.contains(&tab),
                 });
@@ -356,12 +449,41 @@ impl Core {
         }
         self.current = Some(tab);
         out.push(Effect::Show { tab: Some(tab) });
+        out.extend(self.auth_prompt());
+        out
+    }
+
+    /// The renderer of `tab` died: its view is gone. A hidden tab loads again when it is shown;
+    /// the one on screen is reloaded once, and left for the start page when it dies again
+    /// within `CRASH_LOOP`.
+    fn crashed(&mut self, tab: u64, now: i64) -> Vec<Effect> {
+        self.live.remove(tab);
+        self.errors.remove(&tab);
+        let mut out = self.auth_of_closed(tab);
+        out.extend(self.permissions_of_closed(tab));
+        out.push(Effect::Drop { tab });
+        if Self::is_popup(tab) {
+            out.extend(self.close_popup(tab));
+            return out;
+        }
+        if self.current != Some(tab) || !self.exists(tab) {
+            return out;
+        }
+        if self.crashes.insert(tab, now).is_some_and(|at| now - at < CRASH_LOOP) {
+            out.extend(self.home());
+            out.push(Self::toast(&self.t("page_crashing"), false));
+        } else {
+            out.extend(self.show(tab, None));
+        }
+        out.push(self.state());
         out
     }
 
     pub(crate) fn home(&mut self) -> Vec<Effect> {
+        let mut out = self.drop_popups(None);
         self.current = None;
-        vec![Effect::Show { tab: None }]
+        out.push(Effect::Show { tab: None });
+        out
     }
 
     pub(crate) fn toast(text: &str, undo: bool) -> Effect {
@@ -372,7 +494,7 @@ impl Core {
 
     /// Evaluates an address the user or a page asked for: `None` when the Shields refuse it.
     /// Plain http is upgraded to https unless the user accepted the plain site.
-    fn evaluate(&self, url: &Url) -> Result<Url, &'static str> {
+    pub(crate) fn evaluate(&self, url: &Url) -> Result<Url, &'static str> {
         if url.scheme() == "http" && self.bypasses.allows(&host_of(url)) {
             return Ok(url.clone());
         }
@@ -413,9 +535,9 @@ impl Core {
         let asked = resolve_input(input, self.svc.settings().search_engine);
         let url = match self.evaluate(&asked) {
             Ok(u) => u,
-            Err(why) => return vec![Self::toast(&format!("Shields: {why}"), false)],
+            Err(why) => return vec![Self::toast(&self.shields_text(why), false)],
         };
-        let in_private = private || self.current.is_some_and(Self::is_private) && !new_tab;
+        let in_private = private || self.current.is_some_and(|t| self.in_private(t)) && !new_tab;
         let mut out = match self.current {
             Some(tab) if !new_tab => {
                 if let Some(t) = self.private.iter_mut().find(|t| t.id == tab) {
@@ -430,7 +552,7 @@ impl Core {
                     let fresh = !self.live.contains(id.0);
                     self.show(id.0, fresh.then(|| url.clone()))
                 }
-                None => vec![Self::toast("Shields: blocked", false)],
+                None => vec![Self::toast(&self.t("shields_blocked"), false)],
             },
         };
         if let Some(tab) = self.current {
@@ -440,11 +562,18 @@ impl Core {
         out
     }
 
-    fn close(&mut self, tab: u64) -> Vec<Effect> {
+    pub(crate) fn close(&mut self, tab: u64) -> Vec<Effect> {
+        if Self::is_popup(tab) {
+            return self.close_popup(tab);
+        }
         let Some(url) = self.tab_url(tab) else {
             return Vec::new();
         };
-        let mut out = Vec::new();
+        // Its popup goes first (the tab comes back on screen, then closes like any other).
+        let mut out = match self.popups.iter().find(|p| p.opener == tab).map(|p| p.id) {
+            Some(popup) => self.close_popup(popup),
+            None => Vec::new(),
+        };
         let private = Self::is_private(tab);
         if private {
             self.private.retain(|t| t.id != tab);
@@ -460,8 +589,8 @@ impl Core {
                 .spaces()
                 .iter()
                 .flat_map(|s| s.tabs.iter())
-                .any(|t| t.id == TabId(tab) && t.pinned);
-            // Quick access tiles are put to sleep, never removed (like the desktop).
+                .any(|t| t.id == TabId(tab) && (t.pinned || t.folder.is_some()));
+            // Quick access tiles and folder tabs are put to sleep, never removed (like the desktop).
             let done = if pinned {
                 self.svc.release_tab(TabId(tab))
             } else {
@@ -476,7 +605,9 @@ impl Core {
         self.upgraded.remove(&tab);
         self.pages.remove(&tab);
         self.desktop.remove(&tab);
+        self.crashes.remove(&tab);
         out.extend(self.permissions_of_closed(tab));
+        out.extend(self.auth_of_closed(tab));
         out.push(Effect::Drop { tab });
         self.closed.push(Closed { url, private });
         if self.closed.len() > MAX_CLOSED {
@@ -494,7 +625,7 @@ impl Core {
                 None => self.home(),
             });
         }
-        out.push(Self::toast("Tab closed", true));
+        out.push(Self::toast(&self.t("tab_closed"), true));
         out.push(self.state());
         out
     }
@@ -530,14 +661,16 @@ impl Core {
             .collect();
         for id in ids {
             out.extend(self.permissions_of_closed(id));
+            out.extend(self.auth_of_closed(id));
         }
         self.closed.retain(|c| !c.private);
+        // (A private tab's popup goes with it, before the profile is cleared.)
+        if self.current.is_some_and(|t| self.in_private(t)) {
+            out.extend(self.home());
+        }
         out.push(Effect::ClearProfile {
             profile: "private".into(),
         });
-        if self.current.is_some_and(Self::is_private) {
-            out.extend(self.home());
-        }
         out.push(self.state());
         out
     }
@@ -721,10 +854,13 @@ impl Core {
             config["why"] = json!(if self.blocker.is_ad(&host) { "ad" } else { "tracker" });
         }
         self.errors.insert(tab, (shown.clone(), page));
+        if let Some(page) = self.pages.get_mut(&tab) {
+            page.1.clear();
+        }
         vec![
             Effect::Html {
                 tab,
-                html: error_page(&config),
+                html: error_page_in(&config, self.lang),
                 url: shown.to_string(),
             },
             self.state(),
@@ -734,7 +870,28 @@ impl Core {
     pub fn command(&mut self, command: MobileCommand) -> Vec<Effect> {
         use MobileCommand as C;
         match command {
-            C::Ready => vec![self.web_prefs(), self.icons_message(), self.state()],
+            C::Ready => vec![self.web_prefs(), self.i18n_message(), self.icons_message(), self.state()],
+            C::SetLanguage { language } => {
+                if !self.svc.set_language(&language) {
+                    return Vec::new();
+                }
+                self.relang();
+                vec![self.i18n_message(), self.state()]
+            }
+            C::RenameTab { .. }
+            | C::MoveTabToSpace { .. }
+            | C::MoveTabToFolder { .. }
+            | C::CloseOtherTabs { .. }
+            | C::RenameSpace { .. }
+            | C::DeleteSpace { .. }
+            | C::UndoRemoval
+            | C::AddFolder { .. }
+            | C::RenameFolder { .. }
+            | C::ToggleFolder { .. }
+            | C::DeleteFolder { .. }
+            | C::Tidy
+            | C::Untidy
+            | C::DismissTidy => self.organize(command),
             C::Navigate { input, new_tab, private } => self.navigate(&input, new_tab, private),
             C::OpenLink { url, private } => match web_url(&url) {
                 Some(url) => self.navigate(url.as_str(), true, private),
@@ -765,7 +922,8 @@ impl Core {
                 if self.live.contains(tab) {
                     out.push(Effect::DesktopMode { tab, on });
                 }
-                out.push(Self::toast(if on { "Desktop site" } else { "Mobile site" }, false));
+                let said = if on { self.t("desktop_site") } else { self.t("mobile_site") };
+                out.push(Self::toast(&said, false));
                 out.push(self.state());
                 out
             }
@@ -813,11 +971,11 @@ impl Core {
             }
             C::Suggest { text } => vec![self.suggestions(&text)],
             C::History { query } => vec![self.history(&query)],
-            C::ForgetHistory { url } => {
+            C::ForgetHistory { url, query } => {
                 if let Ok(url) = Url::parse(&url) {
                     self.svc.forget_history(&url);
                 }
-                vec![self.history(""), self.state()]
+                vec![self.history(&query), self.state()]
             }
             C::ClearHistory => {
                 self.svc.clear_history();
@@ -832,7 +990,7 @@ impl Core {
                 self.permissions.clear();
                 vec![
                     Effect::ClearProfile { profile: "*".into() },
-                    Self::toast("Cookies and site data cleared", false),
+                    Self::toast(&self.t("site_data_cleared"), false),
                     self.state(),
                 ]
             }
@@ -843,7 +1001,7 @@ impl Core {
                     return Vec::new();
                 };
                 if !page.can_bypass() || !self.bypasses.allow(&host_of(&url)) {
-                    return vec![Self::toast("This site cannot be opened without a secure connection", false)];
+                    return vec![Self::toast(&self.t("needs_secure"), false)];
                 }
                 self.errors.remove(&tab);
                 vec![Effect::Load {
@@ -853,6 +1011,8 @@ impl Core {
             }
             C::OpenExternal { url } if is_external(&url) => vec![Effect::External { url }],
             C::OpenExternal { .. } => Vec::new(),
+            C::AuthAnswer { id, user, password } => self.auth_answer(id, Some((user, password))),
+            C::AuthCancel { id } => self.auth_answer(id, None),
             C::DeviceShowCode
             | C::DeviceJoin { .. }
             | C::DeviceCancelPairing
@@ -884,6 +1044,9 @@ impl Core {
         use NativeEvent as E;
         match event {
             E::Started { tab, url } => {
+                if let Some(out) = self.popup_first_address(tab, &url) {
+                    return out;
+                }
                 let Some(url) = web_url(&url) else {
                     return Vec::new();
                 };
@@ -905,6 +1068,7 @@ impl Core {
                 if self.errors.contains_key(&tab) {
                     return Vec::new();
                 }
+                self.auth_loaded(tab);
                 let title = title.trim().to_owned();
                 self.pages.insert(tab, (url.clone(), title.clone()));
                 if let Some(t) = self.private.iter_mut().find(|t| t.id == tab) {
@@ -935,6 +1099,10 @@ impl Core {
                 vec![self.state()]
             }
             E::Navigating { tab, url } => {
+                if let Some(mut out) = self.popup_first_address(tab, &url) {
+                    out.insert(0, Effect::Cancel);
+                    return out;
+                }
                 if is_external(&url) {
                     return vec![
                         Effect::Cancel,
@@ -996,7 +1164,54 @@ impl Core {
                 Some(url) => self.error(tab, url, ErrorPage::Blocked),
                 None => Vec::new(),
             },
+            E::Blocked { tab } if self.current == Some(tab) => {
+                let mut msg = self.blocked_json();
+                msg["type"] = json!("blocked");
+                vec![Effect::Ui { msg }]
+            }
+            E::Blocked { .. } => Vec::new(),
+            E::Locale { tags } => {
+                self.system = tags;
+                if self.relang() {
+                    vec![self.i18n_message(), self.state()]
+                } else {
+                    Vec::new()
+                }
+            }
+            E::Crashed { tab } => self.crashed(tab, now_unix()),
+            E::HttpStatus { tab, url, status, probe } => {
+                let (Some(url), Some(page)) = (web_url(&url), classify_status(status)) else {
+                    return Vec::new();
+                };
+                // The page the status belongs to must still be the tab's, and not ours already.
+                if self.errors.contains_key(&tab) || self.pages.get(&tab).map(|p| &p.0) != Some(&url) {
+                    return Vec::new();
+                }
+                let Some(body) = serde_json::from_str::<String>(&probe)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                else {
+                    return Vec::new();
+                };
+                // An empty answer: the WebView shows its own "Webpage not available" in its place.
+                let bare = is_engine_error_page(body["href"].as_str().unwrap_or_default())
+                    || is_bare_error_body(
+                    status,
+                    body["title"].as_str().unwrap_or_default(),
+                    body["text"].as_str().unwrap_or_default(),
+                    body["rich"].as_bool().unwrap_or(false),
+                );
+                if bare {
+                    self.error(tab, url, page)
+                } else {
+                    Vec::new()
+                }
+            }
+            E::Auth { id, tab, host, realm } => self.auth_asked(id, tab, &host, &realm),
+            E::NewWindow { tab, sized } => self.window_asked(tab, sized),
+            E::ClosedWindow { tab } => self.close_popup(tab),
             E::BackExhausted => match self.current {
+                Some(popup) if Self::is_popup(popup) => self.close_popup(popup),
                 Some(_) => {
                     let mut out = self.home();
                     out.push(self.state());
@@ -1007,9 +1222,9 @@ impl Core {
             E::Download { url, mime, disposition } => match web_url(&url) {
                 Some(u) if u.scheme() == "https" => vec![
                     Effect::Download { url, mime, disposition },
-                    Self::toast("Downloading…", false),
+                    Self::toast(&self.t("downloading"), false),
                 ],
-                _ => vec![Self::toast("Download refused: only secure (https) downloads are allowed", false)],
+                _ => vec![Self::toast(&self.t("download_refused"), false)],
             },
             E::Intent { url } => match web_url(&url) {
                 Some(url) => self.navigate(url.as_str(), true, false),
@@ -1049,31 +1264,54 @@ impl Core {
         }
     }
 
+    /// Requests refused this session, and for the site of the page on screen.
+    fn blocked_json(&self) -> Value {
+        let log = self.blocker.log.lock();
+        let site = self.current_page().map_or(0, |u| {
+            log.as_ref()
+                .map(|l| l.for_site(&host_of(&u)).iter().map(|(_, n)| n).sum::<u32>())
+                .unwrap_or(0)
+        });
+        let total = log.as_ref().map(|l| l.total()).unwrap_or(0);
+        json!({"total": total, "site": site})
+    }
+
     /// Everything the shell interface draws.
     pub fn state(&self) -> Effect {
         let ws = self.svc.workspace();
         let space = ws.active_space();
-        let tab_json = |id: u64, title: &str, url: &Url, pinned: bool| {
+        // `own`: the user named the tab, the page's title does not replace it.
+        let tab_json = |id: u64, title: &str, url: &Url, pinned: bool, own: bool, folder: Option<u64>| {
             let (url, title) = match self.pages.get(&id) {
-                Some((u, t)) if !t.is_empty() => (u.clone(), t.clone()),
+                Some((u, t)) if !t.is_empty() && !own => (u.clone(), t.clone()),
                 Some((u, _)) => (u.clone(), title.to_owned()),
                 None => (url.clone(), title.to_owned()),
             };
             json!({
                 "id": id, "title": if title.is_empty() { host_of(&url) } else { title },
                 "url": url.as_str(), "host": host_of(&url).trim_start_matches("www."),
-                "pinned": pinned, "live": self.live.contains(id),
+                "pinned": pinned, "live": self.live.contains(id), "folder": folder, "renamed": own,
             })
         };
+        let folders: Vec<Value> = space
+            .folders
+            .iter()
+            .map(|f| {
+                json!({
+                    "id": f.id.0, "name": f.name, "icon": f.icon, "collapsed": f.collapsed,
+                    "parent": f.parent.map(|p| p.0),
+                })
+            })
+            .collect();
         let tabs: Vec<Value> = space
             .tabs
             .iter()
-            .map(|t| tab_json(t.id.0, &t.title, &t.url, t.pinned))
+            .map(|t| tab_json(t.id.0, &t.title, &t.url, t.pinned, t.renamed, t.folder.map(|f| f.0)))
             .collect();
         let private: Vec<Value> = self
             .private
             .iter()
-            .map(|t| tab_json(t.id, &t.title, &t.url, false))
+            .map(|t| tab_json(t.id, &t.title, &t.url, false, false, None))
             .collect();
         let spaces: Vec<Value> = ws
             .spaces()
@@ -1095,24 +1333,14 @@ impl Core {
         let settings = self.svc.settings();
         let shields = settings.shields;
         let page = self.current_page();
-        let site_blocked = page
-            .as_ref()
-            .map(|u| {
-                self.blocker
-                    .log
-                    .lock()
-                    .map(|l| l.for_site(&host_of(u)).iter().map(|(_, n)| n).sum::<u32>())
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
-        let total = self.blocker.log.lock().map(|l| l.total()).unwrap_or(0);
         let error = self.current.and_then(|t| self.errors.get(&t)).map(|(_, p)| p.key());
         Effect::Ui {
             msg: json!({
                 "type": "state",
                 "version": env!("CARGO_PKG_VERSION"),
                 "current": self.current,
-                "private": self.current.is_some_and(Self::is_private),
+                "private": self.current.is_some_and(|t| self.in_private(t)),
+                "popup": self.current.is_some_and(Self::is_popup),
                 "url": page.as_ref().map(Url::as_str),
                 "title": self.current.and_then(|t| self.pages.get(&t)).map(|p| p.1.clone()),
                 "secure": page.as_ref().is_some_and(|u| u.scheme() == "https"),
@@ -1120,10 +1348,12 @@ impl Core {
                 "space": {"id": space.id.0, "name": space.name, "color": space.color},
                 "spaces": spaces,
                 "tabs": tabs,
+                "folders": folders,
+                "tidy": self.tidy_json(),
                 "private_tabs": private,
                 "favorites": favorites,
                 "recent": recent,
-                "blocked": {"total": total, "site": site_blocked},
+                "blocked": self.blocked_json(),
                 "desktop": self.current.is_some_and(|t| self.desktop.contains(&t)),
                 "update": self.update_json(),
                 "devices": self.devices_json(),
@@ -1131,6 +1361,8 @@ impl Core {
                     "engine": settings.search_engine.id(),
                     "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
                     "animations": settings.animations,
+                    "language": settings.language,
+                    "languages": blackhole_domain::i18n::LANGUAGES.iter().map(|(id, label)| json!({"id": id, "label": label})).collect::<Vec<_>>(),
                     "theme": self.prefs.theme,
                     "trackers": settings.tracker_blocking,
                     "ads": settings.ad_blocking,
