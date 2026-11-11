@@ -165,6 +165,21 @@
     },
     true,
   );
+  // Pilot split: while the shell says this page drives the other pane (`__bhPilot`), a plain
+  // click on a link to another page is handed to the shell instead of being followed here.
+  addEventListener(
+    'click',
+    (e) => {
+      if (!window.__bhPilot || e.button !== 0 || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return;
+      const link = linkAt(e);
+      if (!link || link.hasAttribute('download')) return;
+      if (link.href.split('#')[0] === location.href.split('#')[0]) return;
+      e.preventDefault();
+      e.stopPropagation();
+      post({ cmd: 'pilot_link', url: link.href });
+    },
+    true,
+  );
   // The selected text under the pointer (the shell bounds and cleans it again).
   const selectionAt = (e) => {
     const sel = getSelection();
@@ -189,10 +204,15 @@
       if (e.shiftKey || editable(e)) return;
       const link = linkAt(e);
       const text = selectionAt(e);
-      if (!link && !text.trim()) return;
+      // A highlight under the pointer (highlights.js) has its own entries in the menu.
+      let mark = 0;
+      try {
+        mark = (window.__bhMarks && window.__bhMarks.at(e.clientX, e.clientY)) || 0;
+      } catch (_) {}
+      if (!link && !text.trim() && !mark) return;
       e.preventDefault();
       e.stopPropagation();
-      post({ cmd: 'link_menu', url: link ? link.href : '', text, x: e.clientX, y: e.clientY });
+      post({ cmd: 'link_menu', url: link ? link.href : '', text, mark, x: e.clientX, y: e.clientY });
     },
     true,
   );

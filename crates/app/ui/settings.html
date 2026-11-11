@@ -228,7 +228,12 @@
   <section id="privacy" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1 data-i18n="settings.privacy">Privacy</h1><p class="lead"><span data-i18n="settings.privacy_lead">No telemetry, trackers blocked, history stays on this machine.</span></p></div></header>
     <div class="card"><h2 data-i18n="menu.shields">Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
-      <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). The https upgrade and the removal of tracking parameters stay on. Pages already open keep their behaviour until reloaded.</span></p></div>
+      <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). Clean links drop the tracking parameters of an address and skip the redirect pages of search engines and social networks. The https upgrade stays on. Pages already open keep their behaviour until reloaded.</span></p></div>
+    <div class="card"><h2>Recall</h2><div class="rows" id="recall"></div>
+      <div class="list rows" id="recallsites"></div>
+      <div class="actions"><input class="field" id="recallsite" placeholder="example.com" spellcheck="false" autocomplete="off" data-i18n-aria="settings.recall_never"><button class="btn" id="recalladd"><span data-i18n="settings.recall_never">Never remember this site</span></button><button class="btn" id="recallclear"><i data-icon="trash"></i><span data-i18n="settings.recall_clear">Forget everything</span></button></div>
+      <p class="status" id="recallcount" aria-live="polite"></p>
+      <p class="note"><span data-i18n="settings.recall_note">The text of the pages you read is kept on this computer only, encrypted with a key held by the system's credential store, so the command bar can find a page from a few words of it. Never remembered: private windows, black hole tabs, pages with a password field, local addresses and the sites listed here. Clearing the history clears Recall too.</span></p></div>
     <div class="card"><h2 data-i18n="menu.this_session">This session</h2><div class="stat"><b id="blocked">0</b><span data-i18n="settings.requests_blocked">requests blocked</span></div></div>
     <div class="card"><h2 data-i18n="menu.blocked_hosts">Blocked hosts</h2><div class="list rows" id="blocklist"></div>
       <div class="actions"><button class="btn" id="clearblocked"><i data-icon="reload"></i><span data-i18n="settings.reset_list">Reset list</span></button></div></div>
@@ -606,12 +611,14 @@ window.bh = {
     renderCalendar(s.calendar);
     renderDevices(s.devices);
     renderPasswords(s.passwords);
+    renderRecall(s.recall);
     const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
     put($('shields'), 
       shield(bhT('settings.block_ads'), 'ads', s.adBlocking),
       shield(bhT('settings.hide_ads'), 'hide_ads', s.shields.hideAds),
       shield(bhT('settings.video_ads'), 'video_ads', s.shields.videoAds),
       shield(bhT('settings.cookie_banners'), 'cookie_banners', s.shields.cookieBanners),
+      shield(bhT('settings.clean_links'), 'clean_links', s.shields.cleanLinks),
     );
     put($('extpriv'), option(bhT('settings.ext_private'), s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
       bhT('settings.ext_private_sub')));
@@ -735,6 +742,37 @@ function confirmClick(btn, question, run) {
 confirmClick($('clear'), 'home.clear_confirm', () => send({ cmd: 'clear_history' }));
 
 // Calendar: the secret addresses are never sent back to this page, only their calendar's name.
+// Recall: the switch, how many pages are remembered, the sites never remembered.
+function renderRecall(r) {
+  if (!r) return;
+  const sw = option(bhT('settings.recall_on'), r.on && r.available, () => send({ cmd: 'set_recall', on: !r.on }), true,
+    bhT(r.available ? 'settings.recall_sub' : 'palette.recall_private', { keys: bhKeys('mod+shift+f') }));
+  sw.disabled = !r.available;
+  put($('recall'), sw);
+  put($('recallsites'), ...(r.exclude || []).map((site) => {
+    const row = el('div', 'row');
+    const ico = el('div', 'ico neutral');
+    ico.append(bhIcon('eye'));
+    const rm = el('button', 'btn small', bhT('easel.remove'));
+    rm.onclick = () => send({ cmd: 'recall_exclude', site, on: false });
+    const text = el('div', 'grow');
+    text.append(el('div', 'name', site), el('div', 'sub', bhT('settings.recall_never_sub')));
+    row.append(ico, text, rm);
+    return row;
+  }));
+  $('recallcount').textContent = r.count == null ? '' : bhTn('settings.recall_count', r.count);
+  $('recalladd').disabled = $('recallsite').disabled = !r.available;
+  $('recallclear').disabled = !r.available || r.count === 0;
+}
+$('recalladd').onclick = () => {
+  const site = $('recallsite').value.trim();
+  if (!site) return;
+  send({ cmd: 'recall_exclude', site, on: true });
+  $('recallsite').value = '';
+};
+$('recallsite').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('recalladd').click(); });
+confirmClick($('recallclear'), 'settings.recall_clear_confirm', () => send({ cmd: 'recall_clear' }));
+
 function renderCalendar(c) {
   if (!c) return;
   put($('calsrc'), ...(c.sources.length ? c.sources.map((label, index) => {

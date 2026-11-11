@@ -259,7 +259,8 @@ pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {
 mod win;
 #[cfg(windows)]
 pub use win::{
-    app_is_active, block_hosts, frontmost_foreign_window, on_renderer_gone, raise_view, round_view,
+    app_is_active, block_hosts, delete_profile, frontmost_foreign_window, on_renderer_gone,
+    raise_view, round_view,
     set_view_background, ExtensionHost,
 };
 

@@ -104,6 +104,21 @@ pub fn on_renderer_gone(view: &wry::WebView, gone: impl Fn() + 'static) {
     }
 }
 
+/// Deletes the engine profile of a page view (cookies, storage, cache) with everything in it:
+/// the end of a black hole tab. WebView2 closes the views of that profile; drop `view` next.
+pub fn delete_profile(view: &wry::WebView) {
+    // SAFETY: plain COM calls on the thread that owns the view.
+    unsafe {
+        let Ok(page) = view.webview().cast::<ICoreWebView2_13>() else {
+            return;
+        };
+        let Ok(profile) = page.Profile() else { return };
+        if let Ok(profile) = profile.cast::<ICoreWebView2Profile8>() {
+            let _ = profile.Delete();
+        }
+    }
+}
+
 /// Clips a page view to rounded corners with a window region. The region keeps the size it was
 /// made for, so call this again after every resize.
 pub fn round_view(view: &wry::WebView, radius: i32) {

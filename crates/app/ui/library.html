@@ -131,6 +131,8 @@
   .col .fl { display: flex; align-items: center; gap: var(--bh-space-6); font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); padding: var(--bh-space-8) var(--bh-space-14) var(--bh-space-2); }
   .col .row { min-height: 36px; padding: var(--bh-space-6) var(--bh-space-14); }
   .col .row b { font-weight: 400; }
+  .row b.quote { white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  textarea.field.note { display: block; width: 100%; height: auto; margin-top: var(--bh-space-4); padding: var(--bh-space-6) var(--bh-space-10); resize: vertical; font: inherit; color: inherit; }
 
   /* Empty state: an icon in a soft circle and one sentence. */
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--bh-space-10); padding: var(--bh-space-56) var(--bh-space-16); text-align: center;
@@ -154,6 +156,7 @@
   <button class="nav" data-s="easels"><i data-icon="easel"></i><span class="nm" data-i18n="library.easels">Easels &amp; Notes</span><span class="count" data-c="easels"></span></button>
   <button class="nav" data-s="spaces"><i data-icon="grid"></i><span class="nm" data-i18n="library.spaces">Spaces</span><span class="count" data-c="spaces"></span></button>
   <button class="nav" data-s="history"><i data-icon="history"></i><span class="nm" data-i18n="library.history">History</span></button>
+  <button class="nav" data-s="highlights"><i data-icon="marker"></i><span class="nm" data-i18n="library.highlights">Highlights</span><span class="count" data-c="highlights"></span></button>
   <button class="nav" data-s="watches"><i data-icon="eye"></i><span class="nm" data-i18n="library.watches">Watched Areas</span><span class="count" data-c="watches"></span></button>
   <button class="nav" data-s="archive"><i data-icon="archive"></i><span class="nm" data-i18n="library.archive">Archived Tabs</span><span class="count" data-c="archive"></span></button>
   <button class="btn" id="back"><i data-icon="back"></i><span data-i18n="library.back">Back</span></button>
@@ -164,6 +167,8 @@
 // Every text from a page, a file or a catalog goes in with textContent / attributes only.
 const send = (o) => window.ipc.postMessage(JSON.stringify(o));
 let S = null, sec = 'media', q = '', filter = 'all', clearArm = {};
+// Highlights: the one whose note is being written, what was typed so far, the shell's last request.
+let markEdit = 0, markDraft = null, markSeq = 0, painting = false;
 const $ = (id) => document.getElementById(id);
 const host = (u) => { try { return new URL(u).host; } catch { return u || ''; } };
 function el(tag, cls, text) {
@@ -212,6 +217,7 @@ const SECTIONS = {
   easels: { icon: 'easel', title: 'library.easels' },
   spaces: { icon: 'grid', title: 'library.spaces' },
   history: { icon: 'history', title: 'library.history' },
+  highlights: { icon: 'marker', title: 'library.highlights' },
   watches: { icon: 'eye', title: 'library.watches' },
   archive: { icon: 'archive', title: 'library.archive' },
 };
@@ -364,6 +370,47 @@ const VIEWS = {
     if (l.some((w) => w.unread)) setTimeout(() => send({ cmd: 'watches_seen' }), 1500);
     return [...out, card];
   },
+  highlights() {
+    // Passages marked on pages, by page; a note is written on the highlight's own row.
+    const pages = ((S.highlights || {}).pages || [])
+      .map((p) => ({ ...p, marks: p.marks.filter((m) => has(p.title + p.url + m.quote + m.note)) }))
+      .filter((p) => p.marks.length);
+    const total = ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0);
+    const out = [header(bhTn('library.items', total)), tools(bhT('library.search_highlights'), false, total ? 'highlights' : null)];
+    if (!pages.length) return [...out, empty('marker', bhT('library.highlights_empty'))];
+    for (const p of pages) {
+      out.push(el('div', 'day', p.title || host(p.url)));
+      const card = el('div', 'card');
+      for (const m of p.marks) {
+        const title = el('b', 'quote', m.quote);
+        let sub;
+        if (markEdit === m.id) {
+          sub = el('textarea', 'field note');
+          sub.id = 'note'; sub.rows = 2; sub.maxLength = 2000; sub.value = markDraft == null ? m.note : markDraft;
+          sub.placeholder = bhT('library.note_placeholder');
+          sub.setAttribute('aria-label', bhT('library.note_placeholder'));
+          sub.onclick = (e) => e.stopPropagation();
+          sub.oninput = () => { markDraft = sub.value; };
+          const done = (save) => { const note = sub.value; markEdit = 0; markDraft = null; if (save) send({ cmd: 'highlight_note', id: m.id, note }); render(); };
+          sub.onkeydown = (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); done(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); done(false); }
+          };
+          sub.onblur = () => { if (!painting && markEdit === m.id) done(true); };
+        } else {
+          sub = el('i', null, [m.note || null, host(p.url), m.at ? ago(m.at, S.now) : null].filter(Boolean).join(' · '));
+        }
+        card.append(row(tile(m.note ? 'ok' : '', 'marker'), title, sub, () => send({ cmd: 'highlight_open', id: m.id }), [
+          iconButton('edit', bhT(m.note ? 'menu.highlight_edit_note' : 'menu.highlight_add_note'), () => { markEdit = m.id; markDraft = null; render(); }),
+          iconButton('easel', bhT('library.to_easel'), () => send({ cmd: 'highlight_to_easel', id: m.id })),
+          iconButton('close', bhT('menu.highlight_remove'), () => send({ cmd: 'highlight_remove', id: m.id })),
+        ]));
+      }
+      out.push(card);
+    }
+    return out;
+  },
   archive() {
     const l = S.archive.filter((a) => has(a.title + a.url));
     const out = [header(bhTn('library.items', S.archive.length)), tools(bhT('library.search_archive'), false, 'archive')];
@@ -376,7 +423,8 @@ const VIEWS = {
 
 function counts() {
   const n = { media: S.media.length, downloads: S.downloads.length, easels: S.easels.length, spaces: S.spaces.length,
-    watches: (S.watches || []).length, archive: S.archive.length };
+    watches: (S.watches || []).length, archive: S.archive.length,
+    highlights: ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0) };
   const live = S.downloads.filter((d) => !d.done).length, unread = (S.watches || []).filter((w) => w.unread).length;
   document.querySelectorAll('.count').forEach((c) => {
     const k = c.dataset.c;
@@ -395,8 +443,11 @@ function render() {
   const had = document.activeElement && document.activeElement.id === 'q';
   const wrap = el('div', 'wrap');
   wrap.append(...VIEWS[sec]());
+  painting = true;
   m.replaceChildren(wrap);
+  painting = false;
   const qi = $('q'); if (qi && had) { qi.focus(); qi.setSelectionRange(q.length, q.length); }
+  const ni = $('note'); if (ni) { ni.focus(); ni.setSelectionRange(ni.value.length, ni.value.length); }
 }
 
 const cv = $('fx'), cx = cv.getContext('2d'); let raf = 0;
@@ -473,6 +524,8 @@ window.bh = {
   render: (s) => {
     if (!s.history && S) s.history = S.history;
     S = s;
+    const edit = (s.highlights || {}).edit;
+    if (edit && edit[0] > markSeq) { markSeq = edit[0]; if (edit[1]) { markEdit = edit[1]; markDraft = null; } }
     if (s.jump && s.jump[0] > jumped) { jumped = s.jump[0]; if (s.jump[1] && SECTIONS[s.jump[1]]) { sec = s.jump[1]; q = ''; filter = 'all'; } }
     render();
   },

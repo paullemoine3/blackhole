@@ -2,24 +2,29 @@
 //! `zeroize` to wipe secrets.
 
 pub mod changelog;
+pub mod clean_link;
 pub mod easel;
 pub mod error_page;
 pub mod extension;
 pub mod handoff;
+pub mod highlights;
 pub mod history;
 pub mod http_auth;
 pub mod i18n;
 pub mod meetings;
 pub mod omnibox;
 pub mod passwords;
+pub mod pilot;
 pub mod pip;
 pub mod popup;
 pub mod privacy;
+pub mod recall;
 pub mod selection;
 pub mod settings;
 pub mod sync;
 pub mod watch;
 pub mod workspace;
+pub mod wormhole;
 
 pub use easel::{Easel, Easels, Item as EaselItem, ItemKind as EaselItemKind};
 pub use extension::{matches_pattern, ContentScript, Extension, Injection};

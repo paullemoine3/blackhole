@@ -298,6 +298,18 @@ impl Core {
                     }
                 }
                 Event::Delivered(name) => out.push(Self::toast(&format!("Opened on {name}"), false)),
+                // Wormhole: the lite version shows a text it receives and takes no file (the
+                // sender is told at once rather than left waiting).
+                Event::BeamOffer { device, beam, .. } => {
+                    if let Some(n) = &self.nearby {
+                        n.handle.request(Request::BeamAnswer { device, beam, accept: false });
+                    }
+                }
+                Event::BeamText { from, text } => {
+                    let short: String = text.chars().take(120).collect();
+                    out.push(Self::toast(&format!("From {from}: {short}"), false));
+                }
+                Event::BeamFile { .. } | Event::BeamSent { .. } => {}
                 Event::Snapshot { device, name, json } => out.extend(self.on_ledger(device, name, &json)),
                 Event::Status(status) => {
                     // The mobile interface is in English for now (see docs/android.md).

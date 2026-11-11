@@ -113,6 +113,41 @@ cargo test --workspace --locked
 - Continuer sur l'autre appareil (réseau local, sans serveur ni compte) : `domain::handoff` (`format_code` / `parse_code` : 12 caractères Crockford = 60 bits, `can_continue` http(s), `has_position` / `resume_url` : `t=` pour YouTube et les VOD Twitch, `is_fresh` 10 min, `Seen` anti-rejeu). `infrastructure::handoff` : `spawn(Config)` → `Handle` (`Request` / `Event`), thread unique, socket UDP ouverte seulement s'il y a un appareil appairé ou un appairage en cours (`PORT` 47807, sinon port éphémère si une autre fenêtre le tient : elle envoie mais ne reçoit pas), paquets `BH1` + type + nonce + ChaCha20-Poly1305 (en-tête authentifié), enveloppe `{from, at, t, …}` (`hello`, `tab`, `ack`, `unpair`, `offer`, `accept`). Appairage : clé du code = SHA-256 étiré 100 000 fois, chaque côté envoie une moitié aléatoire, clé de paire = SHA-256(clé du code, moitiés) stockée dans `devices.bin` (`Vault::named`). Découverte par `hello` diffusé (255.255.255.255) puis unicast ; un onglet est renvoyé jusqu'à l'`ack` (6 essais). Test bout à bout en boucle locale dans `infrastructure`. App `handoff.rs` : `Nearby` (pas en fenêtre privée ; `Config::loopback` sous la feature `devtools`, pour éviter l'invite du pare-feu), nom d'appareil par plateforme (`COMPUTERNAME` / nom d'hôte), position lue par `POSITION_JS`, commandes `device_show_code`, `device_join`, `device_cancel_pairing`, `device_forget`, `continue_on`, état `devices` (menu d'onglet) et Réglages > Devices (jamais les clés), action de palette `continue:<id>`. macOS : `NSLocalNetworkUsageDescription` (Info.plist de `package-macos.sh`). L'échange réel Windows ↔ Mac n'a pas été testé.
 - Réseau : `ureq` avec `native-certs` (magasin de certificats du système) ; les téléchargements du catalogue et des mises à jour gardent leur vérification SHA-256.
 
+## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
+
+Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 10 captures `f01`–`f10` ; réseau requis ;
+le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
+
+- Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
+  `PrivacyPolicy::evaluate` avant le passage en https ; la cible d'une redirection est rejugée
+  (jamais un contournement des listes). `Msg::LinkCleaned` compte pour le rapport de confidentialité.
+- Split pilote : `domain/pilot.rs`, `app/pilot.rs` (`Running::pilot`, session). La page ne fait
+  que signaler un clic (`PageEvent::PilotLink`, drapeau `__bhPilot` posé par le shell) : c'est le
+  shell qui vérifie le pilote et évalue l'adresse. Reposer le drapeau à chaque chargement.
+- Onglet trou noir : `Workspace::open_burner` / `is_burner` (session, jamais écrit), `Store::Burner`
+  (macOS : magasin éphémère par vue ; Windows : profil InPrivate `BlackHole-burn-<lancement>-<id>`,
+  `delete_profile` dans `drop_view`, `remove_burner_profiles` au démarrage). Jamais mis en veille
+  (`discard_idle_tabs`), quatre au plus ; ni historique, ni archive, ni synchro, ni Recall, ni
+  surlignages. Toute nouvelle fonction qui garde une trace d'une page doit tester `is_burner`.
+- Surlignages : `domain/highlights.rs`, `HighlightStore` (`highlights.json`, `write_later`),
+  `ui/highlights.js` (CSS Custom Highlight, aucun nœud modifié, rien ne tourne sans surlignage),
+  `app/highlights.rs`. La page répond aux questions du shell (`capture`, `at`) ; l'adresse vient du
+  moteur ; l'id donné par la page est vérifié contre les surlignages de cette page.
+- Recall : `domain/recall.rs`, `infrastructure/recall.rs` (fil `bh-recall`, 64 fichiers chiffrés
+  `recall/NN.bin`, clé `Vault::shared_key` lue sur ce fil), `app/recall.rs`. `Settings::recall`
+  (faux par défaut) et `recall_exclude`. Lecture 4 s après `Loaded`, page à l'écran seulement ;
+  jamais avec un champ de mot de passe, en privé, en trou noir, sur une adresse locale. Effacer
+  l'historique passe par `recall_forget`.
+- Wormhole : `domain/wormhole.rs`, `infrastructure/wormhole.rs` (`Outbound` / `Inbound`), messages
+  `beam` / `beam_reply` / `chunk` dans `infrastructure/handoff.rs` (`Tag`, fenêtre `BEAM_WINDOW`).
+  Fichier reçu seulement après accord (`Event::BeamOffer` → `Request::BeamAnswer`), écrit en
+  `.part` puis renommé une fois le SHA-256 vérifié ; texte reçu jamais copié sans clic. Android :
+  texte affiché, fichier refusé.
+- `json!` de `ui_settings` : ajouter les nouvelles clés par `state["clé"] = …` (la macro atteint
+  sa limite de récursion).
+- MSRV : pas de `is_multiple_of` ni `as_chunks`, même si Clippy les suggère.
+
 ## Raccourcis, recherche et glisser-déposer
 - Windows : les vues d'onglet désactivent les raccourcis navigateur de WebView2 (`with_browser_accelerator_keys(false)` dans `views::build_tab`), sinon Ctrl+F/G/P, F5, Alt+←/→ n'atteignent jamais la page. `ui/shortcuts.js` les reprend (F5 → `reload`, Ctrl+F5 → `r`, Alt+←/→ → `[`/`]`).
 - Ctrl/⌘+F/G sont traités après la page (écouteur en phase bulle) et seulement si elle ne les a pas pris (`defaultPrevented`) : Google Docs garde sa propre recherche.

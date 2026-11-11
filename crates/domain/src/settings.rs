@@ -52,6 +52,11 @@ pub struct Settings {
     pub collapsed_sections: BTreeSet<String>,
     /// Interface language: a code of `i18n::LANGUAGES`, or `i18n::SYSTEM` to follow the system.
     pub language: String,
+    /// Recall: the text of the pages read is remembered (encrypted, on this computer) so they
+    /// can be searched later. Off by default.
+    pub recall: bool,
+    /// Sites Recall never remembers (hosts without `www.`, their subdomains included).
+    pub recall_exclude: BTreeSet<String>,
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -117,6 +122,8 @@ impl Default for Settings {
             password_lock_minutes: 15,
             collapsed_sections: BTreeSet::new(),
             language: crate::i18n::SYSTEM.to_owned(),
+            recall: false,
+            recall_exclude: BTreeSet::new(),
         }
     }
 }

@@ -15,7 +15,9 @@
 
 use blackhole_domain::i18n::message;
 use crate::store::Vault;
+use crate::wormhole::{Done, Inbound, Outbound};
 use blackhole_domain::handoff::{self, Seen};
+use blackhole_domain::wormhole::{self as beam_rules, Kind};
 use chacha20poly1305::{
     aead::{rand_core::RngCore, Aead, AeadCore, KeyInit, OsRng, Payload},
     ChaCha20Poly1305, Key, Nonce,
@@ -59,6 +61,11 @@ const HELLO_EVERY: Duration = Duration::from_secs(30);
 /// A device not heard of for this long is shown as away.
 const ONLINE_FOR: Duration = Duration::from_secs(95);
 const TICK: Duration = Duration::from_millis(100);
+/// Wormhole: parts of a text or a file on their way at once (each is confirmed), how long an
+/// offer waits for its answer, and how long a transfer may stall.
+const BEAM_WINDOW: usize = 16;
+const BEAM_OFFER_FOR: Duration = Duration::from_secs(120);
+const BEAM_STALL: Duration = Duration::from_secs(60);
 
 fn now_secs() -> i64 {
     SystemTime::now()
@@ -217,6 +224,29 @@ enum Message {
         parts: u16,
         data: String,
     },
+    /// Wormhole: announces a text or a file (`kind`) of `size` bytes in `parts` parts, with
+    /// its SHA-256. `id` names the transfer.
+    Beam {
+        id: u64,
+        kind: String,
+        name: String,
+        size: u64,
+        parts: u32,
+        sha: String,
+    },
+    /// The answer to a `Beam`: send it, or do not.
+    BeamReply {
+        id: u64,
+        beam: u64,
+        ok: bool,
+    },
+    /// A part of the transfer `beam` (hexadecimal).
+    Chunk {
+        id: u64,
+        beam: u64,
+        part: u32,
+        data: String,
+    },
     /// The sender forgot this device: forget it too.
     Unpair,
     /// Pairing, sealed with the code's key: the device typing the code, then the one showing it.
@@ -279,6 +309,8 @@ pub struct Config {
     pub port: u16,
     pub peer_port: u16,
     pub broadcast: IpAddr,
+    /// Where received files are saved.
+    pub downloads: std::path::PathBuf,
 }
 
 impl Config {
@@ -315,6 +347,7 @@ impl Config {
             port: PORT,
             peer_port: PORT,
             broadcast,
+            downloads: crate::downloads_dir(),
         }
     }
 }
@@ -342,6 +375,23 @@ pub enum Request {
         device: String,
         json: String,
     },
+    /// Wormhole: sends a text or a file to a paired device.
+    Beam {
+        device: String,
+        payload: Cargo,
+    },
+    /// Wormhole: the user's answer to a file offered by a device (`Event::BeamOffer`).
+    BeamAnswer {
+        device: String,
+        beam: u64,
+        accept: bool,
+    },
+}
+
+/// What a Wormhole carries.
+pub enum Cargo {
+    Text(String),
+    File(std::path::PathBuf),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -370,6 +420,30 @@ pub enum Event {
         device: String,
         name: String,
         json: String,
+    },
+    /// Wormhole: a device offers a file; answer with `Request::BeamAnswer`.
+    BeamOffer {
+        device: String,
+        from: String,
+        beam: u64,
+        name: String,
+        size: u64,
+    },
+    /// Wormhole: a text arrived (cleaned and bounded; still untrusted content).
+    BeamText {
+        from: String,
+        text: String,
+    },
+    /// Wormhole: a file arrived, checked, and was saved at `path`.
+    BeamFile {
+        from: String,
+        name: String,
+        path: std::path::PathBuf,
+    },
+    /// Wormhole: the other device has all of what was sent (`name` is empty for a text).
+    BeamSent {
+        to: String,
+        name: String,
     },
     /// Something to tell the user (an error, mostly).
     Status(String),
@@ -426,6 +500,27 @@ struct Outgoing {
     next: Instant,
     /// A part of a ledger: no "delivered" nor "did not answer" for it.
     quiet: bool,
+    /// What it carries of a Wormhole transfer, if anything.
+    tag: Tag,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tag {
+    None,
+    /// The announcement of a transfer, or the answer to one.
+    Beam(u64),
+    /// A part of a transfer.
+    Chunk(u64),
+}
+
+/// A file a device offered, waiting for the user's answer.
+struct Offer {
+    device: String,
+    beam: u64,
+    name: String,
+    size: u64,
+    sha: String,
+    since: Instant,
 }
 
 /// A ledger arriving in parts.
@@ -453,6 +548,11 @@ struct Worker {
     bind_retry: Option<Instant>,
     shown: Option<Vec<DeviceInfo>>,
     incoming: HashMap<(String, u64), Incoming>,
+    /// Wormhole: what is being sent, what is being received, the files offered.
+    beams_out: Vec<Outbound>,
+    beams_in: Vec<Inbound>,
+    offers: Vec<Offer>,
+    downloads: std::path::PathBuf,
     events: Sender<Event>,
 }
 
@@ -475,6 +575,10 @@ impl Worker {
             bind_retry: None,
             shown: None,
             incoming: HashMap::new(),
+            beams_out: Vec::new(),
+            beams_in: Vec::new(),
+            offers: Vec::new(),
+            downloads: config.downloads,
             events,
         }
     }
@@ -712,7 +816,55 @@ impl Worker {
                     tries: 0,
                     next: Instant::now(),
                     quiet: false,
+                    tag: Tag::None,
                 });
+            }
+            Request::Beam { device, payload } => {
+                let Some(key) = self.key_of(&device) else {
+                    self.emit(Event::Status(message("msg.device_unpaired", &[])));
+                    return;
+                };
+                let id = u64::from_le_bytes(random_bytes());
+                let made = match &payload {
+                    Cargo::Text(text) => Outbound::text(id, &device, text),
+                    Cargo::File(path) => Outbound::file(id, &device, path),
+                };
+                let out = match made {
+                    Ok(out) => out,
+                    Err(why) => {
+                        self.emit(Event::Status(why));
+                        return;
+                    }
+                };
+                let announce = Message::Beam {
+                    id,
+                    kind: out.kind.id().to_owned(),
+                    name: out.name.clone(),
+                    size: out.size,
+                    parts: out.parts,
+                    sha: out.sha.clone(),
+                };
+                let packet = seal(&key, PAIRED, &self.envelope(announce));
+                self.push_quiet(id, &device, packet, Tag::Beam(id));
+                self.beams_out.push(out);
+            }
+            Request::BeamAnswer { device, beam, accept } => {
+                let Some(at) = self.offers.iter().position(|o| o.device == device && o.beam == beam) else {
+                    return;
+                };
+                let offer = self.offers.remove(at);
+                let ok = accept
+                    && match Inbound::file(beam, &device, &offer.name, offer.size, &offer.sha, &self.downloads) {
+                        Ok(inbound) => {
+                            self.beams_in.push(inbound);
+                            true
+                        }
+                        Err(why) => {
+                            self.emit(Event::Status(why));
+                            false
+                        }
+                    };
+                self.beam_reply(&device, beam, ok);
             }
             Request::SetSync { device, mode } => {
                 if !SYNC_MODES.contains(&mode.as_str()) {
@@ -760,6 +912,7 @@ impl Worker {
                         tries: 0,
                         next: Instant::now(),
                         quiet: true,
+                        tag: Tag::None,
                     });
                 }
             }
@@ -781,8 +934,111 @@ impl Worker {
         }
     }
 
+    fn key_of(&self, device: &str) -> Option<[u8; 32]> {
+        self.book.devices.iter().find(|d| d.id == device).and_then(Device::key)
+    }
+
+    /// Queues a packet that is sent until confirmed, without a word to the user about it.
+    fn push_quiet(&mut self, id: u64, device: &str, packet: Vec<u8>, tag: Tag) {
+        self.outgoing.push(Outgoing {
+            id,
+            device: device.to_owned(),
+            packet,
+            tries: 0,
+            next: Instant::now(),
+            quiet: true,
+            tag,
+        });
+    }
+
+    /// Wormhole: tells a device whether its transfer `beam` is wanted.
+    fn beam_reply(&mut self, device: &str, beam: u64, ok: bool) {
+        let Some(key) = self.key_of(device) else { return };
+        let id = u64::from_le_bytes(random_bytes());
+        let packet = seal(&key, PAIRED, &self.envelope(Message::BeamReply { id, beam, ok }));
+        self.push_quiet(id, device, packet, Tag::Beam(beam));
+    }
+
+    /// Wormhole: a transfer to a device is over before its end (no answer, a part lost for
+    /// good, a file that changed): everything of it is dropped and the user is told `why`.
+    fn beam_failed(&mut self, beam: u64, why: &str) {
+        let before = self.beams_out.len();
+        self.beams_out.retain(|b| b.id != beam);
+        self.outgoing.retain(|o| o.tag != Tag::Beam(beam) && o.tag != Tag::Chunk(beam));
+        if self.beams_out.len() < before {
+            self.emit(Event::Status(message(why, &[])));
+        }
+    }
+
+    /// Wormhole, every tick: the next parts of what is being sent (a window of them at once),
+    /// and the transfers and offers that waited too long.
+    fn tick_beams(&mut self) {
+        let mut fresh = Vec::new();
+        let mut broken = Vec::new();
+        for out in self.beams_out.iter_mut().filter(|b| b.accepted) {
+            let flying = self.outgoing.iter().filter(|o| o.tag == Tag::Chunk(out.id)).count();
+            for _ in flying..BEAM_WINDOW {
+                if out.next >= out.parts {
+                    break;
+                }
+                match out.part(out.next) {
+                    Some(data) => {
+                        fresh.push((out.id, out.device.clone(), out.next, data));
+                        out.next += 1;
+                    }
+                    None => {
+                        broken.push(out.id);
+                        break;
+                    }
+                }
+            }
+        }
+        for (beam, device, part, data) in fresh {
+            let Some(key) = self.key_of(&device) else { continue };
+            let id = u64::from_le_bytes(random_bytes());
+            let packet = seal(&key, PAIRED, &self.envelope(Message::Chunk { id, beam, part, data }));
+            self.push_quiet(id, &device, packet, Tag::Chunk(beam));
+        }
+        for beam in broken {
+            self.beam_failed(beam, "msg.beam_unreadable");
+        }
+        let unanswered: Vec<u64> = self
+            .beams_out
+            .iter()
+            .filter(|b| !b.accepted && b.since.elapsed() >= BEAM_OFFER_FOR)
+            .map(|b| b.id)
+            .collect();
+        for beam in unanswered {
+            self.beam_failed(beam, "msg.beam_no_answer");
+        }
+        self.offers.retain(|o| o.since.elapsed() < BEAM_OFFER_FOR);
+        let mut stalled = false;
+        let mut at = 0;
+        while at < self.beams_in.len() {
+            if self.beams_in[at].last.elapsed() >= BEAM_STALL {
+                self.beams_in.remove(at).abort();
+                stalled = true;
+            } else {
+                at += 1;
+            }
+        }
+        if stalled {
+            self.emit(Event::Status(message("msg.beam_interrupted", &[])));
+        }
+    }
+
     fn forget(&mut self, id: &str) {
         self.book.devices.retain(|d| d.id != id);
+        self.beams_out.retain(|b| b.device != id);
+        self.offers.retain(|o| o.device != id);
+        let mut at = 0;
+        while at < self.beams_in.len() {
+            if self.beams_in[at].device == id {
+                self.beams_in.remove(at).abort();
+            } else {
+                at += 1;
+            }
+        }
         self.outgoing.retain(|o| o.device != id);
         self.heard.remove(id);
         self.save();
@@ -811,6 +1067,7 @@ impl Worker {
             }
             _ => {}
         }
+        self.tick_beams();
         let mut failed = Vec::new();
         for i in 0..self.outgoing.len() {
             if now < self.outgoing[i].next {
@@ -826,6 +1083,10 @@ impl Worker {
         }
         for i in failed.into_iter().rev() {
             let gone = self.outgoing.remove(i);
+            // A lost part or announcement of a Wormhole transfer ends that transfer.
+            if let Tag::Beam(beam) | Tag::Chunk(beam) = gone.tag {
+                self.beam_failed(beam, "msg.beam_interrupted");
+            }
             if gone.quiet {
                 continue;
             }
@@ -963,15 +1224,88 @@ impl Worker {
                 }
             }
             Message::Ack { id } => {
-                let quiet = self
-                    .outgoing
-                    .iter()
-                    .any(|o| o.id == id && o.device == device.id && o.quiet);
-                let before = self.outgoing.len();
-                self.outgoing
-                    .retain(|o| !(o.id == id && o.device == device.id));
-                if self.outgoing.len() < before && !quiet {
-                    self.emit(Event::Delivered(device.name.clone()));
+                let found = self.outgoing.iter().position(|o| o.id == id && o.device == device.id);
+                if let Some(at) = found {
+                    let done = self.outgoing.remove(at);
+                    if let Tag::Chunk(beam) = done.tag {
+                        // A part of a Wormhole transfer got there; the last one ends it.
+                        if let Some(at) = self.beams_out.iter().position(|b| b.id == beam) {
+                            self.beams_out[at].acked += 1;
+                            if self.beams_out[at].done() {
+                                let sent = self.beams_out.remove(at);
+                                self.emit(Event::BeamSent { to: device.name.clone(), name: sent.name });
+                            }
+                        }
+                    } else if !done.quiet {
+                        self.emit(Event::Delivered(device.name.clone()));
+                    }
+                }
+            }
+            Message::Beam { id, kind, name, size, parts, sha } => {
+                let ack = seal(&key, PAIRED, &self.envelope(Message::Ack { id }));
+                self.send(&ack, from);
+                if self.seen.first_time(id) {
+                    // One transfer at a time from a device: no pile of offers, no pile of files.
+                    let busy = self.beams_in.iter().any(|b| b.device == device.id)
+                        || self.offers.iter().any(|o| o.device == device.id);
+                    match beam_rules::acceptable(&kind, size, parts, &sha).filter(|_| !busy) {
+                        Some(Kind::Text) => {
+                            self.beams_in.push(Inbound::text(id, &device.id, size, &sha));
+                            self.beam_reply(&device.id, id, true);
+                        }
+                        Some(Kind::File) => {
+                            let name = beam_rules::safe_name(&name);
+                            self.offers.push(Offer {
+                                device: device.id.clone(),
+                                beam: id,
+                                name: name.clone(),
+                                size,
+                                sha,
+                                since: Instant::now(),
+                            });
+                            self.emit(Event::BeamOffer {
+                                device: device.id.clone(),
+                                from: device.name.clone(),
+                                beam: id,
+                                name,
+                                size,
+                            });
+                        }
+                        None => self.beam_reply(&device.id, id, false),
+                    }
+                }
+            }
+            Message::BeamReply { id, beam, ok } => {
+                let ack = seal(&key, PAIRED, &self.envelope(Message::Ack { id }));
+                self.send(&ack, from);
+                if self.seen.first_time(id) {
+                    let mine = self.beams_out.iter().position(|b| b.id == beam && b.device == device.id);
+                    match mine {
+                        Some(at) if ok => self.beams_out[at].accepted = true,
+                        Some(_) => self.beam_failed(beam, "msg.beam_declined"),
+                        None => {}
+                    }
+                }
+            }
+            Message::Chunk { id, beam, part, data } => {
+                let ack = seal(&key, PAIRED, &self.envelope(Message::Ack { id }));
+                self.send(&ack, from);
+                let mine = self.beams_in.iter().position(|b| b.id == beam && b.device == device.id);
+                if let Some(at) = mine {
+                    match self.beams_in[at].put(part, &data) {
+                        Ok(false) => {}
+                        Ok(true) => match self.beams_in.remove(at).finish() {
+                            Ok(Done::Text(text)) => self.emit(Event::BeamText { from: device.name.clone(), text }),
+                            Ok(Done::File { name, path }) => {
+                                self.emit(Event::BeamFile { from: device.name.clone(), name, path });
+                            }
+                            Err(why) => self.emit(Event::Status(why)),
+                        },
+                        Err(why) => {
+                            self.beams_in.remove(at).abort();
+                            self.emit(Event::Status(why));
+                        }
+                    }
                 }
             }
             Message::Part {
@@ -1098,6 +1432,13 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(old.message, Message::Tab { position: None, .. }));
+        let chunk = Message::Chunk { id: 2, beam: 9, part: 0, data: "0a".into() };
+        assert_eq!(
+            serde_json::to_string(&envelope(chunk)).unwrap(),
+            r#"{"from":"a","at":100,"t":"chunk","id":2,"beam":9,"part":0,"data":"0a"}"#
+        );
+        // A message this version does not know (a newer device) is not read at all.
+        assert!(serde_json::from_str::<Envelope>(r#"{"from":"a","at":1,"t":"teleport","id":1}"#).is_err());
     }
 
     #[test]
@@ -1139,6 +1480,7 @@ mod tests {
         );
         config.port = port;
         config.peer_port = peer_port;
+        config.downloads = dir.join("received");
         spawn(config)
     }
 
@@ -1214,6 +1556,55 @@ mod tests {
         assert_eq!(
             wait_for(&b, |e| matches!(e, Event::Delivered(_))),
             Event::Delivered("Desk".into())
+        );
+
+        // Wormhole: a text arrives by itself; a file waits for the answer, then arrives whole.
+        let text = "wormhole é😀\n".repeat(700);
+        b.request(Request::Beam { device: list[0].id.clone(), payload: Cargo::Text(text.clone()) });
+        assert_eq!(
+            wait_for(&a, |e| matches!(e, Event::BeamText { .. })),
+            Event::BeamText { from: "Laptop".into(), text }
+        );
+        assert_eq!(
+            wait_for(&b, |e| matches!(e, Event::BeamSent { .. })),
+            Event::BeamSent { to: "Desk".into(), name: String::new() }
+        );
+        let content: Vec<u8> = (0..200_000u32).map(|i| (i % 253) as u8).collect();
+        let source = db.path().join("holiday photo.bin");
+        std::fs::write(&source, &content).unwrap();
+        let beam_to = |file: &std::path::Path| Request::Beam {
+            device: list[0].id.clone(),
+            payload: Cargo::File(file.to_path_buf()),
+        };
+        b.request(beam_to(&source));
+        let Event::BeamOffer { device, from, beam, name, size } =
+            wait_for(&a, |e| matches!(e, Event::BeamOffer { .. }))
+        else {
+            unreachable!()
+        };
+        assert_eq!((from.as_str(), name.as_str(), size), ("Laptop", "holiday photo.bin", 200_000));
+        a.request(Request::BeamAnswer { device: device.clone(), beam, accept: false });
+        assert!(
+            matches!(wait_for(&b, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("msg.beam_declined"))
+        );
+        b.request(beam_to(&source));
+        let Event::BeamOffer { beam, .. } = wait_for(&a, |e| matches!(e, Event::BeamOffer { .. })) else {
+            unreachable!()
+        };
+        a.request(Request::BeamAnswer { device, beam, accept: true });
+        let Event::BeamFile { from, name, path } = wait_for(&a, |e| matches!(e, Event::BeamFile { .. })) else {
+            unreachable!()
+        };
+        assert_eq!((from.as_str(), name.as_str()), ("Laptop", "holiday photo.bin"));
+        assert_eq!(std::fs::read(&path).unwrap(), content);
+        assert!(path.starts_with(da.path().join("received")));
+        assert_eq!(
+            wait_for(&b, |e| matches!(e, Event::BeamSent { .. })),
+            Event::BeamSent { to: "Desk".into(), name: "holiday photo.bin".into() }
+        );
+        b.request(beam_to(&db.path().join("missing.bin")));
+        assert!(
+            matches!(wait_for(&b, |e| matches!(e, Event::Status(_))), Event::Status(s) if s.contains("msg.beam_unreadable"))
         );
 
         // A synced ledger bigger than a packet travels in parts and arrives whole.

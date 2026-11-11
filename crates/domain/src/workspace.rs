@@ -118,6 +118,9 @@ pub struct Workspace {
     next_id: u64,
     /// Tabs in the order they were last shown, most recent first, all spaces mixed. Not persisted.
     recent: Vec<TabId>,
+    /// Black hole tabs: each has a session of its own (cookies, storage) that is destroyed with
+    /// its page. Session state: they are never saved, synchronized, pinned or filed.
+    burners: Vec<TabId>,
 }
 
 /// The recency list is session state: two workspaces holding the same tabs are equal.
@@ -142,6 +145,7 @@ impl Workspace {
             active_space: SpaceId(0),
             next_id: 1,
             recent: Vec::new(),
+            burners: Vec::new(),
         };
         ws.active_space = ws.add_space("Personal", "#7c5cff");
         ws
@@ -185,6 +189,7 @@ impl Workspace {
             active_space,
             next_id,
             recent,
+            burners: Vec::new(),
         }
     }
 
@@ -316,8 +321,29 @@ impl Workspace {
         self.active_space().tabs.iter().find_map(|t| {
             let mut current = t.url.clone();
             current.set_fragment(None);
-            (current == wanted).then_some(t.id)
+            // A black hole tab is another session: it never stands for the page asked for.
+            (current == wanted && !self.is_burner(t.id)).then_some(t.id)
         })
+    }
+
+    /// Opens a black hole tab: a tab like any other, with a throwaway session of its own.
+    pub fn open_burner(&mut self, url: Url) -> TabId {
+        let id = self.open_tab(url);
+        self.burners.push(id);
+        id
+    }
+
+    pub fn is_burner(&self, id: TabId) -> bool {
+        self.burners.contains(&id)
+    }
+
+    /// The black hole tabs still open, all spaces mixed.
+    pub fn burner_count(&self) -> usize {
+        self.spaces
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .filter(|t| self.is_burner(t.id))
+            .count()
     }
 
     /// Opens a tab and shows it. Like Arc, a new tab goes to the top of the unpinned list.
@@ -502,6 +528,10 @@ impl Workspace {
     }
 
     pub fn toggle_pin(&mut self, id: TabId) -> bool {
+        // Quick access outlives the page; a black hole tab does not.
+        if self.is_burner(id) {
+            return false;
+        }
         let space = self.active_space_mut();
         let Some(tab) = space.tabs.iter_mut().find(|t| t.id == id) else {
             return false;
@@ -707,6 +737,8 @@ impl Workspace {
         folder: Option<FolderId>,
         pinned: bool,
     ) -> bool {
+        // A black hole tab only moves among the loose tabs.
+        let (folder, pinned) = if self.is_burner(id) { (None, false) } else { (folder, pinned) };
         let space = self.active_space_mut();
         let Some(pos) = space.tabs.iter().position(|t| t.id == id) else {
             return false;
@@ -924,7 +956,8 @@ impl Workspace {
     /// folder to make (or to fill, when a folder of that name exists), biggest first.
     pub fn tidy_suggestion(&self, min: usize) -> Vec<TidyGroup> {
         let mut groups: Vec<TidyGroup> = Vec::new();
-        for tab in self.active_space().tabs.iter().filter(|t| !t.pinned && t.folder.is_none()) {
+        let loose = |t: &&Tab| !t.pinned && t.folder.is_none() && !self.is_burner(t.id);
+        for tab in self.active_space().tabs.iter().filter(loose) {
             let Some(host) = tab.url.host_str() else { continue };
             let name = site_of_host(host);
             match groups.iter_mut().find(|g| g.name == name) {
@@ -1002,7 +1035,7 @@ impl Workspace {
                 tabs: s
                     .tabs
                     .iter()
-                    .filter(|t| t.folder.is_none())
+                    .filter(|t| t.folder.is_none() && !self.is_burner(t.id))
                     .map(|t| (t.url.clone(), t.title.clone(), t.pinned))
                     .collect(),
             })
@@ -1020,7 +1053,7 @@ impl Workspace {
         self.spaces[space].tabs.iter().position(|t| {
             let mut current = t.url.clone();
             current.set_fragment(None);
-            t.folder.is_none() && current == wanted
+            t.folder.is_none() && current == wanted && !self.is_burner(t.id)
         })
     }
 
@@ -1574,6 +1607,30 @@ mod tests {
         assert_eq!(ws.active_space().folders[0].icon, "📁");
         assert!(!ws.set_folder_icon(FolderId(999), "📁"));
         assert!(!ws.set_space_icon(SpaceId(999), "📁"));
+    }
+
+    #[test]
+    fn a_black_hole_tab_is_never_pinned_filed_reused_tidied_or_synchronized() {
+        let mut ws = Workspace::new();
+        let u = |s: &str| Url::parse(s).unwrap();
+        let plain = ws.open_tab(u("https://a.test/1"));
+        let hole = ws.open_burner(u("https://a.test/"));
+        assert!(ws.is_burner(hole) && !ws.is_burner(plain));
+        assert_eq!(ws.burner_count(), 1);
+        // Another session: opening the same address does not land on it.
+        assert_eq!(ws.find_tab(&u("https://a.test/")), None);
+        assert!(!ws.toggle_pin(hole));
+        let folder = ws.add_folder("Work");
+        assert!(ws.move_tab(hole, None, Some(folder), true));
+        let tab = ws.active_space().tabs.iter().find(|t| t.id == hole).unwrap();
+        assert!(!tab.pinned && tab.folder.is_none());
+        ws.open_burner(u("https://a.test/2"));
+        ws.open_burner(u("https://a.test/3"));
+        assert!(ws.tidy_suggestion(2).is_empty(), "black hole tabs are left where they are");
+        let synced: Vec<_> = ws.sync_view().into_iter().flat_map(|s| s.tabs).collect();
+        assert_eq!(synced.len(), 1);
+        assert!(ws.close_tab(hole));
+        assert_eq!(ws.burner_count(), 2);
     }
 
     #[test]

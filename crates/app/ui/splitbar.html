@@ -13,6 +13,9 @@
   .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
   button { flex: none; width: 20px; height: 20px; padding: 0; line-height: 1; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; opacity: .6; }
   button:hover { background: rgba(255,90,90,.85); color: #fff; opacity: 1; }
+  button.pilot:hover { background: var(--bh-fill-hover-strong, rgba(255,255,255,.16)); }
+  button.pilot.on { opacity: 1; color: var(--bh-text-on-accent, #fff); background: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
 </style>
 </head>
 <body>
@@ -21,7 +24,7 @@
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
 const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
-function pane(side, p, focus) {
+function pane(side, p, focus, other) {
   const n = document.createElement('div'); n.className = 'pane' + (focus ? ' focus' : '');
   // The right pane may be an Easel (a meeting's notes beside the call), not a tab.
   const d = document.createElement('span'); d.className = 'dot'; if (p.easel) d.append(bhIcon('edit', 'xs')); else d.textContent = (host(p.url)[0] || '•').toUpperCase(); d.style.background = p.easel ? 'var(--accent)' : hue(host(p.url));
@@ -29,7 +32,16 @@ function pane(side, p, focus) {
   const x = document.createElement('button'); x.append(bhIcon('close', 'xs')); x.title = bhT(p.easel ? 'split.close_easel_pane' : 'split.close_pane');
   x.onclick = (e) => { e.stopPropagation(); send({ cmd: 'close_pane', side }); };
   n.onclick = () => { if (side === 'right' && !p.easel) send({ cmd: 'activate', id: p.id }); };
-  n.append(d, t, x);
+  n.append(d, t);
+  // Pilot split: the links of this pane open in the other one (the arrow shows where).
+  if (!p.easel && !other.easel) {
+    const b = document.createElement('button'); b.className = 'pilot' + (p.pilot ? ' on' : '');
+    b.append(bhIcon(side === 'left' ? 'forward' : 'back', 'xs'));
+    b.title = bhT(p.pilot ? 'split.pilot_stop' : 'split.pilot'); b.setAttribute('aria-pressed', p.pilot ? 'true' : 'false');
+    b.onclick = (e) => { e.stopPropagation(); send({ cmd: 'pilot', id: p.id }); };
+    n.append(b);
+  }
+  n.append(x);
   return n;
 }
 let last = null;
@@ -38,7 +50,7 @@ window.bh = {
   render(s) {
     last = s;
     document.documentElement.style.setProperty('--accent', s.color);
-    document.getElementById('m').replaceChildren(pane('left', s.left, true), pane('right', s.right, false));
+    document.getElementById('m').replaceChildren(pane('left', s.left, true, s.right), pane('right', s.right, false, s.left));
   },
 };
 send({ cmd: 'ready' });
