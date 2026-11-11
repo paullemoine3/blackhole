@@ -92,6 +92,9 @@ pub enum MobileCommand {
     },
     ForgetHistory {
         url: String,
+        /// What the history page is filtered by: the list sent back keeps that filter.
+        #[serde(default)]
+        query: String,
     },
     ClearHistory,
     /// Cookies, storage and cache of every profile.
@@ -193,6 +196,11 @@ pub enum NativeEvent {
     BlockedPage {
         tab: u64,
         url: String,
+    },
+    /// Requests of `tab` were refused by the Shields: its count changed (the interface gets the
+    /// two numbers, not the whole state).
+    Blocked {
+        tab: u64,
     },
     /// Back pressed with nothing left in the tab's history and no overlay open.
     BackExhausted,

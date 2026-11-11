@@ -813,11 +813,11 @@ impl Core {
             }
             C::Suggest { text } => vec![self.suggestions(&text)],
             C::History { query } => vec![self.history(&query)],
-            C::ForgetHistory { url } => {
+            C::ForgetHistory { url, query } => {
                 if let Ok(url) = Url::parse(&url) {
                     self.svc.forget_history(&url);
                 }
-                vec![self.history(""), self.state()]
+                vec![self.history(&query), self.state()]
             }
             C::ClearHistory => {
                 self.svc.clear_history();
@@ -996,6 +996,12 @@ impl Core {
                 Some(url) => self.error(tab, url, ErrorPage::Blocked),
                 None => Vec::new(),
             },
+            E::Blocked { tab } if self.current == Some(tab) => {
+                let mut msg = self.blocked_json();
+                msg["type"] = json!("blocked");
+                vec![Effect::Ui { msg }]
+            }
+            E::Blocked { .. } => Vec::new(),
             E::BackExhausted => match self.current {
                 Some(_) => {
                     let mut out = self.home();
@@ -1049,6 +1055,18 @@ impl Core {
         }
     }
 
+    /// Requests refused this session, and for the site of the page on screen.
+    fn blocked_json(&self) -> Value {
+        let log = self.blocker.log.lock();
+        let site = self.current_page().map_or(0, |u| {
+            log.as_ref()
+                .map(|l| l.for_site(&host_of(&u)).iter().map(|(_, n)| n).sum::<u32>())
+                .unwrap_or(0)
+        });
+        let total = log.as_ref().map(|l| l.total()).unwrap_or(0);
+        json!({"total": total, "site": site})
+    }
+
     /// Everything the shell interface draws.
     pub fn state(&self) -> Effect {
         let ws = self.svc.workspace();
@@ -1095,17 +1113,6 @@ impl Core {
         let settings = self.svc.settings();
         let shields = settings.shields;
         let page = self.current_page();
-        let site_blocked = page
-            .as_ref()
-            .map(|u| {
-                self.blocker
-                    .log
-                    .lock()
-                    .map(|l| l.for_site(&host_of(u)).iter().map(|(_, n)| n).sum::<u32>())
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
-        let total = self.blocker.log.lock().map(|l| l.total()).unwrap_or(0);
         let error = self.current.and_then(|t| self.errors.get(&t)).map(|(_, p)| p.key());
         Effect::Ui {
             msg: json!({
@@ -1123,7 +1130,7 @@ impl Core {
                 "private_tabs": private,
                 "favorites": favorites,
                 "recent": recent,
-                "blocked": {"total": total, "site": site_blocked},
+                "blocked": self.blocked_json(),
                 "desktop": self.current.is_some_and(|t| self.desktop.contains(&t)),
                 "update": self.update_json(),
                 "devices": self.devices_json(),

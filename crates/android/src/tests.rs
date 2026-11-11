@@ -110,6 +110,19 @@ fn a_visited_page_lands_in_history_and_suggestions() {
     let s = ui(&c.command(C::Suggest { text: "rust".into() }), "suggest").unwrap();
     assert_eq!(s["items"][0]["kind"], json!("search"));
     assert!(s["items"].as_array().unwrap().iter().any(|i| i["kind"] == "tab"));
+    // Forgetting a visit from a filtered list keeps the filter.
+    let other = go(&mut c, "https://example.org/");
+    c.event(E::Finished {
+        tab: other,
+        url: "https://example.org/".into(),
+        title: "Example".into(),
+    });
+    let out = c.command(C::ForgetHistory {
+        url: "https://www.rust-lang.org/learn".into(),
+        query: "learn".into(),
+    });
+    let h = ui(&out, "history").unwrap();
+    assert_eq!((h["query"].clone(), h["items"].clone()), (json!("learn"), json!([])));
     c.command(C::ClearHistory);
     let h = ui(&c.command(C::History { query: String::new() }), "history").unwrap();
     assert_eq!(h["items"], json!([]));
@@ -334,6 +347,12 @@ fn blocked_requests_feed_the_privacy_report() {
     assert!(blocker.should_block("https://ads.example/b.gif", "https://news.example/"));
     assert!(!blocker.should_block("https://cdn.example/app.js", "https://news.example/"));
     assert!(!blocker.should_block("data:text/plain,x", "https://news.example/"));
+    // The shield's count: two numbers for the tab on screen, never the whole state.
+    let out = c.event(E::Blocked { tab });
+    assert_eq!(out.len(), 1);
+    let counts = ui(&out, "blocked").unwrap();
+    assert_eq!((counts["site"].clone(), counts["total"].clone()), (json!(2), json!(2)));
+    assert!(c.event(E::Blocked { tab: tab + 1 }).is_empty());
     let report = ui(&c.command(C::PrivacyReport), "report").unwrap();
     assert_eq!(report["site"], json!("news.example"));
     assert_eq!((report["trackers"].clone(), report["ads"].clone()), (json!(1), json!(1)));
