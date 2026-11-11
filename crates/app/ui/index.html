@@ -186,6 +186,8 @@
   .ficon:hover { background: rgba(255,255,255,.14); }
   .ficon.def { opacity: .6; filter: grayscale(1); }
   .tab.split { box-shadow: inset 3px 0 0 var(--accent); background: rgba(255,255,255,.09); }
+  .tab .burn { flex: none; display: grid; place-items: center; width: var(--bh-space-16); height: var(--bh-space-16); color: var(--accent); opacity: var(--bh-opacity-secondary); }
+  .tab.active .burn { opacity: 1; }
   .tab.split.active { background: rgba(255,255,255,.2); }
   .mo { flex: none; width: 24px; height: 24px; margin: -2px 0; display: grid; place-items: center; border-radius: 6px; opacity: 0; }
   .tab:hover .mo { opacity: .7; } .mo:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
@@ -349,6 +351,12 @@ function tabNode(t) {
     sp.onclick = (e) => { e.stopPropagation(); send(t.split ? { cmd: 'close_split' } : { cmd: 'split', id: t.id }); };
     n.append(d, el('span', 'title', t.title), sp);
   } else n.append(d, el('span', 'title', t.title));
+  // A black hole tab: its own session, gone when it closes.
+  if (t.burner) {
+    n.classList.add('burner');
+    const mark = el('span', 'burn'); mark.append(bhIcon('hole', 'xs')); mark.title = bhT('sidebar.burner');
+    n.querySelector('.title').after(mark);
+  }
   // No speaker on quick access tiles: it covered the tile, so a playing tab was hard to click.
   const md = !t.pinned && (state.media || []).find(m => m.id === t.id);
   if (md && (md.playing || md.muted)) {
@@ -400,7 +408,8 @@ function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, it
 // names drawn by the command bar (palette.html); `confirm` asks for a second click.
 function tabMenu(t, x, y) {
   const keep = t.pinned || t.folder != null;
-  const items = [{ icon: 'pin', label: bhT(t.pinned ? 'menu.quick_remove' : 'menu.quick_add'), run: { cmd: 'pin', id: t.id } }];
+  // A black hole tab cannot join quick access: its session does not outlive its page.
+  const items = t.burner ? [] : [{ icon: 'pin', label: bhT(t.pinned ? 'menu.quick_remove' : 'menu.quick_add'), run: { cmd: 'pin', id: t.id } }];
   items.push({ icon: 'edit', label: bhT('menu.rename_tab'), run: { cmd: 'edit_tab', id: t.id } });
   if (!t.pinned) {
     if (t.split) items.push({ icon: 'split', label: bhT('palette.close_split'), run: { cmd: 'close_split' } });

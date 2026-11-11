@@ -198,9 +198,15 @@ impl Vault {
     }
 
     fn key(&self) -> Result<[u8; 32], String> {
-        if let Some(k) = self.key {
-            return Ok(k);
+        match self.key {
+            Some(k) => Ok(k),
+            None => Self::shared_key(),
         }
+    }
+
+    /// The vault's key, kept by the system's credential store (made on first use). For stores
+    /// that seal many files with it: read once, then `named_with_key`.
+    pub fn shared_key() -> Result<[u8; 32], String> {
         let entry = keyring::Entry::new("BlackHole", "vault-key").map_err(|e| e.to_string())?;
         match entry.get_secret() {
             Ok(s) => s
@@ -432,6 +438,95 @@ impl WatchStore {
     }
 }
 
+/// Highlights and notes on pages (`highlights.json`), written on the background thread.
+pub struct HighlightStore {
+    path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MarkDto {
+    id: u64,
+    quote: String,
+    #[serde(default)]
+    prefix: String,
+    #[serde(default)]
+    suffix: String,
+    #[serde(default)]
+    note: String,
+    #[serde(default)]
+    created: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct MarkedPageDto {
+    url: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    marks: Vec<MarkDto>,
+}
+
+impl HighlightStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("highlights.json"),
+        }
+    }
+
+    pub fn load(&self) -> blackhole_domain::highlights::Highlights {
+        use blackhole_domain::highlights::{Highlight, Highlights, Page};
+        crate::flush_writes();
+        let dtos: Vec<MarkedPageDto> = load_list(&self.path);
+        Highlights::restore(
+            dtos.into_iter()
+                .map(|p| Page {
+                    url: p.url,
+                    title: p.title,
+                    marks: p
+                        .marks
+                        .into_iter()
+                        .map(|m| Highlight {
+                            id: m.id,
+                            quote: m.quote,
+                            prefix: m.prefix,
+                            suffix: m.suffix,
+                            note: m.note,
+                            created: m.created,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        )
+    }
+
+    /// Queues the list to be written (atomically, off the UI thread).
+    pub fn save(&self, highlights: &blackhole_domain::highlights::Highlights) {
+        let dtos: Vec<MarkedPageDto> = highlights
+            .pages()
+            .iter()
+            .map(|p| MarkedPageDto {
+                url: p.url.clone(),
+                title: p.title.clone(),
+                marks: p
+                    .marks
+                    .iter()
+                    .map(|m| MarkDto {
+                        id: m.id,
+                        quote: m.quote.clone(),
+                        prefix: m.prefix.clone(),
+                        suffix: m.suffix.clone(),
+                        note: m.note.clone(),
+                        created: m.created,
+                    })
+                    .collect(),
+            })
+            .collect();
+        if let Ok(json) = serde_json::to_string(&dtos) {
+            crate::write_later(self.path.clone(), json);
+        }
+    }
+}
+
 /// Download history (`downloads.json`), newest last.
 pub struct DownloadStore {
     path: PathBuf,
@@ -494,6 +589,27 @@ mod tests {
         )
         .unwrap();
         assert!(store.load().all().is_empty());
+    }
+
+    #[test]
+    fn highlights_survive_a_restart_and_odd_entries_are_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = HighlightStore::new(dir.path());
+        assert!(store.load().is_empty());
+        let mut h = blackhole_domain::highlights::Highlights::default();
+        let page = url::Url::parse("https://a.test/doc").unwrap();
+        let id = h.add(&page, "Doc", "black holes evaporate", "that", "slowly", 7).unwrap();
+        h.set_note(id, "Hawking, 1974");
+        store.save(&h);
+        assert_eq!(store.load(), h);
+        fs::write(
+            dir.path().join("highlights.json"),
+            r#"[{"url":"javascript:alert(1)","marks":[{"id":1,"quote":"x"}]},{"url":"https://b.test/","marks":[{"id":2,"quote":"kept"}]}]"#,
+        )
+        .unwrap();
+        let back = store.load();
+        assert_eq!(back.pages().len(), 1);
+        assert_eq!(back.pages()[0].marks[0].quote, "kept");
     }
 
     fn bm(url: &str) -> Bookmark {

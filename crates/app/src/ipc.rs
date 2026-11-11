@@ -129,7 +129,8 @@ pub enum UiCommand {
     },
     /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
     UndoRemoval,
-    /// Link menu: `target` is "tab" (background), "front" (new tab shown), "window" or "private".
+    /// Link menu: `target` is "tab" (background), "front" (new tab shown), "window", "private"
+    /// or "burner" (a black hole tab).
     OpenLink {
         url: String,
         target: String,
@@ -144,6 +145,49 @@ pub enum UiCommand {
         id: u64,
     },
     WatchesSeen,
+    /// Recall (see `recall.rs`): the command bar looks for the pages read that match `query`
+    /// (answered with the same `seq`); the setting; a site never remembered (or remembered
+    /// again); one page forgotten; everything forgotten.
+    RecallSearch {
+        query: String,
+        seq: u64,
+    },
+    SetRecall {
+        on: bool,
+    },
+    RecallExclude {
+        site: String,
+        on: bool,
+    },
+    RecallForget {
+        url: String,
+    },
+    RecallClear,
+    /// Highlights and notes on pages (see `highlights.rs`): the selection of the page shown
+    /// becomes a highlight; one is removed, gets its note, is edited in the Library, is opened
+    /// (and scrolled to), or is clipped to the current Easel.
+    HighlightSelection {
+        /// The tab whose page menu offered it (its selection was read when the menu opened);
+        /// absent from the command bar: the page shown.
+        #[serde(default)]
+        tab: Option<u64>,
+    },
+    HighlightRemove {
+        id: u64,
+    },
+    HighlightNote {
+        id: u64,
+        note: String,
+    },
+    HighlightEdit {
+        id: u64,
+    },
+    HighlightOpen {
+        id: u64,
+    },
+    HighlightToEasel {
+        id: u64,
+    },
     /// Files the loose tabs into folders by site (the sidebar's suggestion); `Untidy` undoes
     /// it, `DismissTidy` hides the suggestion for this session.
     Tidy,
@@ -183,7 +227,8 @@ pub enum UiCommand {
         name: String,
         on: bool,
     },
-    /// Settings > Privacy: `name` is `ads`, `hide_ads`, `video_ads` or `cookie_banners`.
+    /// Settings > Privacy: `name` is `ads`, `hide_ads`, `video_ads`, `cookie_banners` or
+    /// `clean_links`.
     SetShield {
         name: String,
         on: bool,
@@ -210,6 +255,27 @@ pub enum UiCommand {
     SyncAnswer {
         id: String,
         answer: String,
+    },
+    /// Wormhole (see `handoff.rs`): a text (the selection), the clipboard's text or a file
+    /// picked by the user goes to a paired device; a file offered by a device is accepted or
+    /// not; a text received is copied.
+    BeamText {
+        device: String,
+        text: String,
+    },
+    BeamClipboard {
+        device: String,
+    },
+    BeamFile {
+        device: String,
+    },
+    BeamAnswer {
+        device: String,
+        beam: u64,
+        accept: bool,
+    },
+    BeamCopy {
+        id: u64,
     },
     /// Tab menu and command bar: opens the tab on a paired device.
     ContinueOn {
@@ -250,6 +316,12 @@ pub enum UiCommand {
         id: u64,
     },
     CloseSplit,
+    /// Pilot split: the links of the pane showing tab `id` (the active one when absent) open
+    /// in the other pane; sent again for the same tab, it stops.
+    Pilot {
+        #[serde(default)]
+        id: Option<u64>,
+    },
     PickIcon {
         kind: String,
         id: u64,
@@ -588,14 +660,22 @@ pub enum PageEvent {
     OpenLink {
         url: String,
     },
+    /// A plain click on a link in a page that was told it is the pilot pane of a split
+    /// (untrusted: the shell checks which tab the pilot is, and the address like any other).
+    PilotLink {
+        url: String,
+    },
     /// Right click on a link or on selected text: the shell shows its menu at (x, y) in the
     /// page. `url` is empty off a link; `text` (untrusted, bounded by `clean_selection`) is the
-    /// selection under the pointer.
+    /// selection under the pointer; `mark` the highlight under it (0: none; untrusted, checked
+    /// against the highlights of that page).
     LinkMenu {
         #[serde(default)]
         url: String,
         #[serde(default)]
         text: String,
+        #[serde(default)]
+        mark: u64,
         x: f64,
         y: f64,
     },
@@ -673,6 +753,8 @@ pub enum Msg {
     ServerTrust(TabId, wry::ServerTrustChallenge),
     /// The http address the shell upgraded to https in this tab.
     Upgraded(TabId, Url),
+    /// A link was cleaned on the way (tracking parameters dropped, redirect page skipped).
+    LinkCleaned,
     /// The tab itself was sent to a blocked tracker or ad server.
     BlockedPage(TabId, Url, &'static str),
     /// The server asks for a user name and password (HTTP Basic or Digest).
@@ -915,6 +997,69 @@ mod tests {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
             assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
         }
+    }
+
+    #[test]
+    fn wormhole_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"beam_text","device":"ab12","text":"hello"}"#,
+            r#"{"cmd":"beam_clipboard","device":"ab12"}"#,
+            r#"{"cmd":"beam_file","device":"ab12"}"#,
+            r#"{"cmd":"beam_answer","device":"ab12","beam":7,"accept":true}"#,
+            r#"{"cmd":"beam_copy","id":1}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn recall_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"recall_search","query":"black holes","seq":4}"#,
+            r#"{"cmd":"set_recall","on":true}"#,
+            r#"{"cmd":"recall_exclude","site":"bank.test","on":true}"#,
+            r#"{"cmd":"recall_forget","url":"https://a.test/"}"#,
+            r#"{"cmd":"recall_clear"}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn highlight_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"highlight_selection"}"#,
+            r#"{"cmd":"highlight_remove","id":3}"#,
+            r#"{"cmd":"highlight_note","id":3,"note":"why"}"#,
+            r#"{"cmd":"highlight_edit","id":3}"#,
+            r#"{"cmd":"highlight_open","id":3}"#,
+            r#"{"cmd":"highlight_to_easel","id":3}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+        let menu: PageEvent =
+            serde_json::from_str(r#"{"cmd":"link_menu","mark":7,"x":3,"y":4}"#).unwrap();
+        assert!(matches!(menu, PageEvent::LinkMenu { mark: 7, .. }));
+    }
+
+    #[test]
+    fn pilot_commands_parse_and_a_page_can_only_report_a_link() {
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"pilot"}"#),
+            Ok(UiCommand::Pilot { id: None })
+        ));
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"pilot","id":3}"#),
+            Ok(UiCommand::Pilot { id: Some(3) })
+        ));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"pilot","id":3}"#).is_err());
+        assert!(matches!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"pilot_link","url":"https://a.test/"}"#),
+            Ok(PageEvent::PilotLink { url }) if url == "https://a.test/"
+        ));
     }
 
     #[test]

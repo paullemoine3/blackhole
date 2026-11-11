@@ -13,10 +13,12 @@ pub mod catalog;
 pub mod handoff;
 pub mod import;
 pub mod peers;
+pub mod recall;
 pub mod store;
 pub mod sync;
 pub mod updater;
 pub mod wallet;
+pub mod wormhole;
 mod writer;
 
 pub use writer::{flush_writes, write_later};
@@ -267,11 +269,13 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                 name: s.name.clone(),
                 color: s.color.clone(),
                 icon: s.icon.clone(),
-                split: s.split.map(|t| t.0),
-                active_tab: s.active_tab.map(|t| t.0),
+                split: s.split.filter(|t| !ws.is_burner(*t)).map(|t| t.0),
+                active_tab: s.active_tab.filter(|t| !ws.is_burner(*t)).map(|t| t.0),
+                // Black hole tabs are never written: their session ends with the app.
                 tabs: s
                     .tabs
                     .iter()
+                    .filter(|t| !ws.is_burner(t.id))
                     .map(|t| TabDto {
                         id: t.id.0,
                         title: t.title.clone(),
@@ -427,6 +431,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 hide_ads: dto.hide_ads,
                 video_ads: dto.skip_video_ads,
                 cookie_banners: dto.hide_cookie_banners,
+                clean_links: dto.clean_links,
             },
             meeting_reminders: dto.meeting_reminders,
             meeting_card: dto.meeting_card,
@@ -438,6 +443,12 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             } else {
                 blackhole_domain::i18n::SYSTEM.to_owned()
             },
+            recall: dto.recall,
+            recall_exclude: dto
+                .recall_exclude
+                .iter()
+                .filter_map(|site| blackhole_domain::recall::site_of(site))
+                .collect(),
         }))
     }
 
@@ -466,12 +477,15 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hide_ads: settings.shields.hide_ads,
             skip_video_ads: settings.shields.video_ads,
             hide_cookie_banners: settings.shields.cookie_banners,
+            clean_links: settings.shields.clean_links,
             meeting_reminders: settings.meeting_reminders,
             meeting_card: settings.meeting_card,
             meeting_notes: settings.meeting_notes,
             password_lock_minutes: settings.password_lock_minutes,
             collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
             language: settings.language.clone(),
+            recall: settings.recall,
+            recall_exclude: settings.recall_exclude.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -567,6 +581,8 @@ struct SettingsDto {
     #[serde(default = "default_true")]
     hide_cookie_banners: bool,
     #[serde(default = "default_true")]
+    clean_links: bool,
+    #[serde(default = "default_true")]
     meeting_reminders: bool,
     #[serde(default = "default_true")]
     meeting_card: bool,
@@ -578,6 +594,10 @@ struct SettingsDto {
     collapsed_sections: Vec<String>,
     #[serde(default = "default_language")]
     language: String,
+    #[serde(default)]
+    recall: bool,
+    #[serde(default)]
+    recall_exclude: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -594,6 +614,37 @@ fn default_lock_minutes() -> u32 {
 
 fn default_spares() -> u32 {
     Settings::DEFAULT_SPARES
+}
+
+/// Prefix of the engine profiles of black hole tabs (WebView2 keeps a folder per profile).
+pub const BURNER_PROFILE: &str = "BlackHole-burn-";
+
+/// Removes the profile folders black hole tabs left under `webview` (the engine's data
+/// folder) in earlier runs: every folder named `BURNER_PROFILE…` except those of this run
+/// (`keep` is this run's own prefix). Returns how many were removed.
+pub fn remove_burner_profiles(webview: &std::path::Path, keep: &str) -> usize {
+    fn sweep(dir: &std::path::Path, keep: &str, depth: usize) -> usize {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return 0;
+        };
+        let mut removed = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(BURNER_PROFILE) {
+                if !name.starts_with(keep) && fs::remove_dir_all(&path).is_ok() {
+                    removed += 1;
+                }
+            } else if depth > 0 {
+                removed += sweep(&path, keep, depth - 1);
+            }
+        }
+        removed
+    }
+    sweep(webview, keep, 2)
 }
 
 /// Queues the write on the background thread (see `writer`).
@@ -672,6 +723,32 @@ mod tests {
     }
 
     #[test]
+    fn black_hole_tabs_are_never_saved_and_their_old_profiles_are_swept() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = JsonWorkspaceRepository::new(dir.path().to_path_buf());
+        let mut ws = Workspace::new();
+        let kept = ws.open_tab(Url::parse("https://a.test/").unwrap());
+        let hole = ws.open_burner(Url::parse("https://b.test/").unwrap());
+        assert!(ws.set_split(kept));
+        repo.save(&ws).unwrap();
+        let back = repo.load().unwrap().unwrap();
+        let tabs: Vec<TabId> = back.active_space().tabs.iter().map(|t| t.id).collect();
+        assert_eq!(tabs, [kept]);
+        assert!(!tabs.contains(&hole) && back.active_tab().is_none());
+        let raw = fs::read_to_string(dir.path().join("workspace.json")).unwrap();
+        assert!(!raw.contains("b.test"));
+
+        let engine = dir.path().join("webview").join("EBWebView");
+        for name in ["BlackHole-burn-1-4", "BlackHole-burn-2-9", "BlackHole-space-3", "Default"] {
+            fs::create_dir_all(engine.join(name).join("Network")).unwrap();
+        }
+        assert_eq!(remove_burner_profiles(&dir.path().join("webview"), "BlackHole-burn-2-"), 1);
+        let left = |name: &str| engine.join(name).exists();
+        assert!(!left("BlackHole-burn-1-4"));
+        assert!(left("BlackHole-burn-2-9") && left("BlackHole-space-3") && left("Default"));
+    }
+
+    #[test]
     fn icons_and_split_survive_a_restart() {
         let dir = tempfile::tempdir().unwrap();
         let repo = JsonWorkspaceRepository::new(dir.path().into());
@@ -729,6 +806,7 @@ mod tests {
                 hide_ads: true,
                 video_ads: false,
                 cookie_banners: true,
+                clean_links: false,
             },
             meeting_reminders: false,
             meeting_card: true,
@@ -736,6 +814,8 @@ mod tests {
             password_lock_minutes: 5,
             collapsed_sections: ["pinned".to_owned()].into(),
             language: "fr".to_owned(),
+            recall: true,
+            recall_exclude: ["bank.test".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);

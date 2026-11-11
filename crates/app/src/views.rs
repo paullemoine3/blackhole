@@ -18,6 +18,8 @@ const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
+/// Paints the highlights the shell hands a page, and reads its selection on demand.
+const HIGHLIGHTS_JS: &str = include_str!("../ui/highlights.js");
 /// Shortcut notation shared by BlackHole's own pages (`bhKeys`).
 const KEYS_JS: &str = include_str!("../ui/keys.js");
 /// Look shared by BlackHole's own pages: design tokens (`--bh-*`), icon scale, scroll bars.
@@ -404,6 +406,22 @@ pub enum Store {
     Space(u64),
     /// A private window: nothing is kept.
     Private,
+    /// A black hole tab (its id): a session of its own, destroyed with the page.
+    Burner(u64),
+}
+
+/// The engine profile of a black hole tab: unique to this run, so the folders left by earlier
+/// runs can be told apart and removed (`remove_burner_profiles`). WebKit's ephemeral stores
+/// leave nothing on disk: Windows only.
+#[cfg(windows)]
+pub fn burner_prefix() -> String {
+    static RUN: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let run = RUN.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs())
+    });
+    format!("{}{run}-", blackhole_infrastructure::BURNER_PROFILE)
 }
 
 impl Store {
@@ -477,7 +495,8 @@ fn build_tab(
         let data = match store {
             Store::Main => DataStore::Default,
             Store::Space(space) => DataStore::Identified(Store::identifier(space)),
-            Store::Private => DataStore::Ephemeral,
+            // Each ephemeral store is a new one: two black hole tabs share nothing.
+            Store::Private | Store::Burner(_) => DataStore::Ephemeral,
         };
         match (host, data) {
             (Some(host), data) => builder.with_webview_configuration(host.view_configuration(data)),
@@ -529,6 +548,14 @@ fn build_tab(
             use wry::WebViewBuilderExtWindows;
             builder.with_profile_name(format!("BlackHole-space-{space}"))
         }
+        // An InPrivate profile of its own: nothing shared with the space, nothing kept; the
+        // shell deletes the profile when the tab closes (`delete_profile`).
+        Store::Burner(tab) => {
+            use wry::WebViewBuilderExtWindows;
+            builder
+                .with_profile_name(format!("{}{tab}", burner_prefix()))
+                .with_incognito(true)
+        }
         _ => builder,
     };
     #[cfg(not(windows))]
@@ -567,6 +594,7 @@ fn build_tab(
             page_script(FIND_JS, &["page.no_match", "palette.find", "page.previous", "page.next", "window.close"]),
             true,
         )
+        .with_initialization_script_for_main_only(HIGHLIGHTS_JS, true)
         .with_initialization_script_for_main_only(
             if cfg!(debug_assertions) { DEBUG_LOG_JS } else { "" },
             false,
@@ -596,6 +624,11 @@ fn build_tab(
                     // says the site has none.
                     if target.scheme() == "http" && url.scheme() == "https" {
                         nav.push(Msg::Upgraded(tab, target.clone()));
+                    }
+                    if policy.shields().clean_links
+                        && blackhole_domain::clean_link::clean(&target).is_some()
+                    {
+                        nav.push(Msg::LinkCleaned);
                     }
                     nav.push(Msg::Redirect(tab, url));
                     false

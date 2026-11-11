@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.6",
+        &[
+            "Recall: find a page you read from a few words of its text (command bar, Ctrl/Cmd+Shift+F). Off until you turn it on in Settings > Privacy; the text stays on this computer, encrypted; never in private windows, black hole tabs, pages with a password field or the sites you list; clearing the history clears it too",
+            "Black hole tab: a tab with a session of its own (no cookie of the space, nothing in the history or the archive), destroyed when it closes. From the command bar (New black hole tab) or a link's menu; four at most, since each keeps its page alive",
+            "Pilot split: in a split view, the arrow on a pane makes its links open in the other pane, so a list of results or a table of contents stays in place while you read",
+            "Clean links: more tracking parameters are dropped from addresses, the redirect pages of search engines and social networks are skipped, a link's menu copies the clean address, and Settings > Privacy has a switch for it",
+            "Highlights: select text on a page, right-click, Highlight. The passage stays marked each time you come back, can carry a note, and is listed in Library > Highlights, from where it can be clipped to an Easel",
+            "Wormhole: send selected text, the clipboard or a file (64 MB at most) to a paired device over the local network, encrypted, without a server. A file waits for Accept on the other device; a received text is only copied when you ask",
+            "The command bar opens in one movement: the panel glides into place and its rows rise after it, with a single glow behind it for a new tab; the animations setting and the system's reduced motion now stop all of it",
+        ],
+    ),
+    (
         "0.8.5",
         &[
             "Lighter on heavy web apps (YouTube, Google Docs and Sheets, Meet): trackers and ads are now blocked by the engine itself (WebKit content rules on macOS, request filters on Windows) instead of a script that wrapped the page's own functions in every frame",

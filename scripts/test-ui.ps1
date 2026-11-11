@@ -226,7 +226,7 @@ wait 800
 eval settings document.getElementById('calsrc').textContent
 cmd {"cmd":"panel_window","window":"settings","action":"close"}
 wait 500
-eval chrome (bh.render({...state, meeting: {title: 'Standup', url: 'https://meet.google.com/abc-defg-hij', when: 'In 5 min · 09:30', on: false}}), document.querySelector('#meet .nm').textContent + '|' + document.querySelector('#meet button').textContent)
+eval chrome (bh.render({...state, meeting: {title: 'Standup', url: 'https://meet.google.com/abc-defg-hij', when: 'In 5 min · 09:30', on: false}}), document.querySelector('#meet .nm').textContent + '|' + document.querySelector('#meet button:not(.ic)').textContent)
 eval chrome (bh.render({...state, meeting: null}), String(document.getElementById('meet').children.length))
 eval chrome (window.__n = state.tabs.length, 'count')
 cmd {"cmd":"open_meet"}
@@ -598,7 +598,7 @@ Check ($evals[57] -match '"true\|38px\|true"') 'settings window: own top bar lik
 Check ($evals[60] -match '"1\|true"') 'middle click on a link: a new tab in the background'
 Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window') 'right click on a link: the link menu'
 Check ($evals[63] -match '"true\|[1-9]') 'shields: the clean-up script and its sheet are in the page'
-Check ($evals[64] -match '"1111"' -and $evals[65] -match '"1101"') 'privacy: shields listed and switched one by one'
+Check ($evals[64] -match '"11111"' -and $evals[65] -match '"11011"') 'privacy: shields listed and switched one by one'
 Check ($evals[66] -match 'Add the live area to,.*New Easel,Watch this area for changes') 'live capture: asks which Easel, or to watch the area'
 Check ($evals[68] -match '"1"') 'live capture: added to the Easel chosen (a new one)'
 Check ($evals[69] -match '"calendar\|No calendar yet\."') 'calendar: its own section in Settings'
@@ -615,12 +615,12 @@ Check ($evals[80] -match '"1\|true\|.*filed into 1 folder.*Undo"') 'tidy: tabs f
 Check ($evals[82] -match '"0"') 'tidy: Undo puts the tabs back'
 Check ($evals[83] -match '"true\|true"') 'compare: the open tabs are read and shown side by side'
 Check ($evals[84] -match 'Price199 EUR179 EUR' -and $evals[84] -match 'Weight200 g250 g' -and $evals[84] -match '\|179 EUR,4\.5"') 'compare: fields in rows, lowest price and best rating stand out'
-Check ($evals[86] -match '"true\|Search for .{1,3}Black hole sun.{1,3},Copy"') 'selection: right click offers to search it, or copy it'
+Check ($evals[86] -match '"true\|Search for .{1,3}Black hole sun.{1,3},Copy,Highlight"') 'selection: right click offers to search it, or copy it'
 Check ($evals[89] -match '"1\|true\|https://duckduckgo\.com/\?q=Black\+hole\+sun') 'selection: the search opens in a new tab, in front, with the engine of the Settings'
 Check ($evals[91] -match 'Open address .{1,3}example\.org/bh-sel') 'selection: an address is offered to be opened instead'
 Check ($evals[94] -match '"1\|true\|true"') 'selection: Ctrl+click on the entry opens it in the background'
 Check ($evals[96] -match 'Search for .{1,3}javascript:alert' -and $evals[96] -notmatch 'Open address') 'selection: a javascript: address is only ever searched'
-Check ($evals[98] -match 'Search for .{1,3}Black hole link.{1,3},Copy,Open link in new tab,.*Copy link') 'selection on a link: search entries plus the link menu'
+Check ($evals[98] -match 'Search for .{1,3}Black hole link.{1,3},Copy,Highlight,Open link in new tab,.*Open link in black hole tab,.*Copy link') 'selection on a link: search entries plus the link menu'
 Check ($evals[99] -match '"devices\|No device paired yet\."') 'devices: their own section in Settings, nothing paired'
 Check ($evals[100] -match '12 characters') 'devices: a wrong pairing code is refused'
 Check ($evals[101] -match '"false\|[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}"') 'devices: a pairing code is shown (ABCD-EFGH-JKMN)'
@@ -635,7 +635,7 @@ Check ((AuthEval 9) -match 'auth9:bh-auth-401') 'http auth: Cancel shows the ser
 Check ((AuthEval 10) -match 'auth10:false') 'http auth: Cancel closes the prompt'
 Check ((AuthEval 11) -match 'auth11:bh-auth-401') 'http auth: closing the palette (Esc) cancels like Cancel'
 Check ((PwEval 1) -match 'pw1:passwords\|false\|No saved password yet') 'passwords: their own section in Settings, open with the keychain, empty'
-Check ((PwEval 2) -match 'pw2:example\.combh-test-user.*\|false') 'passwords: added, listed by site and username, the password not in the page'
+Check ((PwEval 2) -match 'pw2:E?example\.combh-test-user.*\|false') 'passwords: added, listed by site and username, the password not in the page'
 Check ((PwEval 4) -match 'pw4:20\|true') 'passwords: the generator fills a 20-character password in the editor'
 Check ((PwEval 6) -match 'pw6:object') 'passwords: the autofill script is in the page (main frame)'
 Check ((PwEval 8) -match 'pw8:0\|"') 'passwords: a page posting autofill_fill itself (no menu token) gets nothing'
@@ -656,7 +656,7 @@ Check ((ErrEval 14) -match 'err14:' -and (ErrEval 14) -notmatch 'open')'error pa
 Check ((ErrEval 15) -match 'err15:true') 'error page: no "Not secure" on a normal https page'
 Check ((ErrEval 17) -match 'err17:Blocked by the Shields\|.*Allow this site') 'error page: a blocked tracker opened as a page shows the Shields page'
 Check ((ErrEval 18) -match 'err18:Offline') 'error page: offline variant'
-Check ((ErrEval 19) -match 'err19:The computer.s clock is wrong\|Continue anyway') 'error page: wrong clock variant'
+Check ((ErrEval 19) -match 'err19:The computer.{1,3}s clock is wrong\|Continue anyway') 'error page: wrong clock variant'
 Check ((ErrEval 20) -match 'err20:No secure version\|Continue over http') 'error page: http only variant'
 Check ((ErrEval 21) -match 'err21:Site unreachable\|true\|1"') 'error page: one scene per kind (the black hole for "Site unreachable")'
 Check ($saved.Count -eq 37) "screenshots saved ($($saved.Count)/37)"

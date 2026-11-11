@@ -11,7 +11,8 @@
 use crate::i18n::{message, t, tf, tn};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::handoff::{can_continue, has_position, resume_url};
-use blackhole_infrastructure::handoff::{self, DeviceInfo, Event, Handle, Request};
+use blackhole_domain::wormhole;
+use blackhole_infrastructure::handoff::{self, Cargo, DeviceInfo, Event, Handle, Request};
 use blackhole_infrastructure::sync::{decide, Decision, Received, SyncEngine};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -26,6 +27,9 @@ const SEND_AFTER: Duration = Duration::from_secs(3);
 
 /// Where the video of the page is (the longest one that has started), in seconds.
 const POSITION_JS: &str = "(()=>{const v=[...document.querySelectorAll('video')].filter(v=>v.currentTime>0&&!v.ended).sort((a,b)=>(b.duration||0)-(a.duration||0))[0];return v?v.currentTime:null})()";
+
+/// Texts received through the Wormhole that wait for their "Copy" (the oldest leave).
+const KEPT_TEXTS: usize = 8;
 
 /// A tab waiting for its page to say where its video is: device, address, title, position.
 type Pending = (String, String, String, String);
@@ -47,11 +51,18 @@ pub struct Nearby {
     later: HashSet<String>,
     observe_at: Instant,
     changed_at: Option<Instant>,
+    /// Wormhole: files picked in the system's dialog (on a thread of its own), by device.
+    pick_tx: Sender<(String, std::path::PathBuf)>,
+    pick_rx: Receiver<(String, std::path::PathBuf)>,
+    /// Wormhole: texts received, kept until copied (never put in the clipboard unasked).
+    texts: Vec<(u64, String)>,
+    next_text: u64,
 }
 
 impl Nearby {
     pub fn new(data: &std::path::Path, private: bool) -> Self {
         let (tx, rx) = channel();
+        let (pick_tx, pick_rx) = channel();
         // Development builds stay on this machine: no firewall prompt while testing.
         let config = if cfg!(feature = "devtools") {
             let mut config = handoff::Config::loopback(data, &device_name());
@@ -81,6 +92,10 @@ impl Nearby {
             later: HashSet::new(),
             observe_at: Instant::now(),
             changed_at: None,
+            pick_tx,
+            pick_rx,
+            texts: Vec::new(),
+            next_text: 0,
         }
     }
 
@@ -140,6 +155,41 @@ impl Running {
             .collect()
     }
 
+    /// Command bar actions of the Wormhole: the clipboard or a file, to each paired device.
+    pub(crate) fn beam_actions(&self) -> Vec<Value> {
+        self.nearby
+            .devices
+            .iter()
+            .flat_map(|d| {
+                [
+                    json!({"id": format!("beam_clip:{}", d.id), "label": tf("palette.beam_clipboard", &[("name", &d.name)]), "hint": "Wormhole"}),
+                    json!({"id": format!("beam_file:{}", d.id), "label": tf("palette.beam_file", &[("name", &d.name)]), "hint": "Wormhole"}),
+                ]
+            })
+            .collect()
+    }
+
+    /// Entries of the page menu for a selected text: send it to a paired device.
+    pub(crate) fn beam_menu_items(&self, text: &str) -> Vec<Value> {
+        self.nearby
+            .devices
+            .iter()
+            .take(3)
+            .map(|d| json!({"icon": "devices", "label": tf("menu.beam_to", &[("name", &d.name)]),
+                "run": {"cmd": "beam_text", "device": d.id, "text": text}}))
+            .collect()
+    }
+
+    fn beam(&mut self, device: String, payload: Cargo) {
+        let name = self.nearby.devices.iter().find(|d| d.id == device).map(|d| d.name.clone());
+        let Some(name) = name else {
+            self.toast(&t("msg.device_unpaired"));
+            return;
+        };
+        self.toast(&tf("toast.beam_sending", &[("name", &name)]));
+        self.nearby.request(Request::Beam { device, payload });
+    }
+
     /// Sends a tab to a paired device, with the position of its video when it has one.
     pub(crate) fn continue_on(&mut self, tab: u64, device: String) {
         let found = self
@@ -181,6 +231,9 @@ impl Running {
                 title,
                 position,
             });
+        }
+        while let Ok((device, path)) = self.nearby.pick_rx.try_recv() {
+            self.beam(device, Cargo::File(path));
         }
         let mut events = Vec::new();
         if let Some(handle) = &self.nearby.handle {
@@ -229,6 +282,62 @@ impl Running {
                     }
                 }
                 Event::Delivered(name) => self.toast(&tf("toast.opened_on", &[("name", &name)])),
+                // A file is only received on the user's word; declining tells the sender.
+                Event::BeamOffer { device, from, beam, name, size } => {
+                    let message = tf(
+                        "toast.beam_offer",
+                        &[("name", &from), ("file", &name), ("size", &wormhole::human_size(size))],
+                    );
+                    let run = |accept: bool| json!({"cmd": "beam_answer", "device": device, "beam": beam, "accept": accept});
+                    let actions = json!([
+                        {"label": t("toast.beam_accept"), "run": run(true)},
+                        {"label": t("toast.beam_decline"), "run": run(false)},
+                    ]);
+                    self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+                }
+                // A text is shown, and copied only when asked: nothing reaches the clipboard
+                // by itself.
+                Event::BeamText { from, text } => {
+                    self.nearby.next_text += 1;
+                    let id = self.nearby.next_text;
+                    let short = blackhole_domain::selection::excerpt(&text, 60);
+                    self.nearby.texts.push((id, text));
+                    if self.nearby.texts.len() > KEPT_TEXTS {
+                        self.nearby.texts.remove(0);
+                    }
+                    self.toast_action(
+                        &tf("toast.beam_text", &[("name", &from), ("text", &short)]),
+                        &t("menu.copy"),
+                        json!({"cmd": "beam_copy", "id": id}),
+                    );
+                }
+                Event::BeamFile { from, name, path } => {
+                    let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+                    self.downloads.push(blackhole_infrastructure::store::DownloadRec {
+                        id,
+                        name: name.clone(),
+                        path: path.to_string_lossy().into_owned(),
+                        url: String::new(),
+                        at: crate::now_secs(),
+                        done: true,
+                        ok: true,
+                    });
+                    self.save_downloads();
+                    self.ui_library();
+                    self.toast_action(
+                        &tf("toast.beam_file", &[("name", &from), ("file", &name)]),
+                        &t("toast.open"),
+                        json!({"cmd": "library_open_file", "id": id}),
+                    );
+                }
+                Event::BeamSent { to, name } => {
+                    let message = if name.is_empty() {
+                        tf("toast.beam_text_sent", &[("name", &to)])
+                    } else {
+                        tf("toast.beam_file_sent", &[("name", &to), ("file", &name)])
+                    };
+                    self.toast(&message);
+                }
                 Event::Status(status) => {
                     if self.settings.is_none() {
                         self.toast(&status);
@@ -358,6 +467,36 @@ impl Running {
                 self.nearby.request(Request::Forget(id));
             }
             UiCommand::ContinueOn { id, device } => self.continue_on(id, device),
+            UiCommand::BeamText { device, text } => {
+                if text.trim().is_empty() || text.len() > wormhole::TEXT_MAX {
+                    self.toast(&t("msg.beam_text_size"));
+                } else {
+                    self.beam(device, Cargo::Text(text));
+                }
+            }
+            UiCommand::BeamClipboard { device } => {
+                let text = arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default();
+                self.handle_devices(UiCommand::BeamText { device, text });
+            }
+            // The system's dialog runs on its own thread; the file comes back to `service_nearby`.
+            UiCommand::BeamFile { device } => {
+                if self.nearby.handle.is_some() {
+                    let tx = self.nearby.pick_tx.clone();
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            let _ = tx.send((device, path));
+                        }
+                    });
+                }
+            }
+            UiCommand::BeamAnswer { device, beam, accept } => {
+                self.nearby.request(Request::BeamAnswer { device, beam, accept });
+            }
+            UiCommand::BeamCopy { id } => {
+                let text = self.nearby.texts.iter().find(|(i, _)| *i == id).map(|(_, t)| t.clone());
+                let copied = text.is_some_and(|t| arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok());
+                self.toast(&t(if copied { "palette.copied" } else { "palette.copy_failed" }));
+            }
             UiCommand::DeviceSync { id, mode } => {
                 self.nearby.later.remove(&id);
                 self.nearby.request(Request::SetSync { device: id, mode });

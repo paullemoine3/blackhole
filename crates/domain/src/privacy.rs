@@ -13,6 +13,8 @@ pub struct Shields {
     pub video_ads: bool,
     /// Hide cookie consent banners (and give the page its scrolling back).
     pub cookie_banners: bool,
+    /// Clean links: drop tracking parameters and skip known redirect pages (`clean_link`).
+    pub clean_links: bool,
 }
 
 impl Default for Shields {
@@ -21,13 +23,17 @@ impl Default for Shields {
             hide_ads: true,
             video_ads: true,
             cookie_banners: true,
+            clean_links: true,
         }
     }
 }
 
 impl Shields {
     fn bits(self) -> u8 {
-        u8::from(self.hide_ads) | (u8::from(self.video_ads) << 1) | (u8::from(self.cookie_banners) << 2)
+        u8::from(self.hide_ads)
+            | (u8::from(self.video_ads) << 1)
+            | (u8::from(self.cookie_banners) << 2)
+            | (u8::from(self.clean_links) << 3)
     }
 
     fn from_bits(bits: u8) -> Self {
@@ -35,6 +41,7 @@ impl Shields {
             hide_ads: bits & 1 != 0,
             video_ads: bits & 2 != 0,
             cookie_banners: bits & 4 != 0,
+            clean_links: bits & 8 != 0,
         }
     }
 }
@@ -75,15 +82,6 @@ impl Default for PrivacyPolicy {
     }
 }
 
-const TRACKING_PARAMS: &[&str] = &[
-    "fbclid", "gclid", "dclid", "msclkid", "yclid", "mc_eid", "mc_cid", "igshid", "_hsenc",
-    "_hsmi", "ref_src", "wbraid", "gbraid",
-];
-
-fn is_tracking_param(key: &str) -> bool {
-    key.starts_with("utm_") || TRACKING_PARAMS.contains(&key)
-}
-
 impl PrivacyPolicy {
     pub fn new(blocked_domains: impl IntoIterator<Item = String>) -> Self {
         Self::with_ads(blocked_domains, [])
@@ -104,7 +102,7 @@ impl PrivacyPolicy {
         }
     }
 
-    /// Turns the tracker blocklist on or off (the https upgrade and parameter clean-up stay).
+    /// Turns the tracker blocklist on or off (the https upgrade and the clean links stay).
     pub fn set_blocking(&self, on: bool) {
         self.blocking.store(on, Ordering::Relaxed);
     }
@@ -204,28 +202,27 @@ impl PrivacyPolicy {
             return PrivacyDecision::Block(why);
         }
 
-        let mut rewritten = url.clone();
-        let mut changed = false;
+        // Clean links first: the redirect page skipped, the tracking parameters dropped.
+        let cleaned = self
+            .shields()
+            .clean_links
+            .then(|| crate::clean_link::clean(url))
+            .flatten();
+        let mut changed = cleaned.is_some();
+        let mut rewritten = cleaned.unwrap_or_else(|| url.clone());
+        // The page a redirect led to is judged like any other.
+        if changed {
+            if let Some(why) = rewritten.host_str().and_then(|host| self.block_reason(host)) {
+                return PrivacyDecision::Block(why);
+            }
+        }
+        let url = &rewritten.clone();
 
         if url.scheme() == "http" && !is_local(url) {
             // Port is reset: the http port rarely serves https.
             if rewritten.set_scheme("https").is_ok() && rewritten.set_port(None).is_ok() {
                 changed = true;
             }
-        }
-
-        if url.query_pairs().any(|(k, _)| is_tracking_param(&k)) {
-            let kept: Vec<(String, String)> = url
-                .query_pairs()
-                .filter(|(k, _)| !is_tracking_param(k))
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect();
-            if kept.is_empty() {
-                rewritten.set_query(None);
-            } else {
-                rewritten.query_pairs_mut().clear().extend_pairs(kept);
-            }
-            changed = true;
         }
 
         if changed {
@@ -472,6 +469,7 @@ mod tests {
             hide_ads: false,
             video_ads: true,
             cookie_banners: false,
+            clean_links: true,
         };
         p.set_shields(some);
         assert_eq!(clone.shields(), some);
@@ -499,6 +497,29 @@ mod tests {
             PrivacyDecision::Rewrite(u) => assert_eq!(u.as_str(), "https://example.com/a?id=3"),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn clean_links_skip_redirect_pages_and_follow_their_switch() {
+        let p = policy();
+        let wrapped = Url::parse("https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fa%3Futm_source%3Dx").unwrap();
+        assert_eq!(
+            p.evaluate(&wrapped),
+            PrivacyDecision::Rewrite(Url::parse("https://example.com/a").unwrap())
+        );
+        // A redirect page cannot be a way around the blocklist.
+        let to_tracker = Url::parse("https://www.google.com/url?q=https://ads.doubleclick.net/x").unwrap();
+        assert!(matches!(p.evaluate(&to_tracker), PrivacyDecision::Block(_)));
+        p.set_shields(Shields { clean_links: false, ..Shields::default() });
+        assert_eq!(p.evaluate(&wrapped), PrivacyDecision::Allow);
+        let tagged = Url::parse("https://example.com/a?utm_source=x").unwrap();
+        assert_eq!(p.evaluate(&tagged), PrivacyDecision::Allow);
+        // The https upgrade does not depend on it.
+        let plain = Url::parse("http://example.com/a?utm_source=x").unwrap();
+        assert_eq!(
+            p.evaluate(&plain),
+            PrivacyDecision::Rewrite(Url::parse("https://example.com/a?utm_source=x").unwrap())
+        );
     }
 
     #[test]

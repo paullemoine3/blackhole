@@ -231,6 +231,25 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         true
     }
 
+    /// Recall on or off (see `domain::recall`).
+    pub fn set_recall(&mut self, on: bool) {
+        self.settings.recall = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// Adds a site to (or takes it off) the list Recall never remembers. `site` may be a host
+    /// or an address; the site as listed is returned, `None` when it is not a site.
+    pub fn set_recall_excluded(&mut self, site: &str, excluded: bool) -> Option<String> {
+        let site = blackhole_domain::recall::site_of(site)?;
+        if excluded {
+            self.settings.recall_exclude.insert(site.clone());
+        } else {
+            self.settings.recall_exclude.remove(&site);
+        }
+        let _ = self.repo.save_settings(&self.settings);
+        Some(site)
+    }
+
     /// Minutes before a wallet with a master password locks again; ignored unless one of
     /// `Settings::LOCK_CHOICES`.
     pub fn set_password_lock(&mut self, minutes: u32) {
@@ -241,7 +260,8 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     /// Switches one of the Privacy shields by name: `ads` (the ad server list), `hide_ads`,
-    /// `video_ads` or `cookie_banners` (what pages clean up). False for an unknown name.
+    /// `video_ads` or `cookie_banners` (what pages clean up), `clean_links` (tracking parameters
+    /// and redirect pages). False for an unknown name.
     pub fn set_shield(&mut self, name: &str, on: bool) -> bool {
         let shields = &mut self.settings.shields;
         match name {
@@ -252,6 +272,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             "hide_ads" => shields.hide_ads = on,
             "video_ads" => shields.video_ads = on,
             "cookie_banners" => shields.cookie_banners = on,
+            "clean_links" => shields.clean_links = on,
             _ => return false,
         }
         self.policy.set_shields(self.settings.shields);
@@ -419,6 +440,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
                 self.persist();
                 Some(id)
             }
+            NavigationOutcome::Blocked(_) => None,
+        }
+    }
+
+    /// Opens a black hole tab on `input` in the active space (no Air Traffic, no reuse of an
+    /// open tab: its session is its own).
+    pub fn open_burner(&mut self, input: &str) -> Option<TabId> {
+        match self.resolve(input) {
+            NavigationOutcome::Go(url) => Some(self.workspace.open_burner(url)),
             NavigationOutcome::Blocked(_) => None,
         }
     }
@@ -628,6 +658,11 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     pub fn page_changed(&mut self, id: TabId, url: Option<Url>, title: Option<String>) {
+        // A black hole tab leaves no trace: its pages stay out of the history.
+        if self.workspace.is_burner(id) {
+            self.workspace.update_page(id, url, title);
+            return;
+        }
         if let Some(url) = &url {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -944,6 +979,33 @@ mod tests {
         let svc2 = BrowserService::start(repo, PrivacyPolicy::default());
         assert_eq!(svc2.workspace().active_space().icon, "🚀");
         assert_eq!(svc2.workspace().split_tab(), Some(b));
+    }
+
+    #[test]
+    fn recall_is_off_at_first_and_its_exclusions_are_sites() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        assert!(!svc.settings().recall);
+        svc.set_recall(true);
+        assert_eq!(svc.set_recall_excluded("https://www.Bank.test/login", true).as_deref(), Some("bank.test"));
+        assert_eq!(svc.set_recall_excluded("not a site", true), None);
+        assert!(svc.settings().recall && svc.settings().recall_exclude.contains("bank.test"));
+        svc.set_recall_excluded("bank.test", false);
+        assert!(svc.settings().recall_exclude.is_empty());
+    }
+
+    #[test]
+    fn a_black_hole_tab_stays_out_of_the_history() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let plain = svc.open_tab("https://a.test/").unwrap();
+        let hole = svc.open_burner("https://b.test/").unwrap();
+        assert!(svc.workspace().is_burner(hole));
+        svc.page_changed(plain, Some(Url::parse("https://a.test/").unwrap()), None);
+        svc.page_changed(hole, Some(Url::parse("https://b.test/secret").unwrap()), Some("Secret".into()));
+        let seen: Vec<&str> = svc.recent_activity(10).iter().map(|e| e.url.as_str()).collect();
+        assert_eq!(seen, ["https://a.test/"]);
+        // The tab itself still follows its page.
+        let tab = svc.workspace().active_space().tabs.iter().find(|t| t.id == hole).unwrap();
+        assert_eq!((tab.url.as_str(), tab.title.as_str()), ("https://b.test/secret", "Secret"));
     }
 
     #[test]

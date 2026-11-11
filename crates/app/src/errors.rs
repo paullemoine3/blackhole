@@ -135,6 +135,11 @@ fn now_unix() -> i64 {
 
 impl Running {
     /// A new navigation started in the tab: its error page (if any) is gone.
+    /// Whether `tab` shows one of BlackHole's error pages rather than a page of the web.
+    pub(crate) fn error_shown(&self, tab: TabId) -> bool {
+        self.errors.shown.contains_key(&tab)
+    }
+
     pub(crate) fn errors_load_start(&mut self, tab: TabId) {
         self.errors.failures.remove(&tab);
         self.errors.shown.remove(&tab);

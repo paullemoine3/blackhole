@@ -16,9 +16,12 @@ mod media;
 mod compare;
 mod meet;
 mod handoff;
+mod highlights;
 mod i18n;
 mod watching;
 mod passwords;
+mod pilot;
+mod recall;
 mod sidebar;
 mod stats;
 mod views;
@@ -119,8 +122,8 @@ const SPARES_DELAY: Duration = Duration::from_millis(900);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
 const LIBRARY_HTML: &str = include_str!("../ui/library.html");
 /// The sections of the Library page, in its rail's order.
-const LIBRARY_SECTIONS: [&str; 7] =
-    ["media", "downloads", "easels", "spaces", "history", "watches", "archive"];
+const LIBRARY_SECTIONS: [&str; 8] =
+    ["media", "downloads", "easels", "spaces", "history", "highlights", "watches", "archive"];
 /// Gap between the two panes of a split view.
 const SPLIT_GAP: f64 = 8.0;
 /// Height of the strip above a split view that carries each pane's title and close button.
@@ -223,6 +226,8 @@ const BLUR_DELAY: Duration = Duration::from_millis(350);
 /// A site needs this many loose tabs to be suggested as a folder; the sidebar only suggests a
 /// tidy-up from `TIDY_FROM` loose tabs.
 const TIDY_MIN: usize = 3;
+/// Black hole tabs open at once: each keeps its page alive (never put to sleep) until closed.
+const MAX_BURNERS: usize = 4;
 const TIDY_FROM: usize = 6;
 /// How long the Undo of a deleted space or folder stays possible (the toast shows for 8 s).
 const UNDO_FOR: Duration = Duration::from_secs(15);
@@ -425,6 +430,12 @@ struct Running {
     media_seen: serde_json::Value,
     /// Last report with media per tab: a short gap in the probes keeps the card on screen.
     media_hold: media::Linger<MediaProbe>,
+    /// The next address typed in the command bar opens in a black hole tab.
+    burner_next: bool,
+    /// Pilot split: the tab whose links open in the other pane (session only).
+    pilot: Option<TabId>,
+    /// Links cleaned on the way this session (the privacy report's count).
+    links_cleaned: u32,
     /// The space or folder deleted last, for the toast's Undo.
     undo: Option<(Instant, Removed)>,
     /// Library section asked for by the command bar ("Open History"), with a request number.
@@ -441,6 +452,10 @@ struct Running {
     nearby: handoff::Nearby,
     /// Watched areas of pages (see watching.rs).
     watching: watching::Watching,
+    /// Recall: the pages read, searchable by what they said (see recall.rs).
+    recall: recall::Recall,
+    /// Highlights and notes on pages (see highlights.rs).
+    marks: highlights::Marks,
     /// The tab comparator (see compare.rs).
     comparing: compare::Comparing,
     /// The last tidy-up, for its Undo; whether the suggestion was dismissed this session.
@@ -645,6 +660,14 @@ impl Running {
             profile.clone()
         };
         let mut web_context = WebContext::new(Some(data.join("webview")));
+        // Profiles of the black hole tabs of earlier runs (WebView2 keeps a folder per profile).
+        #[cfg(windows)]
+        {
+            let (engine, keep) = (data.join("webview"), views::burner_prefix());
+            std::thread::spawn(move || {
+                blackhole_infrastructure::remove_burner_profiles(&engine, &keep);
+            });
+        }
         // Session, icons and extensions live in separate files: load them side by side.
         let (mut svc, favicons, preloaded_ext) = std::thread::scope(|scope| {
             let icons = scope.spawn(|| favicons::Favicons::load(&data));
@@ -840,6 +863,9 @@ impl Running {
             crashed: HashMap::new(),
             media_seen: serde_json::Value::Null,
             media_hold: media::Linger::new(media::LINGER),
+            burner_next: false,
+            pilot: None,
+            links_cleaned: 0,
             undo: None,
             library_jump: (0, ""),
             panels_maxed: (false, false),
@@ -848,6 +874,8 @@ impl Running {
             calendar: meet::Calendar::new(&data),
             nearby: handoff::Nearby::new(&data, private_mode()),
             watching: watching::Watching::new(&data),
+            recall: recall::Recall::new(&data, private_mode()),
+            marks: highlights::Marks::new(&data, private_mode()),
             comparing: compare::Comparing::new(),
             tidied: None,
             tidy_dismissed: false,
@@ -1288,6 +1316,7 @@ impl Running {
                 "folder": t.folder.map(|f| f.0),
                 "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
                 "asleep": !self.tabs.contains_key(&t.id),
+                "burner": ws.is_burner(t.id),
             })).collect::<Vec<_>>(),
         });
         if self.icons_for_ui.replace(false) {
@@ -1308,7 +1337,8 @@ impl Running {
     fn ui_splitbar(&self) {
         let ws = self.svc.workspace();
         let (active, other) = (ws.active_tab(), self.split_tab());
-        let pane = |t: &blackhole_domain::Tab| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()});
+        let pilot = self.pilot_panes().map(|(pilot, _)| pilot);
+        let pane = |t: &blackhole_domain::Tab| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str(), "pilot": pilot == Some(t.id)});
         let other = other.and_then(|id| ws.active_space().tabs.iter().find(|t| t.id == id));
         let Some(splitbar) = &self.splitbar.view else {
             return;
@@ -1352,6 +1382,7 @@ impl Running {
                 "hideAds": settings.shields.hide_ads,
                 "videoAds": settings.shields.video_ads,
                 "cookieBanners": settings.shields.cookie_banners,
+                "cleanLinks": settings.shields.clean_links,
             },
             "tabSleep": settings.tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
@@ -1396,6 +1427,7 @@ impl Running {
         });
         // General > Language: the setting, the languages in their own words, and what "System"
         // gives on this computer.
+        state["recall"] = self.recall_state();
         state["language"] = json!(settings.language);
         state["languages"] = json!(blackhole_domain::i18n::LANGUAGES
             .iter()
@@ -2078,7 +2110,7 @@ impl Running {
     /// Right click on a link of a page: open it in a new tab, a new window, a private window,
     /// preview it, or copy it. On selected text (`text`, untrusted): search it with the engine
     /// of the Settings, or open it when it is a web address, or copy it.
-    fn link_menu(&mut self, tab: TabId, raw: &str, text: &str, x: f64, y: f64) {
+    fn link_menu(&mut self, tab: TabId, raw: &str, text: &str, mark: u64, x: f64, y: f64) {
         use blackhole_domain::selection::{
             clean_selection, excerpt, selection_action, SelectionAction,
         };
@@ -2100,9 +2132,28 @@ impl Running {
                 "run": {"cmd": "open_link", "url": url, "target": "front"},
                 "background": {"cmd": "open_link", "url": url, "target": "tab"}}));
             items.push(json!({"icon": "copy", "label": t("menu.copy"), "copy": text}));
+            items.extend(self.beam_menu_items(text));
+            // The selection is read now, while it is there: the entry only confirms it.
+            if self.can_mark(tab) {
+                self.mark_capture(tab, false);
+                items.push(json!({"icon": "marker", "label": t("menu.highlight"), "run": {"cmd": "highlight_selection", "tab": tab.0}}));
+            }
         }
+        let on_mark = if mark == 0 { Vec::new() } else { self.mark_menu_items(tab, mark) };
+        if !on_mark.is_empty() {
+            if !items.is_empty() {
+                items.push(json!({"sep": true}));
+            }
+            items.extend(on_mark);
+        }
+        // "Copy link" copies the clean address: what is pasted elsewhere tracks nobody.
+        let clean = link
+            .as_ref()
+            .filter(|_| self.svc.settings().shields.clean_links)
+            .and_then(blackhole_domain::clean_link::clean);
         if let Some(url) = &link {
             let link = url.as_str();
+            let copied = clean.as_ref().map_or(link, Url::as_str);
             if !items.is_empty() {
                 items.push(json!({"sep": true}));
             }
@@ -2110,9 +2161,10 @@ impl Running {
                 json!({"icon": "plus", "label": t("menu.link_new_tab"), "run": {"cmd": "open_link", "url": link, "target": "tab"}}),
                 json!({"icon": "window", "label": t("menu.link_new_window"), "run": {"cmd": "open_link", "url": link, "target": "window"}}),
                 json!({"icon": "sleep", "label": t("menu.link_private_window"), "run": {"cmd": "open_link", "url": link, "target": "private"}}),
+                json!({"icon": "hole", "label": t("menu.link_burner"), "run": {"cmd": "open_link", "url": link, "target": "burner"}}),
                 json!({"sep": true}),
                 json!({"icon": "open", "label": t("menu.link_peek"), "run": {"cmd": "open_peek", "url": link}}),
-                json!({"icon": "link", "label": t("menu.copy_link"), "copy": link}),
+                json!({"icon": "link", "label": t(if clean.is_some() { "menu.copy_clean_link" } else { "menu.copy_link" }), "copy": copied}),
             ]);
         }
         if items.is_empty() {
@@ -2301,6 +2353,7 @@ impl Running {
             "jump": json!([self.library_jump.0, self.library_jump.1]),
             "animations": self.svc.settings().animations,
             "watches": self.watches_json(),
+            "highlights": self.marks_json(),
         });
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -2333,6 +2386,7 @@ impl Running {
 
     fn close_library(&mut self) {
         if self.library {
+            self.marks_edit_done();
             self.library = false;
             self.sync();
         }
@@ -2358,7 +2412,8 @@ impl Running {
         else {
             return;
         };
-        if !matches!(tab.url.scheme(), "http" | "https") {
+        // A black hole tab leaves nothing behind, not even in the archive.
+        if !matches!(tab.url.scheme(), "http" | "https") || ws.is_burner(id) {
             return;
         }
         let rec = blackhole_infrastructure::store::ArchivedTab {
@@ -2524,7 +2579,11 @@ impl Running {
                         self.archive.clear();
                         self.save_archive();
                     }
-                    "history" => self.svc.clear_history(),
+                    "history" => {
+                        self.svc.clear_history();
+                        self.recall_forget(None);
+                    }
+                    "highlights" => self.marks_clear(),
                     _ => {}
                 }
                 self.ui_library();
@@ -2544,6 +2603,7 @@ impl Running {
             UiCommand::ForgetHistory { url } => {
                 if let Ok(url) = Url::parse(&url) {
                     self.svc.forget_history(&url);
+                    self.recall_forget(Some(url.as_str()));
                     self.ui_library();
                 }
             }
@@ -2989,6 +3049,9 @@ impl Running {
     }
 
     fn store_of_tab(&self, tab: TabId) -> views::Store {
+        if self.svc.workspace().is_burner(tab) {
+            return views::Store::Burner(tab.0);
+        }
         let owner = self
             .svc
             .workspace()
@@ -3355,6 +3418,13 @@ impl Running {
         for id in now_busy {
             self.busy_seen.insert(id, now);
         }
+        // Releasing the page of a black hole tab would end its session: it stays alive until
+        // the tab is closed (their number is capped, see `open_burner`).
+        let ws = self.svc.workspace();
+        let holes: Vec<TabId> = self.tabs.keys().filter(|id| ws.is_burner(**id)).copied().collect();
+        for id in holes {
+            self.busy_seen.insert(id, now);
+        }
         self.busy_seen
             .retain(|id, seen| self.tabs.contains_key(id) && now.duration_since(*seen) < BUSY_GRACE);
         let busy: Vec<TabId> = self.busy_seen.keys().copied().collect();
@@ -3464,6 +3534,7 @@ impl Running {
     }
 
     pub(crate) fn sync(&mut self) {
+        self.pilot_sync();
         self.icons_for_ui.set(true);
         self.icons_for_home.set(true);
         self.ensure_active_view();
@@ -3719,7 +3790,30 @@ impl Running {
         self.apply_focus();
     }
 
+    /// A black hole tab on `input`: a tab with a session of its own (no cookie of the space,
+    /// nothing kept), destroyed when it closes.
+    fn open_burner(&mut self, input: &str) {
+        self.close_palette();
+        self.close_peek();
+        if self.svc.workspace().burner_count() >= MAX_BURNERS {
+            self.toast(&t("toast.too_many_burners"));
+            return;
+        }
+        match self.svc.open_burner(input) {
+            Some(_) => {
+                self.home_visible = false;
+                self.easel_tab = false;
+                self.library = false;
+                self.sync();
+            }
+            None => self.toast(&t("blocked.unsupported_scheme")),
+        }
+    }
+
     fn open(&mut self, input: &str) {
+        if std::mem::take(&mut self.burner_next) {
+            return self.open_burner(input);
+        }
         self.close_palette();
         self.close_peek();
         match self.svc.resolve(input) {
@@ -3739,6 +3833,9 @@ impl Running {
     }
 
     fn navigate(&mut self, input: &str) {
+        if self.burner_next {
+            return self.open(input);
+        }
         self.close_palette();
         let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
         let active = if self.home_shown() {
@@ -3798,7 +3895,14 @@ impl Running {
     /// Releases the page view of a tab and everything that followed it (media probe, floating
     /// video bookkeeping), so no state outlives the view.
     pub(crate) fn drop_view(&mut self, id: TabId) {
+        // The end of a black hole tab's page is the end of its session: on Windows the engine
+        // profile is deleted (WebKit's ephemeral store dies with the view).
+        #[cfg(windows)]
+        if let Some(view) = self.tabs.get(&id).filter(|_| self.svc.workspace().is_burner(id)) {
+            blackhole_macos_webext::delete_profile(view);
+        }
         self.tabs.remove(&id);
+        self.marks_push(id, false);
         self.last_active.remove(&id);
         if let Ok(mut probes) = self.media.lock() {
             probes.remove(&id.0);
@@ -3927,6 +4031,7 @@ impl Running {
     }
 
     fn close_palette(&mut self) {
+        self.burner_next = false;
         if !self.palette_open {
             return;
         }
@@ -4077,16 +4182,20 @@ impl Running {
             json!({"id": "default_browser", "label": t("palette.default_browser"), "hint": t("palette.hint_system")}),
             json!({"id": "clear_history", "label": t("palette.clear_history"), "confirm": t("palette.clear_history_confirm")}),
             json!({"id": "open_history", "label": t("palette.open_history"), "hint": t("palette.hint_library")}),
+            json!({"id": "recall", "label": t("palette.recall"), "keys": "mod+shift+f"}),
             json!({"id": "tidy", "label": t("palette.tidy"), "hint": t("palette.hint_tabs")}),
             json!({"id": "open_watches", "label": t("palette.watched_areas"), "hint": t("palette.hint_library")}),
+            json!({"id": "open_highlights", "label": t("palette.highlights"), "hint": t("palette.hint_library")}),
             json!({"id": "compare", "label": t("palette.compare"), "hint": t("palette.hint_tabs")}),
             json!({"id": "key:shift+t", "label": t("palette.reopen_closed"), "keys": "mod+shift+t"}),
             json!({"id": "key:n", "label": t("palette.new_window"), "keys": "mod+n"}),
             json!({"id": "key:shift+n", "label": t("palette.new_private_window"), "keys": "mod+shift+n"}),
+            json!({"id": "burner_tab", "label": t("palette.new_burner_tab"), "hint": t("palette.hint_burner")}),
         ];
         actions.extend(easel_actions);
         actions.extend(self.meeting_actions());
         actions.extend(self.continue_actions());
+        actions.extend(self.beam_actions());
         for folder in &space.folders {
             actions.push(json!({
                 "id": format!("icon_folder:{}", folder.id.0),
@@ -4097,6 +4206,8 @@ impl Running {
         if self.split_tab().is_some() {
             actions
                 .push(json!({"id": "close_split", "label": t("palette.close_split"), "keys": "mod+\\"}));
+            let label = if self.pilot_panes().is_some() { "palette.pilot_off" } else { "palette.pilot_on" };
+            actions.push(json!({"id": "pilot", "label": t(label), "hint": t("palette.hint_split")}));
         }
         if let Some(current) = active {
             for tab in space.tabs.iter().filter(|t| t.id != current.id) {
@@ -4112,7 +4223,7 @@ impl Running {
                 }));
             }
         }
-        if active.is_some() {
+        if let Some(current_tab) = active.map(|t| t.id) {
             actions.extend([
                 json!({"id": "key:f", "label": t("palette.find"), "keys": "mod+f"}),
                 json!({"id": "key:p", "label": t("palette.print"), "keys": "mod+p"}),
@@ -4126,6 +4237,9 @@ impl Running {
                 }),
             ]);
             actions.push(json!({"id": "pip", "label": t("palette.pip"), "hint": t("palette.hint_video")}));
+            if self.can_mark(current_tab) {
+                actions.push(json!({"id": "highlight", "label": t("palette.highlight"), "hint": t("palette.hint_page")}));
+            }
             actions.push(
                 json!({"id": "capture_easel", "label": t("palette.capture_easel"), "keys": "mod+shift+s"}),
             );
@@ -4134,6 +4248,9 @@ impl Running {
             );
         }
         if let Some(site) = &site {
+            if self.recall_on() && !blackhole_domain::recall::excluded(site, &self.svc.settings().recall_exclude) {
+                actions.push(json!({"id": "recall_exclude", "label": tf("palette.recall_exclude", &[("site", site)]), "hint": "Recall"}));
+            }
             actions.push(json!({"id": "boost", "label": tf("palette.boost_site", &[("site", site)]), "hint": "Boost"}));
             let routed = self.svc.route_for(site);
             for other in ws.spaces().iter().filter(|s| Some(s.id) != routed) {
@@ -4164,6 +4281,8 @@ impl Running {
         json!({
             "target": target,
             "mode": self.palette_mode,
+            "burner": self.burner_next,
+            "recall": self.recall_state(),
             "animations": self.svc.settings().animations,
             "url": url,
             "engine": self.svc.settings().search_engine.label(),
@@ -4191,6 +4310,11 @@ impl Running {
         let site = self.active_site();
         if id == "boost" {
             self.palette_mode = "boost".to_owned();
+            self.push_palette();
+            return;
+        }
+        if id == "recall" {
+            self.palette_mode = "recall".to_owned();
             self.push_palette();
             return;
         }
@@ -4224,8 +4348,20 @@ impl Running {
             "open_library" => self.handle_ui(UiCommand::OpenLibrary { section: None }),
             "new_meet" => self.open_meet(None),
             "tidy" => self.handle_ui(UiCommand::Tidy),
+            "pilot" => self.toggle_pilot(None),
+            "burner_tab" => {
+                self.new_tab();
+                self.burner_next = true;
+                self.push_palette();
+            }
             "compare" => self.compare_start(),
             other if other.starts_with("meet:") => self.open_meet(Some(other["meet:".len()..].to_owned())),
+            other if other.starts_with("beam_clip:") => {
+                self.handle_devices(UiCommand::BeamClipboard { device: other["beam_clip:".len()..].to_owned() });
+            }
+            other if other.starts_with("beam_file:") => {
+                self.handle_devices(UiCommand::BeamFile { device: other["beam_file:".len()..].to_owned() });
+            }
             other if other.starts_with("continue:") => {
                 let tab = self.svc.workspace().active_tab().map(|t| t.id.0);
                 if let Some(tab) = tab {
@@ -4238,6 +4374,15 @@ impl Running {
             "open_watches" => {
                 self.handle_ui(UiCommand::OpenLibrary { section: Some("watches".into()) });
             }
+            "open_highlights" => {
+                self.handle_ui(UiCommand::OpenLibrary { section: Some("highlights".into()) });
+            }
+            "highlight" => self.mark_selection(None),
+            "recall_exclude" => {
+                if let Some(site) = site {
+                    self.handle_recall(UiCommand::RecallExclude { site, on: true });
+                }
+            }
             // The commands that have a shortcut run exactly as the shortcut does.
             other if other.starts_with("key:") => self.shortcut(&other["key:".len()..]),
             other if other.starts_with("easel:") => {
@@ -4249,6 +4394,7 @@ impl Running {
             "capture_live" => self.handle_ui(UiCommand::LivePick),
             "clear_history" => {
                 self.svc.clear_history();
+                self.recall_forget(None);
                 self.toast(&t("toast.history_cleared"));
             }
             "default_browser" => {
@@ -4629,6 +4775,7 @@ impl Running {
             }
             UiCommand::ClearHistory => {
                 self.svc.clear_history();
+                self.recall_forget(None);
                 self.ui_state();
             }
             UiCommand::Navigate { input } => self.navigate(&input),
@@ -4737,6 +4884,17 @@ impl Running {
                     self.watch_area(tab, &selector);
                 }
             }
+            command @ (UiCommand::RecallSearch { .. }
+            | UiCommand::SetRecall { .. }
+            | UiCommand::RecallExclude { .. }
+            | UiCommand::RecallForget { .. }
+            | UiCommand::RecallClear) => self.handle_recall(command),
+            command @ (UiCommand::HighlightSelection { .. }
+            | UiCommand::HighlightRemove { .. }
+            | UiCommand::HighlightNote { .. }
+            | UiCommand::HighlightEdit { .. }
+            | UiCommand::HighlightOpen { .. }
+            | UiCommand::HighlightToEasel { .. }) => self.handle_marks(command),
             command @ (UiCommand::WatchRemove { .. }
             | UiCommand::WatchCheck { .. }
             | UiCommand::WatchesSeen) => self.handle_watch(command),
@@ -4780,11 +4938,21 @@ impl Running {
             | UiCommand::DeviceSync { .. }
             | UiCommand::DeviceSyncNow { .. }
             | UiCommand::SyncAnswer { .. }
+            | UiCommand::BeamText { .. }
+            | UiCommand::BeamClipboard { .. }
+            | UiCommand::BeamFile { .. }
+            | UiCommand::BeamAnswer { .. }
+            | UiCommand::BeamCopy { .. }
             | UiCommand::ContinueOn { .. }) => self.handle_devices(command),
             UiCommand::OpenLink { url, target } => match target.as_str() {
                 "window" | "private" => {
                     if matches!(Url::parse(&url), Ok(u) if matches!(u.scheme(), "http" | "https")) {
                         open_window(target == "private", Some(&url));
+                    }
+                }
+                "burner" => {
+                    if matches!(Url::parse(&url), Ok(u) if matches!(u.scheme(), "http" | "https")) {
+                        self.open_burner(&url);
                     }
                 }
                 // A new tab shown at once (the selection's search or address).
@@ -4905,6 +5073,7 @@ impl Running {
                 self.svc.clear_split();
                 self.sync();
             }
+            UiCommand::Pilot { id } => self.toggle_pilot(id.map(TabId)),
             UiCommand::PickIcon { kind, id } => {
                 self.icon_target = Some((kind, id));
                 self.open_palette("emoji");
@@ -5312,6 +5481,7 @@ impl Running {
             "shift+e" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "shift+s" => self.handle_ui(UiCommand::CaptureToEasel),
             "shift+l" => self.handle_ui(UiCommand::LivePick),
+            "shift+f" => self.open_palette("recall"),
             "\\" => self.toggle_split(),
             "zoom_in" | "zoom_out" | "zoom_reset" => self.zoom_active(key),
             "f" => self.with_active_tab(|v| {
@@ -5424,8 +5594,9 @@ impl Running {
                 }
             }
             Msg::Page(_, PageEvent::OpenLink { url }) => self.open_in_background(&url),
-            Msg::Page(tab, PageEvent::LinkMenu { url, text, x, y }) => {
-                self.link_menu(tab, &url, &text, x, y)
+            Msg::Page(tab, PageEvent::PilotLink { url }) => self.pilot_link(tab, &url),
+            Msg::Page(tab, PageEvent::LinkMenu { url, text, mark, x, y }) => {
+                self.link_menu(tab, &url, &text, mark, x, y)
             }
             Msg::Page(tab, PageEvent::DebugLog { msg }) => {
                 if cfg!(debug_assertions) {
@@ -5445,6 +5616,9 @@ impl Running {
                 self.login_submitted(tab, &username, &password)
             }
             Msg::Page(tab, PageEvent::Location) => {
+                self.recall_seen(tab);
+                self.marks_push(tab, false);
+                self.pilot_mark(tab);
                 self.media_hinted(tab);
                 self.refresh_url(tab)
             }
@@ -5462,7 +5636,10 @@ impl Running {
                 let site = self.site_of(tab);
                 self.on_blocked("", &host, &site);
             }
-            Msg::Url(tab, url) => self.page_url(tab, url),
+            Msg::Url(tab, url) => {
+                self.pilot_mark(tab);
+                self.page_url(tab, url);
+            }
             Msg::LoadStart(tab) => {
                 self.errors_load_start(tab);
                 self.awaiting.remove(&tab);
@@ -5470,6 +5647,9 @@ impl Running {
                 self.ui_bar();
             }
             Msg::Loaded(tab, url) => {
+                self.recall_seen(tab);
+                self.marks_push(tab, true);
+                self.pilot_mark(tab);
                 self.media_hinted(tab);
                 self.errors_loaded(tab, &url);
                 self.auth.loaded(tab);
@@ -5493,6 +5673,7 @@ impl Running {
             Msg::ServerTrust(tab, challenge) => self.on_server_trust(tab, challenge),
             Msg::Upgraded(tab, plain) => self.on_upgraded(tab, plain),
             Msg::BlockedPage(tab, url, why) => self.on_blocked_page(tab, url, why),
+            Msg::LinkCleaned => self.links_cleaned = self.links_cleaned.saturating_add(1),
             Msg::Page(tab, PageEvent::ErrorMenu { x, y }) => self.error_menu(tab, x, y),
             Msg::Auth(tab, challenge, reply) => {
                 self.errors_auth_asked(tab);
@@ -5682,6 +5863,9 @@ impl Running {
                 items.push(json!({"icon": "shield", "label": tn("menu.requests_blocked", self.blocked.total() as usize, &[])}));
             }
         }
+        if self.links_cleaned > 0 {
+            items.push(json!({"icon": "link", "label": tn("menu.links_cleaned", self.links_cleaned as usize, &[])}));
+        }
         items.push(json!({"sep": true}));
         items.push(json!({"icon": "settings", "label": t("menu.privacy_settings"), "run": {"cmd": "open_settings", "tab": "privacy"}}));
         self.show_menu(at, json!(items));
@@ -5786,6 +5970,10 @@ impl ApplicationHandler<Wake> for App {
             app.service_auth();
             app.service_nearby();
             app.service_watches();
+            app.service_marks();
+            if let Some(soon) = app.service_recall() {
+                wake = wake.min(soon.max(Duration::from_millis(20)));
+            }
             app.service_compare();
             app.service_errors();
             if app.blur_due.is_some() {
