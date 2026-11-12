@@ -10,6 +10,14 @@ $script = @'
 wait 3000
 cmd {"cmd":"set_language","language":"en"}
 shot 01-home
+eval home 'hm1:' + document.body.className + '|' + !!document.getElementById('splash') + '|' + getComputedStyle(document.querySelector('.logo')).visibility + '|' + document.querySelectorAll('.logo .mote').length + '|' + getComputedStyle(document.querySelector('.logo .ring')).animationName
+eval home 'hm2:' + (() => { const d = document.createElement('div'); d.id = 'splash'; d.innerHTML = '<i class="bgd"></i><div class="core"><i class="flash"></i><i class="shock"></i><i class="glow"></i><i class="disc"></i><i class="ring"></i></div><div class="word">BlackHole</div>'; document.body.prepend(d); splash(); return document.body.className + '|' + d.querySelectorAll('.star').length + '|' + d.querySelectorAll('.word span').length; })()
+wait 700
+eval home 'hm3:' + document.getElementById('splash').className + '|' + getComputedStyle(document.querySelector('.logo')).visibility
+shot 01b-splash-mid
+wait 1800
+eval home 'hm4:' + !!document.getElementById('splash') + '|' + document.body.className + '|' + getComputedStyle(document.querySelector('.logo')).visibility
+shot 01c-splash-landed
 eval chrome document.body ? 'ready' : 'empty'
 cmd {"cmd":"open","input":"https://example.com"}
 wait 5000
@@ -75,6 +83,8 @@ cmd {"cmd":"palette_close"}
 wait 400
 eval palette document.body.className
 cmd {"cmd":"set_animations","on":false}
+wait 300
+eval home 'hm5:' + document.body.className + '|' + getComputedStyle(document.querySelector('.logo .ring')).animationName + '|' + getComputedStyle(document.querySelector('.logo .mote')).animationName
 cmd {"cmd":"palette","mode":"new"}
 wait 400
 eval palette document.body.className
@@ -118,7 +128,18 @@ eval chrome (bh.downloads([{id:1,name:'big-file.iso',received:50,total:100,state
 wait 600
 shot 18-download-cards
 eval chrome (bh.downloads([{id:1,name:'big-file.iso',received:100,total:100,state:'ok'}]), document.querySelector('#dls .dl').className)
-eval chrome (bh.downloads([]), String(document.getElementById('dls').children.length))
+eval chrome (bh.downloads([]), String(document.querySelectorAll('#dls .dl:not(.out)').length))
+wait 700
+eval chrome 'dl4:' + document.getElementById('dls').children.length + '|' + (bh.downloads([{id:9,name:'done.zip',received:100,total:100,state:'ok'},{id:10,name:'run.iso',received:5,total:100,state:null}]), [...document.querySelectorAll('#dls .dl')].map(c => getComputedStyle(c.querySelector('.cl')).display).join(','))
+wait 500
+shot 18b-download-close-button
+eval chrome 'dl5:' + (document.querySelector('#dls .dl.ok .cl').click(), document.querySelector('#dls .dl').className)
+wait 120
+shot 18c-download-leaving
+eval chrome 'dl6:' + (bh.downloads([{id:10,name:'run.iso',received:5,total:100,state:null}]), document.getElementById('dls').children.length + '|' + document.querySelector('#dls .dl .nm').textContent)
+eval chrome 'dl7:' + (bh.downloads([]), document.getElementById('dls').children.length)
+wait 700
+eval chrome 'dl8:' + document.getElementById('dls').children.length
 cmd {"cmd":"new_tab"}
 wait 400
 eval palette (document.body.classList.contains('intro') + '|' + document.getElementById('q').value)
@@ -648,7 +669,7 @@ if (-not $proc.WaitForExit(540000)) { Stop-Process -Id $proc.Id; Write-Host 'FAI
 $log = Get-Content $logFile
 # The HTTP authentication evals are tagged ("authN:") and read apart: they shift no index.
 $all = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
-$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err|dl|cm|sb)\d+:' })
+$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err|dl|cm|sb|hm)\d+:' })
 function AuthEval($n) { $all | Where-Object { $_ -match "-> `"auth${n}:" } | Select-Object -First 1 }
 # The password wallet evals too ("pwN:").
 function PwEval($n) { $all | Where-Object { $_ -match "-> `"pw${n}:" } | Select-Object -First 1 }
@@ -794,6 +815,14 @@ $before = if ((ErrEval 45) -match 'err45:(\d+)') { [int]$Matches[1] } else { -1 
 Check ((ErrEval 46) -match "err46:$($before + 1)`"" -and (ErrEval 47) -match 'err47:Access denied\|2"' -and (ErrEval 48) -match "err48:$before`"" -and (ErrEval 49) -match 'err49:bh-hits') 'error buttons: in a new tab without history, "Back to safety" closes the tab'
 function Named($name) { [string]($all | Where-Object { $_ -match "-> `"${name}:" } | Select-Object -First 1) }
 Check ((Named dl1) -match 'dl1:bh-dl-page' -and (Named dl2) -match 'dl2:bh-dl-page\|/dlpage') 'download: a link that downloads a file leaves its page in place (no "Site unreachable")'
+Check ((Named dl4) -match 'dl4:0\|grid,none') 'download card: a card whose time is up leaves; only a finished card has a close button'
+Check ((Named dl5) -match 'dl5:dl ok out') 'download card: the close button plays the exit'
+Check ((Named dl6) -match 'dl6:1\|run\.iso') 'download card: the dismissed card is gone once the shell has forgotten it'
+Check ((Named dl7) -match 'dl7:1' -and (Named dl8) -match 'dl8:0') 'download card: a card that ends leaves with its exit, then is removed'
+Check ((Named hm1) -match 'hm1:\|false\|visible\|6\|orbit') 'start page: the logo is at rest once the launch splash is over'
+Check ((Named hm2) -match 'hm2:splashing\|24\|9' -and (Named hm3) -match 'hm3:\|hidden') 'launch splash: stars and letters, the logo hidden while it plays'
+Check ((Named hm4) -match 'hm4:false\|\|visible') 'launch splash: it lands and the logo of the page takes over'
+Check ((Named hm5) -match 'hm5:noanim\|none\|none') 'start page: no logo animation when animations are off'
 Check ((Named dl3) -match 'dl3:bh-dl-page\|/dlpage') 'download: the page is still there once the hidden sidebar has slid back'
 Check ((Named cm2) -match 'cm2:.*Reload/Add this page to the Easel/Capture a live area to an Easel[^/]*/Watch an area for changes[^/]*/Copy page link/Find in page/Print[^/]*/Inspect page') 'page menu: a right click on the page shows BlackHole''s menu (Easel, live area, watched area)'
 Check ((Named cm4) -match 'cm4:Open image in new tab/Copy image address') 'page menu: an image adds its own entries'
@@ -805,6 +834,6 @@ Check ((Named sb3) -match 'sb3:true,false,true,false,false\|Idle') 'folders: a c
 # The test file landed in the real Downloads folder: removed.
 $dlDir = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
 Get-ChildItem $dlDir -Filter 'bh-test-download*.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq 4000 } | Remove-Item -Force
-Check ($saved.Count -eq 40) "screenshots saved ($($saved.Count)/40)"
+Check ($saved.Count -eq 44) "screenshots saved ($($saved.Count)/44)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

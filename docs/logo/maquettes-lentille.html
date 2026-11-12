@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlackHole — logo « lentille » (maquettes)</title>
+<style>
+  /* Same names as docs/design-system/tokens.css. */
+  :root {
+    --ink-950: #07060c; --ink-900: #0c0b12; --ink: #eceaf5; --accent: #7c5cff;
+    --accretion-hot: #ffaa3c; --accretion-warm: #ff5a28; --accretion-ring: #ffcd78;
+    --accretion-deep: color-mix(in srgb, var(--accretion-warm) 50%, #000);
+    --hot: rgba(255,170,60,.95); --warm: rgba(255,90,40,.5); --violet-soft: rgba(124,92,255,.3);
+    --ring-a: rgba(255,205,120,.9); --ring-b: rgba(124,92,255,.8);
+    --glow-star: 0 0 6px 1px #beaaffe6;
+    --ease-glide: cubic-bezier(.2,.85,.25,1); --ease-pop: cubic-bezier(.2,1.3,.4,1);
+    --page: var(--ink-900); --text: var(--ink);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--ink-950); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; padding: 28px 16px 60px; }
+  header, section { max-width: 1240px; margin: 0 auto 26px; }
+  header h1 { font-size: 24px; font-weight: 600; }
+  header p, section > p { opacity: .65; margin-top: 6px; max-width: 860px; }
+  section > h2 { font-size: 18px; font-weight: 600; margin-top: 40px; }
+  .toggles { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; color: inherit; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  button.on { background: var(--accent); border-color: transparent; }
+  .grid { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 34px 26px; }
+  figure { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  figcaption { font-size: 13px; opacity: .8; }
+  figcaption b { display: block; color: #fff; font-size: 15px; margin-bottom: 2px; }
+  dl { font-size: 12.5px; display: grid; grid-template-columns: 92px 1fr; gap: 5px 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.09); }
+  dt { opacity: .5; } dd { opacity: .85; }
+  code { font: 12px ui-monospace, Consolas, monospace; background: rgba(255,255,255,.08); border-radius: 4px; padding: 0 4px; }
+
+  .stage { display: flex; align-items: center; justify-content: space-around; gap: 10px; height: 230px; border-radius: 14px; overflow: hidden; color: var(--text);
+    background: radial-gradient(420px 260px at 50% -10%, rgba(124,92,255,.22), transparent 70%), var(--page); border: 1px solid rgba(255,255,255,.08); }
+  .desk { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
+  .mob { display: flex; flex-direction: column; align-items: center; gap: 14px; font-size: 13px; font-weight: 600; letter-spacing: .5em; text-indent: .5em; text-transform: uppercase; }
+  .mob span { opacity: .85; }
+
+  /* Today's logo, for comparison. */
+  .bh { position: relative; width: 1em; height: 1em; font-size: var(--s, 84px); flex: none; }
+  .bh i { position: absolute; border-radius: 50%; }
+  .bh .disc { inset: 0; background: radial-gradient(circle, #000 0 34%, var(--hot) 38%, var(--warm) 52%, var(--violet-soft) 64%, transparent 76%); box-shadow: 0 0 .48em rgba(255,120,40,.3), 0 0 1.07em rgba(124,92,255,.25); animation: breathe 5s ease-in-out infinite; }
+  .bh .ring { inset: -11%; border: max(1.5px, .024em) solid transparent; border-top-color: var(--ring-a); border-right-color: var(--ring-b); animation: swirl 6s linear infinite; }
+  @keyframes breathe { 50% { transform: scale(1.06); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .55; } }
+
+  /* The lensed hole: a disc seen edge-on. The band crosses in front of the shadow, the far side of
+     the disc is bent over the top (arch, and a wider skirt that joins the band) and under it. Each
+     part is a circle around the shadow's centre; only the texture inside turns. */
+  .gh { position: relative; width: 1em; height: 1em; font-size: var(--s, 84px); flex: none; letter-spacing: 0; text-indent: 0; --R: .16em;
+    --doppler: linear-gradient(90deg, #000 0 35%, rgba(0,0,0,.5));
+    --lines: repeating-radial-gradient(circle closest-side, transparent 0 2.2%, rgba(0,0,0,.28) 3.4%, transparent 4.6%), repeating-radial-gradient(circle closest-side, transparent 0 7%, rgba(0,0,0,.3) 9%, transparent 13%);
+    --clumps: conic-gradient(var(--accretion-ring), var(--accretion-hot) 6%, var(--accretion-deep) 11%, var(--accretion-hot) 17%, var(--accretion-ring) 22%, var(--accretion-warm) 30%, var(--accretion-deep) 36%, var(--accretion-hot) 44%, var(--accretion-ring) 52%, var(--accretion-warm) 60%, var(--accretion-deep) 66%, var(--accretion-hot) 74%, var(--accretion-warm) 83%, var(--accretion-deep) 91%, var(--accretion-ring)); }
+  .gh i { position: absolute; }
+  .gh > i { left: calc(50% - var(--r)); top: calc(46% - var(--r) + var(--dy, 0em)); width: calc(var(--r) * 2); height: calc(var(--r) * 2); border-radius: 50%; }
+  .gh .w { border-radius: 0; -webkit-mask: var(--doppler); mask: var(--doppler); }
+  .gh .tex, .gh .glint { inset: 0; border-radius: 50%; -webkit-mask: var(--m); mask: var(--m); }
+  .gh .tex { background: var(--lines), var(--clumps); }
+  .gh .halo { --r: .75em; background: radial-gradient(circle, rgba(255,120,40,.26), rgba(124,92,255,.2) 45%, transparent 70%); }
+  .gh .skirt { --r: .5em; --dy: calc(var(--R) * .28); transform: scaleY(.42); clip-path: inset(0 0 50% 0); --m: radial-gradient(closest-side, transparent 0 40%, #000 58% 84%, transparent 100%); }
+  .gh .arch { --r: calc(var(--R) * 2.1); clip-path: inset(0 0 43.4% 0); transform-origin: 50% 56.6%; --m: radial-gradient(closest-side, transparent 0 51%, #000 56% 84%, transparent 100%); }
+  .gh .under { --r: calc(var(--R) * 1.5); --dy: calc(var(--R) * .5); clip-path: inset(46% 0 0 0); transform-origin: 50% 46%; --m: radial-gradient(closest-side, transparent 0 58%, #000 64% 88%, transparent 100%); }
+  .gh .shadow { --r: calc(var(--R) * 1.1); background: #000; }
+  .gh .photon { --r: calc(var(--R) * .86); border: max(1px, .008em) solid var(--accretion-ring); opacity: .7; }
+  .gh .band { --r: .5em; --dy: calc(var(--R) * .28); transform: scaleY(.085); --m: radial-gradient(closest-side, transparent 0 18%, #000 36% 78%, transparent 100%); }
+
+  /* A5, faithful: the streaks of matter flow, the far side one way and the near side the other. */
+  .flow .halo { animation: pulse 6s ease-in-out infinite; }
+  .flow .arch .tex { animation: swirl 16s linear infinite reverse; }
+  .flow .skirt .tex { animation: swirl 22s linear infinite reverse; }
+  .flow .under .tex { animation: swirl 12s linear infinite; }
+  .flow .band .tex { animation: swirl 7s linear infinite; }
+
+  /* A6, brand: flat colours, gold on the approaching side and the space's violet on the other; one
+     glint runs along the arch and the band. */
+  .g6 { --doppler: none; }
+  .g6 .tex { background: linear-gradient(90deg, var(--accretion-ring), var(--accretion-hot) 35%, var(--accretion-warm) 62%, var(--accent)); }
+  .g6 .skirt { opacity: .55; }
+  .g6 .glint { background: conic-gradient(transparent 0 76%, rgba(255,255,255,.85) 90%, transparent 100%); }
+  .g6 .halo { animation: pulse 6s ease-in-out infinite; }
+  .g6 .arch .glint { animation: swirl 5s linear infinite reverse; }
+  .g6 .band .glint { animation: swirl 5s linear -2.5s infinite; }
+
+  /* A7, tilt: the view rocks between edge-on and a little above the disc. */
+  .g7 .band { animation: tilt-band 9s ease-in-out infinite alternate; }
+  .g7 .skirt { animation: tilt-skirt 9s ease-in-out infinite alternate; }
+  .g7 .arch { animation: tilt-arch 9s ease-in-out infinite alternate; }
+  .g7 .under { animation: tilt-under 9s ease-in-out infinite alternate; }
+  @keyframes tilt-band { to { transform: scaleY(.3); } }
+  @keyframes tilt-skirt { to { transform: scaleY(.5); opacity: .5; } }
+  @keyframes tilt-arch { to { transform: scale(.94, .86); opacity: .7; } }
+  @keyframes tilt-under { to { transform: scaleY(.6); opacity: .35; } }
+
+  /* Launch splash, in a small window over a small start page. */
+  .win { position: relative; width: 320px; height: 210px; margin: 0 auto; border-radius: 12px; overflow: hidden; color: var(--text); --dive: 9;
+    background: radial-gradient(300px 190px at 50% -10%, rgba(124,92,255,.22), transparent 70%), var(--page); border: 1px solid rgba(255,255,255,.1); }
+  .mini { position: absolute; inset: 0; padding: 16px 16px 0; }
+  .mini .brand { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 12px; }
+  .mini .brand b { font-size: 13px; font-weight: 600; }
+  .mini .gh { --s: 28px; }
+  .mc { border-radius: 8px; background: rgba(128,128,128,.12); border: 1px solid rgba(128,128,128,.16); padding: 9px; margin-bottom: 8px; display: flex; gap: 8px; }
+  .mc i { width: 22px; height: 22px; border-radius: 7px; background: rgba(124,92,255,.5); }
+  .mc i:nth-child(2n) { background: rgba(255,170,60,.55); }
+  .sp { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; color: var(--ink); }
+  .win:not(.go) .sp, body.still .sp { display: none; }
+  .bgd { position: absolute; inset: 0; background: radial-gradient(300px 200px at 50% 45%, rgba(124,92,255,.28), transparent 70%), var(--ink-950); }
+  .core { --s: 120px; }
+  .word { position: absolute; top: calc(50% + 56px); width: 100%; text-align: center; font-size: 9px; font-weight: 600; letter-spacing: .6em; text-indent: .6em; text-transform: uppercase; opacity: .85; }
+  .star { left: 50%; top: 50%; width: 2px; height: 2px; margin: -1px; border-radius: 50%; background: #fff; box-shadow: var(--glow-star); opacity: 0; }
+  body.phone .win { width: 190px; height: 330px; border-radius: 22px; --dive: 11; }
+  body.phone .mini { padding: 26px 12px 0; }
+  body.phone .mini .brand { flex-direction: column; gap: 4px; }
+  body.phone .mini .brand b { font-size: 7px; letter-spacing: .5em; text-indent: .5em; text-transform: uppercase; }
+  body.phone .mini .gh { --s: 44px; }
+  body.phone .mc { flex-wrap: wrap; }
+
+  @keyframes emerge { from { opacity: 0; transform: scale(.96); } }
+  @keyframes born { from { opacity: 0; transform: scale(.2); } }
+  @keyframes fadein { from { opacity: 0; } }
+  @keyframes out { to { opacity: 0; transform: scale(1.25); visibility: hidden; } }
+  @keyframes up { from { opacity: 0; transform: scaleY(0); } }
+  @keyframes skirt-in { from { opacity: 0; transform: scale(.4, 0); } to { transform: scaleY(.42); } }
+
+  /* B4, disc rise: the band is drawn across the shadow, then the far side of the disc rises over it. */
+  .s4.go .shadow, .s4.go .photon { animation: born .35s var(--ease-glide) both; }
+  .s4.go .band { animation: band4 .5s var(--ease-glide) .15s both; }
+  .s4.go .skirt { animation: skirt-in .5s var(--ease-glide) .45s both; }
+  .s4.go .arch { animation: up .6s var(--ease-pop) .5s both; }
+  .s4.go .under { animation: up .5s var(--ease-glide) .6s both; }
+  .s4.go .halo { animation: fadein .6s ease .6s both; }
+  .s4.go .word { animation: fadein .4s ease .9s both; }
+  .s4.go .sp { animation: out .4s ease-in 1.55s both; }
+  .s4.go .mini { animation: emerge .6s var(--ease-glide) 1.6s both; }
+  @keyframes band4 { from { opacity: 0; transform: scale(0, .085); } to { transform: scale(1, .085); } }
+
+  /* B5, tilt: the disc is first seen from above (a ring, today's logo), the view drops into its
+     plane and gravity bends the far side into the arch. */
+  .s5.go .shadow { animation: born .4s var(--ease-glide) both; }
+  .s5.go .band { animation: tilt5 1.3s both; }
+  .s5.go .skirt { animation: skirt-in .5s var(--ease-glide) .85s both; }
+  .s5.go .arch { animation: arch5 .6s var(--ease-glide) .8s both; }
+  .s5.go .under { animation: up .5s var(--ease-glide) .9s both; }
+  .s5.go .photon, .s5.go .halo { animation: fadein .5s ease .9s both; }
+  .s5.go .word { animation: fadein .4s ease 1.1s both; }
+  .s5.go .sp { animation: out .4s ease-in 1.7s both; }
+  .s5.go .mini { animation: emerge .6s var(--ease-glide) 1.75s both; }
+  @keyframes tilt5 { 0% { opacity: 0; transform: scale(.5); animation-timing-function: var(--ease-glide); } 25% { opacity: 1; transform: scale(.8); animation-timing-function: cubic-bezier(.6,0,.2,1); } 100% { transform: scale(1, .085); } }
+  @keyframes arch5 { from { opacity: 0; transform: scale(1.15, .4); } }
+
+  /* B6, approach: the hole comes from far away among the stars, then its shadow takes the window. */
+  .s6 .pupil { --r: calc(var(--R) * 1.1); background: #000; }
+  .s6.go .core { animation: near 1.5s both; }
+  .s6.go .star { animation: pass var(--d) cubic-bezier(.4,0,.9,.5) var(--delay) both; }
+  .s6.go .pupil { animation: dive .45s cubic-bezier(.6,0,.9,.4) 1.05s both; }
+  .s6.go .word { animation: word6 1.2s linear both; }
+  .s6.go .sp { animation: gone .3s ease-out 1.5s both; }
+  .s6.go .mini { animation: emerge6 .5s var(--ease-glide) 1.5s both; }
+  @keyframes near { 0% { opacity: 0; transform: scale(.1); animation-timing-function: cubic-bezier(.2,.6,.2,1); } 15% { opacity: 1; } 68% { transform: scale(1); animation-timing-function: ease-in; } 100% { transform: scale(3); } }
+  @keyframes pass { 0% { opacity: 0; transform: rotate(var(--a)) translateX(8px) scale(.4); } 25% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) scale(1.6); } }
+  @keyframes dive { to { transform: scale(var(--dive)); } }
+  @keyframes word6 { 0%, 45% { opacity: 0; } 65%, 82% { opacity: .85; } 100% { opacity: 0; } }
+  @keyframes gone { to { opacity: 0; visibility: hidden; } }
+  @keyframes emerge6 { from { opacity: 0; transform: scale(1.08); } }
+
+  body.still *, body.still *::before, body.still *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .sp { display: none; } }
+  body.light { --page: #f4f3f8; --text: #1a1924; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BlackHole — logo « lentille » (proposition 2)</h1>
+  <p>Seconde série, inspirée de la visualisation d'un vrai trou noir (disque vu par la tranche : bande devant l'ombre, face arrière courbée au-dessus et en dessous par la gravité, anneau de photons, côté qui approche plus lumineux), dans nos couleurs. La première série reste dans <code>maquettes.html</code>. Rien n'est intégré dans l'app.</p>
+  <div class="toggles"><button id="t-still">Animations réduites</button><button id="t-light">Thème clair</button><button id="t-phone">Format téléphone</button><button id="t-slow">Ralenti × 0,25</button><button id="replay">Rejouer les splashs</button></div>
+</header>
+
+<section>
+<h2>A. Logo de la page d'accueil</h2>
+<p>À gauche la disposition du bureau (nom à côté), à droite celle d'Android (nom en dessous). La forme est plus large que haute et son ombre plus petite que le disque actuel : elle est montrée à 64 px et 120 px, contre 46 px et 84 px aujourd'hui.</p>
+<div class="grid">
+
+<figure>
+  <div class="stage" data-v="v0"></div>
+  <figcaption><b>A0 — Actuel</b>Disque rond qui respire, anneau en orbite. Pour comparaison, à sa taille réelle.</figcaption>
+  <dl><dt>Réduit</dt><dd>Disque et anneau fixes.</dd><dt>Coût</dt><dd>2 calques, <code>transform</code> seul.</dd><dt>Changements</dt><dd>Aucun.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="g5"></div>
+  <figcaption><b>A5 — Lentille, matière qui coule</b>Le plus proche du gif : des stries de matière glissent le long de l'arche et de la bande, en sens opposés, le côté gauche plus lumineux. Halo orange et violet de la marque.</figcaption>
+  <dl><dt>Réduit</dt><dd>La même forme, stries immobiles.</dd>
+  <dt>Coût</dt><dd>5 calques : 4 rotations (<code>transform</code>), 1 <code>opacity</code>. Dégradés et masques peints une fois. Le plus lourd des trois, et les stries se perdent sous 60 px.</dd>
+  <dt>Changements</dt><dd>Nouveau bloc à 7 enfants dans les deux pages à la place de <code>.logo</code> / <code>.hole</code> ; boîte du logo agrandie ; teinte violette de l'onglet privé à refaire sur les dégradés ; un token <code>accretion-deep</code> à ajouter.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="g6"></div>
+  <figcaption><b>A6 — Lentille, version marque</b>La même silhouette en aplats : or du côté qui approche, violet de l'espace du côté qui s'éloigne (les deux couleurs de l'anneau actuel). Un seul reflet parcourt l'arche puis la bande.</figcaption>
+  <dl><dt>Réduit</dt><dd>Silhouette en aplats, sans reflet.</dd>
+  <dt>Coût</dt><dd>3 calques : 2 rotations, 1 <code>opacity</code>. Reste net à petite taille.</dd>
+  <dt>Changements</dt><dd>Même balisage que A5, plus 2 reflets. Le violet peut suivre <code>--accent</code>, donc la couleur de l'espace et l'onglet privé, sans règle à part.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="g7"></div>
+  <figcaption><b>A7 — Lentille qui bascule</b>A5, et le point de vue oscille en 9 s entre la tranche et un peu au-dessus du disque : la bande s'ouvre en ellipse, l'arche s'efface, puis tout revient. Remplace la respiration.</figcaption>
+  <dl><dt>Réduit</dt><dd>Vue par la tranche, immobile.</dd>
+  <dt>Coût</dt><dd>9 calques : 8 <code>transform</code> (4 bascules, 4 rotations), <code>opacity</code>. À mesurer sur Android avant de retenir.</dd>
+  <dt>Changements</dt><dd>Ceux de A5, plus 4 images clés de bascule.</dd></dl>
+</figure>
+
+</div>
+</section>
+
+<section>
+<h2>B. Animation d'ouverture</h2>
+<p>Lecture en boucle ; « Rejouer » relance une carte. Avec les animations coupées il n'y a pas de splash, comme aujourd'hui. La petite page d'accueil derrière porte le logo A6.</p>
+<div class="grid">
+
+<figure>
+  <div class="win s4" data-s="s4"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B4 — Lever du disque (1,95 s)</b>L'ombre et son anneau de photons apparaissent, la bande se trace d'un bord à l'autre, puis la face arrière du disque se lève au-dessus et se déplie en dessous. La matière coule dès qu'elle est visible.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls, 11 calques au plus fort, aucune étoile, plus de <code>letter-spacing</code> animé.</dd>
+  <dt>Changements</dt><dd><code>.core</code> reçoit le bloc du logo lentille ; nouvelles images clés ; générateur d'étoiles retiré des deux pages ; <code>duration-splash</code> à ajuster.</dd></dl>
+</figure>
+
+<figure>
+  <div class="win s5" data-s="s5"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B5 — Bascule (2,1 s)</b>Le disque est d'abord vu de dessus, comme le logo actuel ; le regard descend dans son plan, l'anneau s'écrase en bande et la gravité courbe sa face arrière en arche. Raconte le passage de l'ancien logo au nouveau.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls. Un grand anneau texturé mis à l'échelle pendant 1 s.</dd>
+  <dt>Changements</dt><dd>Comme B4, avec d'autres images clés.</dd></dl>
+</figure>
+
+<figure>
+  <div class="win s6" data-s="s6"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B6 — Approche (1,8 s)</b>Le trou noir arrive de loin pendant que les étoiles défilent, s'arrête un instant, puis son ombre grandit jusqu'à prendre la fenêtre ; la page d'accueil sort du noir.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls ; 22 étoiles ; le logo entier (texturé) mis à l'échelle jusqu'à × 3, plus un disque noir plein écran pendant 0,45 s.</dd>
+  <dt>Changements</dt><dd>Bloc du logo lentille et un disque noir dans <code>.core</code> ; le générateur d'étoiles change de trajectoire (vers l'extérieur) ; en thème clair (Android) la sortie du noir est plus marquée.</dd></dl>
+</figure>
+
+</div>
+</section>
+
+<script>
+  const W = (c, more = '') => `<i class="w ${c}"><i class="tex"></i>${more}</i>`;
+  const lens = (glint) => '<i class="halo"></i>' + W('skirt') + W('arch', glint) + W('under') + '<i class="shadow"></i><i class="photon"></i>' + W('band', glint);
+  const LOGO = {
+    v0: ['bh', '<i class="disc"></i><i class="ring"></i>', 46, 84],
+    g5: ['gh flow', lens(''), 64, 120],
+    g6: ['gh g6', lens('<i class="glint"></i>'), 64, 120],
+    g7: ['gh flow g7', lens(''), 64, 120],
+  };
+  const logo = (v, size) => `<div class="${LOGO[v][0]}"${size ? ` style="--s:${size}px"` : ''}>${LOGO[v][1]}</div>`;
+  for (const st of document.querySelectorAll('.stage')) {
+    const v = st.dataset.v;
+    st.innerHTML = `<div class="desk">${logo(v, LOGO[v][2])}<span>BlackHole</span></div><div class="mob">${logo(v, LOGO[v][3])}<span>BlackHole</span></div>`;
+  }
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const stars = (n) => Array.from({ length: n }, () =>
+    `<i class="star" style="--a:${Math.round(rnd(0, 360))}deg;--r:${Math.round(rnd(110, 210))}px;--d:${rnd(.5, .9).toFixed(2)}s;--delay:${rnd(0, .6).toFixed(2)}s"></i>`).join('');
+  const wins = [...document.querySelectorAll('.win')];
+  for (const w of wins) {
+    const s6 = w.dataset.s === 's6';
+    w.innerHTML = `<div class="mini"><div class="brand">${logo('g6')}<b>BlackHole</b></div><div class="mc"><i></i><i></i><i></i><i></i><i></i></div><div class="mc"><i></i><i></i><i></i></div></div>`
+      + `<div class="sp"><i class="bgd"></i>${s6 ? stars(22) : ''}<div class="core gh flow">${lens('')}${s6 ? '<i class="pupil"></i>' : ''}</div><div class="word">BlackHole</div></div>`;
+  }
+
+  let rate = 1, timer = 0;
+  const pace = () => requestAnimationFrame(() => document.getAnimations().forEach((a) => { a.playbackRate = rate; }));
+  const play = (w) => { w.classList.remove('go'); void w.offsetWidth; w.classList.add('go'); pace(); };
+  const loop = () => { clearTimeout(timer); wins.forEach(play); timer = setTimeout(loop, 4200 / rate); };
+  for (const b of document.querySelectorAll('button.one')) b.addEventListener('click', () => play(b.previousElementSibling));
+  document.getElementById('replay').addEventListener('click', loop);
+  for (const [id, cls] of [['t-still', 'still'], ['t-light', 'light'], ['t-phone', 'phone']]) {
+    const b = document.getElementById(id);
+    b.addEventListener('click', () => { b.classList.toggle('on', document.body.classList.toggle(cls)); loop(); });
+  }
+  const slow = document.getElementById('t-slow');
+  slow.addEventListener('click', () => { rate = slow.classList.toggle('on') ? .25 : 1; loop(); });
+  loop();
+</script>
+</body>
+</html>

@@ -225,7 +225,7 @@
     --bh-duration-tint: 0.45s;
     --bh-duration-lit: 0.6s;
     --bh-duration-bloom: 0.6s;
-    --bh-duration-splash: 1.9s;
+    --bh-duration-splash: 2.05s;
     --bh-duration-breathe: 5s;
     --bh-ease-press: cubic-bezier(.3,1.4,.5,1);
     --bh-ease-grow: cubic-bezier(.3,1.2,.4,1);

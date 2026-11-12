@@ -85,7 +85,7 @@ Police système, sans fichier embarqué : `-apple-system, "Segoe UI", system-ui,
 - Survol et couleur : `duration-hover` (.18s) `ease-standard`. Pression : `duration-fast` (.15s) `ease-press`, scale .975 (rangées), .94 (puces d’espace), .88 (boutons de la barre du haut).
 - Apparitions : cartes en `dl-in` (.2s, +6px), toast en `ease-pop`, menu en `ease-pop`, palette et changement d’espace en `duration-panel` (.4s) + `ease-glide`. Trois ressorts seulement : `ease-press` (pression, soulèvement), `ease-pop` (apparition), `ease-glide` (entrée sans rebond).
 - Teinte : `duration-tint` (.45s) sur `--accent`, `--glow`, `--glow2`, `--tint1`, `--tint2`.
-- Ambiance : logo qui respire (`duration-breathe`), anneau en orbite (6s), splash (`duration-splash`).
+- Ambiance : logo calme au repos (anneau en orbite, 9s) qui avale les étoiles voisines au survol (bureau) ou au toucher (Android) ; splash (`duration-splash`, 1,75s sur Android) : effondrement des étoiles, naissance du trou, nom lettre par lettre, puis le trou atterrit sur le logo de l’accueil. `duration-breathe` reste la pulsation de la carte Meet.
 
 **Couper les animations.** Le réglage « Black hole animations » envoie `animations: false` ; la page pose alors une classe qui annule toute animation et transition. Le système d’exploitation peut aussi demander `prefers-reduced-motion: reduce`. Toute nouvelle page interne doit gérer les deux :
 

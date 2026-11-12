@@ -158,6 +158,14 @@
   .dl.bad { box-shadow: inset 0 0 0 1px var(--bh-insecure-border); }
   .dl.bad .pc { color: var(--bh-danger-text); opacity: 1; }
   .dl.bad .fill { width: 100%; background: var(--bh-danger-solid); box-shadow: none; }
+  /* A finished card can be dismissed: it leaves the way it came in (so does one whose time is
+     up), then the shell forgets it. */
+  .dl .cl { display: none; flex: none; width: 24px; height: 24px; margin: -4px -6px -4px 0; place-items: center; border: 0; border-radius: var(--bh-radius-chip); background: none; color: inherit; padding: 0; cursor: pointer;
+    opacity: var(--bh-opacity-secondary); transition: opacity var(--bh-duration-hover) var(--bh-ease-standard), background-color var(--bh-duration-hover) var(--bh-ease-standard); }
+  .dl:is(.ok, .bad) .cl { display: grid; }
+  .dl .cl:hover { opacity: 1; background: var(--bh-fill-control); }
+  .dl.out { pointer-events: none; animation: dl-out var(--bh-duration-spring) var(--bh-ease-standard) forwards; }
+  @keyframes dl-out { to { opacity: 0; transform: translateY(8px) scale(.97); } }
   @keyframes dl-done { 30% { background: color-mix(in srgb, var(--bh-success) 22%, var(--bh-fill-card)); } }
   @keyframes dl-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
   body.noanim .dl, body.noanim .dl *, body.noanim #tidy .td, body.noanim #meet .mt { animation: none !important; transition: none !important; }
@@ -1032,6 +1040,16 @@ const fmtBytes = (n) => n >= 1073741824 ? bhT('unit.gb', { n: (n / 1073741824).t
 // updated in place: rebuilding them on every progress tick replayed their entrance animation
 // and restarted the bar, which made the sidebar flicker.
 const dlNodes = new Map();
+const dlStill = () => document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+// A card plays its exit, then `then` runs once (at once when animations are off).
+function dlLeave(c, then) {
+  if (dlStill() || c.classList.contains('out')) return then();
+  let done = false;
+  const end = () => { if (!done) { done = true; then(); } };
+  c.classList.add('out');
+  c.addEventListener('animationend', end, { once: true });
+  setTimeout(end, 600);
+}
 function renderDownloads(list) {
   const box = $('dls');
   const seen = new Set();
@@ -1043,15 +1061,20 @@ function renderDownloads(list) {
     if (!c) {
       c = el('div', 'dl');
       c.append(el('div', 'top'), el('div', 'bar'));
-      c.firstChild.append(el('span', 'nm'), el('span', 'pc'));
+      const x = el('button', 'cl');
+      x.append(bhIcon('close', 'xs'));
+      // Shown on a finished card only: the shell forgets the download, the file stays.
+      x.onclick = (e) => { e.stopPropagation(); dlLeave(c, () => send({ cmd: 'dismiss_download', id: d.id })); };
+      c.firstChild.append(el('span', 'nm'), el('span', 'pc'), x);
       c.lastChild.append(el('div', 'fill'));
       // A download (finished or not) opens the Library on its Downloads section.
       c.onclick = () => send({ cmd: 'open_library', section: 'downloads' });
       dlNodes.set(d.id, c);
     }
     const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk');
-    if (c.className !== cls) c.className = cls;
-    const [nm, pc] = c.firstChild.children;
+    if (c.className !== cls && !c.classList.contains('out')) c.className = cls;
+    const [nm, pc, x] = c.firstChild.children;
+    if (x.title !== bhT('sidebar.dl_dismiss')) { x.title = bhT('sidebar.dl_dismiss'); x.setAttribute('aria-label', x.title); }
     if (nm.textContent !== d.name) nm.textContent = d.name;
     if (pc.textContent !== label) pc.textContent = label;
     const width = known && !d.state ? pct + '%' : '';
@@ -1059,7 +1082,7 @@ function renderDownloads(list) {
     c.title = d.name + (known ? ' — ' + fmtBytes(d.received) + ' / ' + fmtBytes(d.total) : '');
     if (box.children[i] !== c) box.insertBefore(c, box.children[i] || null);
   });
-  for (const [id, c] of dlNodes) if (!seen.has(id)) { c.remove(); dlNodes.delete(id); }
+  for (const [id, c] of dlNodes) if (!seen.has(id)) { dlNodes.delete(id); c.classList.contains('out') ? c.remove() : dlLeave(c, () => c.remove()); }
 }
 // Arc-style mini player for a tab that plays (or was paused) while another page is shown.
 // It stays on the player it shows while that tab is listed, and is only rebuilt when what it

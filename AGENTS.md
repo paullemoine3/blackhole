@@ -146,6 +146,13 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Cartes de la barre latérale (lecteur, téléchargements) : mises à jour en place, jamais
   reconstruites à chaque rendu (sinon l'animation d'entrée rejoue = scintillement). La carte
   lecteur garde 5 s le dernier état connu (`media::Linger`) quand une sonde ne voit plus rien.
+  Une carte de téléchargement terminé (ou échoué) a un bouton de fermeture (`dismiss_download`) ;
+  elle sort par `dl-out` (`dlLeave`), comme une carte dont le délai est écoulé.
+- Logo et splash de l'accueil (`home.html`, repris dans `mobile.html`) : logo calme au repos, qui
+  avale ses étoiles au survol (`.brand:hover`) ou au toucher (`.gulp` sur Android) ; le retour au
+  repos a ses propres transitions, plus lentes. Le splash finit en atterrissant sur le logo de la
+  page (position mesurée par le script) ; sur Android, sans page d'accueil à l'écran, il s'efface.
+  Maquettes et variantes écartées : `docs/logo/`.
 
 ## Menus et vocabulaire
 

@@ -1584,7 +1584,7 @@
   },
   "duration-splash": {
    "$type": "duration",
-   "$value": "1900ms",
+   "$value": "2050ms",
    "$description": "Splash de lancement."
   },
   "duration-breathe": {
