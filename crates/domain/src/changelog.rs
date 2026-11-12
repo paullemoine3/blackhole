@@ -10,6 +10,11 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A hidden sidebar slides out for a few seconds when a download starts or ends, so its card is seen, and the page stays usable meanwhile",
             "The sidebar no longer flickers when the count of blocked requests moves: its rows are only redrawn when a tab, a folder or a space changes",
             "A tab opened from a page (new-window link, Ctrl/Cmd+click, middle click) now tells the site which site it comes from, as the link would have: an image in a Reddit comment opens full screen instead of showing its post again",
+            "Android is smoother: the interface no longer redraws itself at every page event, so nothing blinks while you type in the address bar, close a tab or load a page; suggestions change in place, and the keyboard of the address bar no longer moves the bar or resizes the page",
+            "Android speaks French: the interface follows the system's language, or the one picked in Settings > Appearance > Language, and switches at once",
+            "Android: a long press on a tab, a space or a folder opens its menu (quick access, rename, move to a folder or another space, close the other tabs, delete with Undo); folders show in the sidebar, fold, and a card offers to tidy up loose tabs by site",
+            "Android: sign-in windows (Google, Microsoft, Apple, GitHub…) now return to the page that opened them, and a server that asks for a name and password gets them from a question in BlackHole, never stored",
+            "Android: an empty 401, 403 or server error answer shows an error page instead of a blank one, and a page whose engine process stops is reloaded once instead of taking the app down",
         ],
     ),
     (
@@ -22,11 +27,6 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Highlights: select text on a page, right-click, Highlight. The passage stays marked each time you come back, can carry a note, and is listed in Library > Highlights, from where it can be clipped to an Easel",
             "Wormhole: send selected text, the clipboard or a file (64 MB at most) to a paired device over the local network, encrypted, without a server. A file waits for Accept on the other device; a received text is only copied when you ask",
             "The command bar opens in one movement: the panel glides into place and its rows rise after it, with a single glow behind it for a new tab; the animations setting and the system's reduced motion now stop all of it",
-            "Android is smoother: the interface no longer redraws itself at every page event, so nothing blinks while you type in the address bar, close a tab or load a page; suggestions change in place, and the keyboard of the address bar no longer moves the bar or resizes the page",
-            "Android speaks French: the interface follows the system's language, or the one picked in Settings > Appearance > Language, and switches at once",
-            "Android: a long press on a tab, a space or a folder opens its menu (quick access, rename, move to a folder or another space, close the other tabs, delete with Undo); folders show in the sidebar, fold, and a card offers to tidy up loose tabs by site",
-            "Android: sign-in windows (Google, Microsoft, Apple, GitHub…) now return to the page that opened them, and a server that asks for a name and password gets them from a question in BlackHole, never stored",
-            "Android: an empty 401, 403 or server error answer shows an error page instead of a blank one, and a page whose engine process stops is reloaded once instead of taking the app down",
         ],
     ),
     (
