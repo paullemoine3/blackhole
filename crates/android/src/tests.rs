@@ -441,6 +441,60 @@ fn json_entry_points_ignore_garbage() {
 }
 
 #[test]
+fn try_again_on_the_error_page_lets_the_page_that_loads_be_seen() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://down.example/");
+    let failed = c.event(E::Failed {
+        tab,
+        url: "https://down.example/".into(),
+        code: -6,
+        online: true,
+    });
+    assert_eq!(html_kind(&failed).as_deref(), Some("unreachable"));
+    assert_eq!(ui(&failed, "state").unwrap()["error"], json!("unreachable"));
+    // The page's button loads the address again: the engine asks, then the page arrives.
+    assert!(c
+        .event(E::Navigating {
+            tab,
+            url: "https://down.example/".into()
+        })
+        .is_empty());
+    c.event(E::Started {
+        tab,
+        url: "https://down.example/".into(),
+    });
+    let done = c.event(E::Finished {
+        tab,
+        url: "https://down.example/".into(),
+        title: "Back up".into(),
+    });
+    let state = ui(&done, "state").expect("the loaded page is reported");
+    assert_eq!(state["error"], json!(null));
+}
+
+#[test]
+fn a_blocked_page_offers_no_exception_the_core_could_not_grant() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    let tab = go(&mut c, "https://example.com/");
+    let out = c.event(E::BlockedPage {
+        tab,
+        url: "https://stats.g.doubleclick.net/x".into(),
+    });
+    assert_eq!(html_kind(&out).as_deref(), Some("blocked"));
+    let html = out
+        .iter()
+        .find_map(|e| match e {
+            Effect::Html { html, .. } => Some(html.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert!(html.contains("\"allow\":false"));
+    assert!(c.page_event(tab, PageEvent::ErrorMenu { x: 0.0, y: 0.0 }).is_empty());
+}
+
+#[test]
 fn the_error_page_escapes_site_text() {
     let html = crate::error_page(&json!({"kind": "unreachable", "url": "https://x.example/</script><script>alert(1)"}));
     assert!(!html.contains("</script><script>alert(1)"));

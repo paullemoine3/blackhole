@@ -728,6 +728,16 @@ pub enum PageEvent {
         x: f64,
         y: f64,
     },
+    /// "Back to safety" of BlackHole's error page, with its `history.length`: the shell knows
+    /// how far the page seen before the failure is. Acted on only while that tab shows the
+    /// error page.
+    ErrorBack {
+        #[serde(default)]
+        length: u32,
+    },
+    /// "Try again" of BlackHole's error page (same condition): the shell reloads the address
+    /// that failed.
+    ErrorRetry,
     /// A video left Picture in Picture, paused or not (untrusted: only acted on for a tab the
     /// shell floated).
     PipLeft {

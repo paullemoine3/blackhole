@@ -5,7 +5,8 @@
 use crate::i18n::{t, tf};
 use crate::{views, Running, PEEK_TAB};
 use blackhole_domain::error_page::{
-    self, classify, classify_status, is_bare_error_body, is_engine_error_page, Bypasses, ErrorPage, Failure,
+    self, classify, classify_status, is_bare_error_body, is_engine_error_page, Back, Bypasses, ErrorPage, Failure,
+    Retry, Trail,
 };
 use blackhole_domain::{PrivacyDecision, TabId};
 use serde_json::json;
@@ -79,12 +80,18 @@ struct Shown {
     url: Url,
     /// The http address, for a site without a secure version.
     plain: Option<Url>,
+    /// Where the page sits in the tab's history: how far "back" is, how to retry.
+    trail: Trail,
 }
 
 /// Body of an HTTP error answer: whether the server sent a page of its own.
 const PROBE_JS: &str = "(()=>{const b=document.body;return JSON.stringify({href:location.href,title:document.title||'',\
 text:b?b.innerText.slice(0,400):'',rich:!!document.querySelector('a[href],form,img,video,iframe,\
 canvas,svg,object,embed,input,button')})})()";
+
+/// How long a "Back to safety" may still be on its way (a load without answer gives up after
+/// `CONNECT_MAX`, 20 s).
+const ESCAPE_FOR: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub struct Errors {
     failures: HashMap<TabId, wry::LoadFailure>,
@@ -94,6 +101,20 @@ pub struct Errors {
     shown: HashMap<TabId, Shown>,
     /// Tabs whose server asked for credentials: their 401 is the prompt's business.
     auth: HashSet<TabId>,
+    /// Tabs whose refused certificate already got its page: the `Failed` that ends that same
+    /// (cancelled) navigation must not replace it with "Site unreachable".
+    settled: HashSet<TabId>,
+    /// The last page each tab showed that was no error: where "Back to safety" lands when
+    /// the history has nothing before the failure.
+    good: HashMap<TabId, Url>,
+    /// "Try again" went back to the entry of the failed address: once the engine has shown
+    /// its cached copy, the address is really loaded again.
+    reloading: HashMap<TabId, Url>,
+    /// "Back to safety" is on its way from this address: failing on it again means the
+    /// history had one more entry than expected, so the tab goes back once more.
+    escaping: HashMap<TabId, (Url, std::time::Instant)>,
+    /// "Try again" asked the address in place of the error page that had this trail.
+    retried: HashMap<TabId, (Url, Trail)>,
     tx: Sender<(TabId, u16, String, String)>,
     rx: Receiver<(TabId, u16, String, String)>,
 }
@@ -108,6 +129,11 @@ impl Default for Errors {
             upgraded: HashMap::new(),
             shown: HashMap::new(),
             auth: HashSet::new(),
+            settled: HashSet::new(),
+            good: HashMap::new(),
+            reloading: HashMap::new(),
+            escaping: HashMap::new(),
+            retried: HashMap::new(),
             tx,
             rx,
         }
@@ -142,6 +168,7 @@ impl Running {
 
     pub(crate) fn errors_load_start(&mut self, tab: TabId) {
         self.errors.failures.remove(&tab);
+        self.errors.settled.remove(&tab);
         self.errors.shown.remove(&tab);
     }
 
@@ -164,6 +191,13 @@ impl Running {
             };
             if let Ok(url) = Url::parse(&c.url) {
                 self.show_error(tab, url, ErrorPage::Certificate(problem));
+            }
+            // Said once: the challenge must not turn a later failure of this host (the load
+            // our own page interrupts) into a certificate page again. In a tab that showed a
+            // page, WebView2 still ends the cancelled navigation with a `Failed`.
+            self.errors.certs.remove(&tab);
+            if failure.url != "about:blank" {
+                self.errors.settled.insert(tab);
             }
             return;
         }
@@ -199,6 +233,11 @@ impl Running {
 
     /// The load failed (`PageLoadEvent::Failed`): the page for the reason given just before.
     pub(crate) fn on_failed(&mut self, tab: TabId, url: Url) {
+        if self.errors.settled.remove(&tab) {
+            return;
+        }
+        // A retry that went back to the failed entry: this failure is a new attempt already.
+        self.errors.reloading.remove(&tab);
         let page = match self.errors.failures.remove(&tab) {
             Some(f) => match classify(failure_of(&f)) {
                 Some(page) => page,
@@ -217,9 +256,19 @@ impl Running {
         }
         self.errors.certs.remove(&tab);
         let asked = self.errors.auth.remove(&tab);
+        let again = self.errors.reloading.remove(&tab).is_some_and(|u| same_page(u.as_str(), url.as_str()));
         let Some((status, raw)) = self.errors.http.remove(&tab) else {
+            self.loaded_fine(tab, url);
             return;
         };
+        // "Try again" went back to this entry and the engine showed its cached error answer:
+        // now the server is really asked again.
+        if again && status >= 400 {
+            if let Some(view) = self.tabs.get(&tab) {
+                let _ = view.reload();
+            }
+            return;
+        }
         // WebView2 ends each hop of a redirect loop as "finished": the 3xx stays known for the
         // failure that ends the loop.
         if (300..400).contains(&status) {
@@ -227,6 +276,7 @@ impl Running {
             return;
         }
         if (asked && status == 401) || tab == PEEK_TAB || !same_page(&raw, url.as_str()) || classify_status(status).is_none() {
+            self.loaded_fine(tab, url);
             return;
         }
         let Some(view) = self.tabs.get(&tab) else { return };
@@ -235,6 +285,15 @@ impl Running {
         let _ = view.evaluate_script_with_callback(PROBE_JS, move |raw| {
             let _ = tx.send((tab, status, page.clone(), raw));
         });
+    }
+
+    /// `tab` shows a page of the web (the server's own error page included).
+    fn loaded_fine(&mut self, tab: TabId, url: &Url) {
+        self.errors.escaping.remove(&tab);
+        self.errors.retried.remove(&tab);
+        if tab != PEEK_TAB && matches!(url.scheme(), "http" | "https") {
+            self.errors.good.insert(tab, url.clone());
+        }
     }
 
     /// Answers of the body probes.
@@ -265,13 +324,19 @@ impl Running {
                     other => other,
                 };
                 self.show_error(tab, url, page);
+            } else if still_there {
+                self.loaded_fine(tab, &url);
             }
         }
-        if self.errors.shown.len() + self.errors.upgraded.len() + self.errors.certs.len() > 64 {
+        if self.errors.shown.len() + self.errors.upgraded.len() + self.errors.certs.len() + self.errors.good.len() > 64 {
             let live: HashSet<TabId> = self.tabs.keys().copied().collect();
             self.errors.shown.retain(|t, _| live.contains(t));
             self.errors.upgraded.retain(|t, _| live.contains(t));
             self.errors.certs.retain(|t, _| live.contains(t));
+            self.errors.good.retain(|t, _| live.contains(t));
+            self.errors.reloading.retain(|t, _| live.contains(t));
+            self.errors.escaping.retain(|t, _| live.contains(t));
+            self.errors.retried.retain(|t, _| live.contains(t));
         }
     }
 
@@ -298,6 +363,28 @@ impl Running {
     }
 
     fn show_error_with(&mut self, tab: TabId, url: Url, page: ErrorPage, mut extra: serde_json::Value) {
+        // "Back to safety" landed on the failed address again (one entry more than expected
+        // in the history): the tab goes on to the page before, it does not show the error twice.
+        if self.errors.escaping.remove(&tab).is_some_and(|(u, at)| at.elapsed() < ESCAPE_FOR && same_page(u.as_str(), url.as_str())) {
+            let further = self.tabs.get(&tab).is_some_and(|v| v.can_go_back().unwrap_or(false));
+            match (further, self.tabs.get(&tab)) {
+                (true, Some(view)) => views::go_back(view),
+                _ => self.error_leave(tab, &url),
+            }
+            return;
+        }
+        // What the engine shows now tells whether the failed address became a history entry:
+        // it did when it got an answer or an engine error page, not when it was cancelled.
+        let failed_entry = self
+            .tabs
+            .get(&tab)
+            .and_then(|v| v.url().ok())
+            .is_some_and(|shown| same_page(&shown, url.as_str()));
+        // WebView2 adds an entry for the HTML it is given; WKWebView does not.
+        let trail = match self.errors.retried.remove(&tab) {
+            Some((asked, before)) if same_page(asked.as_str(), url.as_str()) => before.after_retry(failed_entry),
+            _ => Trail { own_entry: cfg!(windows), failed_entry, stale: 0 },
+        };
         let host = url.host_str().unwrap_or_default().to_owned();
         let plain = self
             .errors
@@ -315,6 +402,9 @@ impl Running {
             "host": host,
             "animations": self.svc.settings().animations,
             "hsts": page.can_bypass() && error_page::hsts_preloaded(&host),
+            // The shell answers the page's "back" and "retry" (see `error_back`).
+            "shell": true,
+            "steps": trail.steps(),
         });
         if let ErrorPage::ServerError(status) = page {
             config["status"] = json!(status);
@@ -344,9 +434,60 @@ impl Running {
             let _ = view.load_html(&views::error_page(&config));
         }
         let plain = if page == ErrorPage::HttpOnly { plain } else { None };
-        self.errors.shown.insert(tab, Shown { page, url: url.clone(), plain });
+        self.errors.shown.insert(tab, Shown { page, url: url.clone(), plain, trail });
         self.page_url(tab, url);
         self.sync();
+    }
+
+    /// "Back to safety" (the page's button, the shell's Back): to the page seen before the
+    /// failure. `history.back()` alone returns to the address that failed, which fails again.
+    /// Nothing happens unless this tab shows our error page.
+    pub(crate) fn error_back(&mut self, tab: TabId, length: u32) {
+        let Some(shown) = self.errors.shown.get(&tab) else { return };
+        let url = shown.url.clone();
+        match shown.trail.back(length) {
+            Back::Go(steps) => {
+                self.errors.escaping.insert(tab, (url, std::time::Instant::now()));
+                if let Some(view) = self.tabs.get(&tab) {
+                    let _ = view.evaluate_script(&format!("history.go(-{steps})"));
+                }
+            }
+            Back::Leave => self.error_leave(tab, &url),
+        }
+    }
+
+    /// Nothing before the failure in the history: the last page of the tab that worked, or
+    /// the tab closes (a quick access tab is put to sleep).
+    fn error_leave(&mut self, tab: TabId, failed: &Url) {
+        let good = self.errors.good.get(&tab).filter(|g| !same_page(g.as_str(), failed.as_str())).cloned();
+        match (good, self.tabs.get(&tab)) {
+            (Some(good), Some(view)) => {
+                let _ = view.load_url(good.as_str());
+            }
+            _ => {
+                self.errors.shown.remove(&tab);
+                self.handle_ui(crate::ipc::UiCommand::Close { id: tab.0 });
+            }
+        }
+    }
+
+    /// "Try again" (the page's button, the shell's Reload): the address that failed is asked
+    /// again, without adding to the history.
+    pub(crate) fn error_retry(&mut self, tab: TabId) {
+        let (Some(shown), Some(view)) = (self.errors.shown.get(&tab), self.tabs.get(&tab)) else { return };
+        match shown.trail.retry() {
+            Retry::ReloadEntry => {
+                self.errors.reloading.insert(tab, shown.url.clone());
+                views::go_back(view);
+            }
+            Retry::Replace => {
+                self.errors.retried.insert(tab, (shown.url.clone(), shown.trail));
+                let _ = view.evaluate_script(&format!("location.replace({})", json!(shown.url.as_str())));
+            }
+            Retry::Push => {
+                let _ = view.load_url(shown.url.as_str());
+            }
+        }
     }
 
     /// The risky button of an error page: the shell's menu asks, so a page cannot grant an

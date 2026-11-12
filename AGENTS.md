@@ -353,6 +353,19 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   barre et le rapport de confidentialité (`errors::insecure`). Test : fin de `test-ui.ps1` (`eval`
   « errN: » hors indices, serveurs locaux 18418 et 18419 auto-signé, étape harnais `errpage KIND`).
   macOS : compilation croisée seulement ; détails du certificat (émetteur, dates) absents sur macOS.
+- Boutons des pages d'erreur (0.8.7) : la page est une entrée d'historique de plus sous WebView2
+  (`load_html`), posée après celle de l'adresse en échec ; `history.back()` y retourne et l'erreur
+  revient, et recharger depuis la page empile deux entrées par essai. « Retour » et « Réessayer »
+  passent donc par le shell (`PageEvent::ErrorBack { length }` / `ErrorRetry`, pris en compte
+  seulement si l'onglet affiche notre page ; `UiCommand::Back` et `reload` y mènent aussi) :
+  règle pure `error_page::Trail` (`steps`, `retry`, `back`, `after_retry`), `failed_entry` lu sur
+  le moteur (`view.url()` = adresse en échec). Sans page avant l'échec : dernière page valable de
+  l'onglet (`good`), sinon l'onglet se ferme (accès rapide : mis en veille). « Réessayer » revient
+  à l'entrée en échec puis la recharge vraiment (le retour seul ressert la réponse d'erreur du
+  cache). WKWebView (aucune entrée pour une chaîne HTML) : mêmes règles avec `own_entry = false`,
+  non testé. Android : la page agit seule (`history`), « Allow this site » masqué (`allow: false`).
+  Certificat refusé dans un onglet qui affichait une page : le `Failed` de la navigation annulée
+  est ignoré (`settled`), sinon les deux pages d'erreur se remplaçaient en boucle.
 - Un statut HTTP (401, 403, 404, 5xx) n'est jamais « injoignable » : WebView2 marque ces réponses
   `IsSuccess=false`, wry ne renvoie `Failed` que sans réponse HTTP (`HttpStatusCode == 0`).
 - Authentification HTTP (Basic/Digest, ex. NAS Transmission) : `with_http_auth_handler` de wry

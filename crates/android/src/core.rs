@@ -852,6 +852,8 @@ impl Core {
         }
         if page == ErrorPage::Blocked {
             config["why"] = json!(if self.blocker.is_ad(&host) { "ad" } else { "tracker" });
+            // No exception for the Shields here: the page offers no "Allow this site".
+            config["allow"] = json!(false);
         }
         self.errors.insert(tab, (shown.clone(), page));
         if let Some(page) = self.pages.get_mut(&tab) {
@@ -1120,6 +1122,10 @@ impl Core {
                 match self.evaluate(&asked) {
                     Ok(going) if going == asked => {
                         self.remember_upgrade(tab, &asked, &going);
+                        // Our error page asks for its address again ("Try again"): the tab
+                        // no longer shows it, or a page that loads this time would stay
+                        // taken for the error (`Started` keeps an error of the same address).
+                        self.errors.remove(&tab);
                         Vec::new()
                     }
                     Ok(going) => {

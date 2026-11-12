@@ -273,6 +273,74 @@ pub fn hsts_preloaded(host: &str) -> bool {
             .any(|site| host == *site || host.ends_with(&format!(".{site}")))
 }
 
+/// Where an error page sits in its tab's back/forward list. The engines differ: WebView2 adds
+/// an entry for our page (and keeps one for the address that failed, unless the navigation
+/// was cancelled before it started); WKWebView adds none for an HTML string, and none for a
+/// navigation that never got an answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Trail {
+    /// The error page is an entry of its own.
+    pub own_entry: bool,
+    /// The address that failed is the entry just before (or under) the error page.
+    pub failed_entry: bool,
+    /// Earlier error pages still under this one: each "Try again" that the engine cancelled
+    /// before it replaced the page (a certificate refused again) leaves one.
+    pub stale: u32,
+}
+
+/// How "Try again" loads the address that failed without piling entries in the history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retry {
+    /// Back to the entry of the failed address, then a real reload: going back alone shows
+    /// the engine's cached copy of an error answer.
+    ReloadEntry,
+    /// The address takes the place of the current entry.
+    Replace,
+    /// A new entry: the current one is the page seen before the failure.
+    Push,
+}
+
+/// What "Back to safety" does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Back {
+    /// That many entries back: the page seen before the failure.
+    Go(u32),
+    /// No such entry: the shell shows the last page that worked, or closes the tab.
+    Leave,
+}
+
+impl Trail {
+    /// Entries between the error page and the page seen before the failure.
+    pub fn steps(self) -> u32 {
+        u32::from(self.own_entry) + u32::from(self.failed_entry) + self.stale
+    }
+
+    /// The trail of the error page shown when a `Retry::Replace` from the page of `self`
+    /// failed too: replaced by the failed address when that one became an entry, the old
+    /// error page stays below otherwise.
+    pub fn after_retry(self, failed_entry: bool) -> Self {
+        let left = u32::from(self.own_entry && !failed_entry);
+        Self { failed_entry, stale: self.stale + left, ..self }
+    }
+
+    pub fn retry(self) -> Retry {
+        match (self.own_entry, self.failed_entry) {
+            (true, true) => Retry::ReloadEntry,
+            (true, false) | (false, true) => Retry::Replace,
+            (false, false) => Retry::Push,
+        }
+    }
+
+    /// `length` is the page's `history.length` (untrusted: a wrong value only picks the
+    /// other harmless outcome).
+    pub fn back(self, length: u32) -> Back {
+        match self.steps() {
+            steps if steps > 0 && length > steps => Back::Go(steps),
+            _ => Back::Leave,
+        }
+    }
+}
+
 /// Hosts the user chose to open despite an error, for this run of the app only (never saved).
 #[derive(Debug, Default, Clone)]
 pub struct Bypasses {
@@ -456,6 +524,37 @@ mod tests {
         assert!(b.allow("NAS.local"));
         assert!(b.allows("nas.local"));
         assert!(!b.allows("other.local"));
+    }
+
+    #[test]
+    fn back_skips_the_failed_entry_and_retry_keeps_the_history_flat() {
+        // WebView2 after a failed load or an empty 403: [page, failed, error].
+        let both = Trail { own_entry: true, failed_entry: true, stale: 0 };
+        assert_eq!(both.back(3), Back::Go(2));
+        assert_eq!(both.back(2), Back::Leave, "a new tab: nothing before the failure");
+        assert_eq!(both.retry(), Retry::ReloadEntry);
+        // WebView2 after a cancelled navigation (refused certificate, Shields): [page, error].
+        let own = Trail { own_entry: true, failed_entry: false, stale: 0 };
+        assert_eq!(own.back(2), Back::Go(1));
+        assert_eq!(own.back(1), Back::Leave);
+        assert_eq!(own.retry(), Retry::Replace);
+        // WKWebView after an empty 403: [page, failed], our page is no entry.
+        let failed = Trail { own_entry: false, failed_entry: true, stale: 0 };
+        assert_eq!(failed.back(2), Back::Go(1));
+        assert_eq!(failed.back(1), Back::Leave);
+        assert_eq!(failed.retry(), Retry::Replace);
+        // WKWebView after a load without answer: the current entry is the page seen before.
+        let none = Trail { own_entry: false, failed_entry: false, stale: 0 };
+        assert_eq!(none.back(5), Back::Leave);
+        assert_eq!(none.retry(), Retry::Push);
+        // A retry the engine cancelled again leaves the old error page under the new one:
+        // [page, error, error]; one that got an answer took its place: [page, failed, error].
+        let again = own.after_retry(false);
+        assert_eq!((again.steps(), again.back(3)), (2, Back::Go(2)));
+        assert_eq!(again.after_retry(false).steps(), 3);
+        assert_eq!(own.after_retry(true).steps(), 2);
+        assert_eq!(failed.after_retry(true).steps(), 1);
+        assert_eq!(failed.after_retry(false).steps(), 0);
     }
 
     #[test]

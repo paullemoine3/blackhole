@@ -426,6 +426,75 @@ errpage unreachable
 wait 800
 eval content 'err21:' + document.title + '|' + !document.querySelector('.hole').hidden + '|' + document.querySelectorAll('svg:not([hidden])').length
 shot 37-error-unreachable
+# ---- every button of the error pages: retry reloads without piling history, back leaves the failed address ----
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/good"}
+wait 2500
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__ERR_PORT__/e403"}
+wait 2500
+eval content 'err22:' + (window.__bhMark = 1, document.title + '|' + history.length + '|' + [...document.querySelectorAll('#actions button')].map(b => b.textContent).join('/'))
+eval content 'err23:' + (document.querySelectorAll('#actions button')[1].click(), 'retry')
+wait 3000
+eval content 'err24:' + document.title + '|' + history.length + '|' + window.__bhMark
+eval content 'err25:' + (document.querySelector('#actions button').click(), 'back')
+wait 2500
+eval content 'err26:' + document.title + '|' + location.pathname
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__ERR_PORT__/e401"}
+wait 2500
+eval content 'err27:' + (window.__bhMark = 1, document.querySelector('#actions button').click(), 'sign in')
+wait 3000
+eval content 'err28:' + document.title + '|' + history.length + '|' + window.__bhMark
+cmd {"cmd":"back"}
+wait 2500
+eval content 'err29:' + document.title + '|' + location.pathname
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__ERR_PORT__/e502"}
+wait 2500
+eval content 'err30:' + (window.__bhMark = 1, document.querySelector('#actions button').click(), 'retry')
+wait 3000
+eval content 'err31:' + (document.title + '|' + history.length + '|' + window.__bhMark + (window.__bhMark = 1, ''))
+cmd {"cmd":"reload"}
+wait 3000
+eval content 'err32:' + document.title + '|' + history.length + '|' + window.__bhMark
+cmd {"cmd":"back"}
+wait 2500
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__DEAD_PORT__/"}
+wait 4000
+eval content 'err33:' + (window.__bhMark = 1, document.title + '|' + (document.querySelector('#actions button').click(), 'retry'))
+wait 4000
+eval content 'err34:' + document.title + '|' + history.length + '|' + window.__bhMark
+cmd {"cmd":"back"}
+wait 2500
+eval content 'err35:' + document.title + '|' + location.pathname
+cmd {"cmd":"navigate","input":"http://bh-missing.invalid/"}
+wait 4000
+eval content 'err36:' + (window.__bhMark = 1, document.title + '|' + (document.querySelector('#actions button').click(), 'retry'))
+wait 4000
+eval content 'err37:' + document.title + '|' + history.length + '|' + window.__bhMark
+cmd {"cmd":"back"}
+wait 2500
+eval content 'err38:' + document.title + '|' + location.pathname
+eval content 'err39:' + (location.href = 'https://stats.g.doubleclick.net/bh-test', 'go')
+wait 2000
+eval content 'err40:' + document.title + '|' + (document.querySelectorAll('#actions button')[1].click(), 'allow')
+wait 900
+eval palette 'err41:' + document.body.className + '|' + document.getElementById('menu').textContent
+cmd {"cmd":"palette_close"}
+wait 600
+eval content 'err42:' + (document.querySelector('#actions button').click(), 'back')
+wait 2500
+eval content 'err43:' + document.title + '|' + location.pathname
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__ERR_PORT__/hits"}
+wait 2000
+eval content 'err44:' + document.body.innerText
+eval chrome 'err45:' + state.tabs.length
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/e403?new"}
+wait 2500
+eval chrome 'err46:' + state.tabs.length
+eval content 'err47:' + document.title + '|' + history.length
+# (No answer to this one: the tab closes under it.)
+eval content 'err50:' + (document.querySelector('#actions button').click(), 'back')
+wait 2500
+eval chrome 'err48:' + state.tabs.length
+eval content 'err49:' + document.title
 # ---- a link that downloads a file, the hidden sidebar, the page's menu ----
 cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/dlpage"}
 wait 3500
@@ -480,7 +549,8 @@ $script = $script.Replace('__AUTH_PORT__', "$authPort").Replace('__AUTH_USER__',
 # server with a self-signed certificate made for this run (in memory, nothing installed).
 $errPort = 18418
 $tlsPort = 18419
-$script = $script.Replace('__ERR_PORT__', "$errPort").Replace('__TLS_PORT__', "$tlsPort")
+# A port nothing listens on: "Site unreachable".
+$script = $script.Replace('__ERR_PORT__', "$errPort").Replace('__TLS_PORT__', "$tlsPort").Replace('__DEAD_PORT__', '18420')
 $errServer = Start-Job -ArgumentList $errPort, $tlsPort -ScriptBlock {
     param($port, $tlsPort)
     $plain = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
@@ -496,15 +566,18 @@ $errServer = Start-Job -ArgumentList $errPort, $tlsPort -ScriptBlock {
     $made = $req.CreateSelfSigned([DateTimeOffset]::Now.AddDays(-1), [DateTimeOffset]::Now.AddDays(7))
     # SChannel needs the key in a key container: round trip through PKCS#12.
     $cert = $X::new($made.Export('Pfx', 'bh'), 'bh', 'UserKeySet')
+    # Requests seen per error path: "Try again" must reach the server, not the engine's cache.
+    $hits = @{ e401 = 0; e403 = 0; e502 = 0 }
     $answer = {
         param($stream)
         $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
         $path = (($reader.ReadLine()) -split ' ')[1]
         while ($reader.ReadLine()) {}
         $extra = ''; $body = ''; $type = 'text/html; charset=utf-8'
-        if ($path -like '/e401*') { $status = '401 Unauthorized' }
-        elseif ($path -like '/e403*') { $status = '403 Forbidden' }
-        elseif ($path -like '/e502*') { $status = '502 Bad Gateway' }
+        if ($path -like '/e401*') { $status = '401 Unauthorized'; $hits.e401++ }
+        elseif ($path -like '/e403*') { $status = '403 Forbidden'; $hits.e403++ }
+        elseif ($path -like '/e502*') { $status = '502 Bad Gateway'; $hits.e502++ }
+        elseif ($path -like '/hits*') { $status = '200 OK'; $body = "<title>bh-hits</title>hits $($hits.e401)/$($hits.e403)/$($hits.e502)" }
         elseif ($path -like '/loop*') { $status = '302 Found'; $extra = "Location: /loop`r`n" }
         elseif ($path -like '/favicon*') { $status = '404 Not Found' }
         elseif ($path -like '/dlpage*') { $status = '200 OK'; $body = '<title>bh-dl-page</title><h1>Download test</h1><p><a id=dl href=/dlfile>Download the file</a></p><img id=im src=/favicon.ico width=120 height=80><p id=txt>Plain text of the page.</p><video id=pv width=80 height=40></video><video id=cv controls width=80 height=40></video>' }
@@ -516,7 +589,7 @@ $errServer = Start-Job -ArgumentList $errPort, $tlsPort -ScriptBlock {
         $stream.Write($bytes, 0, $bytes.Length)
         $stream.Flush()
     }
-    $deadline = (Get-Date).AddMinutes(8)
+    $deadline = (Get-Date).AddMinutes(10)
     while ((Get-Date) -lt $deadline) {
         if ($plain.Pending()) {
             $client = $plain.AcceptTcpClient()
@@ -538,7 +611,7 @@ $authServer = Start-Job -ArgumentList $authPort, $authFixture.user, $authFixture
     $expected = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("${user}:${password}"))
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
     $listener.Start()
-    $deadline = (Get-Date).AddMinutes(8)
+    $deadline = (Get-Date).AddMinutes(10)
     while ((Get-Date) -lt $deadline) {
         if (-not $listener.Pending()) { Start-Sleep -Milliseconds 30; continue }
         $client = $listener.AcceptTcpClient()
@@ -571,7 +644,7 @@ Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding asci
 $logFile = Join-Path $tmp 'bh_run.log'
 # Redirecting to a file (rather than capturing the pipe) keeps the app from blocking on its output.
 $proc = Start-Process cmd -ArgumentList '/c', "cargo run -q -p blackhole --features devtools > `"$logFile`" 2>&1" -PassThru -WindowStyle Hidden
-if (-not $proc.WaitForExit(420000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
+if (-not $proc.WaitForExit(540000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
 $log = Get-Content $logFile
 # The HTTP authentication evals are tagged ("authN:") and read apart: they shift no index.
 $all = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
@@ -701,6 +774,24 @@ Check ((ErrEval 18) -match 'err18:Offline') 'error page: offline variant'
 Check ((ErrEval 19) -match 'err19:The computer.{1,3}s clock is wrong\|Continue anyway') 'error page: wrong clock variant'
 Check ((ErrEval 20) -match 'err20:No secure version\|Continue over http') 'error page: http only variant'
 Check ((ErrEval 21) -match 'err21:Site unreachable\|true\|1"') 'error page: one scene per kind (the black hole for "Site unreachable")'
+Check ((ErrEval 22) -match 'err22:Access denied\|3\|Back to safety/Try again') 'error buttons: an empty 403 after a page offers "Back to safety" and "Try again"'
+Check ((ErrEval 24) -match 'err24:Access denied\|3\|undefined') 'error buttons: "Try again" on a 403 loads the page again, the history no longer'
+Check ((ErrEval 26) -match 'err26:bh-tls-ok\|/good') 'error buttons: "Back to safety" on a 403 returns to the page before (not to the failed address)'
+Check ((ErrEval 28) -match 'err28:Sign-in required\|3\|undefined') 'error buttons: "Sign in" on a 401 asks the server again'
+Check ((ErrEval 29) -match 'err29:bh-tls-ok\|/good') 'error buttons: the shell''s Back on an error page returns to the page before'
+Check ((ErrEval 31) -match 'err31:The server has a problem \(502\)\|3\|undefined') 'error buttons: "Try again" on a 502 loads the page again'
+Check ((ErrEval 32) -match 'err32:The server has a problem \(502\)\|3\|undefined') 'error buttons: the shell''s Reload on an error page tries again, the history no longer'
+Check ((ErrEval 33) -match 'err33:Site unreachable\|retry' -and (ErrEval 34) -match 'err34:Site unreachable\|3\|undefined') 'error buttons: "Try again" on an unreachable site tries again'
+Check ((ErrEval 35) -match 'err35:bh-tls-ok\|/good') 'error buttons: Back from "Site unreachable" returns to the page before'
+Check ((ErrEval 36) -match 'err36:Address not found\|retry' -and (ErrEval 37) -match 'err37:Address not found\|3\|undefined') 'error buttons: "Try again" on an unknown name tries again'
+Check ((ErrEval 38) -match 'err38:bh-tls-ok\|/good') 'error buttons: Back from "Address not found" returns to the page before'
+Check ((ErrEval 40) -match 'err40:Blocked by the Shields\|allow' -and (ErrEval 41) -match 'err41:.*open.*\|.*Allow') 'error buttons: "Allow this site" opens the shell menu'
+Check ((ErrEval 43) -match 'err43:bh-tls-ok\|/good') 'error buttons: "Back to safety" on a blocked page returns to the page before'
+$hit = if ((ErrEval 44) -match 'hits (\d+)/(\d+)/(\d+)') { [int]$Matches[1], [int]$Matches[2], [int]$Matches[3] } else { 0, 0, 0 }
+# One 401, one 403 and one 502 at the top of the error scenario, then one more of each here before its retry.
+Check ($hit[0] -ge 3 -and $hit[1] -ge 3 -and $hit[2] -ge 4) "error buttons: every retry reached the server (401/403/502 requests: $($hit -join '/'))"
+$before = if ((ErrEval 45) -match 'err45:(\d+)') { [int]$Matches[1] } else { -1 }
+Check ((ErrEval 46) -match "err46:$($before + 1)`"" -and (ErrEval 47) -match 'err47:Access denied\|2"' -and (ErrEval 48) -match "err48:$before`"" -and (ErrEval 49) -match 'err49:bh-hits') 'error buttons: in a new tab without history, "Back to safety" closes the tab'
 function Named($name) { [string]($all | Where-Object { $_ -match "-> `"${name}:" } | Select-Object -First 1) }
 Check ((Named dl1) -match 'dl1:bh-dl-page' -and (Named dl2) -match 'dl2:bh-dl-page\|/dlpage') 'download: a link that downloads a file leaves its page in place (no "Site unreachable")'
 Check ((Named dl3) -match 'dl3:bh-dl-page\|/dlpage') 'download: the page is still there once the hidden sidebar has slid back'

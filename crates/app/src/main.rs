@@ -5479,7 +5479,12 @@ impl Running {
                 self.panel_window_action(&window, &action)
             }
             UiCommand::Shortcut { key } => self.shortcut(&key),
-            UiCommand::Back => self.with_active_tab(views::go_back),
+            UiCommand::Back => {
+                // On our error page, "back" is the page seen before the failure (the entry
+                // just before is the address that failed).
+                let on_error = self.svc.workspace().active_tab().is_some_and(|t| self.error_shown(t.id));
+                self.with_active_tab(if on_error { views::error_back } else { views::go_back });
+            }
             UiCommand::Forward => self.with_active_tab(views::go_forward),
             UiCommand::Reload => self.with_active_tab(views::reload),
             UiCommand::Passwords { action } => self.password_action(action),
@@ -5934,6 +5939,8 @@ impl Running {
             Msg::BlockedPage(tab, url, why) => self.on_blocked_page(tab, url, why),
             Msg::LinkCleaned => self.links_cleaned = self.links_cleaned.saturating_add(1),
             Msg::Page(tab, PageEvent::ErrorMenu { x, y }) => self.error_menu(tab, x, y),
+            Msg::Page(tab, PageEvent::ErrorBack { length }) => self.error_back(tab, length),
+            Msg::Page(tab, PageEvent::ErrorRetry) => self.error_retry(tab),
             Msg::Auth(tab, challenge, reply) => {
                 self.errors_auth_asked(tab);
                 self.on_auth(tab, &challenge, reply);
