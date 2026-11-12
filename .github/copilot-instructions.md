@@ -153,6 +153,10 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   rechercher, imprimer, inspecter ; `image` (non fiable, http(s)) ajoute ouvrir/copier l'adresse.
   Les entrées qui visent « la page affichée » ne sont proposées que pour l'onglet actif ; ni
   Easel ni veille pour un onglet trou noir.
+  Depuis 0.8.7 les menus de lien et de sélection se terminent aussi par les outils BlackHole
+  (`page_tool_items` : Easel, zone en direct, veille), et seule une vidéo/un son avec les
+  contrôles du moteur (`controls`) ou un plug-in gardent le menu du moteur : une vidéo que la
+  page joue elle-même (aperçu au survol d'une vignette YouTube) reçoit le menu de page.
 - Téléchargement depuis un lien (Windows) : WebView2 termine la navigation en « connection
   aborted » (9) juste avant `DownloadStarting` ; `Msg::Failed` attend alors `ABORT_GRACE`
   (`aborted`) et n'affiche « Site injoignable » que si aucun téléchargement ne suit. Barre

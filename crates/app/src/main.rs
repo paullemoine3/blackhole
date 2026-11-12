@@ -2236,19 +2236,43 @@ impl Running {
                 json!({"icon": "link", "label": t("menu.copy_image_address"), "copy": image}),
             ]);
         }
-        // Off a link and off a selection: the page's own entries.
-        if link.is_none() && selection.is_none() {
-            let page = self.page_menu_items(tab);
-            if !items.is_empty() && !page.is_empty() {
-                items.push(json!({"sep": true}));
-            }
-            items.extend(page);
+        // Off a link and off a selection: the page's own entries. On one, BlackHole's tools
+        // (Easel, live area, watched area) still follow, so the menu offers them wherever the
+        // click lands.
+        let more = if link.is_none() && selection.is_none() {
+            self.page_menu_items(tab)
+        } else {
+            self.page_tool_items(tab)
+        };
+        if !items.is_empty() && !more.is_empty() {
+            items.push(json!({"sep": true}));
         }
+        items.extend(more);
         if items.is_empty() {
             return;
         }
         let (ox, oy) = self.view_origin(tab);
         self.show_menu((ox + x, oy + y), json!(items));
+    }
+
+    /// BlackHole's own tools for the page in front: clip it to the Easel, capture a live area,
+    /// watch an area. None for another pane, a Peek, an error page, or a black hole tab
+    /// (nothing of it is kept).
+    fn page_tool_items(&self, tab: TabId) -> Vec<serde_json::Value> {
+        let ws = self.svc.workspace();
+        let front = ws.active_tab().is_some_and(|t| t.id == tab) && !self.home_shown();
+        let web = self
+            .view_of(tab)
+            .and_then(|v| v.url().ok())
+            .is_some_and(|u| u.starts_with("https://") || u.starts_with("http://"));
+        if !front || !web || ws.is_burner(tab) || self.error_shown(tab) {
+            return Vec::new();
+        }
+        vec![
+            json!({"icon": "easel", "label": t("menu.page_to_easel"), "run": {"cmd": "capture_to_easel"}}),
+            json!({"icon": "eye", "label": t("menu.live_capture"), "run": {"cmd": "live_pick"}}),
+            json!({"icon": "watch", "label": t("menu.watch_pick"), "run": {"cmd": "watch_pick"}}),
+        ]
     }
 
     /// The entries of a right click on the page itself: history, the Easel, a live area, a
@@ -2274,14 +2298,10 @@ impl Running {
                 items.push(json!({"icon": "forward", "label": t("menu.page_forward"), "run": {"cmd": "forward"}}));
             }
             items.push(json!({"icon": "reload", "label": t("menu.page_reload"), "run": {"cmd": "reload"}}));
-            // Nothing of a black hole tab is kept: no Easel card, no watched area.
-            if address.is_some() && !ws.is_burner(tab) && !self.error_shown(tab) {
-                items.extend([
-                    json!({"sep": true}),
-                    json!({"icon": "easel", "label": t("menu.page_to_easel"), "run": {"cmd": "capture_to_easel"}}),
-                    json!({"icon": "eye", "label": t("menu.live_capture"), "run": {"cmd": "live_pick"}}),
-                    json!({"icon": "watch", "label": t("menu.watch_pick"), "run": {"cmd": "watch_pick"}}),
-                ]);
+            let tools = self.page_tool_items(tab);
+            if !tools.is_empty() {
+                items.push(json!({"sep": true}));
+                items.extend(tools);
             }
             items.push(json!({"sep": true}));
         }
