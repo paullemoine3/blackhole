@@ -106,6 +106,14 @@ pub enum UiCommand {
     EditFolder {
         id: u64,
     },
+    /// Tab menu: a quick access or folder tab goes back to the page it lives at.
+    TabHome {
+        id: u64,
+    },
+    /// Tab menu: the page shown becomes the address of that quick access or folder tab.
+    TabSetHome {
+        id: u64,
+    },
     /// Tab menu: reloads that tab (not only the one shown).
     ReloadTab {
         id: u64,
@@ -137,6 +145,8 @@ pub enum UiCommand {
     },
     /// The area just picked becomes a watched area (the picker's menu).
     WatchArea,
+    /// Starts the area picker on the page in front; the area picked is watched at once.
+    WatchPick,
     /// Library > Watches: stop watching, read again now, everything seen.
     WatchRemove {
         id: u64,
@@ -676,6 +686,9 @@ pub enum PageEvent {
         text: String,
         #[serde(default)]
         mark: u64,
+        /// The image under the pointer (untrusted: an http(s) address or nothing).
+        #[serde(default)]
+        image: String,
         x: f64,
         y: f64,
     },
@@ -762,6 +775,8 @@ pub enum Msg {
     Title(TabId, String),
     /// A page asked for a new window (`target=_blank`, `window.open`).
     OpenTab(Url),
+    /// A page of this tab asked for a new tab (`target=_blank`, `window.open`).
+    OpenTabFrom(TabId, Url),
     /// A link opened from another application (we are the default browser).
     External(Url),
     Redirect(TabId, Url),
@@ -961,6 +976,16 @@ mod tests {
             serde_json::from_str(r#"{"cmd":"link_menu","url":"https://a.test/","x":3,"y":4}"#)
                 .unwrap();
         assert!(matches!(menu, PageEvent::LinkMenu { x, .. } if x == 3.0));
+        let page: PageEvent = serde_json::from_str(
+            r#"{"cmd":"link_menu","url":"","image":"https://a.test/i.png","page":true,"x":3,"y":4}"#,
+        )
+        .unwrap();
+        assert!(matches!(page, PageEvent::LinkMenu { image, url, .. } if url.is_empty() && image.ends_with("i.png")));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"watch_pick"}"#).is_err());
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"watch_pick"}"#).unwrap(),
+            UiCommand::WatchPick
+        ));
         let selected: PageEvent =
             serde_json::from_str(r#"{"cmd":"link_menu","text":"black hole","x":3,"y":4}"#)
                 .unwrap();

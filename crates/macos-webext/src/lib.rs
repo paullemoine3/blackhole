@@ -260,7 +260,7 @@ mod win;
 #[cfg(windows)]
 pub use win::{
     app_is_active, block_hosts, delete_profile, frontmost_foreign_window, on_renderer_gone,
-    raise_view, round_view,
+    raise_view, referrer_once, round_view,
     set_view_background, ExtensionHost,
 };
 

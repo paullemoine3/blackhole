@@ -221,6 +221,11 @@ struct TabDto {
     folder: Option<u64>,
     #[serde(default)]
     renamed: bool,
+    /// Address (and title) a quick access or folder tab returns to when it wakes up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    home: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    home_title: String,
     // A former `locked` URL (removed feature) in older files is ignored on load.
 }
 
@@ -283,6 +288,8 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         pinned: t.pinned,
                         folder: t.folder.map(|f| f.0),
                         renamed: t.renamed,
+                        home: t.home.as_ref().map(|h| h.url.to_string()),
+                        home_title: t.home.as_ref().map(|h| h.title.clone()).unwrap_or_default(),
                     })
                     .collect(),
                 folders: s
@@ -347,6 +354,12 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                             pinned: t.pinned,
                             folder: t.folder.filter(|f| known(*f) && !t.pinned).map(FolderId),
                             renamed: t.renamed,
+                            home: t
+                                .home
+                                .as_deref()
+                                .and_then(|h| Url::parse(h).ok())
+                                .filter(|u| matches!(u.scheme(), "http" | "https"))
+                                .map(|url| blackhole_domain::Home { url, title: t.home_title }),
                         })
                     })
                     .collect(),

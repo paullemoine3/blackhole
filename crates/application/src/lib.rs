@@ -474,6 +474,24 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    /// The page of a quick access or folder tab went to sleep: it wakes up at its home.
+    pub fn go_home(&mut self, id: TabId) -> bool {
+        let ok = self.workspace.go_home(id);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
+    /// The page shown by a quick access or folder tab becomes its home.
+    pub fn set_home(&mut self, id: TabId) -> bool {
+        let ok = self.workspace.set_home(id);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
     pub fn toggle_pin(&mut self, id: TabId) -> bool {
         let ok = self.workspace.toggle_pin(id);
         self.persist();

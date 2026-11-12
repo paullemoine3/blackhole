@@ -18,6 +18,37 @@ pub struct Tab {
     pub folder: Option<FolderId>,
     /// The user chose the title: page title changes no longer replace it.
     pub renamed: bool,
+    /// Where a quick access or pinned (folder) tab lives, like Arc: the page it had when it
+    /// was put there. It may wander from it; it comes back to it when it wakes up.
+    pub home: Option<Home>,
+}
+
+/// The address a kept tab returns to, with the title it had there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Home {
+    pub url: Url,
+    pub title: String,
+}
+
+impl Tab {
+    /// Quick access tile or folder tab: it keeps its place in the sidebar when it sleeps.
+    pub fn kept(&self) -> bool {
+        self.pinned || self.folder.is_some()
+    }
+
+    /// The tab shows another page than the one it lives at.
+    pub fn away(&self) -> bool {
+        self.home.as_ref().is_some_and(|h| h.url != self.url)
+    }
+
+    /// A kept tab has a home (the page it shows when it becomes one); a loose tab has none.
+    fn settle(&mut self) {
+        if !self.kept() {
+            self.home = None;
+        } else if self.home.is_none() {
+            self.home = Some(Home { url: self.url.clone(), title: self.title.clone() });
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folder {
@@ -184,13 +215,51 @@ impl Workspace {
         {
             recent.insert(0, tab);
         }
-        Self {
+        let mut ws = Self {
             spaces,
             active_space,
             next_id,
             recent,
             burners: Vec::new(),
+        };
+        // No page is open yet: every kept tab wakes up at home (files written before homes
+        // existed get the page they were on).
+        for tab in ws.spaces.iter_mut().flat_map(|s| s.tabs.iter_mut()) {
+            tab.settle();
+            Self::send_home(tab);
         }
+        ws
+    }
+
+    fn send_home(tab: &mut Tab) -> bool {
+        if !tab.away() {
+            return false;
+        }
+        if let Some(home) = &tab.home {
+            tab.url = home.url.clone();
+            if !tab.renamed {
+                tab.title = home.title.clone();
+            }
+        }
+        true
+    }
+
+    fn tab_mut(&mut self, id: TabId) -> Option<&mut Tab> {
+        self.spaces.iter_mut().flat_map(|s| s.tabs.iter_mut()).find(|t| t.id == id)
+    }
+
+    /// The page of a kept tab went to sleep: it will wake up at home. True when it had wandered.
+    pub fn go_home(&mut self, id: TabId) -> bool {
+        self.tab_mut(id).is_some_and(Self::send_home)
+    }
+
+    /// The page a kept tab shows becomes its home ("Use this page as its address").
+    pub fn set_home(&mut self, id: TabId) -> bool {
+        let Some(tab) = self.tab_mut(id).filter(|t| t.kept()) else {
+            return false;
+        };
+        tab.home = Some(Home { url: tab.url.clone(), title: tab.title.clone() });
+        true
     }
 
     pub fn spaces(&self) -> &[Space] {
@@ -365,6 +434,7 @@ impl Workspace {
                 pinned: false,
                 folder: None,
                 renamed: false,
+                home: None,
             },
         );
         space.active_tab = Some(id);
@@ -538,6 +608,7 @@ impl Workspace {
         };
         tab.pinned = !tab.pinned;
         tab.folder = None;
+        tab.settle();
         space.tabs.sort_by_key(|t| !t.pinned); // stable: pinned first, order kept
         true
     }
@@ -626,7 +697,11 @@ impl Workspace {
                 pinned: false,
                 folder: Some(folder_id),
                 renamed: false,
+                home: None,
             });
+            if let Some(tab) = self.spaces[idx].tabs.last_mut() {
+                tab.settle();
+            }
             added += 1;
         }
         added
@@ -747,6 +822,7 @@ impl Workspace {
         let mut tab = space.tabs.remove(pos);
         tab.pinned = pinned;
         tab.folder = folder;
+        tab.settle();
         let at = before
             .and_then(|b| space.tabs.iter().position(|t| t.id == b))
             .unwrap_or(space.tabs.len());
@@ -1036,7 +1112,11 @@ impl Workspace {
                     .tabs
                     .iter()
                     .filter(|t| t.folder.is_none() && !self.is_burner(t.id))
-                    .map(|t| (t.url.clone(), t.title.clone(), t.pinned))
+                    .map(|t| match &t.home {
+                        // Quick access is the same tile on every device, wherever it wandered.
+                        Some(home) => (home.url.clone(), home.title.clone(), t.pinned),
+                        None => (t.url.clone(), t.title.clone(), t.pinned),
+                    })
                     .collect(),
             })
             .collect()
@@ -1051,7 +1131,7 @@ impl Workspace {
         let mut wanted = url.clone();
         wanted.set_fragment(None);
         self.spaces[space].tabs.iter().position(|t| {
-            let mut current = t.url.clone();
+            let mut current = t.home.as_ref().map_or(&t.url, |h| &h.url).clone();
             current.set_fragment(None);
             t.folder.is_none() && current == wanted && !self.is_burner(t.id)
         })
@@ -1092,8 +1172,9 @@ impl Workspace {
                     let pos = tabs.iter().position(|t| !t.pinned).unwrap_or(tabs.len());
                     tabs.insert(
                         pos,
-                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false },
+                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false, home: None },
                     );
+                    tabs[pos].settle();
                 }
                 Action::Close { space, url } => {
                     let Some(at) = self.space_named(space) else { continue };
@@ -1117,6 +1198,7 @@ impl Workspace {
                     let Some(pos) = self.sync_tab(at, url) else { continue };
                     let space = &mut self.spaces[at];
                     space.tabs[pos].pinned = *pinned;
+                    space.tabs[pos].settle();
                     space.tabs.sort_by_key(|t| !t.pinned);
                 }
             }
@@ -1523,6 +1605,51 @@ mod tests {
         let only = ws.active_space().id;
         assert_eq!(ws.delete_space(only), None);
         assert_eq!(ws.delete_space(SpaceId(999)), None);
+    }
+
+    #[test]
+    fn a_kept_tab_wanders_and_wakes_up_at_home() {
+        let mut ws = Workspace::new();
+        let tab = ws.open_tab(u("https://mail.test/inbox"));
+        ws.update_page(tab, None, Some("Inbox".into()));
+        let get = |ws: &Workspace| ws.active_space().tabs.iter().find(|t| t.id == tab).cloned().unwrap();
+        assert!(get(&ws).home.is_none() && !ws.go_home(tab), "a loose tab has no home");
+        ws.toggle_pin(tab);
+        assert_eq!(get(&ws).home.map(|h| h.url), Some(u("https://mail.test/inbox")));
+        ws.update_page(tab, Some(u("https://mail.test/message/7")), Some("A message".into()));
+        assert!(get(&ws).away());
+        // Asleep: back home, with the title it had there.
+        assert!(ws.go_home(tab));
+        let home = get(&ws);
+        assert_eq!((home.url.as_str(), home.title.as_str()), ("https://mail.test/inbox", "Inbox"));
+        assert!(!home.away() && !ws.go_home(tab));
+        // The page shown can become the home; a folder tab has one too; a loose tab loses it.
+        ws.update_page(tab, Some(u("https://mail.test/starred")), None);
+        assert!(ws.set_home(tab) && !get(&ws).away());
+        let folder = ws.add_folder("Work");
+        ws.move_tab(tab, None, Some(folder), false);
+        assert_eq!(get(&ws).home.map(|h| h.url), Some(u("https://mail.test/starred")));
+        ws.move_tab(tab, None, None, false);
+        assert!(get(&ws).home.is_none() && !ws.set_home(tab));
+    }
+
+    #[test]
+    fn restored_kept_tabs_start_at_home_and_sync_by_their_home() {
+        let mut ws = Workspace::new();
+        let tab = ws.open_tab(u("https://news.test/"));
+        ws.toggle_pin(tab);
+        ws.update_page(tab, Some(u("https://news.test/article")), None);
+        assert_eq!(ws.sync_view()[0].tabs[0].0, u("https://news.test/"), "the tile, not the page read");
+        let back = Workspace::restore(ws.spaces().to_vec(), ws.active_space().id);
+        assert_eq!(back.active_space().tabs[0].url, u("https://news.test/"));
+        // A file from before homes existed: the page the tile was on becomes its home.
+        let mut old = ws.spaces().to_vec();
+        old[0].tabs[0].home = None;
+        let back = Workspace::restore(old, ws.active_space().id);
+        assert_eq!(
+            back.active_space().tabs[0].home.as_ref().map(|h| h.url.clone()),
+            Some(u("https://news.test/article"))
+        );
     }
 
     #[test]

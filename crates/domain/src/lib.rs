@@ -34,6 +34,7 @@ pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchE
 pub use privacy::{is_third_party, privacy_grade, BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy, Shields};
 pub use settings::{overflow_to_release, site_key, Settings};
 pub use workspace::{
+    Home,
     sanitize_icon, site_of_host, Folder, FolderId, Removed, Space, SpaceId, Tab, TabId, Tidied,
     TidyGroup, Workspace,
 };

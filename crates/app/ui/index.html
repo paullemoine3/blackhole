@@ -54,12 +54,19 @@
   .fh { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; cursor: pointer; }
   .fh:hover { background: rgba(255,255,255,.08); }
   .chev { width: 18px; height: 18px; display: grid; place-items: center; opacity: .7; flex: none; }
+  /* A folder with no page open under it: its title steps back. */
+  .fh.idle .fname, .fh.idle .ficon { opacity: .5; }
+  .fh.idle:hover .fname, .fh.idle:hover .ficon { opacity: 1; }
   .fname { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { font-size: 11px; opacity: .5; }
   .sedit { width: 110px; flex: none; }
   .fedit { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text; -webkit-user-select: text; }
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
-  .folder.collapsed .fb { display: none; }
+  /* Like Arc: a closed folder still shows the pages open under it (and the folders that hold
+     them); the tabs asleep stay folded away. Nothing open: nothing shown. */
+  .folder.collapsed:not(.awake) > .fb { display: none; }
+  .folder.collapsed .fb > .tab.asleep, .folder.collapsed .fb > .tab.easel:not(.active),
+  .folder.collapsed .fb > .folder:not(.awake) { display: none; }
   body.dropping aside { outline: 2px dashed var(--accent); outline-offset: -4px; }
   .bm .dot { background: rgba(255,255,255,.14); }
   .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
@@ -417,6 +424,8 @@ function tabMenu(t, x, y) {
   }
   if (t.folder != null) items.push({ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
   items.push({ sep: true });
+  // A quick access or folder tab that wandered from its own page: back to it, or adopt this one.
+  if (t.away) items.push({ icon: 'home', label: bhT('menu.tab_home'), run: { cmd: 'tab_home', id: t.id } }, { icon: 'pin', label: bhT('menu.tab_set_home'), run: { cmd: 'tab_set_home', id: t.id } });
   if (!t.asleep) items.push({ icon: 'reload', label: bhT('bar.reload'), run: { cmd: 'reload_tab', id: t.id } });
   items.push({ icon: 'copy', label: bhT('menu.duplicate'), run: { cmd: 'duplicate_tab', id: t.id } });
   items.push({ icon: 'link', label: bhT('menu.copy_link'), copy: t.url });
@@ -615,7 +624,13 @@ function editFolder(h, name, f) {
 // ---- drag & drop (pointer based) ---------------------------------
 let down = null, drag = null, justDragged = false, editing = false, deferred = null, newFolderPending = false;
 
-function flush() { if (deferred && !drag && !sdrag && !editing) { const s = deferred; deferred = null; window.bh.render(s); } }
+function flush() { if (deferred && !drag && !sdrag && !editing) { const s = deferred; deferred = null; listsStale = true; window.bh.render(s); } }
+// What the lists of the sidebar are drawn from (see `render`).
+let listSig = '', listIcons = null, listsStale = false;
+function listSignature(s) {
+  return JSON.stringify([s.tabs, s.folders, s.easels, s.spaces, s.activeTab, s.activeSpace, s.collapsed,
+    (s.media || []).map(m => [m.id, !!m.playing, !!m.muted]), s.color, s.sidebarWidth, s.os]);
+}
 
 // Spaces: drag a card to reorder; a horizontal two-finger swipe switches space.
 let sdown = null, sdrag = null, sJustDragged = false;
@@ -906,8 +921,15 @@ window.bh = {
     if (drag || editing || sdrag) { deferred = s; return; }
     const switched = state && state.activeSpace != null && s.activeSpace !== state.activeSpace;
     const prev = state;
+    // The lists (tiles, folders, tabs, spaces) are only rebuilt when what they show changed: a
+    // counter that moves (blocked requests), a download or a card must not replace every row,
+    // which reloaded the icons and made the whole sidebar flicker. The page's own calls (after
+    // an edit, a drag, a language change) pass the state it already has: always rebuilt.
+    const sig = listSignature(s);
+    const dirty = s === prev || listsStale || sig !== listSig || s.favicons !== listIcons;
+    listSig = sig; listIcons = s.favicons; listsStale = false;
     // The rows as they are on screen now, to animate them to their new places.
-    const before = !switched && prev && prev.tabs && prev.tabs.length && s.animations !== false ? motion.snapshot() : null;
+    const before = dirty && !switched && prev && prev.tabs && prev.tabs.length && s.animations !== false ? motion.snapshot() : null;
     state = s;
     if (switched) {
       const a = document.querySelector('aside');
@@ -925,12 +947,19 @@ window.bh = {
     root.setProperty('--tint2', mix(s.color, .24));
     root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
+    if (dirty) {
     const pins = s.tabs.filter(t => t.pinned).map(tabNode);
     $('pinned').replaceChildren(...pins);
     applyFolds(s.collapsed || []);
     folderNodes.clear();
     const build = (parent) => s.folders.filter(f => (f.parent ?? null) === parent).map(f => {
-      const node = folderNode(f, s.tabs.filter(t => !t.pinned && t.folder === f.id), (s.easels || []).filter(e => e.folder === f.id), build(f.id).map(n => n.box));
+      const tabs = s.tabs.filter(t => !t.pinned && t.folder === f.id), easels = (s.easels || []).filter(e => e.folder === f.id);
+      const subs = build(f.id);
+      const node = folderNode(f, tabs, easels, subs.map(n => n.box));
+      // Awake: a page (or an Easel) open somewhere under it. The others step back in grey.
+      node.awake = tabs.some(t => !t.asleep) || easels.some(e => e.open) || subs.some(n => n.awake);
+      node.h.classList.toggle('idle', !node.awake);
+      node.box.classList.toggle('awake', node.awake);
       folderNodes.set(f.id, node);
       return node;
     });
@@ -959,6 +988,7 @@ window.bh = {
       b.oncontextmenu = (e) => { e.preventDefault(); spaceMenu(sp, e.clientX, e.clientY); };
       return b;
     }));
+    }
     const bn = $('blockedn'), blocked = ' ' + s.blocked;
     if (bn.textContent !== blocked) {
       const grew = Number(bn.textContent) < s.blocked;
@@ -1212,7 +1242,10 @@ document.addEventListener('mousemove', (e) => {
   if (window.bh.role === 'flyout' || state.sidebarOpen !== false) return;
   if (e.clientX < state.sidebarWidth + 6) peek(true);
 });
-document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') peek(false); });
+// The floating copy says when the cursor is on it: one the shell showed by itself (a download)
+// stays while it is.
+document.addEventListener('mouseenter', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: true }); });
+document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: false }); });
 send({ cmd: 'ready' });
 </script>
 </body>

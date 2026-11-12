@@ -11,7 +11,8 @@ use std::{
     rc::Rc,
 };
 use webview2_com::{
-    take_pwstr, BrowserExtensionRemoveCompletedHandler, Microsoft::Web::WebView2::Win32::*,
+    take_pwstr, BrowserExtensionRemoveCompletedHandler, ContentLoadingEventHandler,
+    Microsoft::Web::WebView2::Win32::*,
     ProcessFailedEventHandler, ProfileAddBrowserExtensionCompletedHandler,
     ProfileGetBrowserExtensionsCompletedHandler, WebResourceRequestedEventHandler,
 };
@@ -73,6 +74,57 @@ pub fn block_hosts(view: &wry::WebView, hosts: &[&str], blocked: impl Fn(&str, &
                         &HSTRING::new(),
                     )?;
                     args.SetResponse(&response)?;
+                }
+                Ok(())
+            })),
+            &mut token,
+        );
+    }
+}
+
+/// The first page of a view opened from another page: its document requests carry `referrer`
+/// (redirects included, which a header given to the navigation itself does not survive), until
+/// that page starts to show. Sites tell a visit that comes from their own pages by it.
+pub fn referrer_once(view: &wry::WebView, referrer: &str) {
+    let core = view.webview();
+    let (name, value) = (HSTRING::from("Referer"), HSTRING::from(referrer));
+    let pattern = HSTRING::from("*");
+    let active = Rc::new(std::cell::Cell::new(true));
+    // SAFETY: plain COM calls on the thread that owns the view; the handlers hold no view.
+    unsafe {
+        if core
+            .AddWebResourceRequestedFilter(&pattern, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT)
+            .is_err()
+        {
+            return;
+        }
+        let mut token = Default::default();
+        let on = active.clone();
+        let _ = core.add_WebResourceRequested(
+            &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args.filter(|_| on.get()) else {
+                    return Ok(());
+                };
+                let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+                args.ResourceContext(&mut context)?;
+                if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                    args.Request()?.Headers()?.SetHeader(&name, &value)?;
+                }
+                Ok(())
+            })),
+            &mut token,
+        );
+        // The page shows: what it loads next (frames, links) is its own business again.
+        let mut token = Default::default();
+        let _ = core.add_ContentLoading(
+            &ContentLoadingEventHandler::create(Box::new(move |sender, _| {
+                if active.replace(false) {
+                    if let Some(sender) = sender {
+                        let _ = sender.RemoveWebResourceRequestedFilter(
+                            &pattern,
+                            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+                        );
+                    }
                 }
                 Ok(())
             })),

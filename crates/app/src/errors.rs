@@ -172,6 +172,19 @@ impl Running {
         }
     }
 
+    /// The failure just reported for `tab` is WebView2's "connection aborted" (9): also how
+    /// it ends a navigation that turns into a download.
+    pub(crate) fn failure_is_abort(&self, tab: TabId) -> bool {
+        self.errors
+            .failures
+            .get(&tab)
+            .is_some_and(|f| f.domain == "webview2" && f.code == 9)
+    }
+
+    pub(crate) fn forget_failure(&mut self, tab: TabId) {
+        self.errors.failures.remove(&tab);
+    }
+
     pub(crate) fn errors_auth_asked(&mut self, tab: TabId) {
         self.errors.auth.insert(tab);
     }

@@ -216,6 +216,18 @@
     },
     true,
   );
+  // Right click anywhere else on the page: BlackHole's page menu (back, reload, Easel, live
+  // capture, watch an area…). Asked last and only if the page did not show a menu of its own
+  // (Docs, Sheets, Figma); a video or a sound keeps the engine's menu (loop, controls, save).
+  window.addEventListener('contextmenu', (e) => {
+    if (e.defaultPrevented || e.shiftKey || editable(e)) return;
+    const path = e.composedPath();
+    if (path.some((n) => n && /^(VIDEO|AUDIO|CANVAS|EMBED|OBJECT)$/.test(n.tagName))) return;
+    const img = path.find((n) => n && n.tagName === 'IMG' && (n.currentSrc || n.src));
+    const src = img ? img.currentSrc || img.src : '';
+    e.preventDefault();
+    post({ cmd: 'link_menu', url: '', text: '', mark: 0, image: /^https?:/.test(src) ? src.slice(0, 4000) : '', page: true, x: e.clientX, y: e.clientY });
+  });
 
   // Single-page apps change the URL without a navigation; tell the shell to re-read it.
   const report = () => post({ cmd: 'location' });
