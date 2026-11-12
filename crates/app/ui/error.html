@@ -415,9 +415,26 @@ const L = cfg.i18n || { lang: 'en', s: {} };
 const T = (key, p) => (L.s[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => (p && k in p ? String(p[k]) : m));
 document.documentElement.lang = L.lang;
 if (cfg.animations === false) document.body.classList.add('still');
-const retry = () => { location.href = target; };
+const post = (msg) => {
+  try {
+    if (window.__bhipc) { window.__bhipc.postMessage(JSON.stringify(msg)); return true; }
+  } catch (_) { /* no shell to talk to: the page acts alone */ }
+  return false;
+};
+// The desktop shell (`cfg.shell`) answers "retry" and "back" itself: it knows where this page
+// sits in the tab's history. `history.back()` alone returns to the address that failed, which
+// fails again; loading it from here adds two entries per try. Shown again through the history,
+// the page is no longer followed by the shell and acts alone (as on Android, without `shell`).
+const nav = performance.getEntriesByType('navigation')[0];
+const live = cfg.shell === true && !(nav && nav.type === 'back_forward');
+const steps = Number.isInteger(cfg.steps) ? cfg.steps : 1;
+const retry = () => { if (!(live && post({ cmd: 'error_retry' }))) location.href = target; };
+const back = () => {
+  if (live && post({ cmd: 'error_back', length: history.length })) return;
+  if (steps > 0 && history.length > steps) history.go(-steps); else location.href = target;
+};
 window.__bhRetry = retry;
-const back = () => { history.length > 1 ? history.back() : retry(); };
+window.__bhBack = back;
 const date = (secs) => {
   if (!secs) return '';
   try { return new Date(secs * 1000).toLocaleString(L.lang, { dateStyle: 'long', timeStyle: 'short' }); } catch (_) { return ''; }
@@ -425,7 +442,7 @@ const date = (secs) => {
 // The shell asks before anything risky: its own menu, not this page, grants the exception.
 const ask = (e) => {
   const r = e.currentTarget.getBoundingClientRect();
-  window.__bhipc && window.__bhipc.postMessage(JSON.stringify({ cmd: 'error_menu', x: r.left, y: r.bottom + 4 }));
+  post({ cmd: 'error_menu', x: r.left, y: r.bottom + 4 });
 };
 const REASONS = {
   expired: ['error.reason_expired', 'error.reason_expired_hint'],
@@ -494,7 +511,8 @@ const main = ACTIONS[page.main];
 $('actions').append(button(T(main[0]), main[1]));
 if (page.second) $('actions').append(button(T(ACTIONS[page.second][0]), ACTIONS[page.second][1], 'ghost'));
 if (page.main === 'back' && !page.second && kind !== 'blocked') $('actions').append(button(T('error.retry'), retry, 'ghost'));
-if (page.allow) $('actions').append(button(T('error.allow_site'), ask, 'risky'));
+// `cfg.allow === false`: a shell without exceptions for the Shields (Android) offers none.
+if (page.allow && cfg.allow !== false) $('actions').append(button(T('error.allow_site'), ask, 'risky'));
 
 if (page.risky) {
   $('advanced').hidden = false;

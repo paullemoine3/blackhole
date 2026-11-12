@@ -7,6 +7,8 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A closed folder still shows the pages open under it, like Arc, so opening a tab from the command bar no longer unfolds its folders; a folder with no page open is dimmed",
             "Right click anywhere on a page opens BlackHole's own menu: back, forward, reload, add the page to the Easel, capture a live area, watch an area for changes, copy the clean link, find, print, inspect; an image adds open in a new tab and copy its address. Shift+right click, text fields, videos and pages with a menu of their own keep theirs",
             "A link that downloads a file no longer replaces its page with Site unreachable on Windows",
+            "Error pages: Back to safety (and the Back button) now returns to the page you were on instead of bouncing on the address that failed, and closes a tab that has nothing to return to; Try again and Sign in really ask the server again, without piling entries in the history",
+            "A refused certificate on a site opened from another page no longer makes the tab flicker between two error pages on Windows",
             "A hidden sidebar slides out for a few seconds when a download starts or ends, so its card is seen, and the page stays usable meanwhile",
             "The sidebar no longer flickers when the count of blocked requests moves: its rows are only redrawn when a tab, a folder or a space changes",
             "A tab opened from a page (new-window link, Ctrl/Cmd+click, middle click) now tells the site which site it comes from, as the link would have: an image in a Reddit comment opens full screen instead of showing its post again",

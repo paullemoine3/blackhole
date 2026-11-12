@@ -863,6 +863,12 @@ pub fn go_back(view: &WebView) {
     let _ = view.go_back();
 }
 
+/// "Back" on BlackHole's error page: the page tells the shell its history length
+/// (`PageEvent::ErrorBack`), the shell picks how far to go.
+pub fn error_back(view: &WebView) {
+    let _ = view.evaluate_script("window.__bhBack?window.__bhBack():history.back()");
+}
+
 pub fn go_forward(view: &WebView) {
     let _ = view.go_forward();
 }
