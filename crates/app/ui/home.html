@@ -10,13 +10,32 @@
   body { overflow-y: auto; background: radial-gradient(800px 500px at 50% -10%, rgba(124,92,255,.22), transparent 70%), #0c0b12; }
   main { max-width: 860px; margin: 0 auto; padding: 56px 28px 40px; }
   .brand { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 26px; }
-  /* The black hole breathes and its ring turns, like the Android start page. */
-  .logo { width: 46px; height: 46px; border-radius: 50%; flex: none; position: relative;
-    background: radial-gradient(circle, #000 0 42%, rgba(255,170,60,.95) 48%, rgba(255,90,40,.5) 62%, transparent 74%);
-    box-shadow: 0 0 30px rgba(255,120,40,.3); animation: breathe 5s ease-in-out infinite; }
-  .logo::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent;
-    border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8); animation: orbit 6s linear infinite; }
-  @keyframes breathe { 50% { transform: scale(1.06); } }
+  /* The black hole is quiet at rest: only its ring turns. Under the pointer the disc swells, a
+     second ring races and the stars around it are swallowed. Same logo as the Android start page
+     (mobile.html) and as the launch splash, which lands on it. */
+  .logo { position: relative; width: 1em; height: 1em; font-size: 46px; flex: none; }
+  .logo i, #splash i { position: absolute; border-radius: 50%; }
+  .logo .glow, #splash .glow { inset: -45%; opacity: .55; background: radial-gradient(circle, rgba(255,120,40,.3), rgba(124,92,255,.16) 45%, transparent 70%); }
+  .logo .disc, #splash .disc { inset: 0; background: radial-gradient(circle, #000 0 34%, rgba(255,170,60,.95) 38%, rgba(255,90,40,.5) 52%, rgba(124,92,255,.3) 64%, transparent 76%); }
+  .logo .ring, #splash .ring { inset: -11%; border: 2px solid transparent; border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8); }
+  /* Two paces: these slow ones bring the logo back to rest, the quick ones further down start the reaction. */
+  .logo .glow { transition: opacity 1s ease, transform 1s cubic-bezier(.2,.7,.2,1); }
+  .logo .disc { transition: transform 1s cubic-bezier(.2,.7,.2,1); }
+  .logo .ring { animation: orbit 9s linear infinite; }
+  .logo .fast { inset: -22%; border-top-color: #fff; border-right-color: rgba(255,205,120,.9); opacity: 0; transition: opacity .9s ease; animation: orbit 1.1s linear infinite paused; }
+  .logo .mote { left: 50%; top: 50%; width: 2px; height: 2px; margin: -1px; background: #fff; box-shadow: 0 0 6px 1px rgba(190,170,255,.9); opacity: .8;
+    transform: rotate(var(--a)) translateX(var(--r));
+    transition: transform 1.5s cubic-bezier(.2,.7,.2,1) calc(var(--k) * 70ms), opacity 1.2s ease-out calc(.15s + var(--k) * 70ms);
+    animation: mote-in 1.1s cubic-bezier(.2,.7,.2,1) calc(var(--k) * 80ms) backwards; }
+  .mote:nth-last-child(6) { --k: 0; --a: 20deg; --r: .72em; } .mote:nth-last-child(5) { --k: 1; --a: 75deg; --r: .82em; } .mote:nth-last-child(4) { --k: 2; --a: 140deg; --r: .92em; }
+  .mote:nth-last-child(3) { --k: 3; --a: 200deg; --r: .72em; } .mote:nth-last-child(2) { --k: 4; --a: 255deg; --r: .82em; } .mote:nth-last-child(1) { --k: 5; --a: 320deg; --r: .92em; }
+  @media (prefers-reduced-motion: no-preference) {
+    body:not(.noanim) .brand:hover .glow { opacity: 1; transform: scale(1.15); transition: opacity .4s ease, transform .5s cubic-bezier(.3,1.4,.5,1); }
+    body:not(.noanim) .brand:hover .disc { transform: scale(1.12); transition: transform .5s cubic-bezier(.3,1.4,.5,1); }
+    body:not(.noanim) .brand:active .disc { transform: scale(.92); }
+    body:not(.noanim) .brand:hover .fast { opacity: 1; animation-play-state: running; transition: opacity .3s ease; }
+    body:not(.noanim) .brand:hover .mote { opacity: 0; transform: rotate(calc(var(--a) + 150deg)) translateX(.2em) scale(.3); transition: transform .7s cubic-bezier(.5,0,.8,.6), opacity .7s ease-in; }
+  }
   @keyframes orbit { to { transform: rotate(360deg); } }
   h1 { font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
   .card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 18px; margin-bottom: 18px; }
@@ -49,33 +68,37 @@
   .news .ver + .ver { margin-top: 14px; }
   .news button { font: inherit; color: #fff; background: rgba(124,92,255,.85); border: 0; border-radius: 8px; padding: 6px 14px; cursor: pointer; }
   .news button:hover { background: rgb(124,92,255); }
-  /* Launch splash */
-  #splash { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; overflow: hidden;
-    background: radial-gradient(900px 600px at 50% 45%, rgba(124,92,255,.28), transparent 70%), #07060c; }
-  body.splashing #splash { display: grid; animation: splash-out .55s ease-in 1.9s both; }
-  body.splashing main { animation: emerge .9s cubic-bezier(.2,.7,.2,1) 2s both; }
-  #splash .core { position: relative; width: 150px; height: 150px; display: grid; place-items: center; }
-  #splash .disc { position: absolute; inset: 0; border-radius: 50%;
-    background: radial-gradient(circle, #000 0 34%, rgba(255,170,60,.95) 38%, rgba(255,90,40,.5) 52%, rgba(124,92,255,.3) 64%, transparent 76%);
-    box-shadow: 0 0 80px rgba(255,120,40,.28), 0 0 160px rgba(124,92,255,.25);
-    animation: disc 1.9s cubic-bezier(.4,0,.2,1) both; }
-  #splash .ring { position: absolute; inset: -14px; border-radius: 50%; border: 2px solid transparent;
-    border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8);
-    animation: swirl 1.9s cubic-bezier(.3,.1,.2,1) both; }
-  #splash .star { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%;
-    background: #fff; box-shadow: 0 0 6px 1px rgba(190,170,255,.9); opacity: 0;
+  /* Launch splash: the stars fall to a point, a flash, the hole is born, the name comes letter by
+     letter; then the backdrop fades and the hole lands on the page's logo (--lx, --ly, --ls are
+     measured by splash()). Only transform and opacity move. */
+  #splash { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; overflow: hidden; }
+  body.splashing #splash { display: grid; }
+  body.splashing .logo { visibility: hidden; }
+  body.splashing .logo .ring, body.splashing .logo .mote { animation: none; }
+  #splash .bgd { inset: 0; border-radius: 0; background: radial-gradient(900px 600px at 50% 45%, rgba(124,92,255,.28), transparent 70%), #07060c; }
+  #splash .core { position: relative; width: 150px; height: 150px; }
+  #splash .flash { inset: 0; background: radial-gradient(circle, #fff, #ffcd78 30%, transparent 68%); animation: flash .4s ease-out .55s both; }
+  #splash .shock { inset: 0; border: 1.5px solid rgba(255,205,120,.9); animation: shock .7s cubic-bezier(.2,.85,.25,1) .6s both; }
+  #splash .glow { animation: born .5s ease-out .6s both; }
+  #splash .disc { animation: born .5s cubic-bezier(.2,1.3,.4,1) .6s both; }
+  #splash .ring { border-width: 4px; animation: ring-in .9s cubic-bezier(.2,.85,.25,1) .65s both; }
+  #splash .star { left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: #fff; box-shadow: 0 0 6px 1px rgba(190,170,255,.9); opacity: 0;
     animation: fall var(--d) cubic-bezier(.5,0,.8,.6) var(--delay) both; }
   #splash .word { position: absolute; top: calc(50% + 120px); width: 100%; text-align: center; font-size: 22px; font-weight: 600;
-    letter-spacing: .6em; text-indent: .6em; text-transform: uppercase; color: #eceaf5; animation: word 1.2s ease-out .6s both; }
-  @keyframes disc { 0% { transform: scale(.2); opacity: 0; } 35% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(1); } 100% { transform: scale(1.15); } }
-  @keyframes swirl { 0% { transform: rotate(0) scale(.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: rotate(720deg) scale(1); opacity: .9; } }
-  @keyframes fall {
-    0% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) scale(1); }
-    15% { opacity: 1; }
-    100% { opacity: 0; transform: rotate(calc(var(--a) + 260deg)) translateX(30px) scale(.2); }
-  }
-  @keyframes word { 0% { opacity: 0; transform: translateY(8px); letter-spacing: 1em; } 100% { opacity: .85; transform: none; letter-spacing: .6em; } }
-  @keyframes splash-out { to { opacity: 0; transform: scale(1.35); } }
+    letter-spacing: .6em; text-indent: .6em; text-transform: uppercase; color: #eceaf5; opacity: .85; }
+  #splash .word span { display: inline-block; animation: letter .35s cubic-bezier(.2,.85,.25,1) calc(.8s + var(--i) * 35ms) both; }
+  #splash.land .bgd { animation: fade-out .45s ease-out both; }
+  #splash.land .word { animation: fade-out .25s ease-out both; }
+  #splash.land .core { animation: land .5s cubic-bezier(.2,.85,.25,1) both; }
+  @keyframes fall { 0% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) scale(1); } 15% { opacity: 1; } 100% { opacity: 0; transform: rotate(calc(var(--a) + 180deg)) translateX(30px) scale(.2); } }
+  @keyframes flash { 0% { opacity: 0; transform: scale(.1); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.8); } }
+  @keyframes shock { 0% { opacity: 0; transform: scale(.2); } 12% { opacity: .9; } 100% { opacity: 0; transform: scale(2.4); } }
+  @keyframes born { from { opacity: 0; transform: scale(.2); } }
+  @keyframes ring-in { from { opacity: 0; transform: rotate(-360deg) scale(.5); } }
+  @keyframes letter { from { opacity: 0; transform: translateY(6px) scale(.8); } }
+  @keyframes fade-out { to { opacity: 0; } }
+  @keyframes mote-in { from { opacity: 0; transform: rotate(calc(var(--a) - 70deg)) translateX(.3em) scale(.3); } }
+  @keyframes land { to { transform: translate(var(--lx), var(--ly)) scale(var(--ls)); } }
   /* Loading screen of a new tab */
   #wait { position: fixed; inset: 0; z-index: 9; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
     background: radial-gradient(800px 500px at 50% 40%, rgba(124,92,255,.2), transparent 70%), #0c0b12; animation: wait-in .18s ease-out both; }
@@ -101,10 +124,10 @@
 </style>
 </head>
 <body>
-<div id="splash"><div class="core"><div class="disc"></div><div class="ring"></div></div><div class="word">BlackHole</div></div>
+<div id="splash"><i class="bgd"></i><div class="core"><i class="flash"></i><i class="shock"></i><i class="glow"></i><i class="disc"></i><i class="ring"></i></div><div class="word">BlackHole</div></div>
 <div id="wait"><div id="waittile"></div><div class="site" id="waitsite"></div><div class="track"><i></i></div></div>
 <main>
-  <div class="brand"><div class="logo"></div><h1>BlackHole</h1></div>
+  <div class="brand"><div class="logo"><i class="glow"></i><i class="disc"></i><i class="ring"></i><i class="ring fast"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
   <section class="card"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
   <section class="card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
@@ -159,18 +182,28 @@ function ago(at) {
 let focused = false;
 let riseAt = 0;
 function splash() {
-  const sp = $('splash');
-  for (let i = 0; i < 36; i++) {
+  const sp = $('splash'), core = sp.querySelector('.core'), word = sp.querySelector('.word');
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  for (let i = 0; i < 24; i++) {
     const s = el('i', 'star');
-    s.style.setProperty('--a', Math.round(Math.random() * 360) + 'deg');
-    s.style.setProperty('--r', Math.round(160 + Math.random() * 300) + 'px');
-    s.style.setProperty('--d', (0.9 + Math.random() * 0.8).toFixed(2) + 's');
-    s.style.setProperty('--delay', (Math.random() * 0.6).toFixed(2) + 's');
-    sp.querySelector('.core').append(s);
+    s.style.setProperty('--a', Math.round(rnd(0, 360)) + 'deg');
+    s.style.setProperty('--r', Math.round(rnd(135, 400)) + 'px');
+    s.style.setProperty('--d', rnd(0.4, 0.6).toFixed(2) + 's');
+    s.style.setProperty('--delay', rnd(0, 0.15).toFixed(2) + 's');
+    core.append(s);
   }
+  word.replaceChildren(...[...word.textContent].map((c, i) => { const s = el('span', '', c); s.style.setProperty('--i', i); return s; }));
   document.body.classList.add('splashing');
   const end = () => { document.body.classList.remove('splashing'); sp.remove(); };
-  setTimeout(end, 2600);
+  // The hole flies to the logo of the page, which takes over when it has landed.
+  setTimeout(() => {
+    const to = document.querySelector('.logo').getBoundingClientRect(), from = core.getBoundingClientRect();
+    core.style.setProperty('--lx', (to.left + to.width / 2 - from.left - from.width / 2) + 'px');
+    core.style.setProperty('--ly', (to.top + to.height / 2 - from.top - from.height / 2) + 'px');
+    core.style.setProperty('--ls', to.width / from.width);
+    sp.classList.add('land');
+  }, 1550);
+  setTimeout(end, 2060);
   sp.onclick = end;
 }
 let last = null;
@@ -216,7 +249,7 @@ window.bh = {
     $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', bhT('home.empty'))]));
     // Tiles rise one after another as the start page emerges from the launch splash. A render
     // that comes in meanwhile (icons arriving) keeps the same schedule.
-    if (!focused && s.animations) riseAt = performance.now() + 2050;
+    if (!focused && s.animations) riseAt = performance.now() + 1750;
     const wait = riseAt - performance.now();
     if (wait > 0) {
       [...$('favs').children, ...$('recent').children].forEach((n, i) => {

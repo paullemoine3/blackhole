@@ -203,6 +203,11 @@ pub enum UiCommand {
     Tidy,
     Untidy,
     DismissTidy,
+    /// The close button of a finished download's card in the sidebar: the card goes, the file
+    /// and its line in the Library stay.
+    DismissDownload {
+        id: u64,
+    },
     /// The sidebar's shield: the privacy report of the site shown, as a menu at (x, y).
     PrivacyReport {
         x: f64,
@@ -948,6 +953,12 @@ mod tests {
             UiCommand::MeetingDismiss { start: 1_700_000_000, .. }
         ));
         assert!(serde_json::from_str::<PageEvent>(dismiss).is_err());
+        // Only the sidebar dismisses a download's card.
+        assert!(matches!(
+            serde_json::from_str::<UiCommand>(r#"{"cmd":"dismiss_download","id":7}"#).unwrap(),
+            UiCommand::DismissDownload { id: 7 }
+        ));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"dismiss_download","id":7}"#).is_err());
         assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"capture_to_easel"}"#).is_err());
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"easel_open_link","item":1}"#).is_err()

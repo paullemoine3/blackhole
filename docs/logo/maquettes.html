@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlackHole — animations du logo (maquettes)</title>
+<style>
+  /* Same names as docs/design-system/tokens.css. */
+  :root {
+    --ink-950: #07060c; --ink-900: #0c0b12; --ink: #eceaf5; --accent: #7c5cff;
+    --accretion-hot: #ffaa3c; --accretion-warm: #ff5a28; --accretion-ring: #ffcd78;
+    --hot: rgba(255,170,60,.95); --warm: rgba(255,90,40,.5); --violet-soft: rgba(124,92,255,.3);
+    --ring-a: rgba(255,205,120,.9); --ring-b: rgba(124,92,255,.8);
+    --glow-star: 0 0 6px 1px #beaaffe6;
+    --ease-glide: cubic-bezier(.2,.85,.25,1); --ease-pop: cubic-bezier(.2,1.3,.4,1); --ease-press: cubic-bezier(.3,1.4,.5,1);
+    --page: var(--ink-900); --text: var(--ink);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--ink-950); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; padding: 28px 16px 60px; }
+  header, section { max-width: 1240px; margin: 0 auto 26px; }
+  header h1 { font-size: 24px; font-weight: 600; }
+  header p, section > p { opacity: .65; margin-top: 6px; max-width: 860px; }
+  section > h2 { font-size: 18px; font-weight: 600; margin-top: 40px; }
+  .toggles { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; color: inherit; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  button.on { background: var(--accent); border-color: transparent; }
+  .grid { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 34px 26px; }
+  figure { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  figcaption { font-size: 13px; opacity: .8; }
+  figcaption b { display: block; color: #fff; font-size: 15px; margin-bottom: 2px; }
+  dl { font-size: 12.5px; display: grid; grid-template-columns: 92px 1fr; gap: 5px 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.09); }
+  dt { opacity: .5; } dd { opacity: .85; }
+  code { font: 12px ui-monospace, Consolas, monospace; background: rgba(255,255,255,.08); border-radius: 4px; padding: 0 4px; }
+
+  /* Start page logo: desktop layout (46px beside the name) and Android layout (84px above it). */
+  .stage { display: flex; align-items: center; justify-content: space-around; gap: 10px; height: 210px; border-radius: 14px; overflow: hidden; color: var(--text);
+    background: radial-gradient(420px 260px at 50% -10%, rgba(124,92,255,.22), transparent 70%), var(--page); border: 1px solid rgba(255,255,255,.08); }
+  .desk { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; letter-spacing: -.02em; }
+  .mob { display: flex; flex-direction: column; align-items: center; gap: 22px; font-size: 13px; font-weight: 600; letter-spacing: .5em; text-indent: .5em; text-transform: uppercase; }
+  .mob span { opacity: .85; }
+
+  /* The logo, sized by --s; every part is a circle laid over the others. */
+  .bh { position: relative; width: 1em; height: 1em; font-size: var(--s, 84px); flex: none; letter-spacing: 0; text-indent: 0; }
+  .bh i { position: absolute; border-radius: 50%; }
+  .bh .disc { inset: 0; background: radial-gradient(circle, #000 0 34%, var(--hot) 38%, var(--warm) 52%, var(--violet-soft) 64%, transparent 76%); }
+  .bh .glow { inset: -45%; background: radial-gradient(circle, rgba(255,120,40,.3), rgba(124,92,255,.16) 45%, transparent 70%); }
+  .bh .ring { inset: -11%; border: max(1.5px, .024em) solid transparent; border-top-color: var(--ring-a); border-right-color: var(--ring-b); }
+  .bh .shadow { inset: 26%; background: #000; box-shadow: 0 0 0 max(1px, .018em) var(--ring-a), 0 0 .16em .03em rgba(255,150,60,.75); }
+  @keyframes breathe { 50% { transform: scale(1.06); } }
+  @keyframes swirl { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .55; } }
+
+  /* A0, today */
+  .v0 .disc { box-shadow: 0 0 .48em rgba(255,120,40,.3), 0 0 1.07em rgba(124,92,255,.25); animation: breathe 5s ease-in-out infinite; }
+  .v0 .ring { animation: swirl 6s linear infinite; }
+
+  /* A1, tilted disc: matter flows along an ellipse, behind the hole then in front of it. */
+  .v1 .glow { animation: pulse 5s ease-in-out infinite; }
+  .v1 .tilt { inset: -32%; border-radius: 0; transform: rotate(-18deg) scaleY(.3); }
+  .v1 .tilt.front { clip-path: inset(50% 0 0 0); }
+  .v1 .tilt::before, .v1 .flow { content: ""; position: absolute; inset: 0; border-radius: 50%;
+    -webkit-mask: radial-gradient(closest-side, transparent 0 57%, #000 60% 66%, transparent 70%); mask: radial-gradient(closest-side, transparent 0 57%, #000 60% 66%, transparent 70%); }
+  .v1 .tilt::before { background: rgba(255,170,60,.28); }
+  .v1 .flow { background: conic-gradient(transparent 0, var(--ring-a) 22%, var(--accretion-warm) 40%, transparent 55%, var(--ring-b) 80%, transparent 100%); animation: swirl 4s linear infinite; }
+
+  /* A2, comets: three arcs at three radii, the inner one the fastest. */
+  .v2 .glow { animation: pulse 6s ease-in-out infinite; }
+  .v2 .orb { animation: swirl var(--t) linear infinite; }
+  .v2 .orb::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(transparent 0 58%, var(--c) 100%);
+    -webkit-mask: radial-gradient(closest-side, transparent 0 89%, #000 91% 97%, transparent 100%); mask: radial-gradient(closest-side, transparent 0 89%, #000 91% 97%, transparent 100%); }
+  .v2 .orb::after { content: ""; position: absolute; left: 50%; top: 3%; width: max(2px, .05em); height: max(2px, .05em); border-radius: 50%; background: #fff; box-shadow: 0 0 .09em .02em var(--c); transform: translate(-50%, -50%); }
+  .v2 .o1 { inset: 0; --c: var(--accretion-ring); --t: 2.6s; }
+  .v2 .o2 { inset: -14%; --c: var(--accretion-warm); --t: 4.4s; animation-delay: -1.5s; }
+  .v2 .o3 { inset: -30%; --c: var(--accent); --t: 7s; animation-delay: -4s; }
+
+  /* A3, whirlpool: two layers of arms turning against each other. */
+  .v3 .glow { animation: pulse 6s ease-in-out infinite; }
+  .v3 .arms { -webkit-mask: radial-gradient(closest-side, transparent 0 38%, #000 46%, rgba(0,0,0,.45) 72%, transparent 100%); mask: radial-gradient(closest-side, transparent 0 38%, #000 46%, rgba(0,0,0,.45) 72%, transparent 100%); }
+  .v3 .a { inset: -12%; background: conic-gradient(transparent 0, var(--hot) 20%, transparent 34%, transparent 50%, var(--accretion-warm) 70%, transparent 84%); animation: swirl 5s linear infinite; }
+  .v3 .b { inset: -30%; opacity: .75; background: conic-gradient(transparent 0, var(--ring-b) 16%, transparent 30%, transparent 50%, var(--ring-b) 66%, transparent 80%); animation: swirl 11s linear infinite reverse; }
+
+  /* A4, reactive: quiet at rest, swallows its stars under the pointer or the finger. */
+  .v4 .glow { opacity: .55; transition: opacity .4s ease, transform .5s var(--ease-press); }
+  .v4 .disc { transition: transform .5s var(--ease-press); }
+  .v4 .ring { animation: swirl 9s linear infinite; }
+  .v4 .fast { inset: -22%; border-top-color: #fff; border-right-color: var(--ring-a); opacity: 0; transition: opacity .3s ease; animation: swirl 1.1s linear infinite paused; }
+  .v4 .mote { left: 50%; top: 50%; width: max(2px, .04em); height: max(2px, .04em); margin: calc(max(2px, .04em) / -2); background: #fff; box-shadow: var(--glow-star); opacity: .8;
+    transform: rotate(var(--a)) translateX(var(--r)); transition: transform .7s cubic-bezier(.5,0,.8,.6), opacity .7s ease-in; }
+  body:not(.still) .stage:hover .v4 .glow { opacity: 1; transform: scale(1.15); }
+  body:not(.still) .stage:hover .v4 .disc { transform: scale(1.12); }
+  body:not(.still) .stage:active .v4 .disc { transform: scale(.92); }
+  body:not(.still) .stage:hover .v4 .fast { opacity: 1; animation-play-state: running; }
+  body:not(.still) .stage:hover .v4 .mote { opacity: 0; transform: rotate(calc(var(--a) + 150deg)) translateX(.2em) scale(.3); }
+
+  /* Launch splash, in a small window over a small start page. */
+  .win { position: relative; width: 320px; height: 210px; margin: 0 auto; border-radius: 12px; overflow: hidden; color: var(--text); --lx: -35px; --ly: -74px; --ls: .321; --dive: 16;
+    background: radial-gradient(300px 190px at 50% -10%, rgba(124,92,255,.22), transparent 70%), var(--page); border: 1px solid rgba(255,255,255,.1); }
+  .mini { position: absolute; inset: 0; padding: 22px 16px 0; }
+  .mini .brand { display: flex; align-items: center; justify-content: center; gap: 6px; height: 18px; margin-bottom: 16px; }
+  .mini .brand b { width: 64px; font-size: 13px; font-weight: 600; }
+  .mini .bh { --s: 18px; }
+  .mc { border-radius: 8px; background: rgba(128,128,128,.12); border: 1px solid rgba(128,128,128,.16); padding: 9px; margin-bottom: 8px; display: flex; gap: 8px; }
+  .mc i { width: 22px; height: 22px; border-radius: 7px; background: rgba(124,92,255,.5); }
+  .mc i:nth-child(2n) { background: rgba(255,170,60,.55); }
+  .sp { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; color: var(--ink); }
+  .win:not(.go) .sp, body.still .sp { display: none; }
+  .bgd { position: absolute; inset: 0; background: radial-gradient(300px 200px at 50% 45%, rgba(124,92,255,.28), transparent 70%), var(--ink-950); }
+  .core { --s: 56px; }
+  .word { position: absolute; top: calc(50% + 46px); width: 100%; text-align: center; font-size: 9px; font-weight: 600; letter-spacing: .6em; text-indent: .6em; text-transform: uppercase; opacity: .85; }
+  .word span { display: inline-block; }
+  .star { left: 50%; top: 50%; width: 2px; height: 2px; margin: -1px; background: #fff; box-shadow: var(--glow-star); opacity: 0; }
+  body.phone .win { width: 190px; height: 330px; border-radius: 22px; --lx: 0px; --ly: -118px; --ls: .607; --dive: 18; }
+  body.phone .mini { padding: 30px 12px 0; }
+  body.phone .mini .brand { flex-direction: column; height: auto; gap: 8px; }
+  body.phone .mini .brand b { width: auto; font-size: 7px; letter-spacing: .5em; text-indent: .5em; text-transform: uppercase; }
+  body.phone .mini .bh { --s: 34px; }
+  body.phone .mc { flex-wrap: wrap; }
+
+  @keyframes fall { 0% { opacity: 0; transform: rotate(var(--a)) translateX(var(--r)) scale(1); } 15% { opacity: 1; } 100% { opacity: 0; transform: rotate(calc(var(--a) + var(--turn, 260deg))) translateX(11px) scale(.2); } }
+  @keyframes emerge { from { opacity: 0; transform: scale(.96); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  @keyframes born { from { opacity: 0; transform: scale(.2); } }
+  @keyframes fadein { from { opacity: 0; } }
+
+  /* B0, today (desktop timings) */
+  .s0.go .sp { animation: out0 .55s ease-in 1.9s both; }
+  .s0.go .mini { animation: emerge .9s cubic-bezier(.2,.7,.2,1) 2s both; }
+  .s0.go .core .disc { animation: disc0 1.9s cubic-bezier(.4,0,.2,1) both; }
+  .s0.go .core .ring { animation: swirl0 1.9s cubic-bezier(.3,.1,.2,1) both; }
+  .s0.go .star { animation: fall var(--d) cubic-bezier(.5,0,.8,.6) var(--delay) both; }
+  .s0.go .word { animation: word0 1.2s ease-out .6s both; }
+  @keyframes disc0 { 0% { transform: scale(.2); opacity: 0; } 35% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(1); } 100% { transform: scale(1.15); } }
+  @keyframes swirl0 { 0% { transform: rotate(0) scale(.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: rotate(720deg) scale(1); opacity: .9; } }
+  @keyframes word0 { 0% { opacity: 0; transform: translateY(8px); letter-spacing: 1em; } 100% { opacity: .85; transform: none; letter-spacing: .6em; } }
+  @keyframes out0 { to { opacity: 0; transform: scale(1.35); visibility: hidden; } }
+
+  /* B1, collapse: the stars fall to a point, a flash, the hole is born. */
+  .s1 .star { --turn: 180deg; }
+  .s1.go .star { animation: fall var(--d) cubic-bezier(.5,0,.8,.6) var(--delay) both; }
+  .s1 .flash { inset: 0; background: radial-gradient(circle, #fff, var(--accretion-ring) 30%, transparent 68%); }
+  .s1 .shock { inset: 0; border: 1.5px solid var(--ring-a); }
+  .s1.go .flash { animation: flash .4s ease-out .55s both; }
+  .s1.go .shock { animation: shock .7s var(--ease-glide) .6s both; }
+  .s1.go .core .disc { animation: born .5s var(--ease-pop) .6s both; }
+  .s1.go .core .ring { animation: ringin .9s var(--ease-glide) .65s both; }
+  .s1.go .word span { animation: letter .35s var(--ease-glide) calc(.8s + var(--i) * 35ms) both; }
+  .s1.go .sp { animation: out1 .4s ease-in 1.55s both; }
+  .s1.go .mini { animation: emerge .6s var(--ease-glide) 1.6s both; }
+  @keyframes flash { 0% { opacity: 0; transform: scale(.1); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.8); } }
+  @keyframes shock { 0% { opacity: 0; transform: scale(.2); } 12% { opacity: .9; } 100% { opacity: 0; transform: scale(3.2); } }
+  @keyframes ringin { from { opacity: 0; transform: rotate(-200deg) scale(.5); } to { transform: rotate(160deg); } }
+  @keyframes letter { from { opacity: 0; transform: translateY(6px) scale(.8); } }
+  @keyframes out1 { to { opacity: 0; transform: scale(1.25); visibility: hidden; } }
+
+  /* B2, ignition and landing: the ring lights around the shadow, then the logo flies to its place on the page. */
+  .s2 .shadow { box-shadow: 0 0 .3em rgba(124,92,255,.45); }
+  .s2 .arc { inset: 21%; border-radius: 0; }
+  .s2 .arc i { inset: 0; border: max(1.5px, .03em) solid var(--accretion-ring); }
+  .s2 .arc.r { clip-path: inset(0 0 0 50%); } .s2 .arc.r i { clip-path: inset(0 50% 0 0); }
+  .s2 .arc.l { clip-path: inset(0 50% 0 0); } .s2 .arc.l i { clip-path: inset(0 0 0 50%); }
+  .s2.go .shadow { animation: born .3s var(--ease-glide) both; }
+  .s2.go .arc.r i { animation: half .3s linear .2s both; }
+  .s2.go .arc.l i { animation: half .3s linear .5s both; }
+  .s2.go .core .disc { animation: bloom .4s var(--ease-glide) .8s both; }
+  .s2.go .word { animation: word2 1.45s linear both; }
+  .s2.go .bgd { animation: fadeout .45s ease-out 1.25s both; }
+  .s2.go .core { animation: land .5s var(--ease-glide) 1.25s both; }
+  .s2.go .sp { animation: gone .01s 1.76s both; }
+  .s2.go .mini .bh { animation: fadein .01s 1.75s both; }
+  .s2.go .mini b { animation: rise .5s var(--ease-glide) 1.4s both; }
+  .s2.go .mini .mc { animation: rise .5s var(--ease-glide) 1.45s both; }
+  .s2.go .mini .mc + .mc { animation-delay: 1.52s; }
+  @keyframes half { from { transform: rotate(0); } to { transform: rotate(180deg); } }
+  @keyframes bloom { from { opacity: 0; transform: scale(.85); } }
+  @keyframes word2 { 0%, 52% { opacity: 0; } 70%, 84% { opacity: .85; } 100% { opacity: 0; } }
+  @keyframes fadeout { to { opacity: 0; } }
+  @keyframes land { to { transform: translate(var(--lx), var(--ly)) scale(var(--ls)); } }
+  @keyframes gone { to { visibility: hidden; } }
+
+  /* B3, horizon: short; the hole grows until the window falls into it, the page comes out of the dark. */
+  .s3 .pupil { inset: 26%; background: #000; }
+  .s3.go .core .disc, .s3.go .core .ring { animation: disc3 1.15s linear both; }
+  .s3.go .core .ring { animation-name: ring3; }
+  .s3.go .word { animation: word3 .9s linear both; }
+  .s3.go .pupil { animation: dive .5s cubic-bezier(.6,0,.9,.4) .65s both; }
+  .s3.go .sp { animation: out3 .35s ease-out 1.15s both; }
+  .s3.go .mini { animation: emerge3 .5s var(--ease-glide) 1.15s both; }
+  @keyframes disc3 { 0% { opacity: 0; transform: scale(.2); animation-timing-function: var(--ease-pop); } 32% { opacity: 1; transform: scale(1); } 56% { opacity: 1; transform: scale(1); animation-timing-function: ease-in; } 100% { opacity: 0; transform: scale(3.5); } }
+  @keyframes ring3 { 0% { opacity: 0; transform: rotate(-120deg) scale(.5); animation-timing-function: var(--ease-glide); } 40% { opacity: 1; transform: rotate(120deg) scale(1); } 56% { opacity: 1; transform: rotate(150deg) scale(1); animation-timing-function: ease-in; } 100% { opacity: 0; transform: rotate(330deg) scale(3.5); } }
+  @keyframes word3 { 0%, 20% { opacity: 0; } 50%, 70% { opacity: .85; } 100% { opacity: 0; } }
+  @keyframes dive { to { transform: scale(var(--dive)); } }
+  @keyframes out3 { to { opacity: 0; visibility: hidden; } }
+  @keyframes emerge3 { from { opacity: 0; transform: scale(1.08); } }
+
+  body.still *, body.still *::before, body.still *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .sp { display: none; } }
+  body.light { --page: #f4f3f8; --text: #1a1924; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BlackHole — animations du logo (proposition)</h1>
+  <p>Deux endroits : le logo de la page d'accueil et le splash d'ouverture. Chaque carte est une variante à comparer, la première étant l'existant. Rien n'est intégré dans l'app ; le détail est dans <code>proposition.md</code>. Les boutons simulent le réglage « animations » coupé, le thème clair d'Android, le format téléphone des splashs et un ralenti pour voir les états intermédiaires.</p>
+  <div class="toggles"><button id="t-still">Animations réduites</button><button id="t-light">Thème clair</button><button id="t-phone">Format téléphone</button><button id="t-slow">Ralenti × 0,25</button><button id="replay">Rejouer les splashs</button></div>
+</header>
+
+<section>
+<h2>A. Logo de la page d'accueil</h2>
+<p>À gauche la disposition du bureau (46 px à côté du nom), à droite celle d'Android (84 px au-dessus). Animation d'ambiance, en boucle tant que la page est visible.</p>
+<div class="grid">
+
+<figure>
+  <div class="stage" data-v="v0"></div>
+  <figcaption><b>A0 — Actuel</b>Le disque respire (échelle 1 → 1,06 en 5 s), un anneau fait un tour en 6 s.</figcaption>
+  <dl><dt>Réduit</dt><dd>Disque et anneau fixes.</dd>
+  <dt>Coût</dt><dd>2 calques, <code>transform</code> seul.</dd>
+  <dt>Changements</dt><dd>Aucun.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="v1"></div>
+  <figcaption><b>A1 — Disque incliné</b>La matière coule le long d'une ellipse inclinée, derrière l'ombre puis devant elle, comme dans le titre du README. Le halo pulse doucement.</figcaption>
+  <dl><dt>Réduit</dt><dd>Ellipse fixe, discrète, autour de l'ombre cerclée d'or.</dd>
+  <dt>Coût</dt><dd>3 calques : 2 <code>transform</code> (rotation), 1 <code>opacity</code>. Masques peints une fois.</dd>
+  <dt>Changements</dt><dd>Bureau : <code>.logo</code> + <code>::after</code> devient un bloc à 4 enfants. Android : <code>.hole</code> reçoit 4 enfants au lieu de 2. Le logo déborde de 4 % de chaque côté.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="v2"></div>
+  <figcaption><b>A2 — Comètes en orbite</b>Le disque actuel, immobile, et trois comètes sur trois orbites : la plus proche tourne en 2,6 s, la plus lointaine en 7 s.</figcaption>
+  <dl><dt>Réduit</dt><dd>Disque et trois arcs fixes.</dd>
+  <dt>Coût</dt><dd>4 calques : 3 <code>transform</code>, 1 <code>opacity</code>.</dd>
+  <dt>Changements</dt><dd>3 enfants <code>.orb</code> ajoutés dans les deux pages ; l'anneau actuel disparaît. Le logo occupe 1,6 fois sa taille : marge à prévoir à côté du nom sur le bureau.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="v3"></div>
+  <figcaption><b>A3 — Tourbillon</b>Deux nappes de bras lumineux tournent en sens contraires (5 s et 11 s) autour de l'ombre. Le plus vivant des quatre.</figcaption>
+  <dl><dt>Réduit</dt><dd>Bras fixes : le logo reste lisible mais change de dessin par rapport à aujourd'hui.</dd>
+  <dt>Coût</dt><dd>3 calques : 2 <code>transform</code>, 1 <code>opacity</code>.</dd>
+  <dt>Changements</dt><dd>Même refonte du balisage que A1 (4 enfants). Le dégradé radial actuel est remplacé par deux dégradés coniques masqués.</dd></dl>
+</figure>
+
+<figure>
+  <div class="stage" data-v="v4"></div>
+  <figcaption><b>A4 — Réactif</b>Calme au repos (anneau en 9 s, pas de respiration). Sous le pointeur ou le doigt, le disque gonfle, un second anneau s'emballe et les étoiles voisines sont avalées. Survolez la carte ; cliquez pour la pression.</figcaption>
+  <dl><dt>Réduit</dt><dd>Disque, anneau et étoiles fixes, aucune réaction.</dd>
+  <dt>Coût</dt><dd>1 calque au repos ; 9 pendant la réaction, <code>transform</code> et <code>opacity</code>. L'anneau rapide est en pause tant qu'il est invisible.</dd>
+  <dt>Changements</dt><dd>Anneau rapide et 6 étoiles ajoutés ; règles <code>:hover</code> (bureau) et <code>:active</code> (Android). Peut s'ajouter à A0, A1 ou A2 plutôt que les remplacer.</dd></dl>
+</figure>
+
+</div>
+</section>
+
+<section>
+<h2>B. Animation d'ouverture</h2>
+<p>Le splash recouvre la page d'accueil au lancement, puis la laisse apparaître. Lecture en boucle ; « Rejouer » relance une carte. Avec les animations coupées il n'y a pas de splash du tout, comme aujourd'hui : la page d'accueil s'affiche directement.</p>
+<div class="grid">
+
+<figure>
+  <div class="win s0" data-s="s0"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B0 — Actuel (2,6 s sur le bureau, 1,7 s sur Android)</b>Le disque grossit, l'anneau fait deux tours, 36 étoiles tombent en spirale, le nom se resserre, puis le tout s'efface en grossissant.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code>, sauf le nom : <code>letter-spacing</code> animé, donc une mise en page par image pendant 1,2 s.</dd>
+  <dt>Changements</dt><dd>Aucun.</dd></dl>
+</figure>
+
+<figure>
+  <div class="win s1" data-s="s1"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B1 — Effondrement (1,95 s)</b>Les étoiles tombent vers un point, un éclair et une onde de choc, le trou noir naît avec un léger rebond, le nom arrive lettre par lettre.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls ; 24 étoiles au lieu de 36 ; plus de <code>letter-spacing</code> animé.</dd>
+  <dt>Changements</dt><dd>2 enfants ajoutés à <code>.core</code> (éclair, onde), nom découpé en lettres par le script, nouvelles images clés. Durées à poser dans les deux pages (et <code>duration-splash</code>).</dd></dl>
+</figure>
+
+<figure>
+  <div class="win s2" data-s="s2"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B2 — Allumage et atterrissage (1,75 s)</b>L'ombre apparaît, l'anneau s'allume en faisant le tour, le disque s'embrase, puis le logo vole jusqu'à sa place sur la page d'accueil pendant que le fond s'efface : le splash et la page partagent le même logo.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls (l'anneau est dessiné par deux demi-cercles qui pivotent). Une mesure de position au lancement, hors animation.</dd>
+  <dt>Changements</dt><dd>Le plus de travail : fond du splash séparé du logo, position d'arrivée mesurée par le script (<code>getBoundingClientRect</code> du logo de la page) dans les deux pages, logo de la page masqué jusqu'à l'atterrissage. Sur Android, sans objet si l'app s'ouvre sur un onglet et non sur l'accueil : il faut alors une sortie de repli.</dd></dl>
+</figure>
+
+<figure>
+  <div class="win s3" data-s="s3"></div>
+  <button class="one">Rejouer</button>
+  <figcaption><b>B3 — Horizon (1,5 s)</b>Le plus court : le trou noir apparaît, puis son ombre grandit jusqu'à avaler la fenêtre ; la page d'accueil sort du noir.</figcaption>
+  <dl><dt>Réduit</dt><dd>Pas de splash.</dd>
+  <dt>Coût</dt><dd><code>transform</code> et <code>opacity</code> seuls, 4 calques, aucune étoile. Un grand disque noir mis à l'échelle sur tout l'écran pendant 0,5 s.</dd>
+  <dt>Changements</dt><dd>1 enfant ajouté à <code>.core</code>, le générateur d'étoiles du script disparaît dans les deux pages. En thème clair (Android), le passage du noir au clair est plus marqué.</dd></dl>
+</figure>
+
+</div>
+</section>
+
+<script>
+  const motes = [20, 75, 140, 200, 255, 320].map((a, i) => `<i class="mote" style="--a:${a}deg;--r:${(.72 + (i % 3) * .1).toFixed(2)}em"></i>`).join('');
+  const LOGO = {
+    v0: '<i class="disc"></i><i class="ring"></i>',
+    v1: '<i class="glow"></i><i class="tilt back"><i class="flow"></i></i><i class="shadow"></i><i class="tilt front"><i class="flow"></i></i>',
+    v2: '<i class="glow"></i><i class="disc"></i><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>',
+    v3: '<i class="glow"></i><i class="arms b"></i><i class="arms a"></i><i class="shadow"></i>',
+    v4: '<i class="glow"></i><i class="disc"></i><i class="ring"></i><i class="ring fast"></i>' + motes,
+  };
+  const logo = (v, size) => `<div class="bh ${v}"${size ? ` style="--s:${size}px"` : ''}>${LOGO[v]}</div>`;
+  for (const st of document.querySelectorAll('.stage')) {
+    const v = st.dataset.v;
+    st.innerHTML = `<div class="desk">${logo(v, 46)}<span>BlackHole</span></div><div class="mob">${logo(v, 84)}<span>BlackHole</span></div>`;
+  }
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const stars = (n, r0, r1, d0, d1, delay) => Array.from({ length: n }, () =>
+    `<i class="star" style="--a:${Math.round(rnd(0, 360))}deg;--r:${Math.round(rnd(r0, r1))}px;--d:${rnd(d0, d1).toFixed(2)}s;--delay:${rnd(0, delay).toFixed(2)}s"></i>`).join('');
+  const SPLASH = {
+    s0: () => '<i class="disc"></i><i class="ring"></i>' + stars(36, 60, 170, .9, 1.7, .6),
+    s1: () => '<i class="flash"></i><i class="shock"></i><i class="disc"></i><i class="ring"></i>' + stars(24, 50, 150, .4, .6, .15),
+    s2: () => '<i class="disc"></i><i class="shadow"></i><i class="arc r"><i></i></i><i class="arc l"><i></i></i>',
+    s3: () => '<i class="disc"></i><i class="ring"></i><i class="pupil"></i>',
+  };
+  const letters = [...'BlackHole'].map((c, i) => `<span style="--i:${i}">${c}</span>`).join('');
+  const wins = [...document.querySelectorAll('.win')];
+  for (const w of wins) {
+    w.innerHTML = `<div class="mini"><div class="brand">${logo('v0')}<b>BlackHole</b></div><div class="mc"><i></i><i></i><i></i><i></i><i></i></div><div class="mc"><i></i><i></i><i></i></div></div>`
+      + `<div class="sp"><i class="bgd"></i><div class="core bh">${SPLASH[w.dataset.s]()}</div><div class="word">${letters}</div></div>`;
+  }
+
+  let rate = 1, timer = 0;
+  const pace = () => requestAnimationFrame(() => document.getAnimations().forEach((a) => { a.playbackRate = rate; }));
+  const play = (w) => { w.classList.remove('go'); void w.offsetWidth; w.classList.add('go'); pace(); };
+  const loop = () => { clearTimeout(timer); wins.forEach(play); timer = setTimeout(loop, 4200 / rate); };
+  for (const b of document.querySelectorAll('button.one')) b.addEventListener('click', () => play(b.previousElementSibling));
+  document.getElementById('replay').addEventListener('click', loop);
+  for (const [id, cls] of [['t-still', 'still'], ['t-light', 'light'], ['t-phone', 'phone']]) {
+    const b = document.getElementById(id);
+    b.addEventListener('click', () => { b.classList.toggle('on', document.body.classList.toggle(cls)); loop(); });
+  }
+  const slow = document.getElementById('t-slow');
+  slow.addEventListener('click', () => { rate = slow.classList.toggle('on') ? .25 : 1; loop(); });
+  loop();
+</script>
+</body>
+</html>
