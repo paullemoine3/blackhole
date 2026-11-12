@@ -472,6 +472,7 @@ fn build_tab(
     let id = |slot: &TabSlot| TabId(slot.load(Ordering::Relaxed));
     let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
     let (s_auth, auth) = (slot.clone(), mailbox.clone());
+    let s_pop = slot.clone();
     let (s_fail, fail, s_trust, trust) = (slot.clone(), mailbox.clone(), slot.clone(), mailbox.clone());
     let guard = guard_script(policy);
     #[cfg(any(target_os = "macos", windows))]
@@ -600,11 +601,20 @@ fn build_tab(
             false,
         )
         .with_ipc_handler(move |request| {
+            crate::trace(|| {
+                let body: String = request.body().chars().take(400).collect();
+                if body.contains("\"media\"") || body.contains("login_submitted") || body.contains("autofill") {
+                    String::new()
+                } else {
+                    format!("page event tab={} {body}", id(&s_ipc).0)
+                }
+            });
             if let Ok(event) = serde_json::from_str::<PageEvent>(request.body()) {
                 events.push(Msg::Page(id(&s_ipc), event));
             }
         })
         .with_navigation_handler(move |raw| {
+            crate::trace(|| format!("navigate tab={} main={} {raw}", id(&s_nav).0, wry::navigating_main_frame()));
             let Ok(target) = Url::parse(&raw) else {
                 return false;
             };
@@ -651,11 +661,12 @@ fn build_tab(
             // profile (`Store`, cookies), closed by the page's `window.close()` (wry's
             // `webViewDidClose:` on macOS, WebView2's own popup window on Windows).
             let sized = features.size.is_some() || features.position.is_some();
+            crate::trace(|| format!("new window sized={sized} -> {:?} {raw}", popup::new_window(&raw, sized)));
             match popup::new_window(&raw, sized) {
                 NewWindow::Popup => return NewWindowResponse::Allow,
                 NewWindow::Tab => {
                     if let Ok(url) = Url::parse(&raw) {
-                        popups.push(Msg::OpenTab(url));
+                        popups.push(Msg::OpenTabFrom(id(&s_pop), url));
                     }
                 }
                 NewWindow::Deny => {}
@@ -694,7 +705,10 @@ fn build_tab(
             }
             if let Ok(url) = Url::parse(&raw) {
                 match event {
-                    PageLoadEvent::Started => load.push(Msg::LoadStart(tab)),
+                    PageLoadEvent::Started => {
+                        crate::trace(|| format!("load start tab={} {raw}", tab.0));
+                        load.push(Msg::LoadStart(tab))
+                    }
                     PageLoadEvent::Finished => load.push(Msg::Loaded(tab, url.clone())),
                     PageLoadEvent::Failed => {
                         load.push(Msg::Failed(tab, url.clone()));

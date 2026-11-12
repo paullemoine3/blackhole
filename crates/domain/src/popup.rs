@@ -87,8 +87,37 @@ pub fn new_window(raw: &str, has_features: bool) -> NewWindow {
     }
 }
 
+/// The `Referer` a tab opened from a page sends on its first request, as a link followed in
+/// that page would: only the opener's origin (never its path), nothing from a secure page to
+/// an insecure one. Sites tell a visit that comes from their own pages apart with it (Reddit
+/// shows an image full screen from its pages, and the post it belongs to otherwise).
+pub fn referrer(opener: &Url, target: &Url) -> Option<String> {
+    let web = |u: &Url| matches!(u.scheme(), "http" | "https") && u.host_str().is_some();
+    if !web(opener) || !web(target) || (opener.scheme() == "https" && target.scheme() == "http") {
+        return None;
+    }
+    Some(format!("{}/", opener.origin().ascii_serialization()))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_tab_opened_from_a_page_says_which_site_it_comes_from() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        assert_eq!(
+            referrer(&u("https://www.reddit.com/r/pics/comments/1/x/?q=secret#c"), &u("https://preview.redd.it/a.jpeg")),
+            Some("https://www.reddit.com/".to_owned()),
+            "the origin only, never the page"
+        );
+        assert_eq!(
+            referrer(&u("http://nas.test:8080/files"), &u("http://nas.test:8080/a")),
+            Some("http://nas.test:8080/".to_owned())
+        );
+        assert_eq!(referrer(&u("https://a.test/"), &u("http://b.test/")), None, "no downgrade");
+        assert_eq!(referrer(&u("about:blank"), &u("https://b.test/")), None);
+        assert_eq!(referrer(&u("https://a.test/"), &u("mailto:x@b.test")), None);
+    }
+
     use super::*;
 
     #[test]

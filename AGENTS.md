@@ -286,6 +286,48 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   Fichier reçu seulement après accord (`Event::BeamOffer` → `Request::BeamAnswer`), écrit en
   `.part` puis renommé une fois le SHA-256 vérifié ; texte reçu jamais copié sans clic. Android :
   texte affiché, fichier refusé.
+- Menu de page (0.8.7) : un clic droit hors lien et hors sélection envoie aussi `link_menu`
+  (`page_guard.js`, écouteur en phase bulle sur `window`, seulement si la page n'a pas pris
+  l'événement : Docs, Sheets, Figma gardent leur menu ; vidéo, audio, canvas, champs de saisie,
+  iframes et Maj+clic droit gardent celui du moteur). `page_menu_items` : précédent/suivant/
+  recharger, « Add this page to the Easel », capture en direct (`live_pick`), veille de zone
+  (`watch_pick` : le sélecteur puis `watch_area` sans autre question), copier le lien propre,
+  rechercher, imprimer, inspecter ; `image` (non fiable, http(s)) ajoute ouvrir/copier l'adresse.
+  Les entrées qui visent « la page affichée » ne sont proposées que pour l'onglet actif ; ni
+  Easel ni veille pour un onglet trou noir.
+  Depuis 0.8.7 les menus de lien et de sélection se terminent aussi par les outils BlackHole
+  (`page_tool_items` : Easel, zone en direct, veille), et seule une vidéo/un son avec les
+  contrôles du moteur (`controls`) ou un plug-in gardent le menu du moteur : une vidéo que la
+  page joue elle-même (aperçu au survol d'une vignette YouTube) reçoit le menu de page.
+- Téléchargement depuis un lien (Windows) : WebView2 termine la navigation en « connection
+  aborted » (9) juste avant `DownloadStarting` ; `Msg::Failed` attend alors `ABORT_GRACE`
+  (`aborted`) et n'affiche « Site injoignable » que si aucun téléchargement ne suit. Barre
+  latérale masquée : `Sidebar::reveal` la fait sortir 4 s (début et fin d'un téléchargement),
+  la bande `hotzone` reste fine pendant ce temps (la page garde ses clics), `release_due` la
+  range sauf si le curseur est dessus (la copie flottante envoie `peek` on/off).
+- Adresse d'origine (0.8.7, comme Arc) : `Tab::home` (`Home { url, title }`) pour un onglet
+  d'accès rapide ou de dossier (`Tab::kept`), posée quand il le devient (`settle`), retirée
+  quand il redevient libre. `Workspace::go_home` quand sa page s'endort (`drop_view`, plafond
+  d'onglets vivants) et à `restore` ; `set_home` (« Keep this page as its address »). Menu
+  d'onglet : `tab_home` / `tab_set_home`, proposés si `away`. `workspace.json` : `home`,
+  `home_title` ; la synchro identifie une tuile par son origine. Android : au démarrage
+  seulement (le cœur mobile n'appelle pas `go_home` à la mise en veille).
+- Onglet ouvert depuis une page (`Msg::OpenTabFrom`, `PageEvent::OpenLink`) : sa première
+  requête porte le `Referer` de la page d'origine, réduit à son origine (`popup::referrer`,
+  jamais de https vers http). Windows : `win::referrer_once` (filtre `WebResourceRequested`
+  sur les documents jusqu'à `ContentLoading`, redirections comprises : un en-tête donné à
+  `NavigateWithWebResourceRequest` est perdu à la première redirection) ; macOS :
+  `load_url_with_headers`, non testé. Sans lui Reddit affiche la publication au lieu de l'image.
+- Barre latérale (`ui/index.html`) : `render` ne reconstruit tuiles, dossiers, onglets et
+  espaces que si `listSignature` a changé (un compteur, une carte ou un téléchargement ne
+  remplacent plus les lignes : c'était le scintillement) ; les appels de la page elle-même
+  (`render(state)`, `flush`) reconstruisent toujours. Tout nouveau champ dont dépend une ligne
+  doit entrer dans `listSignature`. Dossier sans page ouverte dans son arborescence : `.fh.idle`.
+- Dossier replié (comme Arc) : il montre encore les pages ouvertes sous lui et les dossiers
+  qui en contiennent (`.folder.awake`, règles CSS de `ui/index.html`) ; les onglets en veille
+  restent cachés. `reveal_tab` ne déplie donc plus que la section, jamais les dossiers.
+- Trace de mise au point : `BH_TRACE=1` sur un build debug écrit sur stderr les navigations,
+  demandes de nouvelle fenêtre et événements de page (`trace`, jamais en release).
 - `json!` de `ui_settings` : ajouter les nouvelles clés par `state["clé"] = …` (la macro atteint
   sa limite de récursion).
 - MSRV : pas de `is_multiple_of` ni `as_chunks`, même si Clippy les suggère.

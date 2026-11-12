@@ -1,6 +1,23 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.7",
+        &[
+            "Quick access and pinned tabs have an address of their own, like Arc: the page they had when you put them there. They can wander from it and come back to it when they wake up (after sleeping, or at the next launch); their menu offers Back to its own page, or Keep this page as its address",
+            "A closed folder still shows the pages open under it, like Arc, so opening a tab from the command bar no longer unfolds its folders; a folder with no page open is dimmed",
+            "Right click anywhere on a page opens BlackHole's own menu: back, forward, reload, add the page to the Easel, capture a live area, watch an area for changes, copy the clean link, find, print, inspect; an image adds open in a new tab and copy its address. Shift+right click, text fields, videos and pages with a menu of their own keep theirs",
+            "A link that downloads a file no longer replaces its page with Site unreachable on Windows",
+            "A hidden sidebar slides out for a few seconds when a download starts or ends, so its card is seen, and the page stays usable meanwhile",
+            "The sidebar no longer flickers when the count of blocked requests moves: its rows are only redrawn when a tab, a folder or a space changes",
+            "A tab opened from a page (new-window link, Ctrl/Cmd+click, middle click) now tells the site which site it comes from, as the link would have: an image in a Reddit comment opens full screen instead of showing its post again",
+            "Android is smoother: the interface no longer redraws itself at every page event, so nothing blinks while you type in the address bar, close a tab or load a page; suggestions change in place, and the keyboard of the address bar no longer moves the bar or resizes the page",
+            "Android speaks French: the interface follows the system's language, or the one picked in Settings > Appearance > Language, and switches at once",
+            "Android: a long press on a tab, a space or a folder opens its menu (quick access, rename, move to a folder or another space, close the other tabs, delete with Undo); folders show in the sidebar, fold, and a card offers to tidy up loose tabs by site",
+            "Android: sign-in windows (Google, Microsoft, Apple, GitHub…) now return to the page that opened them, and a server that asks for a name and password gets them from a question in BlackHole, never stored",
+            "Android: an empty 401, 403 or server error answer shows an error page instead of a blank one, and a page whose engine process stops is reloaded once instead of taking the app down",
+        ],
+    ),
+    (
         "0.8.6",
         &[
             "Recall: find a page you read from a few words of its text (command bar, Ctrl/Cmd+Shift+F). Off until you turn it on in Settings > Privacy; the text stays on this computer, encrypted; never in private windows, black hole tabs, pages with a password field or the sites you list; clearing the history clears it too",
@@ -10,11 +27,6 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Highlights: select text on a page, right-click, Highlight. The passage stays marked each time you come back, can carry a note, and is listed in Library > Highlights, from where it can be clipped to an Easel",
             "Wormhole: send selected text, the clipboard or a file (64 MB at most) to a paired device over the local network, encrypted, without a server. A file waits for Accept on the other device; a received text is only copied when you ask",
             "The command bar opens in one movement: the panel glides into place and its rows rise after it, with a single glow behind it for a new tab; the animations setting and the system's reduced motion now stop all of it",
-            "Android is smoother: the interface no longer redraws itself at every page event, so nothing blinks while you type in the address bar, close a tab or load a page; suggestions change in place, and the keyboard of the address bar no longer moves the bar or resizes the page",
-            "Android speaks French: the interface follows the system's language, or the one picked in Settings > Appearance > Language, and switches at once",
-            "Android: a long press on a tab, a space or a folder opens its menu (quick access, rename, move to a folder or another space, close the other tabs, delete with Undo); folders show in the sidebar, fold, and a card offers to tidy up loose tabs by site",
-            "Android: sign-in windows (Google, Microsoft, Apple, GitHub…) now return to the page that opened them, and a server that asks for a name and password gets them from a question in BlackHole, never stored",
-            "Android: an empty 401, 403 or server error answer shows an error page instead of a blank one, and a page whose engine process stops is reloaded once instead of taking the app down",
         ],
     ),
     (

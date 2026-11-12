@@ -216,6 +216,20 @@
     },
     true,
   );
+  // Right click anywhere else on the page: BlackHole's page menu (back, reload, Easel, live
+  // capture, watch an area…). Asked last and only if the page did not show a menu of its own
+  // (Docs, Sheets, Figma). A player with the engine's own controls keeps the engine's menu
+  // (loop, speed, save), and so does a plug-in; a video a site plays by itself (a preview over
+  // a thumbnail, a background clip) is part of the page like the rest.
+  window.addEventListener('contextmenu', (e) => {
+    if (e.defaultPrevented || e.shiftKey || editable(e)) return;
+    const path = e.composedPath();
+    if (path.some((n) => n && (/^(EMBED|OBJECT)$/.test(n.tagName) || (/^(VIDEO|AUDIO)$/.test(n.tagName) && n.controls)))) return;
+    const img = path.find((n) => n && n.tagName === 'IMG' && (n.currentSrc || n.src));
+    const src = img ? img.currentSrc || img.src : '';
+    e.preventDefault();
+    post({ cmd: 'link_menu', url: '', text: '', mark: 0, image: /^https?:/.test(src) ? src.slice(0, 4000) : '', page: true, x: e.clientX, y: e.clientY });
+  });
 
   // Single-page apps change the URL without a navigation; tell the shell to re-read it.
   const report = () => post({ cmd: 'location' });

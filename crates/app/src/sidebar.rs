@@ -65,6 +65,10 @@ pub struct Sidebar {
     open: bool,
     layout: Anim,
     flyout: Anim,
+    /// The flyout shown by the shell itself (a download started): it stays until then.
+    held: Option<Instant>,
+    /// The cursor is on the flyout, as far as the pages said.
+    hovered: bool,
 }
 
 impl Sidebar {
@@ -81,6 +85,8 @@ impl Sidebar {
             open,
             layout: Anim::new(if open { full } else { 0.0 }),
             flyout: Anim::new(0.0),
+            held: None,
+            hovered: false,
         }
     }
 
@@ -122,6 +128,7 @@ impl Sidebar {
     /// Opens a hidden sidebar, hides an open one.
     pub fn toggle(&mut self) {
         self.open = !self.open;
+        self.held = None;
         if self.open {
             // Pinning a flyout continues from its current width, so the sidebar doesn't blink.
             if self.flyout.value > 0.0 {
@@ -136,13 +143,47 @@ impl Sidebar {
 
     /// Slides the flyout in or out; it only exists while the sidebar is hidden.
     pub fn peek(&mut self, on: bool) {
-        if self.open {
+        self.hovered = on;
+        // Shown by the shell: the cursor leaving does not hide it before its time.
+        if self.open || (self.held.is_some() && !on) {
             return;
         }
         let target = if on { self.full } else { 0.0 };
         if self.flyout.target != target {
             self.flyout.go(target);
         }
+    }
+
+    /// Shows the hidden sidebar by itself for `time` (something to see in it: a download card).
+    /// The page below stays usable meanwhile; false when the sidebar is open anyway.
+    pub fn reveal(&mut self, now: Instant, time: Duration) -> bool {
+        if self.open {
+            return false;
+        }
+        let until = now + time;
+        self.held = Some(self.held.map_or(until, |h| h.max(until)));
+        if self.flyout.target != self.full {
+            self.flyout.go(self.full);
+        }
+        true
+    }
+
+    /// True while the flyout is out on the shell's own initiative.
+    pub fn held(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// Ends a `reveal` whose time is over: the flyout slides back unless the cursor is on it.
+    /// True when it just ended.
+    pub fn release_due(&mut self, now: Instant) -> bool {
+        if !self.held.is_some_and(|until| now >= until) {
+            return false;
+        }
+        self.held = None;
+        if !self.hovered && !self.open {
+            self.flyout.go(0.0);
+        }
+        true
     }
 
     /// True while a width is still travelling towards its target.
@@ -254,6 +295,34 @@ mod tests {
         settle(&mut s);
         assert_eq!(s.flyout_width(), FULL);
         assert_eq!(s.width(), 0.0);
+        s.peek(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), 0.0);
+    }
+
+    #[test]
+    fn a_revealed_flyout_stays_its_time_then_leaves_unless_the_cursor_is_on_it() {
+        let mut s = Sidebar::new(FULL);
+        let t0 = Instant::now();
+        assert!(!s.reveal(t0, Duration::from_secs(4)), "an open sidebar shows the card already");
+        s.toggle();
+        settle(&mut s);
+        assert!(s.reveal(t0, Duration::from_secs(4)));
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), FULL);
+        // The cursor moving over the page does not hide it early.
+        s.peek(false);
+        assert!(s.held() && s.flyout_shown());
+        assert!(!s.release_due(t0 + Duration::from_secs(3)));
+        assert!(s.release_due(t0 + Duration::from_secs(4)));
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), 0.0);
+        // With the cursor on it, it stays until the cursor leaves.
+        s.reveal(t0, Duration::from_secs(4));
+        s.peek(true);
+        assert!(s.release_due(t0 + Duration::from_secs(5)));
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), FULL);
         s.peek(false);
         settle(&mut s);
         assert_eq!(s.flyout_width(), 0.0);

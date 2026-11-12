@@ -426,6 +426,46 @@ errpage unreachable
 wait 800
 eval content 'err21:' + document.title + '|' + !document.querySelector('.hole').hidden + '|' + document.querySelectorAll('svg:not([hidden])').length
 shot 37-error-unreachable
+# ---- a link that downloads a file, the hidden sidebar, the page's menu ----
+cmd {"cmd":"open","input":"http://127.0.0.1:__ERR_PORT__/dlpage"}
+wait 3500
+cmd {"cmd":"lock"}
+wait 900
+eval content 'dl1:' + (document.getElementById('dl').click(), document.title)
+wait 1500
+shot 38-download-sidebar-revealed
+eval content 'dl2:' + document.title + '|' + location.pathname
+wait 6500
+eval content 'dl3:' + document.title + '|' + location.pathname
+shot 39-download-sidebar-back
+eval content 'cm1:' + (document.getElementById('txt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 })), 'sent')
+wait 1200
+eval palette 'cm2:' + [...document.querySelectorAll('#menu button')].map(b => b.textContent).join('/')
+shot 40-page-menu
+cmd {"cmd":"palette_close"}
+wait 600
+eval content 'cm3:' + (document.getElementById('im').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 150 })), 'sent')
+wait 1200
+eval palette 'cm4:' + [...document.querySelectorAll('#menu button')].slice(0, 2).map(b => b.textContent).join('/')
+cmd {"cmd":"palette_close"}
+wait 600
+eval content 'cm7:' + (document.getElementById('pv').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 300 })), 'preview')
+wait 1200
+eval palette 'cm8:' + document.body.className + '|' + [...document.querySelectorAll('#menu button')].map(b => b.textContent).join('/').includes('Capture a live area')
+cmd {"cmd":"palette_close"}
+wait 600
+eval content 'cm9:' + (document.getElementById('cv').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 130, clientY: 300 })), 'controls')
+wait 1000
+eval palette 'cm10:' + document.body.className
+cmd {"cmd":"palette_close"}
+wait 600
+eval content 'cm5:' + (document.addEventListener('contextmenu', e => e.preventDefault()), document.getElementById('txt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 })), 'own')
+wait 1000
+eval palette 'cm6:' + document.body.className
+# ---- the sidebar's rows stay when only a counter moves ----
+eval chrome 'sb1:' + (document.querySelector('#tabs .tab').__kept = 1, bh.render(Object.assign({}, state, { blocked: state.blocked + 3 })), (document.querySelector('#tabs .tab').__kept === 1) + '|' + document.getElementById('blockedn').textContent.trim())
+eval chrome 'sb2:' + (bh.render(Object.assign({}, state, { tabs: state.tabs.map(t => Object.assign({}, t, { title: t.title + '!' })) })), document.querySelector('#tabs .tab').__kept === 1)
+eval chrome 'sb3:' + (bh.render(Object.assign({}, state, { folders: [{ id: 9001, name: 'Closed', icon: '', collapsed: true, parent: null }, { id: 9002, name: 'Inner', icon: '', collapsed: false, parent: 9001 }, { id: 9003, name: 'Idle', icon: '', collapsed: true, parent: null }], tabs: [[9101, 9001, false], [9102, 9001, true], [9103, 9002, false], [9104, 9002, true], [9105, 9003, true]].map(([id, folder, asleep]) => Object.assign({}, state.tabs[0], { id, folder, asleep, pinned: false })) })), [9101, 9102, 9103, 9104, 9105].map(id => getComputedStyle(document.querySelector('.tab[data-tab="' + id + '"]')).display !== 'none' && getComputedStyle(document.querySelector('.tab[data-tab="' + id + '"]').parentNode).display !== 'none').join(',') + '|' + [...document.querySelectorAll('.fh.idle .fname')].map(n => n.textContent).join(','))
 quit
 '@
 # HTTP authentication: a local server answers 401 Basic (test-only credentials from the fixture).
@@ -461,15 +501,17 @@ $errServer = Start-Job -ArgumentList $errPort, $tlsPort -ScriptBlock {
         $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false, 4096, $true)
         $path = (($reader.ReadLine()) -split ' ')[1]
         while ($reader.ReadLine()) {}
-        $extra = ''; $body = ''
+        $extra = ''; $body = ''; $type = 'text/html; charset=utf-8'
         if ($path -like '/e401*') { $status = '401 Unauthorized' }
         elseif ($path -like '/e403*') { $status = '403 Forbidden' }
         elseif ($path -like '/e502*') { $status = '502 Bad Gateway' }
         elseif ($path -like '/loop*') { $status = '302 Found'; $extra = "Location: /loop`r`n" }
         elseif ($path -like '/favicon*') { $status = '404 Not Found' }
+        elseif ($path -like '/dlpage*') { $status = '200 OK'; $body = '<title>bh-dl-page</title><h1>Download test</h1><p><a id=dl href=/dlfile>Download the file</a></p><img id=im src=/favicon.ico width=120 height=80><p id=txt>Plain text of the page.</p><video id=pv width=80 height=40></video><video id=cv controls width=80 height=40></video>' }
+        elseif ($path -like '/dlfile*') { $status = '200 OK'; $type = 'application/zip'; $extra = "Content-Disposition: attachment; filename=`"bh-test-download.zip`"`r`n"; $body = 'x' * 4000 }
         else { $status = '200 OK'; $body = '<title>bh-tls-ok</title><h1>Self-signed test page</h1>' }
         $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-        $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n$extra`r`n")
+        $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Type: $type`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n$extra`r`n")
         $stream.Write($head, 0, $head.Length)
         $stream.Write($bytes, 0, $bytes.Length)
         $stream.Flush()
@@ -533,7 +575,7 @@ if (-not $proc.WaitForExit(420000)) { Stop-Process -Id $proc.Id; Write-Host 'FAI
 $log = Get-Content $logFile
 # The HTTP authentication evals are tagged ("authN:") and read apart: they shift no index.
 $all = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
-$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err)\d+:' })
+$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err|dl|cm|sb)\d+:' })
 function AuthEval($n) { $all | Where-Object { $_ -match "-> `"auth${n}:" } | Select-Object -First 1 }
 # The password wallet evals too ("pwN:").
 function PwEval($n) { $all | Where-Object { $_ -match "-> `"pw${n}:" } | Select-Object -First 1 }
@@ -596,7 +638,7 @@ Check ($evals[53] -match '"false"') 'middle click: closes an ordinary tab'
 Check ($evals[56] -match '"true\|0"') 'quick access: closing (middle click, close) keeps the tile, no speaker on tiles'
 Check ($evals[57] -match '"true\|38px\|true"') 'settings window: own top bar like the main window, drawn icons'
 Check ($evals[60] -match '"1\|true"') 'middle click on a link: a new tab in the background'
-Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window') 'right click on a link: the link menu'
+Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window' -and $evals[62] -match 'Copy link,Add this page to the Easel,Capture a live area') 'right click on a link: the link menu, then the Easel and live area entries'
 Check ($evals[63] -match '"true\|[1-9]') 'shields: the clean-up script and its sheet are in the page'
 Check ($evals[64] -match '"11111"' -and $evals[65] -match '"11011"') 'privacy: shields listed and switched one by one'
 Check ($evals[66] -match 'Add the live area to,.*New Easel,Watch this area for changes') 'live capture: asks which Easel, or to watch the area'
@@ -615,7 +657,7 @@ Check ($evals[80] -match '"1\|true\|.*filed into 1 folder.*Undo"') 'tidy: tabs f
 Check ($evals[82] -match '"0"') 'tidy: Undo puts the tabs back'
 Check ($evals[83] -match '"true\|true"') 'compare: the open tabs are read and shown side by side'
 Check ($evals[84] -match 'Price199 EUR179 EUR' -and $evals[84] -match 'Weight200 g250 g' -and $evals[84] -match '\|179 EUR,4\.5"') 'compare: fields in rows, lowest price and best rating stand out'
-Check ($evals[86] -match '"true\|Search for .{1,3}Black hole sun.{1,3},Copy,Highlight"') 'selection: right click offers to search it, or copy it'
+Check ($evals[86] -match '"true\|Search for .{1,3}Black hole sun.{1,3},Copy,Highlight,Add this page to the Easel,') 'selection: right click offers to search it, or copy it'
 Check ($evals[89] -match '"1\|true\|https://duckduckgo\.com/\?q=Black\+hole\+sun') 'selection: the search opens in a new tab, in front, with the engine of the Settings'
 Check ($evals[91] -match 'Open address .{1,3}example\.org/bh-sel') 'selection: an address is offered to be opened instead'
 Check ($evals[94] -match '"1\|true\|true"') 'selection: Ctrl+click on the entry opens it in the background'
@@ -659,6 +701,19 @@ Check ((ErrEval 18) -match 'err18:Offline') 'error page: offline variant'
 Check ((ErrEval 19) -match 'err19:The computer.{1,3}s clock is wrong\|Continue anyway') 'error page: wrong clock variant'
 Check ((ErrEval 20) -match 'err20:No secure version\|Continue over http') 'error page: http only variant'
 Check ((ErrEval 21) -match 'err21:Site unreachable\|true\|1"') 'error page: one scene per kind (the black hole for "Site unreachable")'
-Check ($saved.Count -eq 37) "screenshots saved ($($saved.Count)/37)"
+function Named($name) { [string]($all | Where-Object { $_ -match "-> `"${name}:" } | Select-Object -First 1) }
+Check ((Named dl1) -match 'dl1:bh-dl-page' -and (Named dl2) -match 'dl2:bh-dl-page\|/dlpage') 'download: a link that downloads a file leaves its page in place (no "Site unreachable")'
+Check ((Named dl3) -match 'dl3:bh-dl-page\|/dlpage') 'download: the page is still there once the hidden sidebar has slid back'
+Check ((Named cm2) -match 'cm2:.*Reload/Add this page to the Easel/Capture a live area to an Easel[^/]*/Watch an area for changes[^/]*/Copy page link/Find in page/Print[^/]*/Inspect page') 'page menu: a right click on the page shows BlackHole''s menu (Easel, live area, watched area)'
+Check ((Named cm4) -match 'cm4:Open image in new tab/Copy image address') 'page menu: an image adds its own entries'
+Check ((Named cm6) -notmatch 'menuing') 'page menu: a page with a menu of its own keeps it'
+Check ((Named cm8) -match 'menuing.*\|true') 'page menu: a video the page plays by itself (a preview) gets it too'
+Check ((Named cm10) -notmatch 'menuing') 'page menu: a player with the engine controls keeps the engine menu'
+Check ((Named sb1) -match 'sb1:true\|[3-9]\d*' -and (Named sb2) -match 'sb2:false') 'sidebar: a counter that moves keeps the rows (no flicker), a changed tab redraws them'
+Check ((Named sb3) -match 'sb3:true,false,true,false,false\|Idle') 'folders: a closed folder shows the pages open under it only (like Arc), a folder with none is dimmed'
+# The test file landed in the real Downloads folder: removed.
+$dlDir = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+Get-ChildItem $dlDir -Filter 'bh-test-download*.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq 4000 } | Remove-Item -Force
+Check ($saved.Count -eq 40) "screenshots saved ($($saved.Count)/40)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

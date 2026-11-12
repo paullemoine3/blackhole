@@ -155,7 +155,8 @@ fn chrome_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry:
 const HOTZONE_WIDTH: f64 = 12.0;
 
 fn hotzone_rect(sidebar: &Sidebar, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect {
-    let (x, width) = if sidebar.flyout_shown() {
+    // Shown by the shell (a download): the strip stays thin, the page keeps its clicks.
+    let (x, width) = if sidebar.flyout_shown() && !sidebar.held() {
         let x = sidebar.full();
         (x, (window.width - x).max(1.0))
     } else {
@@ -352,6 +353,25 @@ struct DownloadLive {
 /// How long a finished download stays in the sidebar.
 const DOWNLOAD_LINGER: Duration = Duration::from_secs(8);
 const DOWNLOAD_POLL: Duration = Duration::from_millis(500);
+/// Debug builds only, with `BH_TRACE` set: one line on stderr for what a page asks the shell
+/// (navigations, new windows, page events), to follow a click that misbehaves. Never in release.
+pub(crate) fn trace(line: impl FnOnce() -> String) {
+    static ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| cfg!(debug_assertions) && std::env::var_os("BH_TRACE").is_some());
+    if *ON {
+        let line = line();
+        if !line.is_empty() {
+            eprintln!("[trace] {line}");
+        }
+    }
+}
+
+/// How long after a download started the end of its navigation may still be reported.
+const DOWNLOAD_NAV: Duration = Duration::from_secs(10);
+/// How long a hidden sidebar shows itself for a download card.
+const DOWNLOAD_REVEAL: Duration = Duration::from_secs(4);
+/// How long an aborted navigation waits for the download that would explain it.
+const ABORT_GRACE: Duration = Duration::from_millis(600);
 
 /// Size of the file a download is writing: browsers use a temporary name until it completes.
 fn partial_size(path: &std::path::Path) -> u64 {
@@ -446,6 +466,10 @@ struct Running {
     last_frame: Instant,
     /// A live capture area waiting for the user to choose its Easel.
     live_pending: Option<(TabId, String, (f64, f64))>,
+    /// The tab about to be opened from a page: its address and the `Referer` of its first load.
+    referrer_next: Option<(Url, String)>,
+    /// The picker was armed to watch the area (page menu), not to ask where it goes.
+    pick_watches: bool,
     /// Google Calendar sync and the meeting card (see meet.rs).
     calendar: meet::Calendar,
     /// Paired devices and "Continue on…" (see handoff.rs).
@@ -554,6 +578,11 @@ struct Running {
     /// Tabs opened for a file alone (no page shown), by download URL: closed once it is done
     /// (closing the view earlier would cancel the download).
     dl_only_tabs: HashMap<String, TabId>,
+    /// Tabs whose navigation just became a download: the engine ends that navigation as a
+    /// failure, which is no error to show.
+    dl_navs: HashMap<TabId, Instant>,
+    /// Navigations ended as "connection aborted": an error page unless a download follows.
+    aborted: HashMap<TabId, (Instant, Url)>,
     dl_polled: Instant,
     dl_size_tx: std::sync::mpsc::Sender<(u64, u64)>,
     dl_size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
@@ -871,6 +900,8 @@ impl Running {
             panels_maxed: (false, false),
             last_frame: Instant::now(),
             live_pending: None,
+            referrer_next: None,
+            pick_watches: false,
             calendar: meet::Calendar::new(&data),
             nearby: handoff::Nearby::new(&data, private_mode()),
             watching: watching::Watching::new(&data),
@@ -932,6 +963,8 @@ impl Running {
             downloads: blackhole_infrastructure::store::DownloadStore::new(&data).load(),
             dl_live: HashMap::new(),
             dl_only_tabs: HashMap::new(),
+            dl_navs: HashMap::new(),
+            aborted: HashMap::new(),
             dl_polled: Instant::now(),
             dl_size_tx,
             dl_size_rx,
@@ -1255,6 +1288,18 @@ impl Running {
         ));
     }
 
+    /// A hidden sidebar slides out by itself for a moment: what just happened shows in it.
+    fn reveal_sidebar(&mut self, time: Duration) {
+        if !self.library && self.sidebar.reveal(Instant::now(), time) {
+            self.layout(false);
+        }
+    }
+
+    /// The navigation of `tab` just turned into a download.
+    fn download_took(&self, tab: TabId) -> bool {
+        self.dl_navs.get(&tab).is_some_and(|at| at.elapsed() < DOWNLOAD_NAV)
+    }
+
     fn tick_sidebar(&mut self) {
         if self.sidebar.moving() {
             self.sidebar.tick();
@@ -1316,6 +1361,7 @@ impl Running {
                 "folder": t.folder.map(|f| f.0),
                 "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
                 "asleep": !self.tabs.contains_key(&t.id),
+                "away": t.away(),
                 "burner": ws.is_burner(t.id),
             })).collect::<Vec<_>>(),
         });
@@ -2047,6 +2093,7 @@ impl Running {
     fn live_pick_start(&mut self) {
         let tab = self.svc.workspace().active_tab().map(|t| t.id);
         let (Some(tab), false) = (tab, self.home_shown()) else {
+            self.pick_watches = false;
             self.toast(&t("toast.open_page_for_area"));
             return;
         };
@@ -2055,12 +2102,19 @@ impl Running {
         };
         if view.evaluate_script(&views::live_picker_js()).is_ok() {
             self.live_pick = Some(tab);
+        } else {
+            self.pick_watches = false;
         }
     }
 
     /// An area was picked: ask which Easel of the space it goes to (or a new one), or whether
     /// to watch it for changes.
     fn live_picked(&mut self, tab: TabId, selector: String, size: (f64, f64)) {
+        // Picked from "Watch an area…": nothing more to ask.
+        if std::mem::take(&mut self.pick_watches) {
+            self.watch_area(tab, &selector);
+            return;
+        }
         let space = self.svc.workspace().active_space().id.0;
         let easels: Vec<(u64, String)> = self
             .easels
@@ -2110,7 +2164,7 @@ impl Running {
     /// Right click on a link of a page: open it in a new tab, a new window, a private window,
     /// preview it, or copy it. On selected text (`text`, untrusted): search it with the engine
     /// of the Settings, or open it when it is a web address, or copy it.
-    fn link_menu(&mut self, tab: TabId, raw: &str, text: &str, mark: u64, x: f64, y: f64) {
+    fn link_menu(&mut self, tab: TabId, raw: &str, text: &str, mark: u64, image: &str, (x, y): (f64, f64)) {
         use blackhole_domain::selection::{
             clean_selection, excerpt, selection_action, SelectionAction,
         };
@@ -2167,11 +2221,113 @@ impl Running {
                 json!({"icon": "link", "label": t(if clean.is_some() { "menu.copy_clean_link" } else { "menu.copy_link" }), "copy": copied}),
             ]);
         }
+        let image = Url::parse(image)
+            .ok()
+            .filter(|u| matches!(u.scheme(), "http" | "https"));
+        if let Some(image) = &image {
+            let image = image.as_str();
+            if !items.is_empty() {
+                items.push(json!({"sep": true}));
+            }
+            items.extend([
+                json!({"icon": "image", "label": t("menu.image_new_tab"),
+                    "run": {"cmd": "open_link", "url": image, "target": "front"},
+                    "background": {"cmd": "open_link", "url": image, "target": "tab"}}),
+                json!({"icon": "link", "label": t("menu.copy_image_address"), "copy": image}),
+            ]);
+        }
+        // Off a link and off a selection: the page's own entries. On one, BlackHole's tools
+        // (Easel, live area, watched area) still follow, so the menu offers them wherever the
+        // click lands.
+        let more = if link.is_none() && selection.is_none() {
+            self.page_menu_items(tab)
+        } else {
+            self.page_tool_items(tab)
+        };
+        if !items.is_empty() && !more.is_empty() {
+            items.push(json!({"sep": true}));
+        }
+        items.extend(more);
         if items.is_empty() {
             return;
         }
         let (ox, oy) = self.view_origin(tab);
         self.show_menu((ox + x, oy + y), json!(items));
+    }
+
+    /// BlackHole's own tools for the page in front: clip it to the Easel, capture a live area,
+    /// watch an area. None for another pane, a Peek, an error page, or a black hole tab
+    /// (nothing of it is kept).
+    fn page_tool_items(&self, tab: TabId) -> Vec<serde_json::Value> {
+        let ws = self.svc.workspace();
+        let front = ws.active_tab().is_some_and(|t| t.id == tab) && !self.home_shown();
+        let web = self
+            .view_of(tab)
+            .and_then(|v| v.url().ok())
+            .is_some_and(|u| u.starts_with("https://") || u.starts_with("http://"));
+        if !front || !web || ws.is_burner(tab) || self.error_shown(tab) {
+            return Vec::new();
+        }
+        vec![
+            json!({"icon": "easel", "label": t("menu.page_to_easel"), "run": {"cmd": "capture_to_easel"}}),
+            json!({"icon": "eye", "label": t("menu.live_capture"), "run": {"cmd": "live_pick"}}),
+            json!({"icon": "watch", "label": t("menu.watch_pick"), "run": {"cmd": "watch_pick"}}),
+        ]
+    }
+
+    /// The entries of a right click on the page itself: history, the Easel, a live area, a
+    /// watched area, the address, find, print, the inspector. Those that act on "the page in
+    /// front" are only offered for it (not for the other pane of a split, nor for a Peek).
+    fn page_menu_items(&self, tab: TabId) -> Vec<serde_json::Value> {
+        let ws = self.svc.workspace();
+        let front = ws.active_tab().is_some_and(|t| t.id == tab) && !self.home_shown();
+        let address = self
+            .view_of(tab)
+            .and_then(|v| v.url().ok())
+            .and_then(|raw| Url::parse(&raw).ok())
+            .filter(|u| matches!(u.scheme(), "http" | "https"));
+        let mut items = Vec::new();
+        if front {
+            let can = |f: fn(&WebView) -> wry::Result<bool>| {
+                self.tabs.get(&tab).is_some_and(|v| f(v).unwrap_or(false))
+            };
+            if can(WebView::can_go_back) {
+                items.push(json!({"icon": "back", "label": t("menu.page_back"), "run": {"cmd": "back"}}));
+            }
+            if can(WebView::can_go_forward) {
+                items.push(json!({"icon": "forward", "label": t("menu.page_forward"), "run": {"cmd": "forward"}}));
+            }
+            items.push(json!({"icon": "reload", "label": t("menu.page_reload"), "run": {"cmd": "reload"}}));
+            let tools = self.page_tool_items(tab);
+            if !tools.is_empty() {
+                items.push(json!({"sep": true}));
+                items.extend(tools);
+            }
+            items.push(json!({"sep": true}));
+        }
+        if let Some(url) = &address {
+            let clean = self
+                .svc
+                .settings()
+                .shields
+                .clean_links
+                .then(|| blackhole_domain::clean_link::clean(url))
+                .flatten();
+            items.push(json!({"icon": "link", "label": t("menu.copy_page_link"),
+                "copy": clean.as_ref().map_or(url.as_str(), Url::as_str)}));
+        }
+        if front {
+            items.extend([
+                json!({"icon": "search", "label": t("menu.find_in_page"), "run": {"cmd": "shortcut", "key": "f"}}),
+                json!({"icon": "print", "label": t("menu.print"), "run": {"cmd": "shortcut", "key": "p"}}),
+                json!({"sep": true}),
+                json!({"icon": "code", "label": t("menu.inspect"), "run": {"cmd": "shortcut", "key": "devtools"}}),
+            ]);
+        }
+        while items.last().is_some_and(|i| i["sep"] == json!(true)) {
+            items.pop();
+        }
+        items
     }
 
     /// Middle click / Ctrl+click on a link, or "Open link in new tab": the tab opens at the top
@@ -2677,7 +2833,10 @@ impl Running {
                 self.easel_changed(ok);
             }
             UiCommand::CaptureToEasel => self.capture_to_easel(),
-            UiCommand::LivePick => self.live_pick_start(),
+            UiCommand::LivePick => {
+                self.pick_watches = false;
+                self.live_pick_start();
+            }
             UiCommand::CaptureLive { selector, w, h } => {
                 let tab = self.svc.workspace().active_tab().map(|t| t.id);
                 match tab {
@@ -2850,6 +3009,17 @@ impl Running {
         self.loading
             .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < LOADING_MAX);
         self.awaiting.retain(|id, _| self.tabs.contains_key(id));
+        let late: Vec<_> = self
+            .aborted
+            .iter()
+            .filter(|(_, (since, _))| now.duration_since(*since) >= ABORT_GRACE)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in late {
+            if let Some((_, url)) = self.aborted.remove(&id) {
+                self.on_failed(id, url);
+            }
+        }
         let stalled: Vec<_> = self
             .awaiting
             .iter()
@@ -2864,7 +3034,10 @@ impl Running {
         if before != (self.splash.len(), self.loading.len()) {
             self.sync();
         }
-        !self.splash.is_empty() || !self.loading.is_empty() || !self.awaiting.is_empty()
+        !self.splash.is_empty()
+            || !self.loading.is_empty()
+            || !self.awaiting.is_empty()
+            || !self.aborted.is_empty()
     }
 
     fn ui_home(&self) {
@@ -2992,6 +3165,17 @@ impl Running {
         }
     }
 
+    /// The next tab opened for `target` comes from a page of `opener`: its first request says so
+    /// (`popup::referrer`), as the link would have in that page.
+    fn opened_from(&mut self, opener: TabId, target: &Url) {
+        self.referrer_next = self
+            .view_of(opener)
+            .and_then(|v| v.url().ok())
+            .and_then(|raw| Url::parse(&raw).ok())
+            .and_then(|page| blackhole_domain::popup::referrer(&page, target))
+            .map(|referrer| (target.clone(), referrer));
+    }
+
     fn ensure_view(&mut self, tab: &blackhole_domain::Tab) {
         if self.tabs.contains_key(&tab.id) {
             return;
@@ -2999,12 +3183,46 @@ impl Running {
         let url = &tab.url;
         let bounds = self.full_content_bounds();
         let store = self.store_of_tab(tab.id);
+        let referrer = self
+            .referrer_next
+            .take_if(|(target, _)| target == url)
+            .and_then(|(_, r)| wry::http::HeaderValue::from_str(&r).ok());
+        // Headers go with a load, not with a view's creation: a view without a page is made
+        // first when none is in reserve.
+        if referrer.is_some() && !self.spares.iter().any(|(s, ..)| *s == store) {
+            if let Ok((slot, view)) = views::spare_tab_view(
+                &self.window,
+                &mut self.web_context,
+                self.svc.policy(),
+                &self.mailbox,
+                self.webext.as_ref(),
+                store,
+            ) {
+                self.spares.push((store, slot, view));
+                self.raise_palette();
+            }
+        }
         if let Some(at) = self.spares.iter().position(|(s, ..)| *s == store) {
             let (_, slot, view) = self.spares.swap_remove(at);
             slot.store(tab.id.0, std::sync::atomic::Ordering::Relaxed);
             let _ = view.set_bounds(bounds);
             // A native load (not `location.replace`) so that a failure reaches the load handler.
-            let _ = view.load_url(url.as_str());
+            let _ = match referrer {
+                // WebView2 drops a header given to the navigation at the first redirect: the
+                // view's document requests are stamped instead, until the page shows.
+                #[cfg(windows)]
+                Some(value) => {
+                    blackhole_macos_webext::referrer_once(&view, value.to_str().unwrap_or_default());
+                    view.load_url(url.as_str())
+                }
+                #[cfg(not(windows))]
+                Some(value) => {
+                    let mut headers = wry::http::HeaderMap::new();
+                    headers.insert(wry::http::header::REFERER, value);
+                    view.load_url_with_headers(url.as_str(), headers)
+                }
+                None => view.load_url(url.as_str()),
+            };
             self.tabs.insert(tab.id, view);
             self.splash.insert(tab.id, Instant::now());
             self.awaiting.insert(tab.id, (Instant::now(), url.clone()));
@@ -3470,6 +3688,7 @@ impl Running {
         for id in idle {
             self.tabs.remove(&id);
             self.last_active.remove(&id);
+            self.svc.go_home(id);
         }
         self.ui_state();
     }
@@ -3623,33 +3842,23 @@ impl Running {
         self.ui_state();
     }
 
-    /// Unfolds what hides a tab in the sidebar (its section and every folder above it), so the
-    /// tab that becomes active, e.g. from a search, is always visible.
+    /// Unfolds the section that hides a tab in the sidebar, so the tab that becomes active, e.g.
+    /// from a search, is always visible. Its folders stay as the user left them: like Arc, a
+    /// closed folder shows the pages open under it (`ui/index.html`), so nothing else unfolds.
     fn reveal_tab(&mut self, id: TabId) {
         let space = self.svc.workspace().active_space();
         let Some(tab) = space.tabs.iter().find(|t| t.id == id) else {
             return;
         };
-        let (section, mut next) = if tab.pinned {
-            ("pinned", None)
+        let section = if tab.pinned {
+            "pinned"
         } else if tab.folder.is_some() {
-            ("folders", tab.folder)
+            "folders"
         } else {
             return;
         };
-        let mut closed = Vec::new();
-        while let Some(folder) = next.and_then(|f| space.folders.iter().find(|x| x.id == f)) {
-            if folder.collapsed {
-                closed.push(folder.id);
-            }
-            next = folder.parent;
-        }
-        let section_closed = self.svc.settings().collapsed_sections.contains(section);
-        if section_closed {
+        if self.svc.settings().collapsed_sections.contains(section) {
             self.svc.set_section_collapsed(section, false);
-        }
-        for folder in closed {
-            self.svc.toggle_folder(folder);
         }
     }
 
@@ -3902,6 +4111,8 @@ impl Running {
             blackhole_macos_webext::delete_profile(view);
         }
         self.tabs.remove(&id);
+        // Like Arc: a quick access or folder tab that wandered wakes up at its own address.
+        self.svc.go_home(id);
         self.marks_push(id, false);
         self.last_active.remove(&id);
         if let Ok(mut probes) = self.media.lock() {
@@ -4879,6 +5090,10 @@ impl Running {
             }
             UiCommand::UndoRemoval => self.undo_removal(),
             UiCommand::PrivacyReport { x, y } => self.privacy_report((x, y + BAR_HEIGHT)),
+            UiCommand::WatchPick => {
+                self.live_pick_start();
+                self.pick_watches = self.live_pick.is_some();
+            }
             UiCommand::WatchArea => {
                 if let Some((tab, selector, _)) = self.live_pending.take() {
                     self.watch_area(tab, &selector);
@@ -4976,6 +5191,28 @@ impl Running {
             UiCommand::SetSpaceColor { id, color } => {
                 if self.svc.set_space_color(SpaceId(id), &color) {
                     self.sync();
+                }
+            }
+            UiCommand::TabHome { id } => {
+                let id = TabId(id);
+                if self.svc.go_home(id) {
+                    let home = self
+                        .svc
+                        .workspace()
+                        .spaces()
+                        .iter()
+                        .flat_map(|s| s.tabs.iter())
+                        .find(|t| t.id == id)
+                        .map(|t| t.url.clone());
+                    if let (Some(url), Some(view)) = (home, self.tabs.get(&id)) {
+                        let _ = view.load_url(url.as_str());
+                    }
+                    self.sync();
+                }
+            }
+            UiCommand::TabSetHome { id } => {
+                if self.svc.set_home(TabId(id)) {
+                    self.ui_state();
                 }
             }
             UiCommand::ReloadTab { id } => {
@@ -5593,10 +5830,16 @@ impl Running {
                     self.live_picked(tab, selector, (w, h));
                 }
             }
-            Msg::Page(_, PageEvent::OpenLink { url }) => self.open_in_background(&url),
+            Msg::Page(tab, PageEvent::OpenLink { url }) => {
+                if let Ok(target) = Url::parse(&url) {
+                    self.opened_from(tab, &target);
+                }
+                self.open_in_background(&url);
+                self.referrer_next = None;
+            }
             Msg::Page(tab, PageEvent::PilotLink { url }) => self.pilot_link(tab, &url),
-            Msg::Page(tab, PageEvent::LinkMenu { url, text, mark, x, y }) => {
-                self.link_menu(tab, &url, &text, mark, x, y)
+            Msg::Page(tab, PageEvent::LinkMenu { url, text, mark, image, x, y }) => {
+                self.link_menu(tab, &url, &text, mark, &image, (x, y))
             }
             Msg::Page(tab, PageEvent::DebugLog { msg }) => {
                 if cfg!(debug_assertions) {
@@ -5641,6 +5884,8 @@ impl Running {
                 self.page_url(tab, url);
             }
             Msg::LoadStart(tab) => {
+                self.aborted.remove(&tab);
+                self.dl_navs.remove(&tab);
                 self.errors_load_start(tab);
                 self.awaiting.remove(&tab);
                 self.loading.insert(tab, Instant::now());
@@ -5666,10 +5911,24 @@ impl Running {
                     }
                 }
             }
-            Msg::Failed(tab, url) => self.on_failed(tab, url),
+            Msg::Failed(tab, url) => {
+                if self.download_took(tab) {
+                    self.ui_bar();
+                } else if self.failure_is_abort(tab) {
+                    // WebView2 ends a navigation that becomes a download as "connection
+                    // aborted", just before it says a download starts: wait for that word.
+                    self.aborted.insert(tab, (Instant::now(), url));
+                } else {
+                    self.on_failed(tab, url);
+                }
+            }
             Msg::Crashed(tab) => self.on_crashed(tab),
             Msg::Page(tab, PageEvent::Media { .. }) => self.media_hinted(tab),
-            Msg::LoadFailure(tab, failure) => self.on_load_failure(tab, failure),
+            Msg::LoadFailure(tab, failure) => {
+                if failure.http_status > 0 || !self.download_took(tab) {
+                    self.on_load_failure(tab, failure);
+                }
+            }
             Msg::ServerTrust(tab, challenge) => self.on_server_trust(tab, challenge),
             Msg::Upgraded(tab, plain) => self.on_upgraded(tab, plain),
             Msg::BlockedPage(tab, url, why) => self.on_blocked_page(tab, url, why),
@@ -5698,7 +5957,16 @@ impl Running {
                         url.host_str().unwrap_or_default(),
                         (self.window_size().width, BAR_HEIGHT, 0.0, 0.0),
                     ) => {}
-            Msg::OpenTab(url) => self.open(url.as_str()),
+            Msg::OpenTab(url) => {
+                trace(|| format!("open tab {url}"));
+                self.open(url.as_str());
+            }
+            Msg::OpenTabFrom(opener, url) => {
+                trace(|| format!("open tab {url} from tab {}", opener.0));
+                self.opened_from(opener, &url);
+                self.open(url.as_str());
+                self.referrer_next = None;
+            }
             Msg::External(url) => {
                 self.window.set_minimized(false);
                 self.window.focus_window();
@@ -5718,6 +5986,13 @@ impl Running {
                 if self.awaiting.remove(&tab).is_some() && self.splash.contains_key(&tab) {
                     self.dl_only_tabs.insert(url.clone(), tab);
                 }
+                self.dl_navs.retain(|_, at| at.elapsed() < DOWNLOAD_NAV);
+                self.dl_navs.insert(tab, Instant::now());
+                if self.aborted.remove(&tab).is_some() {
+                    self.forget_failure(tab);
+                }
+                self.loading.remove(&tab);
+                self.reveal_sidebar(DOWNLOAD_REVEAL);
                 let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
                 let name = path
                     .file_name()
@@ -5790,6 +6065,7 @@ impl Running {
                 self.save_downloads();
                 let list = self.downloads_json();
                 self.ui(format!("window.bh&&bh.downloads({list})"));
+                self.reveal_sidebar(DOWNLOAD_REVEAL);
                 self.toast(&t(if ok {
                     "toast.download_complete"
                 } else {
@@ -5987,6 +6263,12 @@ impl ApplicationHandler<Wake> for App {
             if app.ext_popup.is_some() {
                 app.probe_ext_popup();
                 wake = wake.min(Duration::from_millis(250));
+            }
+            if app.sidebar.held() {
+                if app.sidebar.release_due(Instant::now()) {
+                    app.layout(false);
+                }
+                wake = wake.min(Duration::from_millis(200));
             }
             if app.sidebar.moving() {
                 let since = app.last_frame.elapsed();
