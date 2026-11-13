@@ -423,6 +423,11 @@ struct Running {
     pip_tab: Option<TabId>,
     /// The probe has seen the floating video of `pip_tab`: its disappearance means it came back.
     pip_seen: bool,
+    /// `pip_tab` when the probe stopped seeing its floating video, and when. WebKit changes
+    /// the video's mode as soon as the window's "back to tab" button is pressed but only tells
+    /// the page once the window has shrunk back: the page's `pip_left` arrives after the probe
+    /// and must still count as a video the shell floated (`pip::LEFT_EVENT_GRACE`).
+    pip_faded: Option<(TabId, Instant)>,
     /// Last time a tab was seen in a call or playing media: it keeps its page for a while after.
     busy_seen: HashMap<TabId, Instant>,
     /// Tab floated because the window lost focus; it returns when the window gets focus back.
@@ -891,6 +896,7 @@ impl Running {
             shown: None,
             pip_tab: None,
             pip_seen: false,
+            pip_faded: None,
             busy_seen: HashMap::new(),
             pip_on_blur: None,
             blur_due: None,
@@ -2573,6 +2579,8 @@ impl Running {
             "jump": json!([self.library_jump.0, self.library_jump.1]),
             "animations": self.svc.settings().animations,
             "watches": self.watches_json(),
+            // The Easel ticked in the "Add to an Easel" menus.
+            "easelCurrent": self.easel_current,
             // Paired devices: a downloaded file can be sent to one (the Wormhole).
             "devices": self.devices_brief(),
             "highlights": self.marks_json(),
@@ -3567,6 +3575,7 @@ impl Running {
             if probe.pip {
                 self.pip_seen = true;
             } else if self.pip_seen {
+                self.pip_faded = Some((tab, Instant::now()));
                 self.pip_returned(tab);
             }
         }
@@ -3968,8 +3977,13 @@ impl Running {
     fn pip_left(&mut self, tab: TabId, paused: bool, stream: bool) {
         let now = Instant::now();
         self.pip_shell_exits.retain(|_, at| now.duration_since(*at) < PIP_SHELL_EXIT);
+        // The probe may have seen the video leave before the page said so (WebKit tells the
+        // page only once its window has shrunk back): it was still floated by the shell.
+        let faded = self.pip_faded.take().is_some_and(|(id, at)| {
+            id == tab && now.duration_since(at) < blackhole_domain::pip::LEFT_EVENT_GRACE
+        });
         let left = blackhole_domain::pip::PipLeft {
-            floated_by_shell: self.pip_tab == Some(tab) || self.pip_on_blur == Some(tab),
+            floated_by_shell: self.pip_tab == Some(tab) || self.pip_on_blur == Some(tab) || faded,
             left_by_shell: self.pip_shell_exits.contains_key(&tab.0),
             paused,
             tab_shown: self.shown == Some(tab) && !self.home_shown(),
@@ -5390,17 +5404,20 @@ impl Running {
                     views::reload(view);
                 }
             }
+            // Not `open`: opening an address shows the tab already on it instead of a copy.
             UiCommand::DuplicateTab { id } => {
-                let url = self
-                    .svc
-                    .workspace()
-                    .active_space()
-                    .tabs
-                    .iter()
-                    .find(|t| t.id.0 == id)
-                    .map(|t| t.url.to_string());
-                if let Some(url) = url {
-                    self.open(&url);
+                let ws = self.svc.workspace();
+                if ws.is_burner(TabId(id)) && ws.burner_count() >= MAX_BURNERS {
+                    self.toast(&t("toast.too_many_burners"));
+                    return;
+                }
+                if self.svc.duplicate_tab(TabId(id)).is_some() {
+                    self.close_palette();
+                    self.close_peek();
+                    self.home_visible = false;
+                    self.easel_tab = false;
+                    self.library = false;
+                    self.sync();
                 }
             }
             UiCommand::MoveTabToSpace { id, space } => {

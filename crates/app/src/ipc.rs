@@ -317,8 +317,14 @@ pub enum UiCommand {
         #[serde(default)]
         text: String,
     },
+    /// A watched area to an Easel: `easel` names one (Library menu), `new` asks for a new one,
+    /// neither means the current one (start page, command bar).
     WatchToEasel {
         id: u64,
+        #[serde(default)]
+        easel: Option<u64>,
+        #[serde(default)]
+        new: bool,
     },
     CompareToEasel {
         ids: Vec<u64>,
@@ -1222,6 +1228,8 @@ mod tests {
             r#"{"cmd":"link_to_easel","url":"https://a.test/"}"#,
             r#"{"cmd":"found_to_easel","url":"https://a.test/","title":"A","text":"x"}"#,
             r#"{"cmd":"watch_to_easel","id":2}"#,
+            r#"{"cmd":"watch_to_easel","id":2,"easel":5}"#,
+            r#"{"cmd":"watch_to_easel","id":2,"new":true}"#,
             r#"{"cmd":"compare_to_easel","ids":[1,2]}"#,
             r#"{"cmd":"beam_to_easel","id":1}"#,
             r#"{"cmd":"easel_watch","item":4,"on":true}"#,
