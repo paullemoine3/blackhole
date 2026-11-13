@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.10",
+        &[
+            "A download that starts from a page already shown (a \"your download starts in a moment\" page, a link redirected to the file) no longer replaces the page with Site unreachable: the file is saved and the page stays",
+            "Messages are no longer missed with the sidebar hidden: the address field becomes the message for a moment, with its buttons (Undo, Copy, Join), and the sidebar button keeps a dot while a download or a card waits there. Every message has the icon of what it is about",
+        ],
+    ),
+    (
         "0.8.9",
         &[
             "Picture in Picture on macOS: the floating window's back to tab button shows the video's tab again (the video went back into its page but the tab stayed hidden)",

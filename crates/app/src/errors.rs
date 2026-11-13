@@ -201,9 +201,10 @@ impl Running {
             }
             return;
         }
-        if classify(failure_of(&failure)).is_some() {
-            self.errors.failures.insert(tab, failure);
-        }
+        // Kept even when it calls for no page (a load interrupted because it became a download,
+        // after a redirect of the page shown): `on_failed` must know the `Failed` that follows
+        // is that one, not a failure without a reason ("Site unreachable").
+        self.errors.failures.insert(tab, failure);
     }
 
     /// The failure just reported for `tab` is WebView2's "connection aborted" (9): also how
