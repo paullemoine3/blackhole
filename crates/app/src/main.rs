@@ -6137,6 +6137,7 @@ impl Running {
                 }
             }
             Msg::Failed(tab, url) => {
+                trace(|| format!("failed tab={} {url}", tab.0));
                 if self.download_took(tab) {
                     self.ui_bar();
                 } else if self.failure_is_abort(tab) {
@@ -6150,6 +6151,7 @@ impl Running {
             Msg::Crashed(tab) => self.on_crashed(tab),
             Msg::Page(tab, PageEvent::Media { .. }) => self.media_hinted(tab),
             Msg::LoadFailure(tab, failure) => {
+                trace(|| format!("load failure tab={} {} {} {}", tab.0, failure.domain, failure.code, failure.url));
                 if failure.http_status > 0 || !self.download_took(tab) {
                     self.on_load_failure(tab, failure);
                 }
@@ -6207,6 +6209,7 @@ impl Running {
                 }
             }
             Msg::DownloadStarted { tab, url, path } => {
+                trace(|| format!("download started tab={} {url}", tab.0));
                 // The navigation became a download: the tab is not waiting for a page any more
                 // (else "Site injoignable" after CONNECT_MAX). A tab opened for the file alone,
                 // that never showed a page, closes once the file is done, as in other browsers.

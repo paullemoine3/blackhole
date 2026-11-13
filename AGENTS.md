@@ -131,6 +131,7 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-pip.sh` (PiP et carte lecteur, vidéo CC0 de MDN),
   `bash scripts/test-library.sh` (Bibliothèque, cartes de téléchargement, HOME jetable),
   `bash scripts/test-notices.sh` (notices : toast de la barre latérale, capsule de la barre du haut),
+  `bash scripts/test-download.sh` (téléchargement lancé par une page déjà affichée : redirection par script ou 302 ; WebKit termine la navigation en `WebKitErrorDomain` 102, gardé dans `Errors::failures` pour que `on_failed` n'affiche pas « Site injoignable » ; Windows non testé),
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
   `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
   `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),
@@ -505,7 +506,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   `autofill.js` capture `Reflect.apply`, `JSON.stringify`, `addEventListener` et le pont natif
   (`chrome.webview` / `webkit.messageHandlers.ipc`) avant les scripts de la page. Soumission →
   `login_submitted` (`Secret` remis à zéro, jamais journalisé) → toast Save/Update + Never
-  (`bh.toast` accepte une liste de boutons). Réglages > Passwords : liste sans secrets, un mot de
+  (`notify` accepte une liste de boutons, voir « Notices »). Réglages > Passwords : liste sans secrets, un mot de
   passe envoyé à la page des Réglages seulement sur Show/Edit, copie par `arboard` (exclue de
   l'historique, effacée après 30 s), générateur, mot de passe maître, verrouillage
   (`Settings::password_lock_minutes`). Fenêtre privée : lecture seule. Import CSV → portefeuille.
