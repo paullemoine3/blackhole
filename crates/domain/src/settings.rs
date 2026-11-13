@@ -57,6 +57,21 @@ pub struct Settings {
     pub recall: bool,
     /// Sites Recall never remembers (hosts without `www.`, their subdomains included).
     pub recall_exclude: BTreeSet<String>,
+    /// Page zoom of each site, in percent (one of `ZOOM_STEPS`, 100 never stored), keyed by
+    /// host without `www.` (`site_key`). Remembered between launches, like other browsers.
+    pub site_zoom: BTreeMap<String, u32>,
+}
+
+/// Page zoom steps in percent, like the other browsers (100% is the fifth).
+pub const ZOOM_STEPS: [u32; 12] = [50, 67, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
+/// Sites whose zoom is remembered at most: past this count a new site is not stored (its
+/// zoom then lasts for the session only).
+pub const MAX_SITE_ZOOMS: usize = 500;
+
+/// The zoom step after (`up`) or before `current` (an unknown level counts as 100%).
+pub fn next_zoom(current: u32, up: bool) -> u32 {
+    let at = ZOOM_STEPS.iter().position(|z| *z == current).unwrap_or(4);
+    ZOOM_STEPS[if up { (at + 1).min(ZOOM_STEPS.len() - 1) } else { at.saturating_sub(1) }]
 }
 
 /// Normalises a host so `www.example.com` and `example.com` share boosts and routes.
@@ -82,6 +97,27 @@ pub fn overflow_to_release<K: Copy + PartialEq, T: Ord>(
 }
 
 impl Settings {
+    /// The zoom of `host`'s site in percent (100 when it has none).
+    pub fn zoom_of(&self, host: &str) -> u32 {
+        self.site_zoom.get(&site_key(host)).copied().unwrap_or(100)
+    }
+
+    /// Remembers the zoom of `host`'s site: 100% forgets it, a level that is not a step is
+    /// refused. Returns whether anything changed.
+    pub fn set_zoom(&mut self, host: &str, percent: u32) -> bool {
+        let site = site_key(host);
+        if site.is_empty() || !ZOOM_STEPS.contains(&percent) {
+            return false;
+        }
+        if percent == 100 {
+            return self.site_zoom.remove(&site).is_some();
+        }
+        if !self.site_zoom.contains_key(&site) && self.site_zoom.len() >= MAX_SITE_ZOOMS {
+            return false;
+        }
+        self.site_zoom.insert(site, percent) != Some(percent)
+    }
+
     /// How many tabs may keep a live engine view (visible ones included).
     pub const LIVE_TABS_CHOICES: [u32; 6] = [2, 3, 4, 6, 8, 12];
     pub const DEFAULT_LIVE_TABS: u32 = 4;
@@ -124,12 +160,40 @@ impl Default for Settings {
             language: crate::i18n::SYSTEM.to_owned(),
             recall: false,
             recall_exclude: BTreeSet::new(),
+            site_zoom: BTreeMap::new(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zoom_is_kept_per_site_and_100_forgets_it() {
+        let mut s = super::Settings::default();
+        assert_eq!(s.zoom_of("example.com"), 100);
+        assert!(s.set_zoom("www.Example.com", 125));
+        assert_eq!(s.zoom_of("example.com"), 125, "www. and case share the site's zoom");
+        assert_eq!(s.zoom_of("other.com"), 100);
+        assert!(!s.set_zoom("example.com", 125), "same level: nothing changes");
+        assert!(!s.set_zoom("example.com", 123), "only the steps are stored");
+        assert!(s.set_zoom("example.com", 100));
+        assert!(s.site_zoom.is_empty(), "100% is never stored");
+        assert_eq!(super::next_zoom(100, true), 110);
+        assert_eq!(super::next_zoom(50, false), 50);
+        assert_eq!(super::next_zoom(300, true), 300);
+        assert_eq!(super::next_zoom(123, false), 90, "an unknown level counts as 100%");
+    }
+
+    #[test]
+    fn remembered_zooms_are_capped() {
+        let mut s = super::Settings::default();
+        for i in 0..super::MAX_SITE_ZOOMS {
+            assert!(s.set_zoom(&format!("s{i}.test"), 90));
+        }
+        assert!(!s.set_zoom("new.test", 90));
+        assert!(s.set_zoom("s0.test", 110), "a known site still changes");
+    }
+
     use super::overflow_to_release;
 
     #[test]

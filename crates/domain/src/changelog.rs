@@ -16,6 +16,8 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Picture in Picture on Windows: back to tab shows the video's tab, as on macOS",
             "An address typed in a tab shows at once in the bar, with the progress line, instead of the old address while a slow server answers",
             "With the sidebar hidden, a middle click on a link slides it out for a moment so the new tab is seen; the sidebar's right-click menu offers a new black hole tab",
+            "The close button of a call's card in the sidebar (Meet and other video calls) now leaves the call, instead of only hiding the card while the camera and microphone stayed on",
+            "A page's zoom is remembered for its site between launches, with or without www., and every tab of the site follows at once; a black hole tab's zoom is forgotten when it closes",
         ],
     ),
     (
