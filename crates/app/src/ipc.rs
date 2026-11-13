@@ -292,6 +292,61 @@ pub enum UiCommand {
     BeamCopy {
         id: u64,
     },
+    /// Link menu: opens the link on a paired device (only its address travels).
+    SendLink {
+        device: String,
+        url: String,
+    },
+    /// Library > Downloads: sends a downloaded file to a paired device (the Wormhole).
+    SendDownload {
+        id: u64,
+        device: String,
+    },
+    /// Keeps something in the Easel shown (a new one when there is none): a link of a page, a
+    /// result of the command bar (Recall, the archive), a watched area's change, the
+    /// comparator's table, a text received from another device.
+    LinkToEasel {
+        url: String,
+        #[serde(default)]
+        title: String,
+    },
+    FoundToEasel {
+        url: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        text: String,
+    },
+    WatchToEasel {
+        id: u64,
+    },
+    CompareToEasel {
+        ids: Vec<u64>,
+    },
+    BeamToEasel {
+        id: u64,
+    },
+    /// A live card of the Easel: tell when its area changes (a watched area), or stop.
+    EaselWatch {
+        item: u64,
+        on: bool,
+    },
+    /// A lasting card of the sidebar (a watched area that changed, a text received, notes to
+    /// take): `act` is one of its buttons ("open", "easel", "copy", "notes"); dismissing it
+    /// only removes the card.
+    SignalAct {
+        id: u64,
+        act: String,
+    },
+    SignalDismiss {
+        id: u64,
+    },
+    /// The sign-in prompt: use the `index`-th login saved for that server (the password goes
+    /// from the wallet to the engine, never through the page).
+    AuthSaved {
+        id: u64,
+        index: usize,
+    },
     /// Tab menu and command bar: opens the tab on a paired device.
     ContinueOn {
         id: u64,
@@ -1152,6 +1207,27 @@ mod tests {
             r#"{"cmd":"close_other_tabs","id":1}"#,
             r##"{"cmd":"set_space_color","id":1,"color":"#ff5c8a"}"##,
             r#"{"cmd":"undo_removal"}"#,
+        ];
+        for raw in cases {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn bridge_commands_parse_and_pages_cannot_send_them() {
+        let cases = [
+            r#"{"cmd":"send_link","device":"d","url":"https://a.test/"}"#,
+            r#"{"cmd":"send_download","id":3,"device":"d"}"#,
+            r#"{"cmd":"link_to_easel","url":"https://a.test/"}"#,
+            r#"{"cmd":"found_to_easel","url":"https://a.test/","title":"A","text":"x"}"#,
+            r#"{"cmd":"watch_to_easel","id":2}"#,
+            r#"{"cmd":"compare_to_easel","ids":[1,2]}"#,
+            r#"{"cmd":"beam_to_easel","id":1}"#,
+            r#"{"cmd":"easel_watch","item":4,"on":true}"#,
+            r#"{"cmd":"signal_act","id":1,"act":"open"}"#,
+            r#"{"cmd":"signal_dismiss","id":1}"#,
+            r#"{"cmd":"auth_saved","id":1,"index":0}"#,
         ];
         for raw in cases {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");

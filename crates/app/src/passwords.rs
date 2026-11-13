@@ -264,6 +264,27 @@ impl Passwords {
         })
     }
 
+    /// The user names saved for an HTTP sign-in of `origin` (the realm's first): what the
+    /// sign-in prompt offers. Never a password.
+    pub(crate) fn auth_users(&self, origin: &str, realm: &str) -> Vec<String> {
+        self.open
+            .as_ref()
+            .map(|u| u.data.http_auth_candidates(origin, realm).iter().map(|e| e.username.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The `index`-th login offered by `auth_users`, for the engine only.
+    pub(crate) fn auth_login(&mut self, origin: &str, realm: &str, index: usize) -> Option<(String, Zeroizing<String>)> {
+        let login = self.open.as_ref().and_then(|u| {
+            let e = *u.data.http_auth_candidates(origin, realm).get(index)?;
+            Some((e.username.clone(), Zeroizing::new(e.password.clone())))
+        });
+        if login.is_some() {
+            self.used = Instant::now();
+        }
+        login
+    }
+
     pub fn count(&self) -> usize {
         self.open.as_ref().map_or(0, |u| u.data.live().len())
     }

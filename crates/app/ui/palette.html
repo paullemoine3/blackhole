@@ -59,6 +59,11 @@
   .chip { width: 24px; height: 24px; border-radius: 7px; display: none; place-items: center; background: rgba(255,255,255,.2); }
   .row.sel .chip { display: grid; }
   .none { padding: 18px; text-align: center; opacity: .5; }
+  /* Grouped results (highlights, watched areas, Recall, archive, downloads): a quiet head per
+     group, never selected. */
+  .ghead { padding: 9px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .45; }
+  body.pop .ghead { animation: row-in var(--bh-duration-quick) var(--bh-ease-glide) both; animation-delay: calc(var(--i, 0) * 14ms + 80ms); }
+  #fkeep[hidden] { display: none; }
   .foot { display: flex; gap: 16px; padding: 9px 18px; border-top: 1px solid rgba(255,255,255,.07); font-size: 12px; opacity: .5; }
   kbd { font: inherit; padding: 0 5px; border-radius: 5px; background: rgba(255,255,255,.12); }
 
@@ -104,7 +109,8 @@
   body.comparing #compare { display: block; }
   body.comparing .search, body.comparing #list, body.comparing .foot { display: none; }
   body.comparing #panel { width: min(1000px, calc(100vw - 48px)); top: 10vh; }
-  #compare h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  #compare h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+  #compare h2 span { flex: 1; }
   #cpick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   #cpick label { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: rgba(255,255,255,.07); font-size: 12.5px; cursor: pointer; max-width: 260px; }
   #cpick label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -127,6 +133,8 @@
   #auth label { display: block; font-size: 12.5px; opacity: .7; margin: 12px 0 5px; }
   #auth input { width: 100%; font: inherit; font-size: 14px; color: inherit; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; outline: none; user-select: text; -webkit-user-select: text; }
   #auth input:focus { border-color: var(--accent); }
+  #asaved { margin: 12px 0 0; }
+  #asaved:empty { display: none; }
   /* Emoji picker */
   #emoji { display: none; padding: 18px 20px 16px; }
   body.picking #emoji { display: block; }
@@ -150,14 +158,14 @@
       <input id="q" data-i18n-placeholder="palette.placeholder" spellcheck="false" autocomplete="off">
     </div>
     <div id="list"></div>
-    <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="palette.foot_navigate">navigate</span></span><span><kbd>↵</kbd> <span data-i18n="palette.foot_open">open</span></span><span><kbd>esc</kbd> <span data-i18n="palette.foot_close">close</span></span></div>
+    <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="palette.foot_navigate">navigate</span></span><span><kbd>↵</kbd> <span data-i18n="palette.foot_open">open</span></span><span id="fkeep" hidden><kbd id="fkeepk"></kbd> <span data-i18n="palette.foot_keep">to the Easel</span></span><span><kbd>esc</kbd> <span data-i18n="palette.foot_close">close</span></span></div>
     <div id="emoji">
       <h2><span data-i18n="palette.icon">Icon</span> · <span id="ename"></span></h2>
       <div id="grid"></div>
       <div class="actions" style="margin-top:0"><input id="eq" spellcheck="false" autocomplete="off"><button class="btn" id="eclear" data-i18n="easel.remove">Remove</button><button class="btn primary" id="eok" data-i18n="palette.apply">Apply</button></div>
     </div>
     <div id="compare">
-      <h2 data-i18n="palette.compare_title">Compare tabs</h2>
+      <h2><span data-i18n="palette.compare_title">Compare tabs</span><button class="btn" id="ckeep" type="button"><i data-icon="easel" data-size="xs"></i> <span data-i18n="palette.compare_keep">Add to the Easel</span></button></h2>
       <div id="cpick"></div>
       <div id="cwrap"><table id="ctable"></table></div>
     </div>
@@ -165,6 +173,7 @@
       <h2><span data-i18n="error.login">Sign in</span> · <span id="ahost"></span></h2>
       <p id="arealm"></p>
       <p id="awarn" class="warn"></p>
+      <div id="asaved" class="chips"></div>
       <label for="auser" data-i18n="palette.user_name">User name</label>
       <input id="auser" spellcheck="false" autocomplete="off" autocapitalize="off">
       <label for="apass" data-i18n="palette.password">Password</label>
@@ -183,6 +192,8 @@
 <script>
 // The list navigation below uses Ctrl+N, so it must not open a window from here.
 window.keepCtrlN = true;
+// Ctrl/Cmd+Enter keeps the selected result in the Easel (not the app's shortcut).
+window.keepModEnter = true;
 const $ = (id) => document.getElementById(id);
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const PRESETS = {
@@ -191,10 +202,13 @@ const PRESETS = {
   'palette.preset_narrow': 'body { max-width: 860px; margin: 0 auto !important; }',
   'palette.preset_sticky': '[style*="position: fixed"], [style*="position:fixed"] { display: none !important; }',
 };
-let S = { mode: 'new', tabs: [], favorites: [], bookmarks: [], recent: [], actions: [] };
+let S = { mode: 'new', tabs: [], favorites: [], bookmarks: [], recent: [], actions: [], found: null };
+// What Ctrl/Cmd+Enter does on the selected row: keep it in the Easel, when it can be kept.
+const keepKey = (e) => (bhMac ? e.metaKey : e.ctrlKey);
 let items = [], sel = 0, pristine = true, target = null;
 // Recall: the last query sent, its answer, and the timer that waits for the typing to pause.
 let recallSeq = 0, recallHits = [], recallNow = 0, recallTimer = 0, recallAsked = '';
+const RECALL_FROM = 3, PER_GROUP = 3;
 const EMOJIS = ['🏠','💼','🎮','📚','🎓','🛒','💰','🎵','🎬','📷','✈️','🍳','🧪','💻','🛠️','🎨','📰','🔒','❤️','⭐','🚀','🌍','🔥','🌱','☕','🧠','📁','📌','🗂️','🧩','🎯','💡','🧳','🏋️','🐱','🐶','🌙','☀️','🍀','🎁'];
 
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
@@ -220,11 +234,16 @@ function buildRecall() {
     }];
   }
   if (!$('q').value.trim()) return [];
+  return recallHits.map((h) => recallRow(h, true));
+}
+// A page found by Recall: opens it; Ctrl/Cmd+Enter keeps its excerpt in the Easel.
+function recallRow(h, wide) {
   const when = (at) => { const d = Math.floor((recallNow - at) / 86400); return d <= 0 ? bhT('time.today') : d === 1 ? bhT('time.yesterday') : new Date(at * 1000).toLocaleDateString(bhI18n.lang); };
-  return recallHits.map((h) => ({
+  return {
     ...site(h.url, h.title || host(h.url), when(h.at), () => send({ cmd: 'open', input: h.url })),
-    sub: host(h.url) + ' · ' + h.snippet, wide: true,
-  }));
+    sub: host(h.url) + ' · ' + h.snippet, wide,
+    keep: () => send({ cmd: 'found_to_easel', url: h.url, title: h.title || '', text: h.snippet || '' }),
+  };
 }
 function askRecall() {
   clearTimeout(recallTimer);
@@ -232,7 +251,9 @@ function askRecall() {
     const query = $('q').value.trim();
     if (!(S.recall || {}).on || query === recallAsked) return;
     recallAsked = query;
-    if (!query) { recallHits = []; draw(); return; }
+    // Outside its own mode, Recall is one group among the results, from three letters on.
+    if (!query || (S.mode !== 'recall' && query.length < RECALL_FROM)) { recallHits = []; draw(); return; }
+    if (S.mode !== 'recall') recallHits = [];
     send({ cmd: 'recall_search', query, seq: ++recallSeq });
   }, 160);
 }
@@ -269,7 +290,34 @@ function build() {
       confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }),
     });
   }
-  return out.slice(0, q ? 9 : 10);
+  const base = out.slice(0, q ? 9 : 10);
+  return q ? [...base, ...groups(q, match)] : base;
+}
+// One search for everything: what the Library keeps (highlights, watched areas, archive,
+// downloads) and what Recall finds, a few rows per group under its own head. Their text comes
+// from pages: it only ever goes in through textContent.
+function groups(q, match) {
+  const F = S.found || {}, out = [];
+  const leave = (cmd) => () => close(() => send(cmd));
+  const group = (head, rows) => { if (rows.length) out.push({ head: bhT(head) }, ...rows.slice(0, PER_GROUP)); };
+  group('palette.group_highlights', (F.highlights || []).filter(h => match(h.quote, h.note, h.title)).map(h => ({
+    glyph: 'marker', title: h.quote, sub: [host(h.url), h.note].filter(Boolean).join(' · '), hint: bhT('palette.hint_highlight'),
+    run: leave({ cmd: 'highlight_open', id: h.id }), keep: () => send({ cmd: 'highlight_to_easel', id: h.id }),
+  })));
+  group('palette.group_watches', (F.watches || []).filter(w => match(w.title, w.url, w.value)).map(w => ({
+    glyph: 'eye', title: w.title || host(w.url), sub: [w.previous ? w.previous + ' → ' + w.value : w.value, host(w.url)].filter(Boolean).join(' · '),
+    hint: bhT(w.unread ? 'library.changed' : 'palette.hint_watch'),
+    run: leave({ cmd: 'open', input: w.url }), keep: () => send({ cmd: 'watch_to_easel', id: w.id }),
+  })));
+  if ((S.recall || {}).on && q.length >= RECALL_FROM && q === recallAsked) group('palette.group_recall', recallHits.map(h => recallRow(h, false)));
+  group('palette.group_archive', (F.archive || []).filter(a => match(a.title, a.url)).map(a => ({
+    ...site(a.url, a.title || host(a.url), bhT('palette.hint_reopen'), leave({ cmd: 'reopen_archived', index: a.index })),
+    keep: () => send({ cmd: 'found_to_easel', url: a.url, title: a.title || '', text: '' }),
+  })));
+  group('palette.group_downloads', (F.downloads || []).filter(d => match(d.name, d.url)).map(d => ({
+    glyph: 'download', title: d.name, sub: host(d.url), hint: bhT('menu.open'), run: leave({ cmd: 'library_open_file', id: d.id }),
+  })));
+  return out;
 }
 // Nothing is selected until the user types or moves: Enter then acts on what the field holds,
 // not on the first row of the list. The untouched address of the page shown loads it again.
@@ -287,7 +335,13 @@ let armed = null;
 function draw() {
   items = build();
   sel = Math.min(sel, items.length - 1);
+  if (items[sel] && items[sel].head) sel = Math.min(sel + 1, items.length - 1);
   const rows = items.map((it, i) => {
+    if (it.head) {
+      const h = document.createElement('div');
+      h.className = 'ghead'; h.textContent = it.head; h.style.setProperty('--i', i);
+      return h;
+    }
     const r = document.createElement('div');
     r.className = 'row' + (i === sel ? ' sel' : '') + (it.wide ? ' wide' : '');
     r.style.setProperty('--i', i);
@@ -314,17 +368,37 @@ function draw() {
     rows.push(n);
   }
   $('list').replaceChildren(...rows);
+  footKeep();
+}
+
+// The foot says what Ctrl/Cmd+Enter does when the selected row can go to the Easel.
+function footKeep() {
+  const it = items[sel];
+  $('fkeep').hidden = !(it && it.keep);
+  $('fkeepk').textContent = bhKeys('mod+enter');
 }
 
 function mark() {
   [...$('list').children].forEach((r, i) => r.classList.toggle('sel', i === sel));
   const cur = $('list').children[sel];
   if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  footKeep();
+}
+
+// Up and down skip the heads of the groups.
+function step(d) {
+  const n = items.length;
+  if (!n) return;
+  let i = sel < 0 ? (d > 0 ? -1 : n) : sel;
+  for (let k = 0; k < n; k++) {
+    i = (i + d + n) % n;
+    if (!items[i].head) { sel = i; mark(); return; }
+  }
 }
 
 function run(i) {
   const it = items[i];
-  if (!it) return;
+  if (!it || it.head) return;
   if (it.confirm && armed !== it.id) { armed = it.id; draw(); return; }
   armed = null;
   it.run();
@@ -439,6 +513,7 @@ function showCompare(c) {
   }));
   drawCompare();
 }
+$('ckeep').onclick = () => { send({ cmd: 'compare_to_easel', ids: [...cmpPicked] }); close(); };
 function drawCompare() {
   const cols = cmpItems.filter(i => cmpPicked.has(i.id));
   const cell = (tag, text, cls) => { const e = document.createElement(tag); e.textContent = text || '—'; if (cls) e.className = cls; return e; };
@@ -498,6 +573,14 @@ function showAuth(a) {
   if (a.retry) warn.push(bhT('palette.auth_retry'));
   if (!a.secure) warn.push(bhT('palette.auth_insecure'));
   $('awarn').textContent = warn.join(' ');
+  // Logins saved for this server: the user name only, the wallet answers for the password.
+  $('asaved').replaceChildren(...(a.saved || []).map((user, index) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn';
+    b.textContent = bhT('palette.auth_use', { user: user || bhT('palette.auth_no_user') });
+    b.onclick = () => { if (authId != null) send({ cmd: 'auth_saved', id: authId, index }); clearAuth(); };
+    return b;
+  }));
   $('apass').value = '';
   if (fresh && !a.retry) $('auser').value = '';
   ($('auser').value ? $('apass') : $('auser')).focus();
@@ -508,10 +591,10 @@ window.bh = {
   save: saveBoost,
   // The store's answer to the query numbered `seq` (an older one is dropped).
   recall(a) {
-    if (S.mode !== 'recall' || a.seq !== recallSeq) return;
+    if (a.seq !== recallSeq) return;
     recallHits = a.hits || [];
     recallNow = a.now || 0;
-    sel = recallHits.length ? 0 : -1;
+    if (S.mode === 'recall') sel = recallHits.length ? 0 : -1;
     draw();
   },
   open(s) {
@@ -567,7 +650,8 @@ window.bh = {
     pristine = s.mode === 'url';
     // The next address opens in a black hole tab: the field says so.
     $('q').dataset.i18nPlaceholder = s.mode === 'recall' ? 'palette.placeholder_recall' : s.burner ? 'palette.placeholder_burner' : 'palette.placeholder';
-    if (s.mode === 'recall') { pristine = false; recallHits = []; recallAsked = ''; recallSeq++; }
+    recallHits = []; recallAsked = ''; recallSeq++;
+    if (s.mode === 'recall') pristine = false;
     $('q').placeholder = bhT($('q').dataset.i18nPlaceholder);
     $('q').value = s.mode === 'url' ? s.url : '';
     sel = -1;
@@ -581,7 +665,7 @@ window.bh = {
 $('q').addEventListener('input', () => {
   pristine = false; armed = null;
   if (S.mode === 'recall') { sel = recallHits.length ? 0 : -1; askRecall(); }
-  else sel = $('q').value.trim() ? 0 : -1;
+  else { sel = $('q').value.trim() ? 0 : -1; askRecall(); }
   draw();
 });
 document.addEventListener('keydown', (e) => {
@@ -597,8 +681,9 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveBoost(); }
     return;
   }
-  if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); sel = (sel + 1) % Math.max(1, items.length); mark(); }
-  else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); sel = sel <= 0 ? items.length - 1 : sel - 1; mark(); }
+  if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); step(1); }
+  else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); step(-1); }
+  else if (e.key === 'Enter' && keepKey(e) && items[sel] && items[sel].keep) { e.preventDefault(); const it = items[sel]; close(() => it.keep()); }
   else if (e.key === 'Enter') { e.preventDefault(); submit(); }
 });
 $('scrim').addEventListener('mousedown', (e) => { if (e.target === $('scrim')) close(); });

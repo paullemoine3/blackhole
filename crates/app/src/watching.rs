@@ -4,6 +4,7 @@
 
 use crate::i18n::{t, tf};
 use crate::{ipc::UiCommand, views, Running, TabId};
+use blackhole_domain::signals::Kind;
 use blackhole_domain::watch::{Reading, Watches};
 use blackhole_infrastructure::store::WatchStore;
 use serde_json::{json, Value};
@@ -70,8 +71,12 @@ impl Running {
     /// "Watch this area for changes" (the area picker's menu): the area picked becomes a
     /// watch, read at once from the page shown to set its reference.
     pub(crate) fn watch_area(&mut self, tab: TabId, selector: &str) {
-        let Some(view) = self.tabs.get(&tab) else { return };
-        let Some(url) = view.url().ok().filter(|u| u.starts_with("https://") || u.starts_with("http://")) else {
+        let Some(url) = self
+            .tabs
+            .get(&tab)
+            .and_then(|v| v.url().ok())
+            .filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+        else {
             self.toast(&t("toast.cannot_watch"));
             return;
         };
@@ -84,17 +89,60 @@ impl Running {
             .find(|t| t.id == tab)
             .map(|t| t.title.clone())
             .unwrap_or_default();
-        let Some(id) = self.watching.list.add(&url, selector, &title, now()) else {
+        self.watch_url(&url, selector, &title, Some(tab));
+    }
+
+    /// Starts watching `selector` of `url` (unless it is watched already). With `tab`, the
+    /// area is read at once from that page; otherwise a hidden view reads it soon.
+    pub(crate) fn watch_url(&mut self, url: &str, selector: &str, title: &str, tab: Option<TabId>) -> bool {
+        if self.watching.list.find(url, selector).is_some() {
+            return true;
+        }
+        let Some(id) = self.watching.list.add(url, selector, title, now()) else {
             self.toast(&t("toast.too_many_watches"));
-            return;
+            return false;
         };
-        read(view, id, selector, &self.watching.tx);
+        if let Some(view) = tab.and_then(|tab| self.tabs.get(&tab)) {
+            read(view, id, selector, &self.watching.tx);
+        }
         self.watching.save();
         self.toast_action(
             &t("toast.watching"),
             &t("toast.see_watches"),
             json!({"cmd": "action", "id": "open_watches"}),
         );
+        self.ui_library();
+        true
+    }
+
+    /// Whether `selector` of `url` is watched (a live card of the Easel shows it).
+    pub(crate) fn is_watched(&self, url: &str, selector: &str) -> bool {
+        self.watching.list.find(url, selector).is_some()
+    }
+
+    /// Stops watching `selector` of `url`.
+    pub(crate) fn unwatch(&mut self, url: &str, selector: &str) {
+        if let Some(id) = self.watching.list.find(url, selector).map(|w| w.id) {
+            self.handle_watch(UiCommand::WatchRemove { id });
+        }
+    }
+
+    /// A watch, for the Easel: its address, title, and its value before and after the last
+    /// change (`previous` is empty before any change).
+    pub(crate) fn watch_of(&self, id: u64) -> Option<(String, String, String, String)> {
+        let w = self.watching.list.get(id)?;
+        Some((w.url.clone(), w.title.clone(), w.previous.clone(), w.value.clone()))
+    }
+
+    /// The areas that changed since the user last looked (the start page lists them).
+    pub(crate) fn changed_watches_json(&self, limit: usize) -> Value {
+        json!(self
+            .watching
+            .list
+            .changed(limit)
+            .iter()
+            .map(|w| json!({"id": w.id, "url": w.url, "title": w.title, "before": w.previous, "after": w.value, "at": w.changed_at}))
+            .collect::<Vec<_>>())
     }
 
     /// Called every turn of the event loop: readings that came back, the hidden page being
@@ -111,6 +159,9 @@ impl Running {
                 let message = tf("toast.watch_changed", &[("title", &title), ("before", before), ("after", after)]);
                 let url = w.url.clone();
                 self.toast_action(&message, &t("toast.open"), json!({"cmd": "open", "input": url}));
+                // Told again by a card of the sidebar, for when nobody saw the toast.
+                let detail = format!("{before} → {after}");
+                self.signal(Kind::AreaChanged, &id.to_string(), &title, &detail);
             }
             changed = true;
         }
@@ -155,6 +206,10 @@ impl Running {
         if changed {
             self.watching.save();
             self.ui_library();
+            self.ui_easel();
+            if self.home_shown() {
+                self.ui_home();
+            }
         }
     }
 
@@ -181,10 +236,14 @@ impl Running {
                 self.watching.list.remove(id);
             }
             UiCommand::WatchCheck { id } => self.watching.list.check_soon(id),
-            UiCommand::WatchesSeen => self.watching.list.mark_read(),
+            UiCommand::WatchesSeen => {
+                self.watching.list.mark_read();
+                self.signals_forget_kind(Kind::AreaChanged);
+            }
             _ => return,
         }
         self.watching.save();
         self.ui_library();
+        self.ui_easel();
     }
 }

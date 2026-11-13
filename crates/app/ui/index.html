@@ -112,6 +112,26 @@
   #tidy button.go, #meet button { background: var(--bh-accent); color: var(--bh-text-on-accent); }
   #tidy button.go:hover, #meet button:hover { background: color-mix(in srgb, var(--bh-accent) 82%, white); }
   #meet:empty { display: none; }
+  /* Signals that last (a watched area that changed, a text received, notes to take): a card
+     stays until it is answered or dismissed, so nothing is lost while away. Updated in place. */
+  #signals { flex: none; display: flex; flex-direction: column; gap: 6px; }
+  #signals:empty { display: none; }
+  .sg { position: relative; display: flex; flex-direction: column; gap: var(--bh-space-6); padding: var(--bh-space-8) var(--bh-space-10);
+    border-radius: var(--bh-radius-card); font: var(--bh-text-body-small); background: var(--bh-fill-card); box-shadow: inset 0 0 0 1px var(--bh-border-card);
+    animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards; }
+  .sg.out { pointer-events: none; animation: dl-out var(--bh-duration-spring) var(--bh-ease-standard) forwards; }
+  .sg .top { display: flex; align-items: center; gap: var(--bh-space-8); min-width: 0; padding-right: 20px; }
+  .sg .top svg { flex: none; opacity: var(--bh-opacity-soft); }
+  .sg .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sg .dt { opacity: var(--bh-opacity-secondary); font: var(--bh-text-caption); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .sg .bt { display: flex; justify-content: flex-end; gap: var(--bh-space-6); }
+  .sg .bt button { border: 0; border-radius: var(--bh-radius-control); padding: 0 var(--bh-space-10); height: 24px; font: var(--bh-text-caption); font-weight: 600; cursor: pointer; color: inherit;
+    background: var(--bh-fill-control); transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
+  .sg .bt button:hover { background: var(--bh-fill-control-hover); }
+  .sg .bt button:first-child { background: var(--bh-accent); color: var(--bh-text-on-accent); }
+  .sg .bt button:active { transform: scale(.95); }
+  .sg .cl { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: grid; place-items: center; border: 0; padding: 0; border-radius: var(--bh-radius-control); background: none; color: inherit; opacity: .6; cursor: pointer; }
+  .sg .cl:hover { opacity: 1; background: var(--bh-fill-control-hover); }
   #meet .mt { display: flex; align-items: center; gap: var(--bh-space-9); padding: var(--bh-space-8) var(--bh-space-8) var(--bh-space-8) var(--bh-space-10);
     background: color-mix(in srgb, var(--bh-accent) 22%, var(--bh-fill-card)); box-shadow: inset 0 0 0 1px var(--bh-accent-border); }
   #meet .mt.on { box-shadow: var(--bh-shadow-meet-live); animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards, meet-live var(--bh-duration-breathe) ease-in-out infinite; }
@@ -320,6 +340,7 @@
   <div id="tabs"></div>
 </div>
   <div id="spaces"></div>
+  <div id="signals"></div>
   <div id="meet"></div>
   <div id="media"></div>
   <div id="dls"></div>
@@ -453,7 +474,7 @@ function tabMenu(t, x, y) {
   items.push({ icon: 'copy', label: bhT('menu.duplicate'), run: { cmd: 'duplicate_tab', id: t.id } });
   items.push({ icon: 'link', label: bhT('menu.copy_link'), copy: t.url });
   items.push({ icon: 'compare', label: bhT('menu.compare'), run: { cmd: 'action', id: 'compare' } });
-  if (/^https?:/.test(t.url)) items.push(...(state.devices || []).map(d => ({ icon: 'devices', label: bhT('palette.continue_on', { name: d.name }), run: { cmd: 'continue_on', id: t.id, device: d.id } })));
+  if (t.send) items.push(...(state.devices || []).map(d => ({ icon: 'devices', label: bhT('palette.continue_on', { name: d.name }), run: { cmd: 'continue_on', id: t.id, device: d.id } })));
   if (t.id === state.activeTab && !t.asleep) items.push({ icon: 'code', label: bhT('menu.inspect'), run: { cmd: 'action', id: 'key:devtools' } });
   const md = (state.media || []).find(m => m.id === t.id);
   if (md) items.push({ icon: md.muted ? 'sound' : 'mute', label: bhT(md.muted ? 'menu.unmute_tab' : 'menu.mute_tab'), run: { cmd: 'media_ctl', id: t.id, action: 'mute' } });
@@ -1054,6 +1075,7 @@ window.bh = {
     if (before) motion.play(before, prev, s);
     if (switched) motion.spaces(prev.activeSpace, s.activeSpace);
     renderUpdate(s.update, s.version);
+    renderSignals(s.signals);
     renderMeeting(s.meeting);
     renderTidy(s.tidy);
     renderMedia(s);
@@ -1160,6 +1182,44 @@ function renderTidy(t) {
   bt.append(later, go);
   card.append(gs, bt);
   $('tidy').replaceChildren(card);
+}
+// Signals that last: one card per signal, kept in place (only its text changes) and leaving
+// with the download cards' exit. Their text comes from pages and devices: textContent only.
+const sgNodes = new Map();
+const SG_ICON = { area: 'eye', text: 'devices', notes: 'calendar' };
+function renderSignals(list) {
+  const box = $('signals');
+  const seen = new Set();
+  (list || []).forEach((g, i) => {
+    seen.add(g.id);
+    let c = sgNodes.get(g.id);
+    if (!c) {
+      c = el('div', 'sg');
+      const top = el('div', 'top');
+      top.append(bhIcon(SG_ICON[g.kind] || 'info', 'sm'), el('span', 'nm'));
+      const x = el('button', 'cl');
+      x.append(bhIcon('close', 'xs'));
+      x.onclick = () => dlLeave(c, () => send({ cmd: 'signal_dismiss', id: g.id }));
+      const bt = el('div', 'bt');
+      bt.append(...g.acts.map(a => {
+        const b = el('button', null, a.label);
+        b.dataset.act = a.act;
+        b.onclick = () => dlLeave(c, () => send({ cmd: 'signal_act', id: g.id, act: a.act }));
+        return b;
+      }));
+      c.append(top, el('div', 'dt'), bt, x);
+      sgNodes.set(g.id, c);
+    }
+    const [nm] = c.firstChild.getElementsByClassName('nm');
+    if (nm.textContent !== g.title) nm.textContent = g.title;
+    const dt = c.children[1];
+    if (dt.textContent !== g.detail) { dt.textContent = g.detail; dt.hidden = !g.detail; }
+    const x = c.lastChild;
+    if (x.title !== bhT('sidebar.dl_dismiss')) { x.title = bhT('sidebar.dl_dismiss'); x.setAttribute('aria-label', x.title); }
+    [...c.children[2].children].forEach((b, k) => { if (g.acts[k] && b.textContent !== g.acts[k].label) b.textContent = g.acts[k].label; });
+    if (box.children[i] !== c) box.insertBefore(c, box.children[i] || null);
+  });
+  for (const [id, c] of sgNodes) if (!seen.has(id)) { sgNodes.delete(id); c.classList.contains('out') ? c.remove() : dlLeave(c, () => c.remove()); }
 }
 // The next meeting of the synced calendars (Settings > Calendar), with a Join button. Only
 // rebuilt when it changes (its "In N min" moves once a minute).

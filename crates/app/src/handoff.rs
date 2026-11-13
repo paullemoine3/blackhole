@@ -11,6 +11,8 @@
 use crate::i18n::{message, t, tf, tn};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::handoff::{can_continue, has_position, resume_url};
+use blackhole_domain::signals::Kind;
+use blackhole_domain::verbs::{self, Target, Verb};
 use blackhole_domain::wormhole;
 use blackhole_infrastructure::handoff::{self, Cargo, DeviceInfo, Event, Handle, Request};
 use blackhole_infrastructure::sync::{decide, Decision, Received, SyncEngine};
@@ -140,12 +142,11 @@ fn device_name() -> String {
 impl Running {
     /// Command bar actions: "Continue on …" for the tab on screen.
     pub(crate) fn continue_actions(&self) -> Vec<Value> {
-        let web = self
-            .svc
-            .workspace()
-            .active_tab()
-            .is_some_and(|t| can_continue(&t.url));
-        if !web || self.home_shown() {
+        let tab = self.svc.workspace().active_tab().filter(|t| can_continue(&t.url));
+        let Some(tab) = tab.filter(|_| !self.home_shown()) else {
+            return Vec::new();
+        };
+        if !verbs::allows(Target::Tab, self.verb_context(tab.id), Verb::Send) {
             return Vec::new();
         }
         self.nearby
@@ -171,13 +172,38 @@ impl Running {
 
     /// Entries of the page menu for a selected text: send it to a paired device.
     pub(crate) fn beam_menu_items(&self, text: &str) -> Vec<Value> {
+        self.send_items("menu.beam_to", |d| json!({"cmd": "beam_text", "device": d, "text": text}))
+    }
+
+    /// Whether a device is paired (something can be sent).
+    pub(crate) fn paired(&self) -> bool {
+        !self.nearby.devices.is_empty()
+    }
+
+    /// "Send to …" menu entries, one per paired device (three at most): `label` is a catalog
+    /// key with `{name}`, `run` the command for a device id.
+    pub(crate) fn send_items(&self, label: &str, run: impl Fn(&str) -> Value) -> Vec<Value> {
         self.nearby
             .devices
             .iter()
             .take(3)
-            .map(|d| json!({"icon": "devices", "label": tf("menu.beam_to", &[("name", &d.name)]),
-                "run": {"cmd": "beam_text", "device": d.id, "text": text}}))
+            .map(|d| json!({"icon": "devices", "label": tf(label, &[("name", &d.name)]), "run": run(&d.id)}))
             .collect()
+    }
+
+    /// The paired devices, for the pages that offer to send something (the Library).
+    pub(crate) fn devices_brief(&self) -> Value {
+        json!(self
+            .nearby
+            .devices
+            .iter()
+            .map(|d| json!({"id": d.id, "name": d.name}))
+            .collect::<Vec<_>>())
+    }
+
+    /// A text received and still kept (for the Easel).
+    pub(crate) fn received_text(&self, id: u64) -> Option<String> {
+        self.nearby.texts.iter().find(|(i, _)| *i == id).map(|(_, t)| t.clone())
     }
 
     fn beam(&mut self, device: String, payload: Cargo) {
@@ -204,6 +230,11 @@ impl Running {
             self.toast(&t("msg.only_web_continue"));
             return;
         };
+        // A black hole tab sends nothing anywhere (`domain::verbs`), whatever menu led here.
+        if self.svc.workspace().is_burner(TabId(tab)) {
+            self.toast(&t("toast.burner_keeps_nothing"));
+            return;
+        }
         match self.tabs.get(&TabId(tab)).filter(|_| has_position(&url)) {
             Some(view) => {
                 let tx = self.nearby.tx.clone();
@@ -277,8 +308,11 @@ impl Running {
                     ..
                 } => {
                     if let Ok(url) = Url::parse(&url) {
-                        self.open(resume_url(&url, position).as_str());
+                        let url = resume_url(&url, position);
+                        self.open(url.as_str());
                         self.toast(&tf("toast.continued_from", &[("name", &from)]));
+                        // The start page says where the last tab came from.
+                        self.received = Some((from, url.to_string(), crate::now_secs() as i64));
                     }
                 }
                 Event::Delivered(name) => self.toast(&tf("toast.opened_on", &[("name", &name)])),
@@ -297,20 +331,7 @@ impl Running {
                 }
                 // A text is shown, and copied only when asked: nothing reaches the clipboard
                 // by itself.
-                Event::BeamText { from, text } => {
-                    self.nearby.next_text += 1;
-                    let id = self.nearby.next_text;
-                    let short = blackhole_domain::selection::excerpt(&text, 60);
-                    self.nearby.texts.push((id, text));
-                    if self.nearby.texts.len() > KEPT_TEXTS {
-                        self.nearby.texts.remove(0);
-                    }
-                    self.toast_action(
-                        &tf("toast.beam_text", &[("name", &from), ("text", &short)]),
-                        &t("menu.copy"),
-                        json!({"cmd": "beam_copy", "id": id}),
-                    );
-                }
+                Event::BeamText { from, text } => self.beam_text_received(&from, text),
                 Event::BeamFile { from, name, path } => {
                     let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
                     self.downloads.push(blackhole_infrastructure::store::DownloadRec {
@@ -348,6 +369,26 @@ impl Running {
             }
         }
         self.sync_tick();
+    }
+
+    /// A text came through the Wormhole: shown, and copied or kept in the Easel only when
+    /// asked. A card of the sidebar keeps it until it is copied or dismissed.
+    pub(crate) fn beam_text_received(&mut self, from: &str, text: String) {
+        self.nearby.next_text += 1;
+        let id = self.nearby.next_text;
+        let short = blackhole_domain::selection::excerpt(&text, 60);
+        self.nearby.texts.push((id, text));
+        if self.nearby.texts.len() > KEPT_TEXTS {
+            let (gone, _) = self.nearby.texts.remove(0);
+            self.signals.forget(Kind::TextReceived, &gone.to_string());
+        }
+        let actions = json!([
+            {"label": t("menu.copy"), "run": {"cmd": "beam_copy", "id": id}},
+            {"label": t("toast.to_easel"), "run": {"cmd": "beam_to_easel", "id": id}},
+        ]);
+        let message = tf("toast.beam_text", &[("name", from), ("text", &short)]);
+        self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+        self.signal(Kind::TextReceived, &id.to_string(), from, &short);
     }
 
     /// Tab synchronization, every turn of the event loop: the workspace is compared with the
@@ -493,9 +534,40 @@ impl Running {
                 self.nearby.request(Request::BeamAnswer { device, beam, accept });
             }
             UiCommand::BeamCopy { id } => {
-                let text = self.nearby.texts.iter().find(|(i, _)| *i == id).map(|(_, t)| t.clone());
+                let text = self.received_text(id);
                 let copied = text.is_some_and(|t| arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok());
                 self.toast(&t(if copied { "palette.copied" } else { "palette.copy_failed" }));
+                if copied {
+                    self.signals_forget(Kind::TextReceived, &id.to_string());
+                }
+            }
+            UiCommand::SendLink { device, url } => {
+                let url = Url::parse(&url).ok().filter(can_continue);
+                match url {
+                    Some(url) => {
+                        let name = self.nearby.devices.iter().find(|d| d.id == device).map(|d| d.name.clone());
+                        match name {
+                            Some(name) => {
+                                self.toast(&tf("toast.beam_sending", &[("name", &name)]));
+                                self.nearby.request(Request::Send { device, url: url.to_string(), title: String::new(), position: None });
+                            }
+                            None => self.toast(&t("msg.device_unpaired")),
+                        }
+                    }
+                    None => self.toast(&t("msg.only_web_continue")),
+                }
+            }
+            UiCommand::SendDownload { id, device } => {
+                let path = self
+                    .downloads
+                    .iter()
+                    .find(|d| d.id == id && d.done && d.ok)
+                    .map(|d| std::path::PathBuf::from(&d.path))
+                    .filter(|p| p.is_file());
+                match path {
+                    Some(path) => self.beam(device, Cargo::File(path)),
+                    None => self.toast(&t("library.file_gone")),
+                }
             }
             UiCommand::DeviceSync { id, mode } => {
                 self.nearby.later.remove(&id);

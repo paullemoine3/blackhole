@@ -62,6 +62,11 @@
   .empty { opacity: .5; font-size: 13px; }
   .news { background: linear-gradient(135deg, rgba(124,92,255,.22), rgba(255,255,255,.04)); border-color: rgba(124,92,255,.45); }
   .news[hidden] { display: none; }
+  /* Now: the next meeting, the areas that changed, the tab sent from another device. */
+  .now[hidden] { display: none; }
+  #nowlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .item.live { border-color: rgba(124,92,255,.45); background: rgba(124,92,255,.1); }
+  .tile.glyph { background: rgba(124,92,255,.28) !important; color: #e6defe; }
   .news h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
   .news ul { margin: 0 0 12px 18px; padding: 0; }
   .news li { margin: 3px 0; }
@@ -129,6 +134,7 @@
 <main>
   <div class="brand"><div class="logo"><i class="glow"></i><i class="disc"></i><i class="ring"></i><i class="ring fast"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
+  <section class="card now" id="now" hidden><h2 data-i18n="home.now">Now</h2><div id="nowlist"></div></section>
   <section class="card"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
   <section class="card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
 </main>
@@ -179,6 +185,33 @@ function ago(at) {
   if (s < 86400) return bhT('time.h_ago', { n: Math.floor(s / 3600) });
   return bhT('time.d_ago', { n: Math.floor(s / 86400) });
 }
+// Now: rows built like the recent pages. Titles and values come from pages: textContent only.
+function nowRow(t, title, sub, open, menuItems, live) {
+  const n = el('div', 'item' + (live ? ' live' : ''));
+  const m = el('div', 'meta');
+  m.append(el('div', 't', title), el('div', 's', sub));
+  n.append(t, m);
+  n.onclick = open;
+  if (menuItems) {
+    n.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, e.clientY, menuItems); };
+    n.append(more((x, y) => menu(x, y, menuItems)));
+  }
+  return n;
+}
+function glyphTile(name) { const t = el('div', 'tile glyph'); t.append(bhIcon(name, 'md')); return t; }
+function renderNow(now) {
+  const rows = [];
+  const m = now && now.meeting;
+  if (m && m.url) rows.push(nowRow(glyphTile('calendar'), m.title, m.when, () => send({ cmd: 'open_meet', url: m.url }), null, m.on));
+  for (const a of (now && now.areas) || []) {
+    const items = [{ icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: a.url } }, { icon: 'easel', label: bhT('library.to_easel'), run: { cmd: 'watch_to_easel', id: a.id } }];
+    rows.push(nowRow(tile(a.url), a.title || host(a.url), (a.before ? a.before + ' → ' : '') + a.after, () => send({ cmd: 'open', input: a.url }), items, true));
+  }
+  const r = now && now.received;
+  if (r) rows.push(nowRow(tile(r.url), bhT('home.from_device', { name: r.from }), host(r.url) + ' · ' + ago(r.at), () => send({ cmd: 'open', input: r.url }), null));
+  $('now').hidden = !rows.length;
+  $('nowlist').replaceChildren(...rows);
+}
 let focused = false;
 let riseAt = 0;
 function splash() {
@@ -228,6 +261,7 @@ window.bh = {
       box.append(el('h3', null, bhT('home.whats_new', { version: r.version })), list);
       return box;
     }), ...(notes.length ? [Object.assign(el('button', null, bhT('home.got_it')), { onclick: () => send({ cmd: 'dismiss_release_notes' }) })] : []));
+    renderNow(s.now);
     $('favs').replaceChildren(...s.favorites.map(f => {
       const n = el('div', 'fav'); n.title = f.url;
       n.append(tile(f.url), el('div', 'name', f.name));

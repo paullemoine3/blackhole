@@ -124,6 +124,20 @@ impl Watches {
         }
     }
 
+    /// The watch of `selector` on `url`, if that area is watched already (a live card of the
+    /// Easel and the area picker watch the same thing).
+    pub fn find(&self, url: &str, selector: &str) -> Option<&Watch> {
+        self.list.iter().find(|w| w.url == url && w.selector == selector)
+    }
+
+    /// The areas that changed since the user last looked, the latest change first.
+    pub fn changed(&self, limit: usize) -> Vec<&Watch> {
+        let mut out: Vec<&Watch> = self.list.iter().filter(|w| w.unread).collect();
+        out.sort_by_key(|w| std::cmp::Reverse(w.changed_at));
+        out.truncate(limit);
+        out
+    }
+
     pub fn mark_read(&mut self) {
         for w in &mut self.list {
             w.unread = false;
@@ -171,5 +185,25 @@ mod tests {
         assert!(w.due(200, 1800).is_some_and(|x| x.id != 2), "the ones never read come first");
         w.check_soon(2);
         assert_eq!(w.get(2).unwrap().checked_at, 0, "due at the next opportunity");
+    }
+
+    #[test]
+    fn a_watch_is_found_by_its_area_and_changes_come_latest_first() {
+        let mut w = Watches::default();
+        let a = w.add("https://a.test/", "#price", "A", 0).unwrap();
+        let b = w.add("https://b.test/", "#stock", "B", 0).unwrap();
+        assert_eq!(w.find("https://a.test/", "#price").map(|x| x.id), Some(a));
+        assert!(w.find("https://a.test/", "#stock").is_none());
+        for id in [a, b] {
+            w.record(id, Some("1"), 10);
+        }
+        assert!(w.changed(5).is_empty());
+        w.record(a, Some("2"), 20);
+        w.record(b, Some("2"), 30);
+        let ids: Vec<u64> = w.changed(5).iter().map(|x| x.id).collect();
+        assert_eq!(ids, [b, a]);
+        assert_eq!(w.changed(1).len(), 1);
+        w.mark_read();
+        assert!(w.changed(5).is_empty());
     }
 }

@@ -36,7 +36,9 @@
     // Mod+Shift+L picks an area to capture live, Mod+Shift+G finds the previous match,
     // Mod+Shift+T reopens the tab closed last, Mod+Shift+F searches the pages read (Recall).
     if (e.shiftKey) return ['n', 'e', 's', 'l', 'g', 't', 'f'].includes(key) ? 'shift+' + key : null;
-    if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN)) return null;
+    // A page may keep Mod+N or Mod+Enter for itself (the command bar: list navigation, keep in
+    // the Easel).
+    if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN) || (key === 'enter' && window.keepModEnter)) return null;
     return key;
   };
 

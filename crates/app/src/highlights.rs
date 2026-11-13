@@ -8,6 +8,7 @@
 use crate::i18n::{t, tf};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::highlights::{page_key, Highlights};
+use blackhole_domain::verbs::{self, Target, Verb};
 use blackhole_infrastructure::store::HighlightStore;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -243,11 +244,36 @@ impl Running {
             return Vec::new();
         }
         let note = if mark.note.is_empty() { "menu.highlight_add_note" } else { "menu.highlight_edit_note" };
-        vec![
+        let mut items = vec![
             json!({"icon": "edit", "label": t(note), "run": {"cmd": "highlight_edit", "id": id}}),
             json!({"icon": "copy", "label": t("menu.copy"), "copy": mark.quote}),
-            json!({"icon": "trash", "label": t("menu.highlight_remove"), "run": {"cmd": "highlight_remove", "id": id}}),
-        ]
+        ];
+        // The same verbs as everywhere else (`domain::verbs`): keep it, send it.
+        let ctx = self.verb_context(tab);
+        for verb in verbs::verbs(Target::Highlight, ctx) {
+            match verb {
+                Verb::Keep => items.push(json!({"icon": "easel", "label": t("library.to_easel"), "run": {"cmd": "highlight_to_easel", "id": id}})),
+                Verb::Send => {
+                    let quote = mark.quote.clone();
+                    items.extend(self.send_items("menu.beam_to", |d| json!({"cmd": "beam_text", "device": d, "text": quote})));
+                }
+                _ => {}
+            }
+        }
+        items.push(json!({"icon": "trash", "label": t("menu.highlight_remove"), "run": {"cmd": "highlight_remove", "id": id}}));
+        items
+    }
+
+    /// Every highlight, for the command bar's search: page, quote and note.
+    pub(crate) fn marks_found_json(&self, limit: usize) -> Value {
+        json!(self
+            .marks
+            .list
+            .pages()
+            .iter()
+            .flat_map(|p| p.marks.iter().map(move |m| json!({"id": m.id, "url": p.url, "title": p.title, "quote": m.quote, "note": m.note})))
+            .take(limit)
+            .collect::<Vec<_>>())
     }
 
     /// The Library's "Highlights" section.

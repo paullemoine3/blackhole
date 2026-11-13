@@ -59,6 +59,44 @@ cargo test --workspace --locked
 - Ajouter une extension au catalogue : URL de la release officielle, télécharger puis calculer le SHA-256, ajouter une entrée avec test (`catalog.rs` vérifie longueurs de hash et https).
 - Limites WebView2 : pas de badge, pas d'onglet actif exposé aux extensions ; le popup est une vue `chrome-extension://<id>/<popup>` sur le même profil.
 
+## Ponts entre fonctions (0.8.8)
+
+Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/signals.rs`.
+
+- Registre unique « que peut-on faire de cet objet » : `domain::verbs` (`Target` : page, onglet,
+  lien, sélection, surlignage, téléchargement, résultat ; `Context` lu par le shell, jamais par la
+  page : `front`, `web`, `burner`, `error`, `paired`, `ready` ; `Verb` : ouvrir, garder dans l'Easel,
+  zone en direct, veille, surligner, envoyer). `Running::verb_context(tab)`, `front_page_allows`.
+  Menus de page/lien/sélection/surlignage, menu d'onglet (`tabs[].send`), palette et commandes
+  (`capture_to_easel`, `live_pick_start`, `continue_on`) demandent tous cette règle : tout nouveau
+  menu ou raccourci qui agit sur une page passe par elle (un onglet trou noir ne garde ni n'envoie
+  rien, raccourcis compris).
+- Recherche unique : la palette reçoit `found` (surlignages, zones surveillées, archive,
+  téléchargements, `found_json`) et interroge Recall dès 3 lettres hors de son mode (réponse
+  acceptée en modes `new`/`url`) ; groupes de 3 lignes sous un en-tête (`.ghead`, sauté par ↑/↓,
+  `step`). Ctrl/⌘+Entrée sur une ligne qui a `keep` l'envoie dans l'Easel (pied `#fkeep`).
+- L'Easel converge : `Easels::add_text` (note déjà remplie) ; commandes `link_to_easel`,
+  `found_to_easel` (Recall, archive), `watch_to_easel` (avant/après d'une zone), `compare_to_easel`
+  (bouton du comparateur), `beam_to_easel` (texte reçu). Carte en direct : bouton de veille
+  (`easel_watch`, `watched` dans l'état de l'Easel) qui crée ou retire la veille de la même zone
+  (`Watches::find`, `watch_url`).
+- Envoyer partout : `send_items` (trois appareils au plus), menu de page (« Send this page to »,
+  `continue_on`), lien (`send_link` : seule l'adresse voyage), surlignage (`beam_text`), Library >
+  Downloads (`send_download`, menu `origin: "library"`, fichier par le Wormhole).
+- Signaux qui durent : `domain::signals` (une carte par sujet, quatre au plus, expirées après 24 h,
+  2 h pour les notes de réunion, en mémoire seulement), cartes `#signals` de la barre latérale
+  (mises à jour en place, sortie `dlLeave`), `signal_act` / `signal_dismiss`. Zone qui change
+  (`service_watches`), texte reçu (`beam_text_received`), notes proposées (`open_meet`) ; la carte
+  part quand on agit ailleurs (copie, notes prises, Library des zones vue). Le toast reste.
+- Accueil : `now` de `ui_home` (`home_now_json`) : prochaine réunion (`calendar.card()`), zones
+  changées (`Watches::changed`, quatre), onglet reçu d'un autre appareil (12 h).
+- Authentification HTTP : l'origine exacte du défi (`challenge.url`, `origin_of` : https ou
+  localhost) est gardée par invite (`auth_origins`) ; la palette ne reçoit que les noms
+  (`auth.saved`), `auth_saved` fait passer le mot de passe du portefeuille au moteur.
+- Test : `scripts\test-features.ps1` (`br*` trou noir, `us*` recherche, `sg*` signaux, `hn1`
+  accueil ; étape harnais `beamtext DE|TEXTE` qui simule un texte reçu). Le bouton de veille des
+  cartes en direct et les identifiants HTTP enregistrés ne sont pas couverts par un scénario.
+
 ## Pages d'erreur et User-Agent
 - Pages d'erreur (0.7.19) : gabarit unique `ui/error.html` (mêmes couleurs, typographie et étoiles que l'ancienne page « Site injoignable » ; une scène SVG animée propre à chaque variante, `data-art` = `kind` : vaisseau près du trou noir pour `unreachable`, satellite coupé de sa planète, écran radar de bord, vaisseau en boucle entre deux trous de ver (SMIL `animateMotion`), blocus de vaisseaux autour d'une station au cadenas brisé pour `certificate`, horloge de bord folle, sas ouvert qui perd ses données pour `http_only`, sas verrouillé à scanner, dôme d'énergie pour `forbidden`, station en surchauffe, drone traqueur pris dans le filet des Shields ; teinte `body.danger|calm|amber|green` ; `prefers-reduced-motion` et réglage `animations` → `body.still` et `pauseAnimations()` pour le SMIL), variantes `kind` : `unreachable`, `offline`, `not_found` (DNS), `redirects`, `certificate` (raison `expired`/`not_yet_valid`/`untrusted`/`self_signed`/`name_mismatch`/`revoked`/`invalid`, section « Avancé » : hôte, raison, émetteur, sujet, dates), `clock`, `http_only`, `unauthorized` (« Se connecter » = recharger, la demande d'identifiants revient si le serveur en envoie une), `forbidden`, `server`, `blocked`. `views::error_page(&json)` (JSON dans le script, `<` échappé, tout en `textContent` ; `window.__bhRetry`).
   - Domaine `error_page.rs` : `classify(Failure::WebView2(status) | Failure::NsError(domain, code))` (annulé, attente d'identifiants, `WebKitErrorDomain` 101–103/204 → `None`), `CertProblem::refine(issuer, subject)` (auto-signé), `ErrorPage::with_clock` (horloge hors 2026–2100 → `clock`), `after_https_upgrade`, `classify_status` (401, 403, 5xx), `is_bare_error_body` (corps vide ou simple ligne de statut sans `<title>` ; une page du serveur avec titre reste affichée, comme les pages de test 401/403 de l'authentification HTTP), `hsts_preloaded` (extrait : TLD Google `.dev`, `.app`… et quelques sites), `Bypasses`.
@@ -71,7 +109,7 @@ cargo test --workspace --locked
 - User-Agent macOS : `views::user_agent_for` (via `wry::USER_AGENT_RESOLVER`, à chaque navigation principale) force l'UA Safari (requis par Meet) sauf sur `docs.google.com`, où le token Safari rend Docs flou. Les demandes de nouvelle fenêtre (pas de cadre cible) ne changent pas l'UA de l'onglet ouvrant. Windows non concerné.
 
 ## Mots de passe (0.7.19)
-- Domaine `passwords.rs` : `Passwords { entries, never }`, `Entry` versionnée pour la synchro future (id aléatoire 128 bits, `created`/`modified` en ms, `device`, pierre tombale `deleted` aux secrets effacés, purge `TOMBSTONE_TTL_MS` = 90 j), `merge` (dernière modification par id, id d'appareil en départage, idempotent), `origin_of` (origine exacte schéma+hôte+port, https ou localhost seulement : ni sous-domaine, ni http, ni autre port), `offer`, `import`, `generate` (sans biais, sans caractères ambigus), `http_auth_candidates(origin, realm)` (accroche pour l'invite d'authentification HTTP, non branchée). `Drop`/`Debug` protègent les secrets (`zeroize`).
+- Domaine `passwords.rs` : `Passwords { entries, never }`, `Entry` versionnée pour la synchro future (id aléatoire 128 bits, `created`/`modified` en ms, `device`, pierre tombale `deleted` aux secrets effacés, purge `TOMBSTONE_TTL_MS` = 90 j), `merge` (dernière modification par id, id d'appareil en départage, idempotent), `origin_of` (origine exacte schéma+hôte+port, https ou localhost seulement : ni sous-domaine, ni http, ni autre port), `offer`, `import`, `generate` (sans biais, sans caractères ambigus), `http_auth_candidates(origin, realm)` (proposé par l'invite d'authentification HTTP : noms seulement à la palette, `auth_saved`). `Drop`/`Debug` protègent les secrets (`zeroize`).
 - Infrastructure `wallet.rs` : `passwords.bin` (JSON : en-tête + `nonce` + `data` en hexadécimal), XChaCha20-Poly1305 avec l'en-tête en AAD ; clé de données enveloppée par le trousseau (`keyring` « BlackHole/passwords-key », Windows Credential Manager, macOS Keychain ; aucun trousseau ailleurs) ou Argon2id (m=64 Mio, t=3, p=1, sel 16 octets) d'un mot de passe maître. `open_at_start` (thread) : crée le fichier, y migre `vault.bin`, supprime ce dernier une fois relu. `Vault`/`vault.bin` restent pour `calendars.bin` et `devices.bin`. MSRV : `base64ct` épinglé en 1.7.x (1.8 exige Rust 1.85).
 - App `passwords.rs` : `Passwords` (état, fil de fond, offres, presse-papiers), `PasswordAction` (commande `{"cmd":"passwords","action":{"op":…}}`, pages d'interface seulement). Remplissage : `autofill_query` → menu `{names, locked, generate, token}` ; `autofill_fill`/`autofill_unlock`/`autofill_generate` exigent le jeton à usage unique et l'origine relue sur le moteur. Un script de page peut poster sur `__bhipc` : ne jamais servir un secret sans ce jeton. Enregistrement : `login_submitted` → toast à deux boutons (`Offer { tab, choice }`), 2 min d'attente. Copie : `arboard` (`SetExtWindows::exclude_from_history/cloud`, `SetExtApple::exclude_from_history`), effacée après 30 s si inchangée. Mot de passe maître : Argon2 dans un thread (`Done::Protected`), verrouillage après `Settings::password_lock_minutes` (5/15/60/0 = à la fermeture). Fenêtre privée : lecture seule (pas d'offre ni de modification).
 - Test : `test-ui.ps1`, `eval` « pwN: » lus par `PwEval`, hors indices ; mots de passe de test générés par le script.
@@ -118,7 +156,7 @@ cargo test --workspace --locked
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 10 captures `f01`–`f10` ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 13 captures `f01`–`f13` ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -154,7 +192,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   (`watch_pick` : le sélecteur puis `watch_area` sans autre question), copier le lien propre,
   rechercher, imprimer, inspecter ; `image` (non fiable, http(s)) ajoute ouvrir/copier l'adresse.
   Les entrées qui visent « la page affichée » ne sont proposées que pour l'onglet actif ; ni
-  Easel ni veille pour un onglet trou noir.
+  Easel ni veille pour un onglet trou noir (règle `domain::verbs`, voir « Ponts entre fonctions »).
   Depuis 0.8.7 les menus de lien et de sélection se terminent aussi par les outils BlackHole
   (`page_tool_items` : Easel, zone en direct, veille), et seule une vidéo/un son avec les
   contrôles du moteur (`controls`) ou un plug-in gardent le menu du moteur : une vidéo que la

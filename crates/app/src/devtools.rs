@@ -150,6 +150,11 @@ impl Running {
                 let (url, title) = rest.trim().split_once(' ').unwrap_or((rest.trim(), "Meeting"));
                 self.dev_add_meeting(url, title);
             }
+            // `beamtext FROM|TEXT`: a text received through the Wormhole (no second device).
+            "beamtext" => {
+                let (from, text) = rest.trim().split_once('|').unwrap_or(("Phone", rest.trim()));
+                self.beam_text_received(from, text.to_owned());
+            }
             // Where the easel and the split view are, as `[dev] state -> {…}`.
             "state" => {
                 let ws = self.svc.workspace();

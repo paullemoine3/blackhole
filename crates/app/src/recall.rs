@@ -175,7 +175,8 @@ impl Running {
             match event {
                 Event::Results { id, hits } => {
                     self.recall.searching = false;
-                    if self.palette_open && self.palette_mode == "recall" {
+                    // Recall mode, or the "Recall" group of an ordinary search.
+                    if self.palette_open && matches!(self.palette_mode.as_str(), "recall" | "new" | "url") {
                         let list: Vec<Value> = hits
                             .iter()
                             .map(|h| json!({"url": h.url, "title": h.title, "snippet": h.snippet, "at": h.at}))

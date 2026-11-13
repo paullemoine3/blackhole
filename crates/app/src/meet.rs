@@ -2,6 +2,7 @@
 //! access or of a folder), the next meeting in the sidebar, a reminder when one starts. The
 //! calendars are fetched on a thread; the UI thread only reads the results.
 
+use blackhole_domain::signals::Kind;
 use crate::i18n::{message, t, tf};
 use crate::{ipc::UiCommand, Running, TabId};
 use blackhole_domain::meetings::{self, Meeting};
@@ -165,6 +166,9 @@ impl Running {
                 &t("toast.take_notes"),
                 json!({"cmd": "meeting_notes", "url": meeting.url, "start": meeting.start}),
             );
+            // The offer stays as a card of the sidebar while the meeting is on.
+            let key = format!("{}|{}", meeting.start, meeting.url);
+            self.signal(Kind::Notes, &key, &meeting.title, &t("sidebar.signal_notes"));
         }
     }
 
@@ -225,6 +229,7 @@ impl Running {
             .iter()
             .find(|m| m.url == url && m.start == start)
             .cloned();
+        self.signals_forget(Kind::Notes, &format!("{start}|{url}"));
         if let Some(meeting) = meeting {
             self.open_meeting_notes(&meeting);
         }
