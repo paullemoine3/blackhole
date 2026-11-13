@@ -462,6 +462,12 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .iter()
                 .filter_map(|site| blackhole_domain::recall::site_of(site))
                 .collect(),
+            site_zoom: dto
+                .site_zoom
+                .into_iter()
+                .filter(|(site, z)| !site.is_empty() && *z != 100 && blackhole_domain::ZOOM_STEPS.contains(z))
+                .map(|(site, z)| (blackhole_domain::site_key(&site), z))
+                .collect(),
         }))
     }
 
@@ -499,6 +505,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             language: settings.language.clone(),
             recall: settings.recall,
             recall_exclude: settings.recall_exclude.iter().cloned().collect(),
+            site_zoom: settings.site_zoom.clone(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -611,6 +618,8 @@ struct SettingsDto {
     recall: bool,
     #[serde(default)]
     recall_exclude: Vec<String>,
+    #[serde(default)]
+    site_zoom: std::collections::BTreeMap<String, u32>,
 }
 
 fn default_language() -> String {
@@ -829,6 +838,7 @@ mod tests {
             language: "fr".to_owned(),
             recall: true,
             recall_exclude: ["bank.test".to_owned()].into(),
+            site_zoom: [("example.com".to_owned(), 125)].into(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -854,6 +864,14 @@ mod tests {
         assert_eq!(old.shields, blackhole_domain::Shields::default(), "shields on by default");
         assert!(old.meeting_reminders && old.meeting_card, "meetings shown by default");
         assert!(old.collapsed_sections.is_empty());
+        assert!(old.site_zoom.is_empty(), "no zoom remembered by default");
+        fs::write(
+            dir.path().join("settings.json"),
+            r#"{"search_engine":"qwant","site_zoom":{"www.a.test":150,"b.test":123,"c.test":100}}"#,
+        )
+        .unwrap();
+        let zooms = repo.load_settings().unwrap().unwrap().site_zoom;
+        assert_eq!(zooms, [("a.test".to_owned(), 150)].into(), "only real steps are read");
     }
 
     #[test]

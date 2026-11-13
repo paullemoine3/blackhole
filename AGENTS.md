@@ -84,6 +84,10 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
 - Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
   titre transparente sur macOS) ; leur page dessine la barre du haut (38 px, teinte de l'espace,
   boutons) et la pilote par `UiCommand::PanelWindow`.
+- Zoom de page : par site (`site_key`, sans `www.`), en pourcentage (`ZOOM_STEPS`, 100 jamais
+  stocké, `MAX_SITE_ZOOMS`) dans `Settings::site_zoom`, gardé entre les lancements
+  (`set_site_zoom`) ; `zoom_of` / `apply_zoom` dans l'app, appliqué à chaque changement d'adresse
+  et à tous les onglets du site. Onglet trou noir : en mémoire seulement (`Running::zoom`).
 - Pour les données utilisateur, utiliser `blackhole_infrastructure::write_later`
   et `flush_writes` avant relecture ou fermeture ; conserver les écritures atomiques.
 - Enregistrer les préférences persistantes dans `Settings`, avec
@@ -231,6 +235,8 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Sonde média : seuls les onglets qui l'ont signalé (`PageEvent::Media` de `media_devices.js`,
   chargement, changement d'adresse), qui jouent ou sont en appel sont interrogés ; pas de script
   périodique dans les onglets silencieux. Pas de PiP forcé sur un onglet en appel (`in_call`).
+  La croix de la carte lecteur d'un appel (caméra, micro ou `call`) quitte l'appel (`CALL_HANG_UP_JS`,
+  `__bhRtc.hangUp` : bouton « quitter » de la page, sinon pistes arrêtées et connexions fermées).
 - Renderer mort (`Msg::Crashed` ; macOS : gestionnaire de wry, Windows : `win::on_renderer_gone`,
   `ProcessFailed`) : onglet affiché rechargé une fois (`CRASH_LOOP`), onglet caché libéré.
 - Capture en direct : la zone choisie attend dans `live_pending` ; un menu demande l'Easel

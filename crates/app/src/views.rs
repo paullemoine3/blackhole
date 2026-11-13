@@ -911,17 +911,6 @@ pub fn hard_reload(view: &WebView) {
     );
 }
 
-/// Page zoom steps, like the other browsers (100% is the fifth).
-pub const ZOOM_STEPS: [f64; 12] = [0.5, 0.67, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
-
-/// The zoom step after (`up`) or before `current`.
-pub fn next_zoom(current: f64, up: bool) -> f64 {
-    let at = ZOOM_STEPS
-        .iter()
-        .position(|z| (z - current).abs() < 0.01)
-        .unwrap_or(4);
-    ZOOM_STEPS[if up { (at + 1).min(ZOOM_STEPS.len() - 1) } else { at.saturating_sub(1) }]
-}
 
 /// Floats the playing video above other windows (WebKit presentation mode, standard API elsewhere).
 pub const PIP_ENTER_JS: &str = "(()=>{const v=[...document.querySelectorAll('video')].find(v=>!v.paused&&!v.ended&&v.videoWidth>0);if(!v||document.pictureInPictureElement||v.webkitPresentationMode==='picture-in-picture')return;try{if(v.webkitSetPresentationMode)v.webkitSetPresentationMode('picture-in-picture');else if(v.requestPictureInPicture)v.requestPictureInPicture().catch(()=>{})}catch(e){}})()";
@@ -950,6 +939,10 @@ pub const MEDIA_MUTE_JS: &str = "(()=>{const m=[...document.querySelectorAll('vi
 pub fn rtc_toggle_js(kind: &str) -> String {
     format!("window.__bhRtc&&window.__bhRtc.toggle('{kind}')")
 }
+
+/// Closes the sidebar card of a call: leaves the call (see `__bhRtc.hangUp` in
+/// `media_devices.js`), not only the card.
+pub const CALL_HANG_UP_JS: &str = "window.__bhRtc&&window.__bhRtc.hangUp()";
 
 /// Closes the player of the sidebar card: pauses everything and brings a floating video back
 /// into its page.

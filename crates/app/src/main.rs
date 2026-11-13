@@ -410,8 +410,9 @@ struct Running {
     /// The password wallet: autofill, save offers, Settings › Passwords.
     passwords: passwords::Passwords,
     last_active: HashMap<TabId, Instant>,
-    /// Page zoom per site (host), for the session.
-    zoom: HashMap<String, f64>,
+    /// Page zoom per site of black hole tabs (percent), for the session only: other tabs use
+    /// `Settings::site_zoom`, remembered between launches.
+    zoom: HashMap<String, u32>,
     /// Tabs whose view currently has a zoom other than 100%.
     zoomed: HashSet<TabId>,
     /// Set when a tab view was created above the overlays; they are rebuilt once it is due.
@@ -3033,9 +3034,8 @@ impl Running {
         let zoom = ws
             .active_tab()
             .filter(|_| !self.home_shown())
-            .and_then(|t| t.url.host_str())
-            .and_then(|h| self.zoom.get(h))
-            .map_or(100, |z| (z * 100.0).round() as u32);
+            .and_then(|t| t.url.host_str().map(|h| self.zoom_of(t.id, h)))
+            .unwrap_or(100);
         let loading = asked.is_some()
             || (!self.home_shown()
                 && ws
@@ -3495,6 +3495,7 @@ impl Running {
                 Some(json!({
                     "id": t.id.0, "playing": p.playing, "muted": p.muted,
                     "cam": p.cam, "mic": p.mic, "camOn": p.cam_on, "micOn": p.mic_on,
+                    "call": p.cam || p.mic || p.call,
                 }))
             })
             .collect();
@@ -3600,6 +3601,18 @@ impl Running {
             }
             _ => return,
         };
+        // The card of a call (camera, microphone or a live connection): closing it leaves the
+        // call too, instead of only pausing its tiles.
+        if action == "close"
+            && self
+                .media
+                .lock()
+                .ok()
+                .and_then(|probes| probes.get(&id.0).copied())
+                .is_some_and(|p| p.cam || p.mic || p.call)
+        {
+            let _ = view.evaluate_script(views::CALL_HANG_UP_JS);
+        }
         let _ = view.evaluate_script(js);
         self.media_hint.insert(id.0, Instant::now());
         match action {
@@ -5907,8 +5920,18 @@ impl Running {
         }
     }
 
-    /// Zooms the active page like other browsers do: the level belongs to the site and is kept
-    /// for the whole session.
+    /// The zoom of `host`'s site for `tab`, in percent: remembered in the settings, or for the
+    /// session only in a black hole tab (it keeps nothing).
+    fn zoom_of(&self, tab: TabId, host: &str) -> u32 {
+        if self.svc.workspace().is_burner(tab) {
+            self.zoom.get(&blackhole_domain::site_key(host)).copied().unwrap_or(100)
+        } else {
+            self.svc.settings().zoom_of(host)
+        }
+    }
+
+    /// Zooms the active page like other browsers do: the level belongs to the site (`www.`
+    /// included) and is remembered between launches.
     fn zoom_active(&mut self, action: &str) {
         let Some(tab) = self.svc.workspace().active_tab().map(|t| t.id) else {
             return;
@@ -5920,20 +5943,29 @@ impl Running {
             .and_then(|raw| Url::parse(&raw).ok())
             .and_then(|u| u.host_str().map(str::to_owned));
         let Some(host) = host else { return };
-        let current = self.zoom.get(&host).copied().unwrap_or(1.0);
+        let current = self.zoom_of(tab, &host);
         let next = match action {
-            "zoom_in" => views::next_zoom(current, true),
-            "zoom_out" => views::next_zoom(current, false),
-            _ => 1.0,
+            "zoom_in" => blackhole_domain::next_zoom(current, true),
+            "zoom_out" => blackhole_domain::next_zoom(current, false),
+            _ => 100,
         };
-        if (next - 1.0).abs() < 0.01 {
-            self.zoom.remove(&host);
+        if self.svc.workspace().is_burner(tab) {
+            let site = blackhole_domain::site_key(&host);
+            if next == 100 {
+                self.zoom.remove(&site);
+            } else {
+                self.zoom.insert(site, next);
+            }
         } else {
-            self.zoom.insert(host, next);
+            self.svc.set_site_zoom(&host, next);
         }
-        self.apply_zoom(tab);
+        // Every tab of this window showing the site follows, as in other browsers.
+        let ids: Vec<TabId> = self.tabs.keys().copied().collect();
+        for id in ids {
+            self.apply_zoom(id);
+        }
         self.ui_bar();
-        self.toast(&tf("toast.zoom", &[("n", &(next * 100.0).round().to_string())]));
+        self.toast(&tf("toast.zoom", &[("n", &next.to_string())]));
     }
 
     /// Gives a tab the zoom of the site it shows (100% when the site has none).
@@ -5944,13 +5976,13 @@ impl Running {
             .ok()
             .and_then(|raw| Url::parse(&raw).ok())
             .and_then(|u| u.host_str().map(str::to_owned));
-        let wanted = host.and_then(|h| self.zoom.get(&h).copied()).unwrap_or(1.0);
+        let wanted = host.map_or(100, |h| self.zoom_of(tab, &h));
         let zoomed = self.zoomed.contains(&tab);
-        if (wanted - 1.0).abs() < 0.01 && !zoomed {
+        if wanted == 100 && !zoomed {
             return;
         }
-        let _ = view.zoom(wanted);
-        if (wanted - 1.0).abs() < 0.01 {
+        let _ = view.zoom(f64::from(wanted) / 100.0);
+        if wanted == 100 {
             self.zoomed.remove(&tab);
         } else {
             self.zoomed.insert(tab);

@@ -1256,7 +1256,7 @@ function renderMedia(s) {
   const t = m && s.tabs.find(t => t.id === m.id);
   if (!t) { mediaId = null; mediaSig = ''; box.replaceChildren(); return; }
   const icon = (s.favicons || {})[host(t.url)] || '';
-  const sig = JSON.stringify([t.id, t.title, t.url, icon, m.playing, m.muted, m.mic, m.micOn, m.cam, m.camOn]);
+  const sig = JSON.stringify([t.id, t.title, t.url, icon, m.playing, m.muted, m.mic, m.micOn, m.cam, m.camOn, m.call]);
   if (sig === mediaSig && box.firstChild) return;
   let card = box.firstChild;
   // A new card slides in; the same player only has its content refreshed.
@@ -1279,7 +1279,7 @@ function renderMedia(s) {
   if (m.cam) ctl.append(btn(m.camOn ? '' : 'off', m.camOn ? 'video' : 'video-off', bhT(m.camOn ? 'sidebar.cam_off' : 'sidebar.cam_on'), 'cam'));
   ctl.append(
     btn('', 'pip', bhT('palette.pip'), 'pip'),
-    btn('cl', 'close', bhT('sidebar.close_player'), 'close'));
+    btn('cl', 'close', bhT(m.call ? 'sidebar.leave_call' : 'sidebar.close_player'), 'close'));
   card.replaceChildren(top, ctl);
 }
 const UPDATE_ICONS = { ready: 'download', busy: 'spinner', error: 'alert' };

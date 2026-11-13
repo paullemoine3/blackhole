@@ -222,6 +222,13 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     /// Interface language: a supported code or `i18n::SYSTEM`; false (unchanged) otherwise.
+    /// Remembers the page zoom of `host`'s site (percent, 100 forgets it).
+    pub fn set_site_zoom(&mut self, host: &str, percent: u32) {
+        if self.settings.set_zoom(host, percent) {
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
     pub fn set_language(&mut self, code: &str) -> bool {
         if !blackhole_domain::i18n::is_choice(code) {
             return false;

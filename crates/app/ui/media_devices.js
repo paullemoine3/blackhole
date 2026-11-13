@@ -102,6 +102,23 @@
       const enable = !list.some((t) => t.enabled);
       list.forEach((t) => (t.enabled = enable));
     },
+    // Leaves the call (the sidebar card's close button): the page's own leave button when one is
+    // found (Meet, Teams, Jitsi…), so it shows its own "you left" screen; then, if the call is
+    // still up, the camera and microphone are released and the connections closed.
+    hangUp() {
+      const LEAVE = /^(leave call|leave|hang up|end call|quitter l.appel|quitter|raccrocher)$/i;
+      const button = document.querySelector('[jsname="CQylAd"], [data-tid="hangup-main-btn"], #hangup-button, .hangup-button') ||
+        [...document.querySelectorAll('button[aria-label], [role="button"][aria-label]')].find((b) => LEAVE.test(b.getAttribute('aria-label').trim()));
+      if (button) button.click();
+      setTimeout(() => {
+        if (!inCall() && !live('audio').length && !live('video').length) return;
+        for (const t of tracks) t.stop();
+        tracks.clear();
+        for (const pc of peers) try { pc.close(); } catch (_) {}
+        peers.clear();
+        hint();
+      }, button ? 1500 : 0);
+    },
   };
 
   // Paused while it floats: the window's close button (it pauses the video first). Left playing:
