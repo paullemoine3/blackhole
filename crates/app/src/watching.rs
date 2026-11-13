@@ -191,7 +191,10 @@ impl Running {
                     self.svc.policy(),
                     &self.mailbox,
                 ) {
-                    Ok(view) => self.watching.probe = Some((w.id, view, Instant::now(), false, false)),
+                    Ok(view) => {
+                        self.watching.probe = Some((w.id, view, Instant::now(), false, false));
+                        self.ui_library();
+                    }
                     Err(_) => {
                         self.watching.list.record(w.id, None, now());
                         changed = true;
@@ -213,8 +216,11 @@ impl Running {
         }
     }
 
-    /// The Library's "Watches" section.
+    /// The Library's "Watches" section. `checking`: a reading was asked for ("Check now") or
+    /// its page is being read now; the Library says so until the reading is in.
     pub(crate) fn watches_json(&self) -> Value {
+        // The hidden page being read, until its answer is in (it lingers a little after).
+        let reading = self.watching.probe.as_ref().filter(|p| !p.4).map(|p| p.0);
         json!(self
             .watching
             .list
@@ -223,6 +229,7 @@ impl Running {
             .map(|w| json!({
                 "id": w.id, "url": w.url, "title": w.title, "value": w.value, "previous": w.previous,
                 "checked": w.checked_at, "changed": w.changed_at, "unread": w.unread,
+                "checking": w.checked_at == 0 || reading == Some(w.id),
             }))
             .collect::<Vec<_>>())
     }
@@ -235,7 +242,13 @@ impl Running {
                 }
                 self.watching.list.remove(id);
             }
-            UiCommand::WatchCheck { id } => self.watching.list.check_soon(id),
+            UiCommand::WatchCheck { id } => {
+                // Its page already answered and only lingers: read it again in a fresh one.
+                if self.watching.probe.as_ref().is_some_and(|p| p.0 == id && p.4) {
+                    self.watching.probe = None;
+                }
+                self.watching.list.check_soon(id);
+            }
             UiCommand::WatchesSeen => {
                 self.watching.list.mark_read();
                 self.signals_forget_kind(Kind::AreaChanged);

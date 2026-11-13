@@ -1,5 +1,14 @@
 //! Picture in Picture: what a video leaving its floating window means.
 
+use std::time::Duration;
+
+/// How long after the shell's probe stopped seeing a floating video the page's own "left
+/// Picture in Picture" still counts as that video. WebKit switches the video back to inline
+/// as soon as "back to tab" is pressed, but only fires `webkitpresentationmodechanged` once the
+/// window's closing animation is over: the probe (every 500 ms while a video floats) usually
+/// sees it first. Longer than that animation, short enough not to pair two unrelated events.
+pub const LEFT_EVENT_GRACE: Duration = Duration::from_millis(3000);
+
 /// How a video left its floating window, as the shell knows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PipLeft {

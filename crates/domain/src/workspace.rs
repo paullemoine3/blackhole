@@ -406,6 +406,51 @@ impl Workspace {
         self.burners.contains(&id)
     }
 
+    /// "Duplicate" (tab menu): a new loose tab on the same page, shown at once. It never
+    /// reuses the open tab (that is what opening an address does). A loose tab's copy goes
+    /// just below it; a quick access or folder tab's copy goes to the top of the loose list,
+    /// like a new tab. The copy of a black hole tab is a black hole tab (its own session).
+    pub fn duplicate_tab(&mut self, id: TabId) -> Option<TabId> {
+        let space = self.active_space();
+        let at = space.tabs.iter().position(|t| t.id == id)?;
+        let original = &space.tabs[at];
+        let (url, title, loose) = (
+            original.url.clone(),
+            original.title.clone(),
+            !original.kept(),
+        );
+        let burner = self.is_burner(id);
+        let copy = TabId(self.alloc());
+        let space = self.active_space_mut();
+        let to = if loose {
+            at + 1
+        } else {
+            space
+                .tabs
+                .iter()
+                .position(|t| !t.pinned)
+                .unwrap_or(space.tabs.len())
+        };
+        space.tabs.insert(
+            to,
+            Tab {
+                id: copy,
+                title,
+                url,
+                pinned: false,
+                folder: None,
+                renamed: false,
+                home: None,
+            },
+        );
+        space.active_tab = Some(copy);
+        if burner {
+            self.burners.push(copy);
+        }
+        self.touch(copy);
+        Some(copy)
+    }
+
     /// The black hole tabs still open, all spaces mixed.
     pub fn burner_count(&self) -> usize {
         self.spaces
@@ -1223,6 +1268,32 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn duplicating_a_tab_opens_another_tab_on_the_same_page() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://example.com/a"));
+        let b = ws.open_tab(u("https://example.com/b"));
+        // Loose list, newest first: b, a. The copy of a goes just below a.
+        let copy = ws.duplicate_tab(a).unwrap();
+        assert_ne!(copy, a);
+        let ids: Vec<TabId> = ws.active_space().tabs.iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec![b, a, copy]);
+        assert_eq!(ws.active_space().active_tab, Some(copy));
+        assert_eq!(ws.active_tab().unwrap().url, u("https://example.com/a"));
+        // A quick access tab's copy is a loose tab at the top of the loose list.
+        ws.toggle_pin(b);
+        let pinned_copy = ws.duplicate_tab(b).unwrap();
+        let tab = ws.active_space().tabs.iter().find(|t| t.id == pinned_copy).unwrap();
+        assert!(!tab.pinned && tab.folder.is_none() && tab.home.is_none());
+        let first_loose = ws.active_space().tabs.iter().find(|t| !t.pinned).unwrap().id;
+        assert_eq!(first_loose, pinned_copy);
+        // A black hole tab's copy has a session of its own too.
+        let burner = ws.open_burner(u("https://example.com/secret"));
+        let burner_copy = ws.duplicate_tab(burner).unwrap();
+        assert!(ws.is_burner(burner_copy));
+        assert!(ws.duplicate_tab(TabId(999)).is_none());
     }
 
     #[test]

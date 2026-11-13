@@ -569,6 +569,7 @@ function easelNode(e) {
       { icon: 'easel', label: bhT('menu.open_as_tab'), run: { cmd: 'open_easel_tab', id: e.id } },
       { icon: 'window', label: bhT('menu.open_in_easel_window'), run: { cmd: 'open_easel', id: e.id } },
       ...(state.folders.some(f => f.id === e.folder) ? [{ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_easel', id: e.id, folder: null } }] : []),
+      { icon: 'plus', label: bhT('menu.new_easel'), run: { cmd: 'action', id: 'new_easel' } },
       { sep: true },
       { icon: 'trash', label: bhT('menu.delete_easel'), danger: true, confirm: bhT('menu.delete_easel_confirm'), run: { cmd: 'delete_easel', id: e.id } },
     ]);

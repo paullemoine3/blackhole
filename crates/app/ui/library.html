@@ -65,6 +65,8 @@
   .btn:hover { background: var(--bh-fill-control-hover); }
   .btn:active { transform: scale(.96); }
   .btn.danger { color: var(--bh-danger-text); }
+  .btn.primary, .btn.primary:hover { background: var(--bh-accent); color: var(--bh-text-on-accent); }
+  .btn.primary:hover { filter: brightness(1.08); }
   .btn.armed, .btn.armed:hover { background: var(--bh-danger-fill); color: var(--bh-white); }
 
   /* Lists: rows in a card, grouped by day where it helps. */
@@ -144,6 +146,11 @@
   main.enter :is(.row, .tile, .ec, .col, .day, .card, .empty) { animation: rise var(--bh-duration-spring) var(--bh-ease-settle) backwards; animation-delay: calc(var(--i, 0) * 16ms); }
   @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(.985); } }
   @keyframes bh-spin { to { transform: rotate(360deg); } }
+  /* A watched area being read again pulses; the row glows once when the reading is in. */
+  .checking { color: var(--bh-accent); animation: bh-pulse 1.2s var(--bh-ease-settle) infinite alternate; }
+  @keyframes bh-pulse { from { opacity: .45; } }
+  .row.fresh { animation: bh-fresh 1.4s var(--bh-ease-settle); }
+  @keyframes bh-fresh { from { background: color-mix(in srgb, var(--bh-accent) 22%, transparent); } }
   #fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9; }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -207,6 +214,26 @@ function empty(iconName, text) {
   e.append(h, el('p', null, text));
   return e;
 }
+// The host's clock when the state came, moved on by the page's own: "checked 3 min ago" keeps
+// counting while the Library stays open (spans `.ago` are refreshed in place, not re-rendered).
+let gotAt = Date.now();
+const nowSecs = () => (S ? S.now : 0) + Math.floor((Date.now() - gotAt) / 1000);
+function agoSpan(at, key) { const s = el('span', 'ago'); s.dataset.at = at; if (key) s.dataset.key = key; s.textContent = agoText(s); return s; }
+function agoText(s) { const w = ago(+s.dataset.at, nowSecs()); return s.dataset.key ? bhT(s.dataset.key, { when: w }) : w; }
+setInterval(() => document.querySelectorAll('.ago').forEach((s) => { const t = agoText(s); if (s.textContent !== t) s.textContent = t; }), 15000);
+// "Add to an Easel": the Easels of the space (the current one ticked), then a new one.
+// `run(extra)` is the command with the Easel chosen added to it.
+function easelMenu(anchor, run) {
+  const list = S.easels || [];
+  const r = anchor.getBoundingClientRect();
+  const items = [{ head: bhT('library.add_to') },
+    ...list.map((e) => ({ icon: e.id === S.easelCurrent ? 'check' : 'easel', label: e.name, run: run({ easel: e.id }) })),
+    ...(list.length ? [{ sep: true }] : []),
+    { icon: 'plus', label: bhT('menu.new_easel'), run: run({ new: true }) }];
+  send({ cmd: 'menu', origin: 'library', x: r.left, y: r.bottom + 4, items });
+}
+// Watches whose reading was asked for: their row glows once the new reading is in.
+const checking = new Set();
 function ago(at, now) { const m = Math.max(0, Math.round((now - at) / 60)); return m < 1 ? bhT('time.just_now') : m < 60 ? bhT('time.min_ago', { n: m }) : m < 1440 ? bhT('time.h_ago', { n: Math.round(m / 60) }) : day(at, now); }
 function day(at, now) { const d = Math.floor((now - at) / 86400); return d <= 0 ? bhT('time.today') : d == 1 ? bhT('time.yesterday') : new Date(at * 1000).toLocaleDateString(bhI18n.lang); }
 const has = (t) => !q || String(t || '').toLowerCase().includes(q.toLowerCase());
@@ -321,7 +348,13 @@ const VIEWS = {
     return [...out, card];
   },
   easels() {
-    const out = [header(bhTn('library.items', S.easels.length))];
+    // A new Easel opens as a tab, ready to be filled.
+    const bar = el('div', 'tools');
+    const add = el('button', 'btn primary');
+    add.type = 'button'; add.append(icon('plus'), el('span', null, bhT('menu.new_easel')));
+    add.onclick = () => send({ cmd: 'action', id: 'new_easel' });
+    bar.append(add);
+    const out = [header(bhTn('library.items', S.easels.length)), bar];
     if (!S.easels.length) return [...out, empty('easel', bhT('library.empty'))];
     const g = el('div', 'cards');
     for (const e of S.easels) {
@@ -372,12 +405,20 @@ const VIEWS = {
       if (w.unread) title.append(el('span', 'chip new', bhT('library.changed')));
       const sub = el('i');
       if (w.previous) sub.append(el('s', null, w.previous), ' → ');
-      sub.append([w.value || bhT('library.reading'), host(w.url), w.checked > 0 ? bhT('library.checked', { when: ago(w.checked, S.now) }) : null].filter(Boolean).join(' · '));
-      card.append(row(tile(w.unread ? 'live' : '', 'eye'), title, sub, () => send({ cmd: 'open', input: w.url }), [
-        iconButton('reload', bhT('library.check_now'), () => send({ cmd: 'watch_check', id: w.id })),
-        ...(w.value ? [iconButton('easel', bhT('library.to_easel'), () => send({ cmd: 'watch_to_easel', id: w.id }))] : []),
+      sub.append([w.value || bhT('library.reading'), host(w.url)].filter(Boolean).join(' · '));
+      // Being read again: said at once, then "checked just now" when the reading is in.
+      if (w.checking) sub.append(' · ', el('span', 'checking', bhT('library.checking')));
+      else if (w.checked > 0) sub.append(' · ', agoSpan(w.checked, 'library.checked'));
+      const check = iconButton('reload', bhT('library.check_now'), () => { checking.add(w.id); send({ cmd: 'watch_check', id: w.id }); });
+      check.disabled = !!w.checking;
+      const keep = iconButton('easel', bhT('library.add_to_easel'), () => easelMenu(keep, (o) => ({ cmd: 'watch_to_easel', id: w.id, ...o })));
+      const r = row(tile(w.checking ? 'live' : w.unread ? 'live' : '', w.checking ? 'spinner' : 'eye'), title, sub, () => send({ cmd: 'open', input: w.url }), [
+        check,
+        ...(w.value ? [keep] : []),
         iconButton('close', bhT('library.stop_watching'), () => send({ cmd: 'watch_remove', id: w.id })),
-      ]));
+      ]);
+      if (!w.checking && checking.delete(w.id)) r.classList.add('fresh');
+      card.append(r);
     }
     if (l.some((w) => w.unread)) setTimeout(() => send({ cmd: 'watches_seen' }), 1500);
     return [...out, card];
@@ -536,6 +577,7 @@ window.bh = {
   render: (s) => {
     if (!s.history && S) s.history = S.history;
     S = s;
+    gotAt = Date.now();
     const edit = (s.highlights || {}).edit;
     if (edit && edit[0] > markSeq) { markSeq = edit[0]; if (edit[1]) { markEdit = edit[1]; markDraft = null; } }
     if (s.jump && s.jump[0] > jumped) { jumped = s.jump[0]; if (s.jump[1] && SECTIONS[s.jump[1]]) { sec = s.jump[1]; q = ''; filter = 'all'; } }

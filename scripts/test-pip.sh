@@ -114,6 +114,19 @@ wait 4000
 eval tab4 (() => { const v = $V; v.pause(); v.webkitSetPresentationMode('inline'); return 'live-close'; })()
 wait 3000
 $ACTIVE
+# WebKit switches the video back to inline when "back to tab" is pressed but tells the page only
+# once the window has shrunk back: the shell's probe sees it first. The page's event is held
+# back 1.5 s here; it must still show the tab.
+eval tab2 (() => { $V.play(); return 'late-replay'; })()
+wait 1500
+cmd {"cmd":"activate","id":2}
+wait 2500
+cmd {"cmd":"activate","id":3}
+wait 4000
+eval tab2 'late-auto ' + $STATE
+eval tab2 (() => { const v = $V; const hold = (e) => { if (e.target === v) e.stopImmediatePropagation(); }; addEventListener('webkitpresentationmodechanged', hold, true); v.webkitSetPresentationMode('inline'); setTimeout(() => { removeEventListener('webkitpresentationmodechanged', hold, true); window.__bhipc.postMessage(JSON.stringify({ cmd: 'pip_left', paused: false })); }, 1500); return 'late-back'; })()
+wait 4000
+$ACTIVE
 eval chrome 'alive'
 quit
 S
@@ -151,7 +164,11 @@ check 26 'active=4' "live stream: back to tab shows its tab"
 check 27 'live-after inline playing' "live stream: it goes on in its page"
 check 28 'live-close' "live stream: close (pauses, leaves)"
 check 29 'active=3' "live stream: close switches no tab"
-check 30 'alive' "no crash: the app is still running"
+check 30 'late-replay' "the first video plays again"
+check 31 'late-auto pip playing' "leaving its tab floats it"
+check 32 'late-back' "back to tab, the page told late (WebKit's animation)"
+check 33 'active=2' "back to tab told late: its tab is shown"
+check 34 'alive' "no crash: the app is still running"
 for s in pip-auto pip-back; do
   [[ -f /tmp/bh_shots/$s.png ]] || { echo "FAIL screenshot $s missing"; fail=1; }
 done

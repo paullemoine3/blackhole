@@ -57,7 +57,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
 - Onglets façon Arc (logique dans `domain/workspace.rs`, testée) : nouvel onglet en haut
   de la liste non épinglée ; à la fermeture, le partenaire de split puis l'onglet vu juste
   avant (`recent`, non persisté) puis le voisin prend le relais ; ⌘W sur un onglet épinglé
-  ou de dossier appelle `release_tab` (il reste dans la barre). Libérer une vue d'onglet
+  ou de dossier appelle `release_tab` (il reste dans la barre). Dupliquer : `Workspace::duplicate_tab`,
+  jamais `open` (qui réutilise l'onglet ouvert sur la même adresse). Libérer une vue d'onglet
   via `drop_view` (sonde média et suivi du PiP compris). Un PiP n'est lancé que pour
   l'onglet quitté qui n'est plus à l'écran (pas l'autre volet d'un split).
 - Vues de réserve : créées sans URL (`spare_tab_view`), jamais sur `about:blank`, sinon
@@ -68,7 +69,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   Pas de bouton son sur les tuiles. La fonction « Lock URL » a été retirée (un ancien champ
   `locked` dans `workspace.json` est ignoré au chargement).
 - PiP : le bouton « retour à l'onglet » de la fenêtre flottante affiche l'onglet de la vidéo
-  (elle sort en lecture) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
+  (elle sort en lecture ; WebKit ne prévient la page qu'après l'animation, après la sonde : `pip_faded`,
+  `pip::LEFT_EVENT_GRACE`) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
   `pip_left`), sur macOS comme sous WebView2 (vérifié avec de vrais clics : la pause arrive
   avant `leavepictureinpicture`). Exception WebView2 : un flux en direct (`srcObject`, champ
   `stream`) n'est pas mis en pause à la fermeture, donc rien ne change d'onglet pour lui.
@@ -265,7 +267,9 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   les événements annulés et ceux refusés par le propriétaire (`meetings::is_on_calendar`).
 - Veille de zone : `domain/watch.rs`, `WatchStore` (`watches.json`), `app/watching.rs` (une vue
   cachée à la fois, lecture à 8 s, abandon à 14 s, toutes les 30 min), section Library « Watched
-  Areas ». Démarrée depuis le menu du sélecteur de zone (`WatchArea`).
+  Areas » (`checking` : « checking… » jusqu'à la réponse, « il y a » qui avance sur place). Démarrée
+  depuis le menu du sélecteur de zone (`WatchArea`). Vers l'Easel : menu « Add to » (Easels de l'espace,
+  « New Easel »), `watch_to_easel { easel | new }`.
 - Comparateur : `ui/compare.js` (JSON-LD Product, Open Graph, tableau de caractéristiques) lancé
   dans chaque onglet chargé, `app/compare.rs`, palette en mode `compare` (données de page
   insérées par `textContent` uniquement).

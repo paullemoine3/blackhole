@@ -204,7 +204,11 @@ function renderNow(now) {
   const m = now && now.meeting;
   if (m && m.url) rows.push(nowRow(glyphTile('calendar'), m.title, m.when, () => send({ cmd: 'open_meet', url: m.url }), null, m.on));
   for (const a of (now && now.areas) || []) {
-    const items = [{ icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: a.url } }, { icon: 'easel', label: bhT('library.to_easel'), run: { cmd: 'watch_to_easel', id: a.id } }];
+    // Then "Add to" the Easels of the space (the current one ticked), or a new one.
+    const easels = now.easels || [];
+    const items = [{ icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: a.url } }, { sep: true }, { head: bhT('library.add_to') },
+      ...easels.map((e) => ({ icon: e.id === now.easel ? 'check' : 'easel', label: e.name, run: { cmd: 'watch_to_easel', id: a.id, easel: e.id } })),
+      { icon: 'plus', label: bhT('menu.new_easel'), run: { cmd: 'watch_to_easel', id: a.id, new: true } }];
     rows.push(nowRow(tile(a.url), a.title || host(a.url), (a.before ? a.before + ' → ' : '') + a.after, () => send({ cmd: 'open', input: a.url }), items, true));
   }
   const r = now && now.received;

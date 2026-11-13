@@ -460,6 +460,13 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         }
     }
 
+    /// "Duplicate" (tab menu): another tab on the same page, never the open one reused.
+    pub fn duplicate_tab(&mut self, id: TabId) -> Option<TabId> {
+        let copy = self.workspace.duplicate_tab(id)?;
+        self.persist();
+        Some(copy)
+    }
+
     pub fn activate_tab(&mut self, id: TabId) -> bool {
         let ok = self.workspace.activate_tab(id);
         self.persist();

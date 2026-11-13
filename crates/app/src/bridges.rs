@@ -68,6 +68,26 @@ impl Running {
         }
     }
 
+    /// Makes the Easel chosen in a menu the current one before something is kept in it:
+    /// `easel` (when it still exists), a new one (`new`), or the current one (neither).
+    fn pick_easel(&mut self, easel: Option<u64>, new: bool) -> bool {
+        if new {
+            match self.create_easel("") {
+                Some(id) => {
+                    self.easel_current = Some(id);
+                    self.tag_easel_space();
+                }
+                None => {
+                    self.toast(&t("toast.too_many_easels"));
+                    return false;
+                }
+            }
+        } else if let Some(id) = easel.filter(|id| self.easels.get(*id).is_some()) {
+            self.easel_current = Some(id);
+        }
+        true
+    }
+
     /// A watched area to the Easel: a clip of its page with the value before and after.
     fn watch_to_easel(&mut self, id: u64) -> bool {
         let Some((url, title, before, after)) = self.watch_of(id) else {
@@ -210,10 +230,15 @@ impl Running {
             .as_ref()
             .filter(|(_, _, at)| now() - at < HOME_RECEIVED_FOR)
             .map(|(from, url, at)| json!({"from": from, "url": url, "at": at}));
+        let space = self.svc.workspace().active_space().id.0;
         json!({
             "meeting": self.calendar.card(),
             "areas": self.changed_watches_json(HOME_AREAS),
             "received": received,
+            // The Easels a changed area can go to ("Add to an Easel"), the current one ticked.
+            "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space)
+                .map(|e| json!({"id": e.id, "name": e.name})).collect::<Vec<_>>(),
+            "easel": self.easel_current,
         })
     }
 
@@ -250,8 +275,10 @@ impl Running {
             UiCommand::FoundToEasel { url, title, text } => {
                 self.keep(|e, easel| e.capture(easel, &url, &title, &text));
             }
-            UiCommand::WatchToEasel { id } => {
-                self.watch_to_easel(id);
+            UiCommand::WatchToEasel { id, easel, new } => {
+                if self.pick_easel(easel, new) {
+                    self.watch_to_easel(id);
+                }
             }
             UiCommand::CompareToEasel { ids } => {
                 self.compare_to_easel(&ids);

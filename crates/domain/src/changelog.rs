@@ -1,6 +1,16 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.9",
+        &[
+            "Picture in Picture on macOS: the floating window's back to tab button shows the video's tab again (the video went back into its page but the tab stayed hidden)",
+            "Duplicate in a tab's menu opens a second tab on the same page, just below it, instead of showing the same tab again",
+            "Library > Watched Areas: Check now says checking… while the page is read, then checked just now, and the time since the last check keeps counting while the Library is open",
+            "A watched area goes to the Easel of your choice: its button (and the start page's card) lists the Easels of the space, the current one ticked, and offers a new one",
+            "New Easel from Library > Easels & Notes and from an Easel's menu in the sidebar",
+        ],
+    ),
+    (
         "0.8.8",
         &[
             "One search for everything: the command bar also finds your highlights, watched areas, closed tabs (archive) and downloads, and, when Recall is on, the pages you read, each group under its own head. Ctrl/Cmd+Enter on a result keeps it in the Easel",
