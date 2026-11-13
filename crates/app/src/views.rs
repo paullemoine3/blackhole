@@ -26,6 +26,8 @@ const KEYS_JS: &str = include_str!("../ui/keys.js");
 const THEME_JS: &str = include_str!("../ui/theme.js");
 /// Icons of BlackHole's own pages (`bhIcon`), drawn at the scale set by `THEME_JS`.
 const ICONS_JS: &str = include_str!("../ui/icons.js");
+/// The component that draws a notice (`bhNotice`): the sidebar's toast, the top bar's capsule.
+const NOTICE_JS: &str = include_str!("../ui/notice.js");
 /// `bhT`/`bhTn` and the catalog of the current language (see `crate::i18n`).
 const I18N_JS: &str = include_str!("../ui/i18n.js");
 
@@ -229,6 +231,7 @@ pub fn ui_view(
         .with_initialization_script_for_main_only(i18n_script(), true)
         .with_initialization_script_for_main_only(THEME_JS, true)
         .with_initialization_script_for_main_only(ICONS_JS, true)
+        .with_initialization_script_for_main_only(NOTICE_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {

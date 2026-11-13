@@ -58,7 +58,7 @@ impl Running {
             Ok(_) => {
                 let name = self.easels.get(easel).map(|e| e.name.clone()).unwrap_or_default();
                 self.easel_changed(true);
-                self.toast(&tf("toast.captured_to", &[("name", &name)]));
+                self.notify(crate::notices::Notice::Easel, &tf("toast.captured_to", &[("name", &name)]), serde_json::Value::Null);
                 true
             }
             Err(why) => {

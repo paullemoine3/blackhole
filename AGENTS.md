@@ -130,6 +130,7 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-errors.sh` (pages d'erreur, serveurs locaux, sans réseau),
   `bash scripts/test-pip.sh` (PiP et carte lecteur, vidéo CC0 de MDN),
   `bash scripts/test-library.sh` (Bibliothèque, cartes de téléchargement, HOME jetable),
+  `bash scripts/test-notices.sh` (notices : toast de la barre latérale, capsule de la barre du haut),
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
   `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
   `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),
@@ -412,6 +413,29 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Test : `scripts\test-features.ps1` (`br*` trou noir, `us*` recherche, `sg*` signaux, `hn1`
   accueil ; étape harnais `beamtext DE|TEXTE` qui simule un texte reçu). Le bouton de veille des
   cartes en direct et les identifiants HTTP enregistrés ne sont pas couverts par un scénario.
+
+## Notices (toasts et capsule de la barre du haut)
+
+- Un seul point d'entrée : `Running::notify(kind, message, actions)` (`app/src/notices.rs` ; `notify_action`
+  pour un bouton, `toast` = `Notice::Info`). Ne plus écrire `bh.toast(…)` depuis Rust.
+- Les types sont déclarés à un seul endroit, `domain/notice.rs` (`Kind` : info, problem, download, done,
+  watch, easel, device, password, undo, meeting ; icône de `ui/icons.js`, ton, durée 2,2 s ou 8 s avec
+  boutons). Ajouter un type = une variante, son icône, `ALL` ; les tests vérifient l'icône.
+- Un seul composant de dessin, `ui/notice.js` (`bhNotice(host, send)`, injecté par `ui_view`) : icône,
+  texte (`textContent`), boutons, ligne du temps restant (`toast-time`). Deux hôtes : `#toast` de la barre
+  latérale (`index.html`) et `#notice` de la barre du haut (`bar.html`), où le champ d'adresse devient la
+  notice. Mêmes courbes et durées dans les deux.
+- Où elle s'affiche : chaque hôte reçoit la notice et garde son échéance ; la barre du haut ne la dessine
+  que si aucune barre latérale n'est à l'écran (`notice::in_top_bar` : ni ouverte, ni flottante), état
+  poussé par `sync_bar_notice` (`bh.side(side, waiting)`, à chaque `layout` et `ui_state`). Basculer la
+  barre pendant une notice la fait changer d'hôte, la ligne du temps reprend où elle en est.
+- Un bouton pressé envoie `notice_done` avant sa commande : tous les hôtes retirent la notice.
+- Point sur le bouton de la barre latérale (`body.waiting`) : téléchargements en cours et cartes
+  `#signals` qui attendent, barre masquée seulement. Un téléchargement fait toujours sortir la barre
+  (`reveal_sidebar`) : sa notice est alors dans la barre flottante, pas dans la capsule.
+- Test macOS : `bash scripts/test-notices.sh` (contrôles nommés, captures `notice-*`, état intermédiaire
+  et animations coupées). Windows : code commun, non testé ; `test-ui.ps1` lit toujours `#toast`.
+  Android (`mobile.html`) garde son propre toast.
 
 ## Pages d'erreur et User-Agent
 

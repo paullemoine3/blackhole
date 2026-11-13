@@ -12,6 +12,7 @@ pub mod history;
 pub mod http_auth;
 pub mod i18n;
 pub mod meetings;
+pub mod notice;
 pub mod omnibox;
 pub mod passwords;
 pub mod pilot;

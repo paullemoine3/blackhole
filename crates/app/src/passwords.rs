@@ -468,7 +468,7 @@ impl Running {
             {"label": t(if verb { "toast.pw_update_button" } else { "toast.pw_save_button" }), "run": run("save")},
             {"label": t("toast.pw_never"), "run": run("never")},
         ]);
-        self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+        self.notify(crate::notices::Notice::Password, &message, actions);
     }
 
     fn settings_js(&self, js: &str) {
@@ -666,7 +666,7 @@ impl Running {
                 p.status.clear();
                 p.touch();
                 p.persist();
-                self.toast_action(&tf("toast.pw_deleted", &[("host", &host)]), &t("toast.undo"), json!({"cmd": "passwords", "action": {"op": "undo"}}));
+                self.notify_action(crate::notices::Notice::Undo, &tf("toast.pw_deleted", &[("host", &host)]), &t("toast.undo"), json!({"cmd": "passwords", "action": {"op": "undo"}}));
             }
             PasswordAction::Undo => {
                 let p = &mut self.passwords;
@@ -735,7 +735,7 @@ impl Running {
                 p.touch();
                 p.persist();
                 if choice != "never" {
-                    self.toast(&t("toast.pw_saved"));
+                    self.notify(crate::notices::Notice::Done, &t("toast.pw_saved"), serde_json::Value::Null);
                 }
             }
         }

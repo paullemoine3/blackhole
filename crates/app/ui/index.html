@@ -251,12 +251,13 @@
   @keyframes roll-tint { from, 60% { color: #8ff0b4; } }
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
-  #toast.act { display: flex; align-items: center; gap: 8px; }
+  /* What the toast holds (icon, text, buttons, time line) is the shared notice: ui/notice.js. */
   #toast.act.show { pointer-events: auto; }
-  #toast .txt { flex: 1; min-width: 0; }
-  #toast button { flex: none; border: 0; border-radius: 7px; padding: 3px 9px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-  #toast button.alt { background: rgba(255,255,255,.12); font-weight: 500; }
-  #toast.act { flex-wrap: wrap; }
+  /* A notice that asks: the text keeps the first line, its buttons go under it. */
+  #toast.act { flex-wrap: wrap; justify-content: flex-end; row-gap: var(--bh-space-6); }
+  #toast.act .txt { flex-basis: calc(100% - 24px); }
+  #toast.good { border-color: color-mix(in srgb, var(--bh-success) 45%, transparent); }
+  #toast.bad { border-color: var(--bh-insecure-border); }
 
 
 
@@ -310,10 +311,6 @@
   .ghost-out { position: fixed; z-index: 30; margin: 0; pointer-events: none; }
   #toast { overflow: hidden; transform: translateY(18px); transition: opacity .2s ease-in, transform .2s ease-in; }
   #toast.show { transform: none; transition: opacity .25s ease, transform .34s cubic-bezier(.2,1.3,.4,1); }
-  /* The time it stays, as a line that runs out. */
-  #toast .tbar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--accent); transform-origin: 0 0; transform: scaleX(0); }
-  #toast.show .tbar { animation: toast-time var(--t, 2200ms) linear both; }
-  @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
   /* The highlight of the active tab glides from the tab left to the tab shown. */
   .tab-glide { position: fixed; z-index: 5; pointer-events: none; border-radius: 9px; background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.04); }
   .tab.gliding { background: transparent !important; box-shadow: none !important; }
@@ -1088,24 +1085,13 @@ window.bh = {
   editFolderId,
   // `action` ({ label, run }, or a list of them) adds buttons, e.g. Undo after a deletion or
   // Save / Never for a password; it stays longer.
-  toast(m, action) {
-    const t = $('toast');
-    const txt = el('span', 'txt', m);
-    if (action) {
-      const buttons = (Array.isArray(action) ? action : [action]).map((a, i) => {
-        const b = el('button', i ? 'alt' : null, a.label);
-        b.onclick = () => { t.classList.remove('show'); send(a.run); };
-        return b;
-      });
-      t.replaceChildren(txt, ...buttons, el('i', 'tbar'));
-    } else t.replaceChildren(txt, el('i', 'tbar'));
-    const stay = action ? 8000 : 2200;
-    t.style.setProperty('--t', stay + 'ms');
-    t.classList.toggle('act', !!action);
-    t.classList.add('show');
-    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), stay);
-  },
+  toast(m, action) { notice.show({ text: m, actions: action ? [].concat(action) : [] }); },
+  // What the shell has to say (`notify`): drawn by the shared notice, here as the toast. The
+  // top bar draws the same one in its address field while no sidebar is on screen.
+  notice(n) { notice.show(n); },
+  noticeDone() { notice.done(); },
 };
+const notice = bhNotice($('toast'), (m) => send(m));
 
 const fmtBytes = (n) => n >= 1073741824 ? bhT('unit.gb', { n: (n / 1073741824).toFixed(1) }) : n >= 1048576 ? bhT('unit.mb', { n: (n / 1048576).toFixed(1) }) : bhT('unit.kb', { n: Math.max(1, Math.round(n / 1024)) });
 // Downloads in progress (and just finished) are cards above the update button. The cards are

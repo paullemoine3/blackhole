@@ -77,7 +77,7 @@ impl Running {
             .and_then(|v| v.url().ok())
             .filter(|u| u.starts_with("https://") || u.starts_with("http://"))
         else {
-            self.toast(&t("toast.cannot_watch"));
+            self.notify(crate::notices::Notice::Problem, &t("toast.cannot_watch"), serde_json::Value::Null);
             return;
         };
         let title = self
@@ -99,14 +99,15 @@ impl Running {
             return true;
         }
         let Some(id) = self.watching.list.add(url, selector, title, now()) else {
-            self.toast(&t("toast.too_many_watches"));
+            self.notify(crate::notices::Notice::Problem, &t("toast.too_many_watches"), serde_json::Value::Null);
             return false;
         };
         if let Some(view) = tab.and_then(|tab| self.tabs.get(&tab)) {
             read(view, id, selector, &self.watching.tx);
         }
         self.watching.save();
-        self.toast_action(
+        self.notify_action(
+            crate::notices::Notice::Watch,
             &t("toast.watching"),
             &t("toast.see_watches"),
             json!({"cmd": "action", "id": "open_watches"}),
@@ -158,7 +159,7 @@ impl Running {
                 let title = if w.title.is_empty() { t("toast.watched_area") } else { w.title.clone() };
                 let message = tf("toast.watch_changed", &[("title", &title), ("before", before), ("after", after)]);
                 let url = w.url.clone();
-                self.toast_action(&message, &t("toast.open"), json!({"cmd": "open", "input": url}));
+                self.notify_action(crate::notices::Notice::Watch, &message, &t("toast.open"), json!({"cmd": "open", "input": url}));
                 // Told again by a card of the sidebar, for when nobody saw the toast.
                 let detail = format!("{before} → {after}");
                 self.signal(Kind::AreaChanged, &id.to_string(), &title, &detail);

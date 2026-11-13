@@ -212,7 +212,7 @@ impl Running {
             self.toast(&t("msg.device_unpaired"));
             return;
         };
-        self.toast(&tf("toast.beam_sending", &[("name", &name)]));
+        self.notify(crate::notices::Notice::Device, &tf("toast.beam_sending", &[("name", &name)]), serde_json::Value::Null);
         self.nearby.request(Request::Beam { device, payload });
     }
 
@@ -298,7 +298,7 @@ impl Running {
                 }
                 Event::Paired(name) => {
                     self.nearby.status = message("settings.devices_paired_with", &[("name", &name)]);
-                    self.toast(&tf("toast.paired", &[("name", &name)]));
+                    self.notify(crate::notices::Notice::Device, &tf("toast.paired", &[("name", &name)]), serde_json::Value::Null);
                     self.ui_settings();
                 }
                 Event::Received {
@@ -310,12 +310,12 @@ impl Running {
                     if let Ok(url) = Url::parse(&url) {
                         let url = resume_url(&url, position);
                         self.open(url.as_str());
-                        self.toast(&tf("toast.continued_from", &[("name", &from)]));
+                        self.notify(crate::notices::Notice::Device, &tf("toast.continued_from", &[("name", &from)]), serde_json::Value::Null);
                         // The start page says where the last tab came from.
                         self.received = Some((from, url.to_string(), crate::now_secs() as i64));
                     }
                 }
-                Event::Delivered(name) => self.toast(&tf("toast.opened_on", &[("name", &name)])),
+                Event::Delivered(name) => self.notify(crate::notices::Notice::Device, &tf("toast.opened_on", &[("name", &name)]), serde_json::Value::Null),
                 // A file is only received on the user's word; declining tells the sender.
                 Event::BeamOffer { device, from, beam, name, size } => {
                     let message = tf(
@@ -327,7 +327,7 @@ impl Running {
                         {"label": t("toast.beam_accept"), "run": run(true)},
                         {"label": t("toast.beam_decline"), "run": run(false)},
                     ]);
-                    self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+                    self.notify(crate::notices::Notice::Device, &message, actions);
                 }
                 // A text is shown, and copied only when asked: nothing reaches the clipboard
                 // by itself.
@@ -345,7 +345,8 @@ impl Running {
                     });
                     self.save_downloads();
                     self.ui_library();
-                    self.toast_action(
+                    self.notify_action(
+                        crate::notices::Notice::Device,
                         &tf("toast.beam_file", &[("name", &from), ("file", &name)]),
                         &t("toast.open"),
                         json!({"cmd": "library_open_file", "id": id}),
@@ -357,7 +358,7 @@ impl Running {
                     } else {
                         tf("toast.beam_file_sent", &[("name", &to), ("file", &name)])
                     };
-                    self.toast(&message);
+                    self.notify(crate::notices::Notice::Device, &message, serde_json::Value::Null);
                 }
                 Event::Status(status) => {
                     if self.settings.is_none() {
@@ -387,7 +388,7 @@ impl Running {
             {"label": t("toast.to_easel"), "run": {"cmd": "beam_to_easel", "id": id}},
         ]);
         let message = tf("toast.beam_text", &[("name", from), ("text", &short)]);
-        self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+        self.notify(crate::notices::Notice::Device, &message, actions);
         self.signal(Kind::TextReceived, &id.to_string(), from, &short);
     }
 
@@ -447,7 +448,7 @@ impl Running {
                 let quiet = received.reply;
                 self.apply_ledger(&device, &received);
                 if !quiet {
-                    self.toast(&tf("toast.synced_with", &[("name", &name)]));
+                    self.notify(crate::notices::Notice::Device, &tf("toast.synced_with", &[("name", &name)]), serde_json::Value::Null);
                 }
             }
             Decision::Ask { opens, closes, changes } => {
@@ -472,7 +473,7 @@ impl Running {
                     {"label": t("toast.sync_always"), "run": run("always")},
                     {"label": t("toast.sync_later"), "run": run("later")},
                 ]);
-                self.ui(format!("window.bh&&bh.toast({},{actions})", json!(message)));
+                self.notify(crate::notices::Notice::Device, &message, actions);
             }
         }
     }
@@ -548,7 +549,7 @@ impl Running {
                         let name = self.nearby.devices.iter().find(|d| d.id == device).map(|d| d.name.clone());
                         match name {
                             Some(name) => {
-                                self.toast(&tf("toast.beam_sending", &[("name", &name)]));
+                                self.notify(crate::notices::Notice::Device, &tf("toast.beam_sending", &[("name", &name)]), serde_json::Value::Null);
                                 self.nearby.request(Request::Send { device, url: url.to_string(), title: String::new(), position: None });
                             }
                             None => self.toast(&t("msg.device_unpaired")),
@@ -591,7 +592,7 @@ impl Running {
                             });
                         }
                         self.apply_ledger(&id, &received);
-                        self.toast(&tf("toast.synced_with", &[("name", &name)]));
+                        self.notify(crate::notices::Notice::Device, &tf("toast.synced_with", &[("name", &name)]), serde_json::Value::Null);
                     }
                     _ => {
                         self.nearby.later.insert(id);
