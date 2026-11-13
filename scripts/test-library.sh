@@ -40,7 +40,7 @@ cmd {"cmd":"open","input":"https://example.test/"}
 wait 1500
 cmd {"cmd":"open","input":"http://127.0.0.1:47994/report"}
 wait 2500
-eval chrome 'card:' + (() => { const c = document.querySelector('#dls .dl'); return c ? c.className + '|' + c.querySelector('.pc').textContent : 'none'; })()
+eval chrome 'card:' + (() => { const c = document.querySelector('#dls .dl'); return c ? c.className + '|' + (c.querySelector('.pc').textContent || c.querySelector('.pc').title) : 'none'; })()
 eval chrome (() => { document.querySelector('#dls .dl').click(); return 'clicked'; })()
 wait 2000
 eval library 'sec:' + document.querySelector('.nav.on').dataset.s + '|' + document.querySelector('h1').textContent

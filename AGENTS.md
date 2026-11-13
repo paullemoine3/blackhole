@@ -67,10 +67,18 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   retire. Clic molette : veille pour un onglet d'accès rapide ou de dossier, fermeture sinon.
   Pas de bouton son sur les tuiles. La fonction « Lock URL » a été retirée (un ancien champ
   `locked` dans `workspace.json` est ignoré au chargement).
-- PiP : sur macOS, le bouton « retour à l'onglet » de la fenêtre flottante affiche l'onglet de la
-  vidéo (elle sort en lecture) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
-  `pip_left`). Sous WebView2, fermer ne met pas en pause : rien ne change d'onglet (la page ne distingue pas
-  « fermer » de « retour à l'onglet ») ; la carte lecteur reste dans la barre latérale.
+- PiP : le bouton « retour à l'onglet » de la fenêtre flottante affiche l'onglet de la vidéo
+  (elle sort en lecture) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
+  `pip_left`), sur macOS comme sous WebView2 (vérifié avec de vrais clics : la pause arrive
+  avant `leavepictureinpicture`). Exception WebView2 : un flux en direct (`srcObject`, champ
+  `stream`) n'est pas mis en pause à la fermeture, donc rien ne change d'onglet pour lui.
+  Barre latérale masquée : un clic molette (`open_in_background`) la fait sortir `LINK_REVEAL`.
+- Adresse saisie dans un onglet (`navigate`) : `Running::pending` la montre aussitôt dans la barre,
+  avec la ligne de progression, jusqu'au début de la page, à l'échec, à l'invite d'authentification
+  ou au téléchargement (`LOADING_MAX` au plus) ; sans elle un appareil lent du réseau local laissait
+  l'ancienne adresse une vingtaine de secondes. Menu du clic droit de la barre latérale
+  (`createMenu`) : « New black hole tab » (action `burner_tab`). Test : fin de `test-ui.ps1`
+  (`ad1`, `ad2`, `bm1`, `bm2`).
   `paused` = une pause vue pendant le PiP (`media_devices.js`), pas `video.paused` à la sortie :
   WebKit met en pause une vidéo muette (tuiles d'un appel) qui revient dans un onglet masqué.
 - Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
@@ -194,6 +202,13 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   la popup partage les scripts de l'onglet, mais wry ignore ses messages IPC (`owner`). Scripts
   injectés dans les pages : jamais `innerHTML` (Trusted Types de accounts.google.com), nœuds et
   `adoptedStyleSheets`. Test : `scripts/test-popup.sh`.
+- Popups d'extension (Windows) : `open_ext_popup` sous le bouton (`ExtAction`), ajustée au
+  contenu (`POPUP_MIN` / `POPUP_MAX`), coins arrondis (`round_ext_popup`, à refaire à chaque
+  redimensionnement). Une fenêtre qu'une extension demande depuis un onglet (déverrouillage
+  Bitwarden) repart en `Msg::OpenTab`, jamais `OpenTabFrom` : `is_extension_popout` en fait une
+  popup sous le bouton de l'extension (`ExtAnchors` envoyé par `bar.html`, `ext_anchor`), pas un
+  onglet. Nom du bouton : `__MSG_clé__` lu dans `_locales/<default_locale>` (`win::localized`).
+  Test : `scripts\test-ext.ps1`.
 - Recherche sur la sélection (0.7.19) : clic droit sur du texte sélectionné → `link_menu` avec
   `text` (non fiable) ; `domain::selection` (`clean_selection` : 500 caractères, espaces
   normalisés, caractères invisibles retirés ; `selection_action` : adresse http(s) via
@@ -333,6 +348,17 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Dossier replié (comme Arc) : il montre encore les pages ouvertes sous lui et les dossiers
   qui en contiennent (`.folder.awake`, règles CSS de `ui/index.html`) ; les onglets en veille
   restent cachés. `reveal_tab` ne déplie donc plus que la section, jamais les dossiers.
+- Mouvement (0.8.7), mêmes règles sur le bureau et sur Android : menus (lignes en cascade
+  `--i` / `enter(…, délai)`, fermeture en fondu avant de masquer : `close(then)` de
+  `palette.html` exécute la commande de l'entrée après le fondu, `#pop.out` sur mobile),
+  toasts (montée, ligne du temps restant `.tbar` / `#toast-bar`, sortie vers le bas), chiffres
+  qui défilent (`#blockedn.roll`, `roll()` sur mobile : l'ancien chiffre est dessiné par
+  `::before`, le texte relu reste le nouveau), téléchargement terminé (coche, onde, barre
+  estompée), dossiers qui se déplient depuis leur en-tête et s'y replient (`motion.play`,
+  `foldStart` / `foldPlay`). Bureau seulement : la surbrillance de l'onglet actif glisse
+  (`.tab-glide`) ; sur mobile le tiroir se ferme au choix d'un onglet. Tout passe par
+  `body.noanim` / `body.still` et `prefers-reduced-motion` (les appels `animate()` testent
+  `motion.calm()` ou `still`).
 - Trace de mise au point : `BH_TRACE=1` sur un build debug écrit sur stderr les navigations,
   demandes de nouvelle fenêtre et événements de page (`trace`, jamais en release).
 - `json!` de `ui_settings` : ajouter les nouvelles clés par `state["clé"] = …` (la macro atteint

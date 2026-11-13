@@ -447,6 +447,11 @@ pub enum UiCommand {
         w: f64,
         h: f64,
     },
+    /// Where the command bar drew each extension's button (`id` → left edge and width, window
+    /// coordinates): a window an extension asks for by itself opens under its own button.
+    ExtAnchors {
+        anchors: std::collections::HashMap<String, (f64, f64)>,
+    },
     /// Enable or remove an extension found inside an installed app (Safari web extension).
     SetAppExtension {
         id: String,
@@ -744,10 +749,13 @@ pub enum PageEvent {
     /// that failed.
     ErrorRetry,
     /// A video left Picture in Picture, paused or not (untrusted: only acted on for a tab the
-    /// shell floated).
+    /// shell floated). `stream`: a live stream, which WebView2 cannot pause when its window is
+    /// closed.
     PipLeft {
         #[serde(default)]
         paused: bool,
+        #[serde(default)]
+        stream: bool,
     },
     /// Something about the page's audio, video, camera or microphone may have changed: the
     /// shell probes this tab (it does not poll the tabs that stay silent).
@@ -850,6 +858,10 @@ mod tests {
             serde_json::from_str(r#"{"cmd":"ext_action","id":"x","x":1,"y":2,"w":3,"h":4}"#)
                 .unwrap();
         assert!(matches!(c, UiCommand::ExtAction { id, w, .. } if id == "x" && w == 3.0));
+        let c: UiCommand =
+            serde_json::from_str(r#"{"cmd":"ext_anchors","anchors":{"bitwarden":[2294,28]}}"#).unwrap();
+        assert!(matches!(c, UiCommand::ExtAnchors { anchors } if anchors["bitwarden"] == (2294.0, 28.0)));
+        assert!(serde_json::from_str::<PageEvent>(r#"{"cmd":"ext_anchors","anchors":{}}"#).is_err());
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"set_app_extension","id":"app-a","on":true}"#).unwrap();
         assert!(matches!(c, UiCommand::SetAppExtension { on: true, .. }));
@@ -1121,10 +1133,14 @@ mod tests {
     fn pip_left_parses_with_or_without_extra_fields() {
         for (raw, want) in [(r#"{"cmd":"pip_left"}"#, false), (r#"{"cmd":"pip_left","paused":true}"#, true)] {
             assert!(
-                matches!(serde_json::from_str::<PageEvent>(raw), Ok(PageEvent::PipLeft { paused }) if paused == want),
+                matches!(serde_json::from_str::<PageEvent>(raw), Ok(PageEvent::PipLeft { paused, stream: false }) if paused == want),
                 "{raw}"
             );
         }
+        assert!(matches!(
+            serde_json::from_str::<PageEvent>(r#"{"cmd":"pip_left","paused":false,"stream":true}"#),
+            Ok(PageEvent::PipLeft { paused: false, stream: true })
+        ));
     }
 
     #[test]

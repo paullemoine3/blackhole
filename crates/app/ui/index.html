@@ -152,7 +152,10 @@
   .dl .fill { height: 100%; width: 0; border-radius: var(--bh-radius-pill); background: var(--bh-accent); box-shadow: var(--bh-shadow-progress); transition: width var(--bh-duration-panel) var(--bh-ease-glide); }
   .dl.unk .fill { width: 35%; animation: dl-slide 1.1s ease-in-out infinite; }
   /* Done: the bar fills in green and the card flashes once; a click opens Library > Downloads. */
-  .dl.ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-success) 45%, transparent); animation: dl-done var(--bh-duration-lit) var(--bh-ease-standard); }
+  .dl.ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-success) 45%, transparent); animation: dl-done .7s ease-out; }
+  .dl.ok .pc svg { display: block; animation: dl-check .34s var(--bh-ease-pop) both; }
+  .dl.ok .bar { opacity: .35; transition: opacity .5s ease .3s; }
+  @keyframes dl-check { from { transform: scale(0) rotate(-40deg); } }
   .dl.ok .pc { color: var(--bh-success-text); opacity: 1; font-weight: 600; }
   .dl.ok .fill { width: 100%; background: var(--bh-success); box-shadow: none; }
   .dl.bad { box-shadow: inset 0 0 0 1px var(--bh-insecure-border); }
@@ -166,7 +169,7 @@
   .dl .cl:hover { opacity: 1; background: var(--bh-fill-control); }
   .dl.out { pointer-events: none; animation: dl-out var(--bh-duration-spring) var(--bh-ease-standard) forwards; }
   @keyframes dl-out { to { opacity: 0; transform: translateY(8px) scale(.97); } }
-  @keyframes dl-done { 30% { background: color-mix(in srgb, var(--bh-success) 22%, var(--bh-fill-card)); } }
+  @keyframes dl-done { from { box-shadow: inset 0 0 0 1px var(--bh-success), 0 0 0 0 color-mix(in srgb, var(--bh-success) 50%, transparent); } to { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-success) 45%, transparent), 0 0 0 10px transparent; } }
   @keyframes dl-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
   body.noanim .dl, body.noanim .dl *, body.noanim #tidy .td, body.noanim #meet .mt { animation: none !important; transition: none !important; }
   .newrow { display: flex; align-items: center; margin: 4px 0; } .newrow .new { flex: 1; }
@@ -218,9 +221,14 @@
   .shield { font-size: 11px; opacity: .7; padding: 0 8px; height: 32px; display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
   /* The count jumps when something new is blocked (as on Android). */
-  #blockedn { display: inline-block; }
-  #blockedn.bump { animation: bump .4s cubic-bezier(.2,.9,.3,1.15); }
-  @keyframes bump { 40% { transform: scale(1.35); color: #8ff0b4; } }
+  .roll-clip { display: inline-block; overflow: hidden; vertical-align: bottom; }
+  #blockedn { display: inline-block; position: relative; white-space: pre; }
+  /* The figure rolls like a counter: the old one leaves upwards, the new one comes from below. */
+  #blockedn.roll { animation: roll-in .26s var(--bh-ease-glide), roll-tint .52s ease; }
+  #blockedn.roll::before { content: attr(data-old); position: absolute; left: 0; top: -100%; animation: roll-out .26s ease both; }
+  @keyframes roll-in { from { transform: translateY(100%); } }
+  @keyframes roll-out { to { opacity: 0; } }
+  @keyframes roll-tint { from, 60% { color: #8ff0b4; } }
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
   #toast.act { display: flex; align-items: center; gap: 8px; }
@@ -280,8 +288,15 @@
   .tab.lit { animation: tab-lit .55s cubic-bezier(.2,.8,.2,1); }
   @keyframes tab-lit { from { background-color: color-mix(in srgb, var(--accent) 42%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 18px -4px var(--glow); } }
   .ghost-out { position: fixed; z-index: 30; margin: 0; pointer-events: none; }
-  #toast { transform: translateY(10px) scale(.97); transition: opacity .25s ease, transform .34s cubic-bezier(.2,1.3,.4,1); }
-  #toast.show { transform: none; }
+  #toast { overflow: hidden; transform: translateY(18px); transition: opacity .2s ease-in, transform .2s ease-in; }
+  #toast.show { transform: none; transition: opacity .25s ease, transform .34s cubic-bezier(.2,1.3,.4,1); }
+  /* The time it stays, as a line that runs out. */
+  #toast .tbar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--accent); transform-origin: 0 0; transform: scaleX(0); }
+  #toast.show .tbar { animation: toast-time var(--t, 2200ms) linear both; }
+  @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  /* The highlight of the active tab glides from the tab left to the tab shown. */
+  .tab-glide { position: fixed; z-index: 5; pointer-events: none; border-radius: 9px; background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.04); }
+  .tab.gliding { background: transparent !important; box-shadow: none !important; }
   #scroll::-webkit-scrollbar-thumb { transition: background-color .2s ease; }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -313,7 +328,7 @@
   <footer>
     <button class="icon" id="library" data-i18n-title="palette.hint_library" data-i18n-aria="palette.hint_library"><i data-icon="library"></i></button>
     <button class="icon" id="gear" data-i18n-aria="settings.title"><i data-icon="gear"></i></button>
-    <button class="shield" id="shield" data-i18n-title="sidebar.privacy_report"><i data-icon="shield"></i><span class="full-only" id="blockedn"> 0</span></button>
+    <button class="shield" id="shield" data-i18n-title="sidebar.privacy_report"><i data-icon="shield"></i><span class="roll-clip full-only"><span id="blockedn"> 0</span></span></button>
     <span class="grow"></span>
     <button class="icon" id="addspace" data-i18n-title="palette.new_space" data-i18n-aria="palette.new_space"><i data-icon="plus"></i></button>
   </footer>
@@ -506,6 +521,7 @@ function createMenu(x, y) {
   const easels = state.easels || [];
   openMenu(x, y, [
     { icon: 'plus', label: bhT('sidebar.new_tab'), run: { cmd: 'new_tab' } },
+    { icon: 'hole', label: bhT('palette.new_burner_tab'), run: { cmd: 'action', id: 'burner_tab' } },
     { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
     { icon: 'space', label: bhT('palette.new_space'), run: { cmd: 'action', id: 'new_space' } },
     { icon: 'easel', label: bhT('menu.new_easel'), run: { cmd: 'action', id: 'new_easel' } },
@@ -863,6 +879,19 @@ const motion = {
     const view = $('scroll').getBoundingClientRect();
     const seen = new Set();
     let fresh = 0;
+    // Folders that just opened or closed: their rows unfold from under the header, or fold
+    // back under it, instead of sliding in from the side.
+    const was = new Map((prev.folders || []).map(f => [f.id, f.collapsed]));
+    const turned = (s.folders || []).filter(f => was.has(f.id) && was.get(f.id) !== f.collapsed);
+    const header = (n, open) => {
+      for (const f of turned) {
+        if (f.collapsed === open || !n.closest(`.fb[data-folder="${f.id}"]`)) continue;
+        const h = document.querySelector(`.fh[data-folder="${f.id}"]`);
+        if (h) return h.getBoundingClientRect().bottom;
+      }
+      return null;
+    };
+    const GLIDE = 'cubic-bezier(.2,.85,.25,1)';
     for (const n of document.querySelectorAll(this.SEL)) {
       const k = this.key(n), r = n.getBoundingClientRect();
       if (!r.width || !r.height) continue;
@@ -870,6 +899,11 @@ const motion = {
       const old = before.get(k);
       if (!old) {
         if (r.bottom < view.top || r.top > view.bottom) continue;
+        const top = header(n, true);
+        if (top != null) {
+          n.animate([{ opacity: 0, transform: `translateY(${Math.min(0, top - r.top)}px)` }, { opacity: 1, transform: 'none' }], { duration: 300, easing: GLIDE });
+          continue;
+        }
         n.animate([{ opacity: 0, transform: 'translateX(-12px) scale(.96)' }, { opacity: 1, transform: 'none' }],
           { duration: 300, delay: Math.min(fresh++, 8) * 22, easing: 'cubic-bezier(.2,.9,.3,1.15)', fill: 'backwards' });
         continue;
@@ -886,20 +920,32 @@ const motion = {
       g.classList.remove('lit');
       Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
       document.body.append(g);
-      g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-14px) scale(.94)' }],
-        { duration: 220, easing: 'cubic-bezier(.4,0,.8,.4)', fill: 'forwards' }).onfinish = () => g.remove();
+      const top = header(node, false);
+      const leave = top != null
+        ? g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${Math.min(0, top - r.top)}px)` }], { duration: 240, easing: GLIDE, fill: 'forwards' })
+        : g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(-14px) scale(.94)' }], { duration: 220, easing: 'cubic-bezier(.4,0,.8,.4)', fill: 'forwards' });
+      leave.onfinish = () => g.remove();
     }
     // A folder that opened or closed turns its chevron.
-    const was = new Map((prev.folders || []).map(f => [f.id, f.collapsed]));
-    for (const f of s.folders || []) {
-      if (!was.has(f.id) || was.get(f.id) === f.collapsed) continue;
+    for (const f of turned) {
       const chev = document.querySelector(`.fh[data-folder="${f.id}"] .chev`);
       if (chev) chev.animate([{ transform: `rotate(${f.collapsed ? 90 : -90}deg)` }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3,1.3,.5,1)' });
     }
     // The tab that became active lights up briefly.
+    // The highlight glides from the tab left to the tab shown (rows of the list); a tile, or
+    // a tab that was not on screen, lights up briefly instead.
     if (s.activeTab != null && s.activeTab !== prev.activeTab) {
       const a = document.querySelector(`#scroll .tab[data-tab="${s.activeTab}"]`);
-      if (a) a.classList.add('lit');
+      const from = before.get('t' + prev.activeTab);
+      if (a && from && !a.dataset.pinned && !from.node.dataset.pinned) {
+        const r = a.getBoundingClientRect();
+        const g = el('div', 'tab-glide');
+        Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+        document.body.append(g);
+        a.classList.add('gliding');
+        g.animate([{ transform: `translate(${from.r.left - r.left}px, ${from.r.top - r.top}px)` }, { transform: 'none' }], { duration: 320, easing: GLIDE })
+          .onfinish = () => { g.remove(); a.classList.remove('gliding'); };
+      } else if (a) a.classList.add('lit');
     }
   },
   // The active space card widens while the previous one shrinks back.
@@ -1000,8 +1046,9 @@ window.bh = {
     const bn = $('blockedn'), blocked = ' ' + s.blocked;
     if (bn.textContent !== blocked) {
       const grew = Number(bn.textContent) < s.blocked;
+      bn.dataset.old = bn.textContent;
       bn.textContent = blocked;
-      if (grew) { bn.classList.remove('bump'); void bn.offsetWidth; bn.classList.add('bump'); }
+      if (grew) { bn.classList.remove('roll'); void bn.offsetWidth; bn.classList.add('roll'); }
     }
     document.body.classList.toggle('noanim', s.animations === false);
     if (before) motion.play(before, prev, s);
@@ -1027,11 +1074,13 @@ window.bh = {
         b.onclick = () => { t.classList.remove('show'); send(a.run); };
         return b;
       });
-      t.replaceChildren(txt, ...buttons);
-    } else t.replaceChildren(txt);
+      t.replaceChildren(txt, ...buttons, el('i', 'tbar'));
+    } else t.replaceChildren(txt, el('i', 'tbar'));
+    const stay = action ? 8000 : 2200;
+    t.style.setProperty('--t', stay + 'ms');
     t.classList.toggle('act', !!action);
     t.classList.add('show');
-    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), action ? 8000 : 2200);
+    clearTimeout(this._t); this._t = setTimeout(() => t.classList.remove('show'), stay);
   },
 };
 
@@ -1076,7 +1125,10 @@ function renderDownloads(list) {
     const [nm, pc, x] = c.firstChild.children;
     if (x.title !== bhT('sidebar.dl_dismiss')) { x.title = bhT('sidebar.dl_dismiss'); x.setAttribute('aria-label', x.title); }
     if (nm.textContent !== d.name) nm.textContent = d.name;
-    if (pc.textContent !== label) pc.textContent = label;
+    // Done: a check drawn once (its entrance must not replay on the next refresh).
+    if (d.state === 'ok') {
+      if (!pc.dataset.done) { pc.dataset.done = '1'; pc.replaceChildren(bhIcon('check', 'xs')); pc.title = label; }
+    } else if (pc.textContent !== label) pc.textContent = label;
     const width = known && !d.state ? pct + '%' : '';
     if (c.lastChild.firstChild.style.width !== width) c.lastChild.firstChild.style.width = width;
     c.title = d.name + (known ? ' — ' + fmtBytes(d.received) + ' / ' + fmtBytes(d.total) : '');

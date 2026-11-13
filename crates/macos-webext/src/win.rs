@@ -577,12 +577,13 @@ fn read_manifest(dir: &Path) -> Manifest {
     let json: serde_json::Value =
         serde_json::from_str(text.trim_start_matches('\u{feff}')).unwrap_or_default();
     let action = json.get("action").or_else(|| json.get("browser_action"));
-    let name = action
-        .and_then(|a| a.get("default_title"))
-        .or_else(|| json.get("name"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.starts_with("__MSG_"))
-        .map(str::to_owned)
+    // The button's title, else the extension's name; `__MSG_key__` is read in the extension's
+    // default locale (uBlock Origin Lite names itself that way).
+    let name = [action.and_then(|a| a.get("default_title")), json.get("name")]
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .find_map(|text| localized(dir, &json, text))
         .or_else(|| dir.file_name().map(|n| n.to_string_lossy().into_owned()))
         .unwrap_or_default();
     let popup = action
@@ -603,6 +604,28 @@ fn read_manifest(dir: &Path) -> Manifest {
         })
         .map(|p| dir.join(p.trim_start_matches('/')));
     Manifest { name, popup, icon }
+}
+
+/// A manifest text as written, or the message `__MSG_key__` stands for in the extension's
+/// default locale (`_locales/<default_locale>/messages.json`, keys compared without case).
+fn localized(dir: &Path, manifest: &serde_json::Value, text: &str) -> Option<String> {
+    let Some(key) = text.strip_prefix("__MSG_").and_then(|t| t.strip_suffix("__")) else {
+        return (!text.trim().is_empty()).then(|| text.to_owned());
+    };
+    let locale = manifest.get("default_locale")?.as_str()?;
+    // A folder name, never a path.
+    if !locale.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return None;
+    }
+    let raw = std::fs::read_to_string(dir.join("_locales").join(locale).join("messages.json")).ok()?;
+    let messages: serde_json::Value = serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()?;
+    messages
+        .as_object()?
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .and_then(|(_, m)| m.get("message")?.as_str())
+        .filter(|m| !m.trim().is_empty())
+        .map(str::to_owned)
 }
 
 fn data_url(path: &Path) -> Option<String> {
@@ -637,5 +660,33 @@ mod tests {
         assert_eq!(m.name, "Dark Reader");
         assert_eq!(m.popup.as_deref(), Some("ui/popup.html"));
         assert!(m.icon.unwrap().ends_with("i128.png"));
+    }
+
+    #[test]
+    fn a_localized_name_is_read_in_the_default_locale() {
+        let dir = std::env::temp_dir().join(format!("bh-manifest-msg-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("_locales/en")).unwrap();
+        std::fs::write(
+            dir.join("_locales/en/messages.json"),
+            r#"{"extName":{"message":"uBlock Origin Lite"}}"#,
+        )
+        .unwrap();
+        // The key is found whatever its case; no title on the button: the name is used.
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"name":"__MSG_extname__","default_locale":"en","action":{"default_popup":"popup.html"}}"#,
+        )
+        .unwrap();
+        let named = read_manifest(&dir);
+        // Without the message (or with a locale that is not a folder name), the folder's name.
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"name":"__MSG_missing__","default_locale":"../en","action":{"default_popup":"popup.html"}}"#,
+        )
+        .unwrap();
+        let unnamed = read_manifest(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(named.name, "uBlock Origin Lite");
+        assert!(unnamed.name.starts_with("bh-manifest-msg-"));
     }
 }

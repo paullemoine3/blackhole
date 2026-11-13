@@ -115,8 +115,10 @@
     'leavepictureinpicture',
     (e) => {
       const v = video(e);
-      // WebKit already said so below; elsewhere this is the only event.
-      if (v && !('webkitPresentationMode' in v)) post({ cmd: 'pip_left', paused: !!v.paused });
+      // WebKit already said so below; elsewhere this is the only event. Chromium pauses the
+      // video before this event when the window is closed, but cannot pause a live stream
+      // (`srcObject`): for those the two buttons look the same, and the shell is told.
+      if (v && !('webkitPresentationMode' in v)) post({ cmd: 'pip_left', paused: !!v.paused, stream: !!v.srcObject });
     },
     true
   );
