@@ -298,6 +298,19 @@ Eval folderdel "S.folders.length + ' ' + (window.__tabs - S.tabs.length) + ' ' +
 Run "document.querySelector('#toast-act').click()"
 Wait 900
 Eval folderundo "S.folders.length + ' ' + S.tabs.length + ' ' + window.__tabs"
+# Motion shared with the desktop: menu rows in cascade and a fade on the way out, the time a
+# toast stays, figures that roll, a finished download.
+Eval menurows "(menu('Test', [{ label: 'One', icon: 'x', run() {} }, { label: 'Two', icon: 'x', run() {} }, { label: 'Three', icon: 'x', run() {} }]), [...document.querySelectorAll('#pop .act')].map((n) => n.style.animationDelay).join('|'))"
+Wait 600
+Shot '30b-menu-motion'
+Eval popout "(close('pop'), document.querySelector('#pop').classList.contains('out') + ' ' + document.querySelector('#pop').hidden)"
+Wait 500
+Eval popgone "document.querySelector('#pop').hidden + ' ' + document.querySelector('#pop').classList.contains('out')"
+Eval toastbar "(toast('Test'), getComputedStyle(document.querySelector('#toast-bar')).animationName + ' ' + document.querySelector('#toast').style.getPropertyValue('--t'))"
+Eval rolled "(roll(document.querySelector('#count'), '7'), document.querySelector('#count .rl').classList.contains('roll') + ' ' + /^\d+$/.test(document.querySelector('#count .rl').dataset.old) + ' ' + document.querySelector('#count').textContent)"
+Eval dlok "(downloads({ items: [{ id: 901, name: 'a.zip', status: 'done', done: 1, total: 1 }] }), document.querySelector('#dls .dl').className.includes('ok') + ' ' + document.querySelectorAll('#dls .dl .ck').length)"
+Run "downloads({ items: [] })"
+Wait 400
 # The menu of a space (its only one cannot be deleted) and the card that offers to tidy up.
 Run "spaceMenu(S.space)"
 Wait 700
@@ -396,6 +409,11 @@ Check ((V folder) -eq '"1 1 tab 1"') 'a new folder takes the tab'
 Check ((V folded) -eq '"true 1"') 'a folder folds its tabs away'
 Check ((V folderdel) -eq '"0 1 Undo"') 'a folder is deleted with its tab, with Undo'
 Check ((V folderundo) -match '^"1 (\d+) \1"$') 'Undo brings the folder and its tab back'
+Check ((V menurows) -eq '"0.04s|0.068s|0.096s"') 'menu motion: the rows rise one after the other'
+Check ((V popout) -eq '"true false"' -and (V popgone) -eq '"true false"') 'menu motion: closing fades the menu out, then hides it'
+Check ((V toastbar) -eq '"toast-time 3200ms"') 'toast: a line shows the time it stays'
+Check ((V rolled) -eq '"true true 7"') 'a figure that changes rolls from the old one to the new one'
+Check ((V dlok) -eq '"true 1"') 'a finished download: its card rings and shows a check'
 Check ((V spacemenu) -eq '2') 'the menu of the only space: rename and color'
 Check ((V tidy) -eq '"Tidy up 6 tabs into 2 folders?"') 'the tidy card'
 Check ((V httpstatus) -eq '"forbidden"') 'an empty 403 answer gets our error page'

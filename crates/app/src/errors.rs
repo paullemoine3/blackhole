@@ -428,6 +428,7 @@ impl Running {
             map.extend(more);
         }
         self.awaiting.remove(&tab);
+        self.pending.remove(&tab);
         self.loading.remove(&tab);
         self.splash.remove(&tab);
         if let Some(view) = self.tabs.get(&tab) {

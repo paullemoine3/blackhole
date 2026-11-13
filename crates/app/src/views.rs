@@ -665,8 +665,15 @@ fn build_tab(
             match popup::new_window(&raw, sized) {
                 NewWindow::Popup => return NewWindowResponse::Allow,
                 NewWindow::Tab => {
-                    if let Ok(url) = Url::parse(&raw) {
-                        popups.push(Msg::OpenTabFrom(id(&s_pop), url));
+                    match Url::parse(&raw) {
+                        // A window asked by an extension from a page (Bitwarden's unlock, from
+                        // its menu in a login form): the shell shows it as the extension's
+                        // popup when it is one (`Msg::OpenTab`), never with a referrer.
+                        Ok(url) if blackhole_domain::is_extension_page(&url) => {
+                            popups.push(Msg::OpenTab(url));
+                        }
+                        Ok(url) => popups.push(Msg::OpenTabFrom(id(&s_pop), url)),
+                        Err(_) => {}
                     }
                 }
                 NewWindow::Deny => {}

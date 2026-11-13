@@ -175,8 +175,22 @@ window.bh = {
       b.onclick = () => { const r = b.getBoundingClientRect(); send({ cmd: 'ext_action', id: e.id, x: r.left, y: r.top, w: r.width, h: r.height }); };
       return b;
     }));
+    anchors();
   },
 };
+// Where each extension's button is, for the windows an extension opens by itself (the shell
+// puts them under the button): sent when the buttons move, not at every render.
+let anchored = '';
+function anchors() {
+  const map = {};
+  [...$('exts').children].forEach((b, i) => {
+    const r = b.getBoundingClientRect(), e = ((last && last.extensions) || [])[i];
+    if (e) map[e.id] = [Math.round(r.left), Math.round(r.width)];
+  });
+  const sig = JSON.stringify(map);
+  if (sig !== anchored) { anchored = sig; send({ cmd: 'ext_anchors', anchors: map }); }
+}
+addEventListener('resize', anchors);
 const mix = (hex, r) => {
   const n = parseInt(hex.slice(1), 16), b = [16, 15, 23];
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');

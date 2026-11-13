@@ -317,9 +317,13 @@ struct ExtPopup {
     measure: std::sync::mpsc::Sender<String>,
 }
 
-/// Popup limits: it never gets narrower than the usual toolbar popup, nor larger than Chromium's maximum.
+/// Popup limits: a narrow popup keeps its own width (uBlock Origin Lite's is 273 px wide: a wider
+/// view showed an empty strip beside it), and none gets larger than Chromium's maximum.
 #[cfg(windows)]
-const POPUP_MIN: (f64, f64) = (300.0, 120.0);
+const POPUP_MIN: (f64, f64) = (200.0, 80.0);
+/// Corner radius of an extension popup, in logical pixels.
+#[cfg(windows)]
+const POPUP_RADIUS: f64 = 10.0;
 #[cfg(windows)]
 const POPUP_MAX: (f64, f64) = (800.0, 600.0);
 
@@ -370,6 +374,9 @@ pub(crate) fn trace(line: impl FnOnce() -> String) {
 const DOWNLOAD_NAV: Duration = Duration::from_secs(10);
 /// How long a hidden sidebar shows itself for a download card.
 const DOWNLOAD_REVEAL: Duration = Duration::from_secs(4);
+/// How long a hidden sidebar shows itself when a link opens a tab in the background (middle
+/// click): without it nothing on screen says the tab is there.
+const LINK_REVEAL: Duration = Duration::from_millis(2500);
 /// How long an aborted navigation waits for the download that would explain it.
 const ABORT_GRACE: Duration = Duration::from_millis(600);
 
@@ -433,6 +440,11 @@ struct Running {
     splash: HashMap<TabId, Instant>,
     /// Tabs opened but not yet answering at all (no commit), with the URL asked for.
     awaiting: HashMap<TabId, (Instant, Url)>,
+    /// The address typed for a tab that already shows a page, until that page starts, fails or
+    /// turns into a download: the bar shows it at once, with the progress line. A slow server
+    /// (a device of the local network) otherwise left the old address for many seconds, as if
+    /// nothing had been asked.
+    pending: HashMap<TabId, (Instant, Url)>,
     /// Error pages of the tabs and what led to them (`errors.rs`).
     errors: errors::Errors,
     /// HTTP authentication prompts waiting for the user, their engine answers, and the one shown.
@@ -521,6 +533,9 @@ struct Running {
     peek: Option<Peek>,
     #[cfg(windows)]
     ext_popup: Option<ExtPopup>,
+    /// Left edge and width of each extension's button in the command bar (`ExtAnchors`).
+    #[cfg(windows)]
+    ext_anchors: HashMap<String, (f64, f64)>,
     data: std::path::PathBuf,
     /// Where installed extensions are read from: the profile itself, or, in a private window
     /// that allows extensions, the main profile.
@@ -880,6 +895,7 @@ impl Running {
             loading: HashMap::new(),
             splash: HashMap::new(),
             awaiting: HashMap::new(),
+            pending: HashMap::new(),
             errors: errors::Errors::default(),
             auth: http_auth::AuthPrompts::default(),
             auth_replies: HashMap::new(),
@@ -943,6 +959,8 @@ impl Running {
             peek: None,
             #[cfg(windows)]
             ext_popup: None,
+            #[cfg(windows)]
+            ext_anchors: HashMap::new(),
             webext,
             installing: Default::default(),
             catalog_checked: None,
@@ -2359,6 +2377,7 @@ impl Running {
             self.ensure_view(&tab);
         }
         self.sync();
+        self.reveal_sidebar(LINK_REVEAL);
     }
 
     /// Adds a live card for `selector` of the page of `tab` to `easel` (`None`: a new Easel);
@@ -2935,12 +2954,19 @@ impl Running {
 
     fn ui_bar(&self) {
         let ws = self.svc.workspace();
+        let asked = ws
+            .active_tab()
+            .filter(|_| !self.home_shown())
+            .and_then(|t| self.pending.get(&t.id))
+            .map(|(_, url)| url.to_string());
         let url = if self.home_shown() {
             String::new()
         } else {
-            ws.active_tab()
-                .map(|t| t.url.to_string())
-                .unwrap_or_default()
+            asked.clone().unwrap_or_else(|| {
+                ws.active_tab()
+                    .map(|t| t.url.to_string())
+                    .unwrap_or_default()
+            })
         };
         let nav = |can: fn(&WebView) -> wry::Result<bool>| {
             // The start page has no history: its arrows would act on the hidden tab.
@@ -2956,10 +2982,11 @@ impl Running {
             .and_then(|t| t.url.host_str())
             .and_then(|h| self.zoom.get(h))
             .map_or(100, |z| (z * 100.0).round() as u32);
-        let loading = !self.home_shown()
-            && ws
-                .active_tab()
-                .is_some_and(|t| self.loading.contains_key(&t.id) || self.splash.contains_key(&t.id));
+        let loading = asked.is_some()
+            || (!self.home_shown()
+                && ws
+                    .active_tab()
+                    .is_some_and(|t| self.loading.contains_key(&t.id) || self.splash.contains_key(&t.id)));
         let state = json!({
             "loading": loading,
             "zoom": zoom,
@@ -3003,12 +3030,14 @@ impl Running {
     /// Ends the loading screen of a tab, and the progress of a page that went quiet.
     fn service_loading(&mut self) -> bool {
         let now = Instant::now();
-        let before = (self.splash.len(), self.loading.len());
+        let before = (self.splash.len(), self.loading.len() + self.pending.len());
         self.splash
             .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < SPLASH_MAX);
         self.loading
             .retain(|id, since| self.tabs.contains_key(id) && now.duration_since(*since) < LOADING_MAX);
         self.awaiting.retain(|id, _| self.tabs.contains_key(id));
+        self.pending
+            .retain(|id, (since, _)| self.tabs.contains_key(id) && now.duration_since(*since) < LOADING_MAX);
         let late: Vec<_> = self
             .aborted
             .iter()
@@ -3031,11 +3060,12 @@ impl Running {
                 self.show_unreachable(id, url);
             }
         }
-        if before != (self.splash.len(), self.loading.len()) {
+        if before != (self.splash.len(), self.loading.len() + self.pending.len()) {
             self.sync();
         }
         !self.splash.is_empty()
             || !self.loading.is_empty()
+            || !self.pending.is_empty()
             || !self.awaiting.is_empty()
             || !self.aborted.is_empty()
     }
@@ -3862,11 +3892,12 @@ impl Running {
         }
     }
 
-    /// A video left its floating window. On macOS the window's close button pauses it: nothing
-    /// changes; its "back to tab" button leaves it playing: its tab is shown, as in Safari.
-    /// WebView2 does not pause on close, so on Windows nothing is switched. Only a video the
-    /// shell floated counts, and not when the shell itself brought it back.
-    fn pip_left(&mut self, tab: TabId, paused: bool) {
+    /// A video left its floating window. The window's close button pauses it: nothing changes;
+    /// its "back to tab" button leaves it playing: its tab is shown, as in Safari. WebView2
+    /// cannot pause a live stream on close (`stream`): for those nothing is switched on
+    /// Windows. Only a video the shell floated counts, and not when the shell itself brought
+    /// it back.
+    fn pip_left(&mut self, tab: TabId, paused: bool, stream: bool) {
         let now = Instant::now();
         self.pip_shell_exits.retain(|_, at| now.duration_since(*at) < PIP_SHELL_EXIT);
         let left = blackhole_domain::pip::PipLeft {
@@ -3874,7 +3905,7 @@ impl Running {
             left_by_shell: self.pip_shell_exits.contains_key(&tab.0),
             paused,
             tab_shown: self.shown == Some(tab) && !self.home_shown(),
-            close_pauses: cfg!(target_os = "macos"),
+            close_pauses: cfg!(target_os = "macos") || !stream,
         };
         self.pip_returned(tab);
         if self.pip_on_blur == Some(tab) {
@@ -4065,7 +4096,10 @@ impl Running {
                 if self.refuse_restricted_port(id, &url) {
                     // Nothing to load: WebKit would refuse it without a word.
                 } else if let Some(view) = self.tabs.get(&id) {
-                    let _ = view.load_url(url.as_str());
+                    if view.load_url(url.as_str()).is_ok() {
+                        self.pending.insert(id, (Instant::now(), url));
+                        self.ui_bar();
+                    }
                 }
                 self.focus_content();
             }
@@ -4272,6 +4306,7 @@ impl Running {
             return; // `reply` dropped: cancelled.
         }
         self.awaiting.remove(&tab);
+        self.pending.remove(&tab);
         let realm = http_auth::realm_of(&challenge.challenge);
         let id = self
             .auth
@@ -4786,6 +4821,7 @@ impl Running {
         match (scrim, page) {
             (Ok(scrim), Ok(page)) => {
                 let _ = page.focus();
+                self.round_ext_popup(&page);
                 self.ext_popup = Some(ExtPopup {
                     scrim,
                     page,
@@ -4805,6 +4841,24 @@ impl Running {
                     page.err()
                 );
             }
+        }
+    }
+
+    /// Where the window an extension asked for by itself goes: under that extension's button
+    /// in the command bar, or at the right edge of the window when the bar has not drawn it.
+    #[cfg(windows)]
+    fn ext_anchor(&self, page: &Url) -> (f64, f64, f64, f64) {
+        let button = self.webext.as_ref().and_then(|host| {
+            host.actions().into_iter().find_map(|a| {
+                let popup = Url::parse(&host.popup_url(&a.id)?).ok()?;
+                (popup.host_str() == page.host_str())
+                    .then(|| self.ext_anchors.get(&a.id).copied())
+                    .flatten()
+            })
+        });
+        match button {
+            Some((x, w)) => (x, 0.0, w, BAR_HEIGHT),
+            None => (self.window_size().width, BAR_HEIGHT, 0.0, 0.0),
         }
     }
 
@@ -4864,6 +4918,17 @@ impl Running {
         let _ = popup
             .page
             .set_bounds(views::rect(x, BAR_HEIGHT - 4.0, w, h));
+        if let Some(popup) = &self.ext_popup {
+            self.round_ext_popup(&popup.page);
+        }
+    }
+
+    /// Rounded corners for the popup, like the menus; the region has the size of the view, so
+    /// this follows every resize.
+    #[cfg(windows)]
+    fn round_ext_popup(&self, page: &WebView) {
+        let radius = (POPUP_RADIUS * self.window.scale_factor()).round() as i32;
+        blackhole_macos_webext::round_view(page, radius);
     }
 
     #[cfg(windows)]
@@ -5570,6 +5635,14 @@ impl Running {
                 #[cfg(windows)]
                 self.close_ext_popup();
             }
+            UiCommand::ExtAnchors { anchors } => {
+                #[cfg(windows)]
+                {
+                    self.ext_anchors = anchors;
+                }
+                #[cfg(not(windows))]
+                let _ = anchors;
+            }
             UiCommand::SetAppExtension { id, on } => {
                 if let Some(e) = self.app_ext.iter().find(|e| e.id == id).cloned() {
                     set_app_extension_enabled(&self.data, &id, on);
@@ -5859,7 +5932,7 @@ impl Running {
                     eprintln!("[page {}] {}", tab.0, msg.chars().take(600).collect::<String>());
                 }
             }
-            Msg::Page(tab, PageEvent::PipLeft { paused }) => self.pip_left(tab, paused),
+            Msg::Page(tab, PageEvent::PipLeft { paused, stream }) => self.pip_left(tab, paused, stream),
             Msg::Page(tab, PageEvent::AutofillQuery { fresh }) => self.autofill_query(tab, fresh),
             Msg::Page(tab, PageEvent::AutofillFill { index, token }) => {
                 self.autofill_fill(tab, index, &token)
@@ -5901,6 +5974,7 @@ impl Running {
                 self.dl_navs.remove(&tab);
                 self.errors_load_start(tab);
                 self.awaiting.remove(&tab);
+                self.pending.remove(&tab);
                 self.loading.insert(tab, Instant::now());
                 self.ui_bar();
             }
@@ -5912,6 +5986,7 @@ impl Running {
                 self.errors_loaded(tab, &url);
                 self.auth.loaded(tab);
                 self.loading.remove(&tab);
+                self.pending.remove(&tab);
                 if self.splash.remove(&tab).is_some() {
                     self.sync();
                 } else {
@@ -5962,8 +6037,8 @@ impl Running {
             #[cfg(windows)]
             Msg::OpenTab(url) if blackhole_domain::is_extension_popout(&url) => {
                 self.close_ext_popup();
-                let width = self.window_size().width;
-                self.show_ext_popup(url.as_str(), (width, BAR_HEIGHT, 0.0, 0.0));
+                let rect = self.ext_anchor(&url);
+                self.show_ext_popup(url.as_str(), rect);
             }
             #[cfg(target_os = "macos")]
             Msg::OpenTab(url)
@@ -6007,6 +6082,7 @@ impl Running {
                     self.forget_failure(tab);
                 }
                 self.loading.remove(&tab);
+                self.pending.remove(&tab);
                 self.reveal_sidebar(DOWNLOAD_REVEAL);
                 let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
                 let name = path

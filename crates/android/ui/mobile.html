@@ -111,7 +111,13 @@
   #progress.on { opacity: 1; transition: width .3s ease; }
   .count { width: 24px; height: 24px; border-radius: 8px; border: 2px solid currentColor; display: grid; place-items: center; font-size: 11.5px; font-weight: 800;
     font-variant-numeric: tabular-nums; }
-  .count.bump { animation: bump .4s var(--spring); }
+  /* A figure that changes rolls like a counter (`roll`): the old one leaves upwards. */
+  .count, #shield b { overflow: hidden; }
+  .rl { display: block; position: relative; }
+  .rl.roll { animation: roll-in .26s var(--ease); }
+  .rl.roll::before { content: attr(data-old); position: absolute; left: 0; right: 0; top: -100%; text-align: center; animation: roll-out .26s ease both; }
+  @keyframes roll-in { from { transform: translateY(100%); } }
+  @keyframes roll-out { to { opacity: 0; } }
   #dots { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; pointer-events: none; opacity: 0; transition: opacity .25s; }
   #dots.on { opacity: 1; }
   #dots i { width: 5px; height: 5px; border-radius: 3px; background: var(--fill2); transition: width .25s var(--ease), background .25s; }
@@ -156,6 +162,13 @@
   .act.armed { background: rgba(255,90,90,.18); }
   .dl { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--fill); border: 1px solid var(--line); font-size: 12.5px; }
   .dl.in { animation: rise .4s var(--ease) both; }
+  .dl > div:first-child { display: flex; align-items: center; gap: 8px; }
+  .dl > div:first-child span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dl .ck { width: 16px; height: 16px; flex: none; color: var(--ok); animation: pop .34s var(--spring) both; }
+  .dl.ok { border-color: rgba(143,240,180,.45); animation: dl-ring .7s ease-out; }
+  .dl.ok .pb { opacity: .35; transition: opacity .5s ease .3s; }
+  .dl.ok .pb i { background: var(--ok); }
+  @keyframes dl-ring { from { box-shadow: 0 0 0 0 rgba(143,240,180,.5); } to { box-shadow: 0 0 0 10px rgba(143,240,180,0); } }
   .dl .pb { height: 4px; border-radius: 2px; background: var(--fill2); margin-top: 7px; overflow: hidden; }
   .dl .pb i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--amber)); transition: width .4s ease; }
 
@@ -231,6 +244,9 @@
   .pop { position: fixed; left: calc(10px + var(--sl)); right: calc(10px + var(--sr)); bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 10px); z-index: 31; border-radius: 22px;
     padding: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.5);
     animation: bloom .45s var(--spring) both; transform-origin: 20% 100%; max-height: 70vh; overflow-y: auto; }
+  /* Closing fades the menu out instead of cutting it (as on the desktop). */
+  .pop.out { animation: popout .12s ease-in both; pointer-events: none; }
+  @keyframes popout { to { opacity: 0; transform: scale(.96); } }
   .grade { width: 56px; height: 56px; border-radius: 17px; display: grid; place-items: center; font-size: 28px; font-weight: 800; flex: none; }
   .g-A, .g-B { background: rgba(143,240,180,.15); color: var(--ok); border: 1px solid rgba(143,240,180,.4); }
   .g-C { background: rgba(255,176,32,.15); color: var(--amber); border: 1px solid rgba(255,176,32,.4); }
@@ -301,6 +317,10 @@
     display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px; border-radius: 14px; background: #1f1d2b; color: #eceaf5;
     box-shadow: 0 12px 30px rgba(0,0,0,.4); font-size: 14px; pointer-events: none; transition: transform .35s var(--spring), opacity .25s; max-width: 92vw; }
   #toast.on { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  #toast { overflow: hidden; }
+  #toast-bar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--accent); transform-origin: 0 0; transform: scaleX(0); }
+  #toast.on #toast-bar { animation: toast-time var(--t, 3200ms) linear both; }
+  @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
   #toast button { color: #b9a8ff; font-weight: 700; padding: 6px 10px; border-radius: 9px; }
   #toast-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
@@ -476,7 +496,7 @@
   <div id="hlist"></div>
 </section>
 
-<div id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button id="toast-undo" hidden data-i18n="undo">Undo</button><button id="toast-act" hidden></button></div>
+<div id="toast" role="status" aria-live="polite"><span id="toast-t"></span><button id="toast-undo" hidden data-i18n="undo">Undo</button><button id="toast-act" hidden></button><i id="toast-bar"></i></div>
 
 <svg width="0" height="0" style="position:absolute">
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
@@ -616,6 +636,15 @@ function changed(part, deps) {
   drawn[part] = sig;
   return true;
 }
+// Writes a figure in `box`; when it changes, the new one rolls in from below while the old
+// one leaves upwards (drawn by `.rl.roll::before`, so the text read back is the new one only).
+function roll(box, text) {
+  let n = box.firstElementChild;
+  if (!n) { n = el('span', 'rl'); box.replaceChildren(n); n.textContent = text; return; }
+  if (n.textContent === text) return;
+  n.dataset.old = n.textContent; n.textContent = text;
+  n.classList.remove('roll'); void n.offsetWidth; n.classList.add('roll');
+}
 // Entry animation of a new node (`.in` rules of the style sheet), once.
 function enter(n, delay) {
   n.classList.add('in');
@@ -665,9 +694,13 @@ function toast(text, undo, action) {
   const a = $('#toast-act');
   a.hidden = !action;
   if (action) { a.textContent = action.label; a.onclick = () => { $('#toast').classList.remove('on'); action.run(); }; }
+  const stay = undo || (action && action.long) ? 15000 : action ? 8000 : 3200;
+  const bar = $('#toast-bar');
+  $('#toast').style.setProperty('--t', stay + 'ms');
+  bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
   $('#toast').classList.add('on');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => $('#toast').classList.remove('on'), undo || (action && action.long) ? 15000 : action ? 8000 : 3200);
+  toastTimer = setTimeout(() => $('#toast').classList.remove('on'), stay);
 }
 
 // --- surface: tells the shell which touches are ours --------------------------------------
@@ -693,7 +726,15 @@ function setOpen(name, on) {
     $('#sheet').classList.toggle('on', on); $('#sheet').style.transform = '';
     if (!on) { $('#q').blur(); mode = null; $('#q').placeholder = T('search_or_address'); }
   }
-  if (name === 'pop') { if (!on) { $('#pop').hidden = true; dismissPop(); } }
+  if (name === 'pop') {
+    const p = $('#pop');
+    clearTimeout(popOut); p.classList.remove('out');
+    if (!on) {
+      dismissPop();
+      if (document.body.classList.contains('still')) p.hidden = true;
+      else { p.classList.add('out'); popOut = setTimeout(() => { p.hidden = true; p.classList.remove('out'); }, 120); }
+    }
+  }
   if (name === 'settings' || name === 'history') $('#' + name).classList.toggle('on', on);
   surface();
 }
@@ -727,7 +768,7 @@ function render() {
   renderShield();
   // Quick access tiles and folder tabs count while they are awake.
   const count = $('#count'); const c = String((S.tabs || []).filter((t) => (!t.pinned && t.folder == null) || t.live).length + (S.private_tabs || []).length);
-  if (count.textContent !== c) { count.textContent = c; count.classList.remove('bump'); void count.offsetWidth; count.classList.add('bump'); }
+  roll(count, c);
   renderHome(); renderDrawer(); if (open.grid) renderGrid(); renderSettings(); renderUpdate(); renderDots(); surface();
 }
 // Bar: the site (its icon, host, then the path in grey), like the desktop's bar.
@@ -754,7 +795,7 @@ function renderShield() {
   sh.hidden = home;
   sh.classList.toggle('warn', plain);
   sh.firstElementChild.firstElementChild.setAttribute('href', plain ? '#i-warn' : '#i-shield');
-  $('#shield-n').hidden = !n; $('#shield-n').textContent = n > 99 ? '99+' : String(n);
+  $('#shield-n').hidden = !n; roll($('#shield-n'), n > 99 ? '99+' : String(n));
 }
 
 // --- updates (start page card and Settings > Updates) ----------------------------------------
@@ -934,6 +975,43 @@ function drawerRows() {
   for (const tab of tabs.filter((t) => !known(t))) rows.push({ tab, depth: 0 });
   return rows;
 }
+// A folder opened or closed in the drawer: its rows unfold from under its header, or fold back
+// under it, instead of appearing and vanishing. `foldStart` notes where the rows are before the
+// list is redrawn, `foldPlay` animates the ones that came or went.
+let folds = new Map();
+function foldStart(rows) {
+  const now = new Map(rows.filter((r) => r.folder).map((r) => [r.folder.id, !!r.folder.collapsed]));
+  const turned = [...now].filter(([id, c]) => folds.has(id) && folds.get(id) !== c);
+  folds = now;
+  if (!turned.length || !open.drawer || document.body.classList.contains('still') || !Element.prototype.animate) return null;
+  const before = new Map([...$('#dtabs').children].map((n) => [n.__k, { n, r: n.getBoundingClientRect() }]));
+  return { before, opened: turned.filter(([, c]) => !c).map(([id]) => 'f' + id), closed: turned.filter(([, c]) => c).map(([id]) => 'f' + id) };
+}
+function foldPlay(f) {
+  if (!f) return;
+  const nodes = new Map([...$('#dtabs').children].map((n) => [n.__k, n]));
+  // The header of the nearest folder of `keys` above `top`.
+  const edge = (keys, top) => {
+    let best = null;
+    for (const k of keys) { const h = nodes.get(k); if (!h) continue; const b = h.getBoundingClientRect().bottom; if (b <= top + 1 && (best == null || b > best)) best = b; }
+    return best;
+  };
+  const glide = 'cubic-bezier(.2,.85,.25,1)';
+  for (const [k, n] of nodes) {
+    if (f.before.has(k)) continue;
+    const r = n.getBoundingClientRect(), from = edge(f.opened, r.top);
+    if (from != null) n.animate([{ opacity: 0, transform: `translateY(${from - r.top}px)` }, { opacity: 1, transform: 'none' }], { duration: 300, easing: glide });
+  }
+  for (const [k, { n, r }] of f.before) {
+    if (nodes.has(k)) continue;
+    const to = edge(f.closed, r.top);
+    if (to == null) continue;
+    const g = n.cloneNode(true);
+    g.style.cssText += `;position:fixed;z-index:22;margin:0;pointer-events:none;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+    document.body.append(g);
+    g.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${to - r.top}px)` }], { duration: 240, easing: glide, fill: 'forwards' }).onfinish = () => g.remove();
+  }
+}
 function renderDrawer() {
   const spaces = S.spaces || [];
   if (changed('spaces', [spaces, S.space.id])) sync($('#spaces'), [...spaces, null], (s) => s ? s.id : '+', (s) => {
@@ -960,6 +1038,7 @@ function renderDrawer() {
   if (changed('dtabs', [rows, S.current, !!S.private, S.space.name, iconsRev])) {
     $('#tabs-lbl').textContent = S.private ? T('private_tabs') : (S.space.name || T('tabs'));
     $('#dtabs-empty').hidden = !!rows.length;
+    const fold = foldStart(rows);
     sync($('#dtabs'), rows, (r) => (r.folder ? 'f' + r.folder.id : 't' + r.tab.id), (r) => {
       if (r.folder) {
         const b = el('button', 'trow fold'); const chev = icon('right'); chev.classList.add('chev');
@@ -990,6 +1069,7 @@ function renderDrawer() {
       const dot = b.querySelector('.live');
       if (t.live && !dot) b.append(el('i', 'live')); else if (!t.live && dot) dot.remove();
     });
+    foldPlay(fold);
   }
   const tidy = S.private ? null : S.tidy;
   if (changed('tidy', tidy)) {
@@ -1325,15 +1405,15 @@ function suggestions(m) {
 
 // --- menus, report, history ------------------------------------------------------------------
 // `dismiss`: called when the menu closes without a choice (back, scrim, another menu).
-let popDismiss = null;
+let popDismiss = null, popOut = 0;
 function dismissPop() { const d = popDismiss; popDismiss = null; if (d) d(); }
 function menu(title, items, dismiss) {
   dismissPop();
   const p = $('#pop'); p.replaceChildren();
   if (title) p.append(el('div', 'ttl', title));
-  for (const it of items) {
+  items.forEach((it, i) => {
     const ic = it.color ? (() => { const d = el('span'); d.style.cssText = `width:16px;height:16px;border-radius:50%;background:${it.color}`; return d; })() : it.icon;
-    const b = enter(row(it.label, ic, null, { cls: it.danger ? 'danger' : '' }));
+    const b = enter(row(it.label, ic, null, { cls: it.danger ? 'danger' : '' }), 0.04 + Math.min(i, 9) * 0.028);
     b.onclick = () => {
       // `confirm`: irreversible, two taps within 3 s.
       if (it.confirm && !b.classList.contains('armed')) {
@@ -1344,7 +1424,7 @@ function menu(title, items, dismiss) {
       popDismiss = null; close('pop'); it.run();
     };
     p.append(b);
-  }
+  });
   popDismiss = dismiss || null;
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
   setOpen('pop', true);
@@ -1437,10 +1517,15 @@ function armed(b, run) {
 }
 function downloads(m) {
   sync($('#dls'), m.items.slice(-3), (d) => d.id != null ? d.id : d.name, () => {
-    const c = el('div', 'dl'); const pb = el('div', 'pb'); pb.append(el('i')); c.append(el('div'), pb);
+    const c = el('div', 'dl'); const pb = el('div', 'pb'); pb.append(el('i'));
+    const top = el('div'); top.append(el('span')); c.append(top, pb);
     return c;
   }, (c, d) => {
-    c.firstElementChild.textContent = d.status === 'done' ? T('dl_done', { name: d.name }) : d.status === 'failed' ? T('dl_failed', { name: d.name }) : d.name;
+    c.firstElementChild.firstElementChild.textContent = d.status === 'done' ? T('dl_done', { name: d.name }) : d.status === 'failed' ? T('dl_failed', { name: d.name }) : d.name;
+    // Done: a check drawn once, the card rings.
+    if (d.status === 'done' && !c.classList.contains('ok')) {
+      c.classList.add('ok'); const k = icon('check'); k.classList.add('ck'); c.firstElementChild.append(k);
+    }
     c.lastElementChild.firstElementChild.style.width = (d.total > 0 ? Math.round(100 * d.done / d.total) : d.status === 'done' ? 100 : 8) + '%';
   }, true);
 }

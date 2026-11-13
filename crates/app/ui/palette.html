@@ -69,6 +69,13 @@
   body.menuing #panel { display: none; }
   body.menuing #scrim { background: transparent; animation: none; }
   @keyframes menuin { from { opacity: 0; transform: scale(.88); } }
+  /* The rows rise one after the other behind the panel; closing fades the menu out instead of
+     cutting it (`close` waits for it before the shell hides the view). */
+  body.menuing #menu > * { animation: menurow .22s var(--bh-ease-glide) both; animation-delay: calc(40ms + var(--i, 0) * 28ms); }
+  @keyframes menurow { from { opacity: 0; transform: translateY(6px); } }
+  body.menuing.leaving #menu { animation: menuout .12s ease-in both; }
+  body.menuing.leaving #menu > * { animation: none; }
+  @keyframes menuout { to { opacity: 0; transform: scale(.96); } }
   #menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
   #menu button:hover { background: var(--sel); color: #fff; }
   #menu button.danger { color: #ff8a8a; }
@@ -322,7 +329,18 @@ function run(i) {
   armed = null;
   it.run();
 }
-const close = () => send({ cmd: 'palette_close' });
+// Closes the overlay, then runs `then` (what the menu entry asked for). A menu fades out first;
+// the shell hides the view at once, so the order "close, then the command" is kept.
+const MENU_OUT = 120;
+const close = (then) => {
+  const cl = document.body.classList;
+  const done = () => { cl.remove('leaving'); send({ cmd: 'palette_close' }); if (typeof then === 'function') then(); };
+  const calm = cl.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!cl.contains('menuing') || calm) { done(); return; }
+  if (cl.contains('leaving')) return;
+  cl.add('leaving');
+  setTimeout(done, MENU_OUT);
+};
 
 function applyIcon(icon) {
   if (!target) return;
@@ -356,6 +374,7 @@ function copyText(text) {
 
 function showMenu(m) {
   const box = $('menu');
+  document.body.classList.remove('leaving');
   box.replaceChildren(...m.items.map(it => {
     if (it.sep) return Object.assign(document.createElement('div'), { className: 'msep' });
     if (it.head) return Object.assign(document.createElement('div'), { className: 'mhead', textContent: it.head });
@@ -368,17 +387,16 @@ function showMenu(m) {
     // `background`: what Ctrl/Cmd+click or a middle click runs instead (a tab behind, like a link).
     if (it.background) {
       b.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
-      b.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); close(); send(it.background); } };
+      b.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); close(() => send(it.background)); } };
     }
     b.onclick = (e) => {
       if (it.copy != null) {
         label.textContent = bhT(copyText(it.copy) ? 'palette.copied' : 'palette.copy_failed');
-        setTimeout(close, 450);
+        setTimeout(() => close(), 450);
         return;
       }
       if (it.background && (bhMac ? e.metaKey : e.ctrlKey)) {
-        close();
-        send(it.background);
+        close(() => send(it.background));
         return;
       }
       if (it.confirm && !b.classList.contains('armed')) {
@@ -386,11 +404,11 @@ function showMenu(m) {
         label.textContent = it.confirm;
         return;
       }
-      close();
-      if (it.run) send(it.run);
+      close(() => { if (it.run) send(it.run); });
     };
     return b;
   }));
+  [...box.children].forEach((n, i) => n.style.setProperty('--i', Math.min(i, 9)));
   box.style.left = '0px'; box.style.top = '0px';
   const w = box.offsetWidth, h = box.offsetHeight;
   const x = Math.max(8, Math.min(m.x, innerWidth - w - 8)), y = Math.max(8, Math.min(m.y, innerHeight - h - 8));
@@ -557,7 +575,7 @@ window.bh = {
     $('q').focus();
     if (pristine) $('q').select();
   },
-  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'comparing', 'authing'); $('q').blur(); $('eq').blur(); clearAuth(); },
+  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'leaving', 'comparing', 'authing'); $('q').blur(); $('eq').blur(); clearAuth(); },
 };
 
 $('q').addEventListener('input', () => {

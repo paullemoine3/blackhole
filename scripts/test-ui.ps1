@@ -549,13 +549,49 @@ wait 1000
 eval palette 'cm10:' + document.body.className
 cmd {"cmd":"palette_close"}
 wait 600
+# ---- menu motion: rows in cascade, a fade on the way out, nothing with animations off ----
+eval content 'an0:' + (document.getElementById('txt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 })), 'sent')
+wait 1200
+eval palette 'an1:' + getComputedStyle(document.querySelector('#menu button')).animationName + '|' + document.querySelector('#menu').children[2].style.getPropertyValue('--i')
+eval palette 'an2:' + (close(), document.body.classList.contains('leaving'))
+wait 500
+eval palette 'an3:' + document.body.classList.contains('menuing')
+eval content 'an4:' + (document.getElementById('txt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 })), 'sent')
+wait 1200
+eval palette 'an5:' + (document.body.classList.add('noanim'), close(), document.body.classList.contains('leaving'))
+wait 500
+eval palette 'an9:' + (document.body.classList.remove('noanim'), 'reset')
 eval content 'cm5:' + (document.addEventListener('contextmenu', e => e.preventDefault()), document.getElementById('txt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 })), 'own')
 wait 1000
 eval palette 'cm6:' + document.body.className
+# ---- sidebar motion: toast, counter, the active highlight ----
+cmd {"cmd":"lock"}
+wait 900
+eval chrome 'an6:' + (bh.toast('Test'), getComputedStyle(document.querySelector('#toast .tbar')).animationName + '|' + document.getElementById('toast').style.getPropertyValue('--t'))
+eval chrome 'an7:' + (bh.render(Object.assign({}, state, { blocked: state.blocked + 1 })), document.getElementById('blockedn').classList.contains('roll') + '|' + (document.getElementById('blockedn').dataset.old || '').trim() + '>' + document.getElementById('blockedn').textContent.trim())
+eval chrome 'an8:' + (() => { const rows = state.tabs.filter(t => !t.pinned && t.folder == null); const other = rows.find(t => t.id !== state.activeTab); if (rows.length < 2 || !rows.some(t => t.id === state.activeTab)) return 'few ' + rows.length; bh.render(Object.assign({}, state, { activeTab: other.id })); return !!document.querySelector('.tab-glide') + '|' + document.querySelector('#tabs .tab.active').classList.contains('gliding'); })()
+shot 41-sidebar-motion
 # ---- the sidebar's rows stay when only a counter moves ----
 eval chrome 'sb1:' + (document.querySelector('#tabs .tab').__kept = 1, bh.render(Object.assign({}, state, { blocked: state.blocked + 3 })), (document.querySelector('#tabs .tab').__kept === 1) + '|' + document.getElementById('blockedn').textContent.trim())
 eval chrome 'sb2:' + (bh.render(Object.assign({}, state, { tabs: state.tabs.map(t => Object.assign({}, t, { title: t.title + '!' })) })), document.querySelector('#tabs .tab').__kept === 1)
 eval chrome 'sb3:' + (bh.render(Object.assign({}, state, { folders: [{ id: 9001, name: 'Closed', icon: '', collapsed: true, parent: null }, { id: 9002, name: 'Inner', icon: '', collapsed: false, parent: 9001 }, { id: 9003, name: 'Idle', icon: '', collapsed: true, parent: null }], tabs: [[9101, 9001, false], [9102, 9001, true], [9103, 9002, false], [9104, 9002, true], [9105, 9003, true]].map(([id, folder, asleep]) => Object.assign({}, state.tabs[0], { id, folder, asleep, pinned: false })) })), [9101, 9102, 9103, 9104, 9105].map(id => getComputedStyle(document.querySelector('.tab[data-tab="' + id + '"]')).display !== 'none' && getComputedStyle(document.querySelector('.tab[data-tab="' + id + '"]').parentNode).display !== 'none').join(',') + '|' + [...document.querySelectorAll('.fh.idle .fname')].map(n => n.textContent).join(','))
+# ---- an address typed in a tab shows at once in the bar, with the progress line ----
+cmd {"cmd":"open","input":"https://example.com"}
+wait 4000
+cmd {"cmd":"navigate","input":"http://192.0.2.1/"}
+wait 1500
+eval bar 'ad1:' + document.getElementById('url').textContent + '|' + (last && last.loading)
+cmd {"cmd":"navigate","input":"https://example.org"}
+wait 5000
+eval bar 'ad2:' + document.getElementById('url').textContent + '|' + (last && last.loading)
+# ---- the sidebar's right-click menu opens a black hole tab ----
+eval chrome (createMenu(20, 300), 'bm0:asked')
+wait 1200
+eval palette 'bm1:' + (() => { const b = [...document.querySelectorAll('#menu button')].find(b => /black hole tab/i.test(b.textContent)); if (!b) return 'missing'; b.click(); return 'clicked'; })()
+wait 1500
+eval palette 'bm2:' + document.getElementById('q').placeholder
+cmd {"cmd":"palette_close"}
+wait 500
 quit
 '@
 # HTTP authentication: a local server answers 401 Basic (test-only credentials from the fixture).
@@ -669,7 +705,7 @@ if (-not $proc.WaitForExit(540000)) { Stop-Process -Id $proc.Id; Write-Host 'FAI
 $log = Get-Content $logFile
 # The HTTP authentication evals are tagged ("authN:") and read apart: they shift no index.
 $all = @($log | Where-Object { $_ -match '\[dev\] eval ->' })
-$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err|dl|cm|sb|hm)\d+:' })
+$evals = @($all | Where-Object { $_ -notmatch '-> "(auth|pw|err|dl|cm|sb|hm|an|ad|bm)\d+:' })
 function AuthEval($n) { $all | Where-Object { $_ -match "-> `"auth${n}:" } | Select-Object -First 1 }
 # The password wallet evals too ("pwN:").
 function PwEval($n) { $all | Where-Object { $_ -match "-> `"pw${n}:" } | Select-Object -First 1 }
@@ -830,10 +866,17 @@ Check ((Named cm6) -notmatch 'menuing') 'page menu: a page with a menu of its ow
 Check ((Named cm8) -match 'menuing.*\|true') 'page menu: a video the page plays by itself (a preview) gets it too'
 Check ((Named cm10) -notmatch 'menuing') 'page menu: a player with the engine controls keeps the engine menu'
 Check ((Named sb1) -match 'sb1:true\|[3-9]\d*' -and (Named sb2) -match 'sb2:false') 'sidebar: a counter that moves keeps the rows (no flicker), a changed tab redraws them'
+Check ((Named ad1) -match 'ad1:192\.0\.2\.1\|true' -and (Named ad2) -match 'ad2:example\.org\|false') 'address bar: the address asked for shows at once while the server is slow, then the page reached'
+Check ((Named bm1) -match 'bm1:clicked' -and (Named bm2) -match 'black hole tab') 'sidebar menu: right-click offers a new black hole tab'
 Check ((Named sb3) -match 'sb3:true,false,true,false,false\|Idle') 'folders: a closed folder shows the pages open under it only (like Arc), a folder with none is dimmed'
+Check ((Named an1) -match 'an1:menurow\|2' -and (Named an2) -match 'an2:true' -and (Named an3) -match 'an3:false') 'menu motion: rows rise in cascade, closing fades the menu out first'
+Check ((Named an5) -match 'an5:false') 'menu motion: with animations off the menu closes at once'
+Check ((Named an6) -match 'an6:toast-time\|2200ms') 'toast: a line shows the time it stays'
+Check ((Named an7) -match 'an7:true\|\d+>\d+') 'shield count: the figure rolls from the old one to the new one'
+Check ((Named an8) -match 'an8:true\|true') 'active tab: the highlight glides from the tab left to the tab shown'
 # The test file landed in the real Downloads folder: removed.
 $dlDir = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
 Get-ChildItem $dlDir -Filter 'bh-test-download*.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq 4000 } | Remove-Item -Force
-Check ($saved.Count -eq 44) "screenshots saved ($($saved.Count)/44)"
+Check ($saved.Count -eq 45) "screenshots saved ($($saved.Count)/45)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

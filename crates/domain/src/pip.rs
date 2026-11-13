@@ -12,8 +12,9 @@ pub struct PipLeft {
     pub paused: bool,
     /// Its tab is already the one on screen.
     pub tab_shown: bool,
-    /// The engine pauses a video whose window is closed (WebKit), so a playing video means
-    /// "back to tab". WebView2 does not: there the two buttons cannot be told apart.
+    /// The engine pauses this video when its window is closed, so a playing video means "back
+    /// to tab". WebKit always does; WebView2 does for a file or a network video but cannot
+    /// pause a live stream: there the two buttons cannot be told apart.
     pub close_pauses: bool,
 }
 
@@ -60,7 +61,7 @@ mod tests {
     }
 
     #[test]
-    fn engines_that_do_not_pause_on_close_never_switch() {
+    fn a_video_the_engine_cannot_pause_on_close_never_switches() {
         assert!(!back_to_tab(PipLeft { close_pauses: false, ..BACK }));
     }
 
