@@ -50,6 +50,8 @@
   .card .kind { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .07em; flex: 1; }
   .card .tool { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; width: 24px; height: 22px; padding: 0; display: grid; place-items: center; opacity: .7; }
   .card .tool:hover { background: rgba(255,255,255,.18); opacity: 1; }
+  /* A live card that is also watched: told when its area changes. */
+  .card .tool.on { opacity: 1; background: rgba(255,255,255,.22); }
   .card .link { display: block; padding: 8px 10px 0; font-weight: 600; color: #fff; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .link:hover { text-decoration: underline; }
   .card .host { padding: 0 10px 4px; font-size: 11.5px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -176,7 +178,13 @@ function card(item) {
   play.append(bhIcon(item.playing ? 'pause' : 'play', 'xs'));
   play.title = bhT(item.playing ? 'easel.pause' : 'easel.play');
   play.onclick = () => send({ cmd: item.playing ? 'easel_live_stop' : 'easel_live_play', item: item.id });
-  bar.append(el('span', 'kind', label), ...(item.kind === 'live' ? [play] : []), colors, paint, remove);
+  // The area of a live card can also be watched: a card of the sidebar tells when it changes.
+  const watch = el('button', 'tool watch' + (item.watched ? ' on' : ''));
+  watch.append(bhIcon('watch', 'xs'));
+  watch.title = bhT(item.watched ? 'easel.unwatch' : 'easel.watch');
+  watch.setAttribute('aria-pressed', item.watched ? 'true' : 'false');
+  watch.onclick = () => send({ cmd: 'easel_watch', item: item.id, on: !item.watched });
+  bar.append(el('span', 'kind', label), ...(item.kind === 'live' ? [play, watch] : []), colors, paint, remove);
   bar.onpointerdown = drag(c, item, 'move');
   c.append(bar);
   if (item.kind === 'clip') {

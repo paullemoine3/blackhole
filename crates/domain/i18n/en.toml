@@ -58,6 +58,9 @@ paused = "Paused — press Play to show this area live"
 play = "Play live"
 remove = "Remove"
 write = "Write something…"
+watch = "Tell me when this area changes"
+unwatch = "Stop watching this area"
+watch_change = "Before: {before}\nNow: {after}"
 
 [error]
 advanced = "Advanced"
@@ -131,6 +134,8 @@ got_it = "Got it"
 recent = "Recent activity"
 remove_favorite = "Remove from favorites"
 whats_new = "What’s new in BlackHole {version}"
+now = "Now"
+from_device = "Sent from {name}"
 
 [keys]
 address = "Search or enter an address (command bar)"
@@ -206,6 +211,7 @@ title = "Library"
 to_easel = "Clip to the current Easel"
 watches = "Watched Areas"
 watches_empty = "Pick an area of a page (Live capture) and choose “Watch this area for changes”."
+send_to_device = "Send to a device"
 
 [menu]
 tab_home = "Back to its own page"
@@ -291,6 +297,9 @@ trackers_blocked.other = "{n} tracker requests blocked"
 unmute_tab = "Unmute tab"
 until_quit = "Only until BlackHole quits"
 watch_area = "Watch this area for changes"
+page_send_to = "Send this page to {name}"
+link_send_to = "Send link to {name}"
+link_to_easel = "Add link to the Easel"
 
 [mobile]
 add_quick_access = "Add to quick access"
@@ -683,6 +692,18 @@ watched_areas = "Watched areas"
 zoom_in = "Zoom in"
 zoom_out = "Zoom out"
 zoom_reset = "Reset zoom"
+foot_keep = "to the Easel"
+compare_keep = "Add to the Easel"
+auth_use = "Sign in as {user}"
+auth_no_user = "saved login"
+group_highlights = "Highlights"
+group_watches = "Watched areas"
+group_recall = "Recall"
+group_archive = "Archive"
+group_downloads = "Downloads"
+hint_highlight = "Highlight"
+hint_watch = "Watched"
+hint_reopen = "Reopen"
 
 [peek]
 close = "close"
@@ -971,6 +992,7 @@ update_failed = "Update failed — retry"
 update_to = "Update to v{version}"
 updating = "Updating to v{version}…"
 usage = "{mem} · {cpu}% CPU"
+signal_notes = "The meeting has a notes Easel ready"
 
 [split]
 close_easel_pane = "Close this pane (the Easel stays in the sidebar)"
@@ -1076,6 +1098,9 @@ watch_changed = "{title}: {before} → {after}"
 watched_area = "Watched area"
 watching = "Watching this area: you’ll be told when it changes"
 zoom = "Zoom {n}%"
+burner_keeps_nothing = "A black hole tab keeps nothing: open the page in an ordinary tab to keep it"
+to_easel = "To the Easel"
+beam_text_gone = "This text is no longer kept"
 
 [unit]
 gb = "{n} GB"

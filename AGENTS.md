@@ -280,7 +280,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 10 captures `f01`–`f10` ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 13 captures `f01`–`f13` ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -316,7 +316,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   (`watch_pick` : le sélecteur puis `watch_area` sans autre question), copier le lien propre,
   rechercher, imprimer, inspecter ; `image` (non fiable, http(s)) ajoute ouvrir/copier l'adresse.
   Les entrées qui visent « la page affichée » ne sont proposées que pour l'onglet actif ; ni
-  Easel ni veille pour un onglet trou noir.
+  Easel ni veille pour un onglet trou noir (règle `domain::verbs`, voir « Ponts entre fonctions »).
   Depuis 0.8.7 les menus de lien et de sélection se terminent aussi par les outils BlackHole
   (`page_tool_items` : Easel, zone en direct, veille), et seule une vidéo/un son avec les
   contrôles du moteur (`controls`) ou un plug-in gardent le menu du moteur : une vidéo que la
@@ -364,6 +364,44 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - `json!` de `ui_settings` : ajouter les nouvelles clés par `state["clé"] = …` (la macro atteint
   sa limite de récursion).
 - MSRV : pas de `is_multiple_of` ni `as_chunks`, même si Clippy les suggère.
+
+## Ponts entre fonctions (0.8.8)
+
+Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/signals.rs`.
+
+- Registre unique « que peut-on faire de cet objet » : `domain::verbs` (`Target` : page, onglet,
+  lien, sélection, surlignage, téléchargement, résultat ; `Context` lu par le shell, jamais par la
+  page : `front`, `web`, `burner`, `error`, `paired`, `ready` ; `Verb` : ouvrir, garder dans l'Easel,
+  zone en direct, veille, surligner, envoyer). `Running::verb_context(tab)`, `front_page_allows`.
+  Menus de page/lien/sélection/surlignage, menu d'onglet (`tabs[].send`), palette et commandes
+  (`capture_to_easel`, `live_pick_start`, `continue_on`) demandent tous cette règle : tout nouveau
+  menu ou raccourci qui agit sur une page passe par elle (un onglet trou noir ne garde ni n'envoie
+  rien, raccourcis compris).
+- Recherche unique : la palette reçoit `found` (surlignages, zones surveillées, archive,
+  téléchargements, `found_json`) et interroge Recall dès 3 lettres hors de son mode (réponse
+  acceptée en modes `new`/`url`) ; groupes de 3 lignes sous un en-tête (`.ghead`, sauté par ↑/↓,
+  `step`). Ctrl/⌘+Entrée sur une ligne qui a `keep` l'envoie dans l'Easel (pied `#fkeep`).
+- L'Easel converge : `Easels::add_text` (note déjà remplie) ; commandes `link_to_easel`,
+  `found_to_easel` (Recall, archive), `watch_to_easel` (avant/après d'une zone), `compare_to_easel`
+  (bouton du comparateur), `beam_to_easel` (texte reçu). Carte en direct : bouton de veille
+  (`easel_watch`, `watched` dans l'état de l'Easel) qui crée ou retire la veille de la même zone
+  (`Watches::find`, `watch_url`).
+- Envoyer partout : `send_items` (trois appareils au plus), menu de page (« Send this page to »,
+  `continue_on`), lien (`send_link` : seule l'adresse voyage), surlignage (`beam_text`), Library >
+  Downloads (`send_download`, menu `origin: "library"`, fichier par le Wormhole).
+- Signaux qui durent : `domain::signals` (une carte par sujet, quatre au plus, expirées après 24 h,
+  2 h pour les notes de réunion, en mémoire seulement), cartes `#signals` de la barre latérale
+  (mises à jour en place, sortie `dlLeave`), `signal_act` / `signal_dismiss`. Zone qui change
+  (`service_watches`), texte reçu (`beam_text_received`), notes proposées (`open_meet`) ; la carte
+  part quand on agit ailleurs (copie, notes prises, Library des zones vue). Le toast reste.
+- Accueil : `now` de `ui_home` (`home_now_json`) : prochaine réunion (`calendar.card()`), zones
+  changées (`Watches::changed`, quatre), onglet reçu d'un autre appareil (12 h).
+- Authentification HTTP : l'origine exacte du défi (`challenge.url`, `origin_of` : https ou
+  localhost) est gardée par invite (`auth_origins`) ; la palette ne reçoit que les noms
+  (`auth.saved`), `auth_saved` fait passer le mot de passe du portefeuille au moteur.
+- Test : `scripts\test-features.ps1` (`br*` trou noir, `us*` recherche, `sg*` signaux, `hn1`
+  accueil ; étape harnais `beamtext DE|TEXTE` qui simule un texte reçu). Le bouton de veille des
+  cartes en direct et les identifiants HTTP enregistrés ne sont pas couverts par un scénario.
 
 ## Pages d'erreur et User-Agent
 
@@ -419,7 +457,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   pierre tombale `deleted` aux secrets effacés, purge après 90 j), `origin_of` (origine exacte,
   https ou localhost seulement), `offer` (Save / Update / Nothing, liste « Never »), `merge`
   (dernière modification par id, appareil en départage), `generate`, `http_auth_candidates`
-  (point d'accroche pour l'invite d'authentification HTTP, non branché). `Drop` remet à zéro le
+  (proposé par l'invite d'authentification HTTP, voir « Ponts entre fonctions »). `Drop` remet à zéro le
   mot de passe et les notes ; `Debug` ne les affiche jamais.
 - Fichier `passwords.bin` (`infrastructure/wallet.rs`), séparé de `vault.bin` : contenu
   XChaCha20-Poly1305 sous une clé de données aléatoire, en-tête (format, appareil, KDF, clé

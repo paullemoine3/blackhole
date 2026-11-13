@@ -57,6 +57,9 @@ paused = "En pause — appuyez sur Lecture pour afficher cette zone en direct"
 play = "Lire en direct"
 remove = "Retirer"
 write = "Écrivez quelque chose…"
+watch = "Me prévenir quand cette zone change"
+unwatch = "Ne plus surveiller cette zone"
+watch_change = "Avant : {before}\nMaintenant : {after}"
 
 [error]
 advanced = "Avancé"
@@ -130,6 +133,8 @@ got_it = "Compris"
 recent = "Activité récente"
 remove_favorite = "Retirer des favoris"
 whats_new = "Nouveautés de BlackHole {version}"
+now = "En ce moment"
+from_device = "Envoyé depuis {name}"
 
 [keys]
 address = "Rechercher ou saisir une adresse (barre de commande)"
@@ -205,6 +210,7 @@ title = "Bibliothèque"
 to_easel = "Épingler dans l’Easel courant"
 watches = "Zones surveillées"
 watches_empty = "Choisissez une zone d’une page (capture en direct) puis « Surveiller les changements de cette zone »."
+send_to_device = "Envoyer à un appareil"
 
 [menu]
 tab_home = "Revenir à sa page d’origine"
@@ -290,6 +296,9 @@ trackers_blocked.other = "{n} requêtes de traqueurs bloquées"
 unmute_tab = "Réactiver le son"
 until_quit = "Seulement jusqu’à la fermeture de BlackHole"
 watch_area = "Surveiller les changements de cette zone"
+page_send_to = "Envoyer cette page à {name}"
+link_send_to = "Envoyer le lien à {name}"
+link_to_easel = "Ajouter le lien à l’Easel"
 
 [mobile]
 add_quick_access = "Ajouter à l’accès rapide"
@@ -682,6 +691,18 @@ watched_areas = "Zones surveillées"
 zoom_in = "Zoom avant"
 zoom_out = "Zoom arrière"
 zoom_reset = "Réinitialiser le zoom"
+foot_keep = "dans l’Easel"
+compare_keep = "Ajouter à l’Easel"
+auth_use = "Se connecter en tant que {user}"
+auth_no_user = "identifiant enregistré"
+group_highlights = "Surlignages"
+group_watches = "Zones surveillées"
+group_recall = "Recall"
+group_archive = "Archive"
+group_downloads = "Téléchargements"
+hint_highlight = "Surlignage"
+hint_watch = "Surveillée"
+hint_reopen = "Rouvrir"
 
 [peek]
 close = "fermer"
@@ -970,6 +991,7 @@ update_failed = "Échec — réessayer"
 update_to = "Mise à jour v{version}"
 updating = "Mise à jour v{version}…"
 usage = "{mem} · {cpu} % CPU"
+signal_notes = "La réunion a un Easel de notes prêt"
 
 [split]
 close_easel_pane = "Fermer ce volet (l’Easel reste dans la barre latérale)"
@@ -1075,6 +1097,9 @@ watch_changed = "{title} : {before} → {after}"
 watched_area = "Zone surveillée"
 watching = "Zone surveillée : vous serez prévenu quand elle change"
 zoom = "Zoom {n} %"
+burner_keeps_nothing = "Un onglet trou noir ne garde rien : ouvrez la page dans un onglet ordinaire pour la garder"
+to_easel = "Dans l’Easel"
+beam_text_gone = "Ce texte n’est plus conservé"
 
 [unit]
 gb = "{n} Go"

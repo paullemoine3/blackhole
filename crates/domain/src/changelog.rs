@@ -1,6 +1,24 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.8",
+        &[
+            "One search for everything: the command bar also finds your highlights, watched areas, closed tabs (archive) and downloads, and, when Recall is on, the pages you read, each group under its own head. Ctrl/Cmd+Enter on a result keeps it in the Easel",
+            "The Easel gathers more: the comparator's table (Add to the Easel), the before and after of a watched area, a page found by Recall, a text received from another device, and a link from its menu",
+            "A live card of the Easel can also tell you when its area changes: its watch button makes it a watched area, without picking it again",
+            "Send to your other device from everywhere: a link's menu, the page's menu, a highlight's menu and Library > Downloads (the file goes through the Wormhole), as well as the tab menu and the command bar",
+            "What happened while you were away stays in the sidebar: a watched area that changed, a text received from another device and the notes offered for a meeting get a card with their buttons, until you answer or dismiss it",
+            "The start page shows what happens now: the next meeting, the watched areas that changed, and the tab just sent from another device",
+            "A server that asks for a name and password (a NAS, a router) is offered the logins saved for it in Passwords: one click signs in, the password goes from the wallet to the page without being shown",
+            "Black hole tabs keep nothing, everywhere: the command bar and the shortcuts no longer capture them to the Easel or as a live area, and they are no longer offered to another device. Every menu now asks the same rule what can be done with a page, a link, a tab or a file",
+            "Motion, on the desktop and on Android: menu rows rise one after the other and a menu fades out when it closes; a toast rises, shows the time it stays and leaves downwards; the count of blocked requests rolls like a counter; a finished download draws a check; a folder's tabs unfold from under it and fold back. On the desktop the highlight of the active tab glides from the tab left to the tab shown",
+            "Extensions on Windows: the window an extension opens from a page (Bitwarden's unlock) is its popup again, under its own button, with rounded corners and its own width; a button is named after its extension",
+            "Picture in Picture on Windows: back to tab shows the video's tab, as on macOS",
+            "An address typed in a tab shows at once in the bar, with the progress line, instead of the old address while a slow server answers",
+            "With the sidebar hidden, a middle click on a link slides it out for a moment so the new tab is seen; the sidebar's right-click menu offers a new black hole tab",
+        ],
+    ),
+    (
         "0.8.7",
         &[
             "Quick access and pinned tabs have an address of their own, like Arc: the page they had when you put them there. They can wander from it and come back to it when they wake up (after sleeping, or at the next launch); their menu offers Back to its own page, or Keep this page as its address",
@@ -14,7 +32,6 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "New launch animation, on the computer and on Android: the stars fall to a point, a flash, the black hole is born, the name comes letter by letter, then the hole lands on the start page's logo",
             "The start page's logo is quiet at rest and reacts: under the pointer (a touch on Android) the disc swells, a second ring races and the stars around it are swallowed, then come back gently",
             "The sidebar no longer flickers when the count of blocked requests moves: its rows are only redrawn when a tab, a folder or a space changes",
-            "Motion, on the desktop and on Android: menu rows rise one after the other and a menu fades out when it closes; a toast rises, shows the time it stays and leaves downwards; the count of blocked requests rolls like a counter; a finished download draws a check; a folder's tabs unfold from under it and fold back. On the desktop the highlight of the active tab glides from the tab left to the tab shown",
             "A tab opened from a page (new-window link, Ctrl/Cmd+click, middle click) now tells the site which site it comes from, as the link would have: an image in a Reddit comment opens full screen instead of showing its post again",
             "Android is smoother: the interface no longer redraws itself at every page event, so nothing blinks while you type in the address bar, close a tab or load a page; suggestions change in place, and the keyboard of the address bar no longer moves the bar or resizes the page",
             "Android speaks French: the interface follows the system's language, or the one picked in Settings > Appearance > Language, and switches at once",

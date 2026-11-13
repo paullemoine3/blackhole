@@ -267,6 +267,18 @@ impl Easels {
         Some(id)
     }
 
+    /// Adds a note that already holds `text` (a table of the comparator, a text received from
+    /// another device): the text is only ever kept as text.
+    pub fn add_text(&mut self, easel: u64, text: &str) -> Result<u64, &'static str> {
+        let text = clean(text.trim(), MAX_TEXT);
+        if text.is_empty() {
+            return Err("msg.easel_nothing_selected");
+        }
+        let id = self.add_note(easel, None).ok_or("msg.easel_full")?;
+        self.with_item(easel, id, |i| i.text = text);
+        Ok(id)
+    }
+
     /// Adds a clip of a page: its address, title and the text that was selected (may be empty).
     pub fn capture(
         &mut self,
@@ -406,6 +418,19 @@ mod tests {
         assert!(!easels.rename(a, "   "));
         assert!(easels.rename(a, " Ideas "));
         assert_eq!(easels.get(a).unwrap().name, "Ideas");
+    }
+
+    #[test]
+    fn a_note_can_arrive_with_its_text() {
+        let (mut easels, id) = board();
+        let note = easels.add_text(id, "  Price | 10 €
+Rating | 4.5  ").unwrap();
+        let item = &easels.get(id).unwrap().items[0];
+        assert_eq!((item.id, item.kind), (note, ItemKind::Note));
+        assert_eq!(item.text, "Price | 10 €
+Rating | 4.5");
+        assert!(easels.add_text(id, "   ").is_err());
+        assert!(easels.add_text(id + 1, "x").is_err());
     }
 
     #[test]

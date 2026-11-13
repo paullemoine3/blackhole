@@ -305,7 +305,18 @@ const VIEWS = {
       const status = !d.done ? bhT('library.downloading') : !d.ok ? bhT('library.failed') : !d.exists ? bhT('library.file_gone') : null;
       const sub = el('i', null, [host(d.url), status, d.at ? ago(d.at, S.now) : null].filter(Boolean).join(' · '));
       const del = iconButton('close', bhT('library.remove'), () => send({ cmd: 'library_delete_download', id: d.id }));
-      card.append(row(ico, title, sub, () => send({ cmd: 'library_open_file', id: d.id }), [del]));
+      // A file that is there can go to a paired device (the Wormhole), like a text or a link.
+      const devices = S.devices || [];
+      const acts = [];
+      if (d.done && d.ok && d.exists && devices.length) {
+        const share = iconButton('devices', bhT('library.send_to_device'), () => {
+          const r = share.getBoundingClientRect();
+          send({ cmd: 'menu', origin: 'library', x: r.left, y: r.bottom + 4, items: devices.map((v) => (
+            { icon: 'devices', label: bhT('menu.beam_to', { name: v.name }), run: { cmd: 'send_download', id: d.id, device: v.id } })) });
+        });
+        acts.push(share);
+      }
+      card.append(row(ico, title, sub, () => send({ cmd: 'library_open_file', id: d.id }), [...acts, del]));
     }
     return [...out, card];
   },
@@ -364,6 +375,7 @@ const VIEWS = {
       sub.append([w.value || bhT('library.reading'), host(w.url), w.checked > 0 ? bhT('library.checked', { when: ago(w.checked, S.now) }) : null].filter(Boolean).join(' · '));
       card.append(row(tile(w.unread ? 'live' : '', 'eye'), title, sub, () => send({ cmd: 'open', input: w.url }), [
         iconButton('reload', bhT('library.check_now'), () => send({ cmd: 'watch_check', id: w.id })),
+        ...(w.value ? [iconButton('easel', bhT('library.to_easel'), () => send({ cmd: 'watch_to_easel', id: w.id }))] : []),
         iconButton('close', bhT('library.stop_watching'), () => send({ cmd: 'watch_remove', id: w.id })),
       ]));
     }

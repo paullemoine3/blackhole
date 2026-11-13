@@ -6,6 +6,7 @@
 
 #[cfg(windows)]
 mod backdrop;
+mod bridges;
 #[cfg(feature = "devtools")]
 mod devtools;
 mod errors;
@@ -29,6 +30,7 @@ mod views;
 use i18n::{message, t, tf, tn};
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::http_auth;
+use blackhole_domain::verbs::{self, Target, Verb};
 use blackhole_domain::{
     BlockLog, Easels, FolderId, Removed, SearchEngine, Settings, SpaceId, TabId,
 };
@@ -451,6 +453,12 @@ struct Running {
     auth: http_auth::AuthPrompts,
     auth_replies: HashMap<u64, wry::HttpAuthResponder>,
     auth_shown: Option<u64>,
+    /// The exact origin of each prompt (read from the engine), for the logins saved for it.
+    auth_origins: HashMap<u64, String>,
+    /// Cards of the sidebar that stay until answered (`bridges.rs`, `domain::signals`).
+    signals: blackhole_domain::signals::Signals,
+    /// The last tab received from another device: from whom, its address, when (start page).
+    received: Option<(String, String, i64)>,
     #[cfg(target_os = "macos")]
     cards_rounded: Instant,
     media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
@@ -900,6 +908,9 @@ impl Running {
             auth: http_auth::AuthPrompts::default(),
             auth_replies: HashMap::new(),
             auth_shown: None,
+            auth_origins: HashMap::new(),
+            signals: Default::default(),
+            received: None,
             #[cfg(target_os = "macos")]
             cards_rounded: Instant::now(),
             media: Arc::default(),
@@ -1371,6 +1382,7 @@ impl Running {
             "folders": space.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name, "collapsed": f.collapsed, "icon": f.icon, "parent": f.parent.map(|p| p.0)})).collect::<Vec<_>>(),
             "media": self.media_json(),
             "meeting": self.calendar.card(),
+            "signals": self.signals_json(),
             "devices": self.nearby.menu_json(),
             "tidy": self.tidy_json(),
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == space.id.0).map(|e| json!({"id": e.id, "name": e.name, "folder": e.folder, "count": e.items.len(), "open": self.easel_tab && self.easel_current == Some(e.id)})).collect::<Vec<_>>(),
@@ -1381,6 +1393,13 @@ impl Running {
                 "asleep": !self.tabs.contains_key(&t.id),
                 "away": t.away(),
                 "burner": ws.is_burner(t.id),
+                // Its menu offers "Continue on …" (`domain::verbs`, the rule of every menu).
+                "send": verbs::allows(Target::Tab, verbs::Context {
+                    web: matches!(t.url.scheme(), "http" | "https"),
+                    burner: ws.is_burner(t.id),
+                    paired: self.paired(),
+                    ..Default::default()
+                }, Verb::Send),
             })).collect::<Vec<_>>(),
         });
         if self.icons_for_ui.replace(false) {
@@ -2115,6 +2134,14 @@ impl Running {
             self.toast(&t("toast.open_page_for_area"));
             return;
         };
+        // A live area and a watched area keep a trace of the page: never for a black hole
+        // tab (`domain::verbs`, the same rule as the menus).
+        if !self.front_page_allows(Verb::LiveArea) {
+            self.pick_watches = false;
+            let key = if self.svc.workspace().is_burner(tab) { "toast.burner_keeps_nothing" } else { "toast.open_page_for_area" };
+            self.toast(&t(key));
+            return;
+        }
         let Some(view) = self.tabs.get(&tab) else {
             return;
         };
@@ -2204,9 +2231,12 @@ impl Running {
                 "run": {"cmd": "open_link", "url": url, "target": "front"},
                 "background": {"cmd": "open_link", "url": url, "target": "tab"}}));
             items.push(json!({"icon": "copy", "label": t("menu.copy"), "copy": text}));
-            items.extend(self.beam_menu_items(text));
+            let can = verbs::verbs(Target::Selection, self.verb_context(tab));
+            if can.contains(&Verb::Send) {
+                items.extend(self.beam_menu_items(text));
+            }
             // The selection is read now, while it is there: the entry only confirms it.
-            if self.can_mark(tab) {
+            if can.contains(&Verb::Highlight) && self.can_mark(tab) {
                 self.mark_capture(tab, false);
                 items.push(json!({"icon": "marker", "label": t("menu.highlight"), "run": {"cmd": "highlight_selection", "tab": tab.0}}));
             }
@@ -2238,6 +2268,16 @@ impl Running {
                 json!({"icon": "open", "label": t("menu.link_peek"), "run": {"cmd": "open_peek", "url": link}}),
                 json!({"icon": "link", "label": t(if clean.is_some() { "menu.copy_clean_link" } else { "menu.copy_link" }), "copy": copied}),
             ]);
+            // Keep it, send it: the same rule as every other menu (`domain::verbs`).
+            let ctx = verbs::Context { web: true, ..self.verb_context(tab) };
+            for verb in verbs::verbs(Target::Link, ctx) {
+                match verb {
+                    Verb::Keep => items.push(json!({"icon": "easel", "label": t("menu.link_to_easel"),
+                        "run": {"cmd": "link_to_easel", "url": copied}})),
+                    Verb::Send => items.extend(self.send_items("menu.link_send_to", |d| json!({"cmd": "send_link", "device": d, "url": copied}))),
+                    _ => {}
+                }
+            }
         }
         let image = Url::parse(image)
             .ok()
@@ -2277,20 +2317,23 @@ impl Running {
     /// watch an area. None for another pane, a Peek, an error page, or a black hole tab
     /// (nothing of it is kept).
     fn page_tool_items(&self, tab: TabId) -> Vec<serde_json::Value> {
-        let ws = self.svc.workspace();
-        let front = ws.active_tab().is_some_and(|t| t.id == tab) && !self.home_shown();
-        let web = self
-            .view_of(tab)
-            .and_then(|v| v.url().ok())
-            .is_some_and(|u| u.starts_with("https://") || u.starts_with("http://"));
-        if !front || !web || ws.is_burner(tab) || self.error_shown(tab) {
+        verbs::verbs(Target::Page, self.verb_context(tab))
+            .into_iter()
+            .filter_map(|verb| match verb {
+                Verb::Keep => Some(json!({"icon": "easel", "label": t("menu.page_to_easel"), "run": {"cmd": "capture_to_easel"}})),
+                Verb::LiveArea => Some(json!({"icon": "eye", "label": t("menu.live_capture"), "run": {"cmd": "live_pick"}})),
+                Verb::Watch => Some(json!({"icon": "watch", "label": t("menu.watch_pick"), "run": {"cmd": "watch_pick"}})),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// "Send this page to …": the tab goes to a paired device (`domain::verbs`, Send).
+    fn page_send_items(&self, tab: TabId) -> Vec<serde_json::Value> {
+        if !verbs::allows(Target::Page, self.verb_context(tab), Verb::Send) {
             return Vec::new();
         }
-        vec![
-            json!({"icon": "easel", "label": t("menu.page_to_easel"), "run": {"cmd": "capture_to_easel"}}),
-            json!({"icon": "eye", "label": t("menu.live_capture"), "run": {"cmd": "live_pick"}}),
-            json!({"icon": "watch", "label": t("menu.watch_pick"), "run": {"cmd": "watch_pick"}}),
-        ]
+        self.send_items("menu.page_send_to", |d| json!({"cmd": "continue_on", "id": tab.0, "device": d}))
     }
 
     /// The entries of a right click on the page itself: history, the Easel, a live area, a
@@ -2333,6 +2376,7 @@ impl Running {
                 .flatten();
             items.push(json!({"icon": "link", "label": t("menu.copy_page_link"),
                 "copy": clean.as_ref().map_or(url.as_str(), Url::as_str)}));
+            items.extend(self.page_send_items(tab));
         }
         if front {
             items.extend([
@@ -2528,6 +2572,8 @@ impl Running {
             "jump": json!([self.library_jump.0, self.library_jump.1]),
             "animations": self.svc.settings().animations,
             "watches": self.watches_json(),
+            // Paired devices: a downloaded file can be sent to one (the Wormhole).
+            "devices": self.devices_brief(),
             "highlights": self.marks_json(),
         });
         if let Some(panel) = &self.library_panel.view {
@@ -2616,6 +2662,8 @@ impl Running {
                         "id": i.id, "kind": i.kind.id(), "x": i.x, "y": i.y, "w": i.w, "h": i.h,
                         "text": i.text, "title": i.title, "url": i.url, "color": i.color,
                         "selector": i.selector, "playing": self.live.contains_key(&i.id),
+                        "watched": i.kind == blackhole_domain::EaselItemKind::Live
+                            && i.url.as_deref().is_some_and(|u| self.is_watched(u, &i.selector)),
                     })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
                 "colors": blackhole_domain::easel::COLORS,
@@ -2662,6 +2710,12 @@ impl Running {
     /// Reads the page in front. The address comes from the engine; the title and the selection
     /// come from the page and are only ever stored as text.
     fn capture_to_easel(&mut self) {
+        // Nothing of a black hole tab is kept (`domain::verbs`), whatever led here.
+        let burner = self.svc.workspace().active_tab().is_some_and(|t| self.svc.workspace().is_burner(t.id));
+        if burner && !self.home_shown() {
+            self.toast(&t("toast.burner_keeps_nothing"));
+            return;
+        }
         let Some(view) = (if self.home_visible {
             None
         } else {
@@ -3085,6 +3139,7 @@ impl Running {
                 .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
                 .collect::<Vec<_>>(),
             "releaseNotes": self.release_notes,
+            "now": self.home_now_json(),
         });
         if self.icons_for_home.replace(false) {
             state["favicons"] = json!(self.favicons.all());
@@ -4312,6 +4367,13 @@ impl Running {
             .auth
             .push(tab, &challenge.host, &realm, challenge.secure, challenge.retry);
         self.auth_replies.insert(id, reply);
+        // The logins saved for exactly this origin (https or localhost) can answer it.
+        let origin = Url::parse(&challenge.url)
+            .ok()
+            .and_then(|u| blackhole_domain::passwords::origin_of(&u));
+        if let Some(origin) = origin {
+            self.auth_origins.insert(id, origin);
+        }
         if self.splash.remove(&tab).is_some() {
             self.sync();
         }
@@ -4381,6 +4443,7 @@ impl Running {
 
     fn reply_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
         for each in self.auth.answer(id, credentials.is_some()) {
+            self.auth_origins.remove(&each);
             if let Some(reply) = self.auth_replies.remove(&each) {
                 reply.respond(credentials.clone());
             }
@@ -4486,12 +4549,18 @@ impl Running {
             if self.can_mark(current_tab) {
                 actions.push(json!({"id": "highlight", "label": t("palette.highlight"), "hint": t("palette.hint_page")}));
             }
-            actions.push(
-                json!({"id": "capture_easel", "label": t("palette.capture_easel"), "keys": "mod+shift+s"}),
-            );
-            actions.push(
-                json!({"id": "capture_live", "label": t("palette.capture_live"), "keys": "mod+shift+l"}),
-            );
+            // Only what the page menu would offer for it (`domain::verbs`): nothing is kept of
+            // a black hole tab.
+            if self.front_page_allows(Verb::Keep) {
+                actions.push(
+                    json!({"id": "capture_easel", "label": t("palette.capture_easel"), "keys": "mod+shift+s"}),
+                );
+            }
+            if self.front_page_allows(Verb::LiveArea) {
+                actions.push(
+                    json!({"id": "capture_live", "label": t("palette.capture_live"), "keys": "mod+shift+l"}),
+                );
+            }
         }
         if let Some(site) = &site {
             if self.recall_on() && !blackhole_domain::recall::excluded(site, &self.svc.settings().recall_exclude) {
@@ -4541,7 +4610,11 @@ impl Running {
                 "realm": c.realm,
                 "secure": c.secure,
                 "retry": c.retry,
+                // User names only: the password goes from the wallet to the engine.
+                "saved": self.auth_shown.map(|id| self.auth_saved_users(id)).unwrap_or_default(),
             })),
+            // The highlights, watched areas, archive and downloads the search also looks in.
+            "found": if matches!(self.palette_mode.as_str(), "new" | "url") { self.found_json() } else { json!(null) },
             "boostHost": site,
             "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
             "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
@@ -5112,7 +5185,7 @@ impl Running {
                 y,
                 items,
             } => {
-                let dx = if origin == "home" {
+                let dx = if origin == "home" || origin == "library" {
                     card_rect(&self.sidebar, &self.window_size()).0
                 } else {
                     0.0
@@ -5175,6 +5248,15 @@ impl Running {
             | UiCommand::HighlightEdit { .. }
             | UiCommand::HighlightOpen { .. }
             | UiCommand::HighlightToEasel { .. }) => self.handle_marks(command),
+            command @ (UiCommand::SignalAct { .. }
+            | UiCommand::SignalDismiss { .. }
+            | UiCommand::LinkToEasel { .. }
+            | UiCommand::FoundToEasel { .. }
+            | UiCommand::WatchToEasel { .. }
+            | UiCommand::CompareToEasel { .. }
+            | UiCommand::BeamToEasel { .. }
+            | UiCommand::EaselWatch { .. }
+            | UiCommand::AuthSaved { .. }) => self.handle_bridges(command),
             command @ (UiCommand::WatchRemove { .. }
             | UiCommand::WatchCheck { .. }
             | UiCommand::WatchesSeen) => self.handle_watch(command),
@@ -5231,6 +5313,8 @@ impl Running {
             | UiCommand::BeamFile { .. }
             | UiCommand::BeamAnswer { .. }
             | UiCommand::BeamCopy { .. }
+            | UiCommand::SendLink { .. }
+            | UiCommand::SendDownload { .. }
             | UiCommand::ContinueOn { .. }) => self.handle_devices(command),
             UiCommand::OpenLink { url, target } => match target.as_str() {
                 "window" | "private" => {
@@ -6337,6 +6421,7 @@ impl ApplicationHandler<Wake> for App {
             app.service_auth();
             app.service_nearby();
             app.service_watches();
+            app.service_signals();
             app.service_marks();
             if let Some(soon) = app.service_recall() {
                 wake = wake.min(soon.max(Duration::from_millis(20)));
