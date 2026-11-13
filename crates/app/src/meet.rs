@@ -130,7 +130,8 @@ impl Running {
         let since = std::mem::replace(&mut self.calendar.remind_since, at);
         if self.svc.settings().meeting_reminders {
             for m in meetings::starting(&self.calendar.meetings, since, at) {
-                self.toast_action(
+                self.notify_action(
+                    crate::notices::Notice::Meeting,
                     &tf("toast.meeting_starts", &[("title", &m.title)]),
                     &t("toast.join"),
                     json!({"cmd": "open_meet", "url": m.url}),
@@ -161,7 +162,8 @@ impl Running {
         if self.notes_easel(&meeting).is_some() {
             self.open_meeting_notes(&meeting);
         } else {
-            self.toast_action(
+            self.notify_action(
+                crate::notices::Notice::Meeting,
                 &tf("toast.take_notes_for", &[("title", &meeting.title)]),
                 &t("toast.take_notes"),
                 json!({"cmd": "meeting_notes", "url": meeting.url, "start": meeting.start}),

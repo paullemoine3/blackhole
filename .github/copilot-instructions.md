@@ -97,6 +97,29 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   accueil ; étape harnais `beamtext DE|TEXTE` qui simule un texte reçu). Le bouton de veille des
   cartes en direct et les identifiants HTTP enregistrés ne sont pas couverts par un scénario.
 
+## Notices (toasts et capsule de la barre du haut)
+
+- Un seul point d'entrée : `Running::notify(kind, message, actions)` (`app/src/notices.rs` ; `notify_action`
+  pour un bouton, `toast` = `Notice::Info`). Ne plus écrire `bh.toast(…)` depuis Rust.
+- Les types sont déclarés à un seul endroit, `domain/notice.rs` (`Kind` : info, problem, download, done,
+  watch, easel, device, password, undo, meeting ; icône de `ui/icons.js`, ton, durée 2,2 s ou 8 s avec
+  boutons). Ajouter un type = une variante, son icône, `ALL` ; les tests vérifient l'icône.
+- Un seul composant de dessin, `ui/notice.js` (`bhNotice(host, send)`, injecté par `ui_view`) : icône,
+  texte (`textContent`), boutons, ligne du temps restant (`toast-time`). Deux hôtes : `#toast` de la barre
+  latérale (`index.html`) et `#notice` de la barre du haut (`bar.html`), où le champ d'adresse devient la
+  notice. Mêmes courbes et durées dans les deux.
+- Où elle s'affiche : chaque hôte reçoit la notice et garde son échéance ; la barre du haut ne la dessine
+  que si aucune barre latérale n'est à l'écran (`notice::in_top_bar` : ni ouverte, ni flottante), état
+  poussé par `sync_bar_notice` (`bh.side(side, waiting)`, à chaque `layout` et `ui_state`). Basculer la
+  barre pendant une notice la fait changer d'hôte, la ligne du temps reprend où elle en est.
+- Un bouton pressé envoie `notice_done` avant sa commande : tous les hôtes retirent la notice.
+- Point sur le bouton de la barre latérale (`body.waiting`) : téléchargements en cours et cartes
+  `#signals` qui attendent, barre masquée seulement. Un téléchargement fait toujours sortir la barre
+  (`reveal_sidebar`) : sa notice est alors dans la barre flottante, pas dans la capsule.
+- Test macOS : `bash scripts/test-notices.sh` (contrôles nommés, captures `notice-*`, état intermédiaire
+  et animations coupées). Windows : code commun, non testé ; `test-ui.ps1` lit toujours `#toast`.
+  Android (`mobile.html`) garde son propre toast.
+
 ## Pages d'erreur et User-Agent
 - Pages d'erreur (0.7.19) : gabarit unique `ui/error.html` (mêmes couleurs, typographie et étoiles que l'ancienne page « Site injoignable » ; une scène SVG animée propre à chaque variante, `data-art` = `kind` : vaisseau près du trou noir pour `unreachable`, satellite coupé de sa planète, écran radar de bord, vaisseau en boucle entre deux trous de ver (SMIL `animateMotion`), blocus de vaisseaux autour d'une station au cadenas brisé pour `certificate`, horloge de bord folle, sas ouvert qui perd ses données pour `http_only`, sas verrouillé à scanner, dôme d'énergie pour `forbidden`, station en surchauffe, drone traqueur pris dans le filet des Shields ; teinte `body.danger|calm|amber|green` ; `prefers-reduced-motion` et réglage `animations` → `body.still` et `pauseAnimations()` pour le SMIL), variantes `kind` : `unreachable`, `offline`, `not_found` (DNS), `redirects`, `certificate` (raison `expired`/`not_yet_valid`/`untrusted`/`self_signed`/`name_mismatch`/`revoked`/`invalid`, section « Avancé » : hôte, raison, émetteur, sujet, dates), `clock`, `http_only`, `unauthorized` (« Se connecter » = recharger, la demande d'identifiants revient si le serveur en envoie une), `forbidden`, `server`, `blocked`. `views::error_page(&json)` (JSON dans le script, `<` échappé, tout en `textContent` ; `window.__bhRetry`).
   - Domaine `error_page.rs` : `classify(Failure::WebView2(status) | Failure::NsError(domain, code))` (annulé, attente d'identifiants, `WebKitErrorDomain` 101–103/204 → `None`), `CertProblem::refine(issuer, subject)` (auto-signé), `ErrorPage::with_clock` (horloge hors 2026–2100 → `clock`), `after_https_upgrade`, `classify_status` (401, 403, 5xx), `is_bare_error_body` (corps vide ou simple ligne de statut sans `<title>` ; une page du serveur avec titre reste affichée, comme les pages de test 401/403 de l'authentification HTTP), `hsts_preloaded` (extrait : TLD Google `.dev`, `.app`… et quelques sites), `Bypasses`.

@@ -137,6 +137,8 @@ pub enum UiCommand {
     },
     /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
     UndoRemoval,
+    /// A button of a notice was pressed: every page that shows the notice drops it.
+    NoticeDone,
     /// Link menu: `target` is "tab" (background), "front" (new tab shown), "window", "private"
     /// or "burner" (a black hole tab).
     OpenLink {

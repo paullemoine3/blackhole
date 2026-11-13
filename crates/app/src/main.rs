@@ -16,6 +16,7 @@ mod ipc;
 mod media;
 mod compare;
 mod meet;
+mod notices;
 mod handoff;
 mod highlights;
 mod i18n;
@@ -437,6 +438,8 @@ struct Running {
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
     card_left: std::cell::Cell<f64>,
     bar_left: std::cell::Cell<f64>,
+    /// What the top bar was last told about notices (`sync_bar_notice`).
+    bar_notice: std::cell::Cell<(bool, usize)>,
     sampler: stats::Sampler,
     usage: Option<stats::Usage>,
     stats_tabs: usize,
@@ -902,6 +905,7 @@ impl Running {
             blur_due: None,
             card_left: std::cell::Cell::new(f64::NAN),
             bar_left: std::cell::Cell::new(f64::NAN),
+            bar_notice: std::cell::Cell::new((true, 0)),
             sampler: stats::Sampler::start(),
             usage: None,
             stats_tabs: 0,
@@ -1136,6 +1140,7 @@ impl Running {
 
     /// Positions the views; `all` also resizes background tabs (window resize, tab switch).
     fn layout(&self, all: bool) {
+        self.sync_bar_notice();
         let size = self.window_size();
         let _ = self
             .bar
@@ -1365,6 +1370,7 @@ impl Running {
     }
 
     fn ui_state(&self) {
+        self.sync_bar_notice();
         let ws = self.svc.workspace();
         let space = ws.active_space();
         let mut state = json!({
@@ -2101,7 +2107,7 @@ impl Running {
             }
             Err(err) => {
                 tracing::error!("cannot create live view: {err}");
-                self.toast(&t("toast.live_failed"));
+                self.notify(crate::notices::Notice::Problem, &t("toast.live_failed"), serde_json::Value::Null);
             }
         }
         self.ui_easel();
@@ -2456,7 +2462,7 @@ impl Running {
             }
         };
         let (Some(url), Some(easel)) = (page, easel) else {
-            self.toast(&t("toast.cannot_capture"));
+            self.notify(crate::notices::Notice::Problem, &t("toast.cannot_capture"), serde_json::Value::Null);
             return;
         };
         match self
@@ -2465,7 +2471,7 @@ impl Running {
         {
             Ok(_) => {
                 self.easel_changed(true);
-                self.toast(&t("toast.live_added"));
+                self.notify(notices::Notice::Easel, &t("toast.live_added"), serde_json::Value::Null);
             }
             Err(why) => self.toast(&t(why)),
         }
@@ -2748,7 +2754,7 @@ impl Running {
             },
         );
         if result.is_err() {
-            self.toast(&t("toast.cannot_capture"));
+            self.notify(crate::notices::Notice::Problem, &t("toast.cannot_capture"), serde_json::Value::Null);
         }
     }
 
@@ -2771,7 +2777,7 @@ impl Running {
                         .map(|e| e.name.clone())
                         .unwrap_or_default();
                     self.easel_changed(true);
-                    self.toast(&tf("toast.captured_to", &[("name", &name)]));
+                    self.notify(crate::notices::Notice::Easel, &tf("toast.captured_to", &[("name", &name)]), serde_json::Value::Null);
                 }
                 Err(why) => self.toast(&t(why)),
             }
@@ -3063,7 +3069,10 @@ impl Running {
             "engine": self.svc.settings().search_engine.label(),
             "extensions": self.bar_exts,
             "animations": self.svc.settings().animations,
+            "side": self.bar_notice_state().0,
+            "waiting": self.bar_notice_state().1,
         });
+        self.bar_notice.set(self.bar_notice_state());
         let _ = self
             .bar
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
@@ -3196,19 +3205,13 @@ impl Running {
 
     /// A short message; `message` may come from another layer (`i18n::message`).
     pub(crate) fn toast(&self, message: &str) {
-        self.ui(format!("window.bh&&bh.toast({})", json!(i18n::render(message))));
-    }
-
-    /// A toast with a button that runs `run` (a `UiCommand`), shown a little longer.
-    pub(crate) fn toast_action(&self, message: &str, label: &str, run: serde_json::Value) {
-        let action = json!({"label": label, "run": run});
-        self.ui(format!("window.bh&&bh.toast({},{action})", json!(i18n::render(message))));
+        self.notify(notices::Notice::Info, message, serde_json::Value::Null);
     }
 
     /// A toast with an Undo button, for the space or folder just deleted (`removed`).
     fn toast_undo(&mut self, message: &str, removed: Removed) {
         self.undo = Some((Instant::now(), removed));
-        self.toast_action(message, &t("toast.undo"), json!({"cmd": "undo_removal"}));
+        self.notify(notices::Notice::Undo, message, json!([{"label": t("toast.undo"), "run": {"cmd": "undo_removal"}}]));
     }
 
     /// The toast's Undo: the deleted space or folder comes back with its tabs (asleep), and they
@@ -4301,7 +4304,7 @@ impl Running {
             .is_some_and(|before| now.duration_since(before) < CRASH_LOOP);
         self.loading.remove(&tab);
         if again {
-            self.toast(&t("toast.page_crashed"));
+            self.notify(crate::notices::Notice::Problem, &t("toast.page_crashed"), serde_json::Value::Null);
             self.ui_bar();
         } else if let Some(view) = self.tabs.get(&tab) {
             let _ = view.reload();
@@ -5254,6 +5257,7 @@ impl Running {
                 }
             }
             UiCommand::UndoRemoval => self.undo_removal(),
+            UiCommand::NoticeDone => self.notice_done(),
             UiCommand::PrivacyReport { x, y } => self.privacy_report((x, y + BAR_HEIGHT)),
             UiCommand::WatchPick => {
                 self.live_pick_start();
@@ -5301,7 +5305,7 @@ impl Running {
                 );
                 self.tidied = Some(done);
                 self.sync();
-                self.toast_action(&message, &t("toast.undo"), json!({"cmd": "untidy"}));
+                self.notify(notices::Notice::Undo, &message, json!([{"label": t("toast.undo"), "run": {"cmd": "untidy"}}]));
             }
             UiCommand::Untidy => {
                 if let Some(done) = self.tidied.take() {
@@ -6256,7 +6260,8 @@ impl Running {
                 });
                 let list = self.downloads_json();
                 self.ui(format!("window.bh&&bh.downloads({list})"));
-                self.toast(&t("toast.download_started"));
+                self.sync_bar_notice();
+                self.notify(notices::Notice::Download, &t("toast.download_started"), serde_json::Value::Null);
                 self.ui_library();
             }
             Msg::DownloadDone { url, path, ok } => {
@@ -6290,11 +6295,13 @@ impl Running {
                 let list = self.downloads_json();
                 self.ui(format!("window.bh&&bh.downloads({list})"));
                 self.reveal_sidebar(DOWNLOAD_REVEAL);
-                self.toast(&t(if ok {
-                    "toast.download_complete"
+                self.sync_bar_notice();
+                let (kind, key) = if ok {
+                    (notices::Notice::Done, "toast.download_complete")
                 } else {
-                    "toast.download_failed"
-                }));
+                    (notices::Notice::Problem, "toast.download_failed")
+                };
+                self.notify(kind, &t(key), serde_json::Value::Null);
                 self.ui_library();
             }
             Msg::Blocked { why, host } => self.on_blocked(why, &host, ""),
