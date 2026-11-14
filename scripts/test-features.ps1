@@ -146,6 +146,7 @@ eval home 'hn1:' + !document.getElementById('now').hidden + '|' + document.query
 # towards the pointer, and stays flat with animations off.
 eval home 'dp7:' + (getComputedStyle(document.querySelector('.card:not([hidden])')).boxShadow !== 'none') + '|' + (getComputedStyle(document.querySelector('.item .tile, .fav .tile')).boxShadow !== 'none') + '|' + (getComputedStyle(document.querySelector('.item .tile, .fav .tile'), '::after').content !== 'none')
 eval bar 'dp8:' + document.body.classList.contains('flat') + '|' + (getComputedStyle(document.getElementById('omni')).boxShadow !== 'none')
+eval chrome (() => { const row = document.querySelector('#tabs .tab:not(.active):not(.split)'); return 'dp11:' + (getComputedStyle(document.getElementById('new')).boxShadow !== 'none') + '|' + (!row || row.matches(':hover') || getComputedStyle(row).boxShadow === 'none') + '|' + (getComputedStyle(document.querySelector('footer .icon')).boxShadow !== 'none'); })()
 eval home (() => { const n = document.querySelector('.fav') || document.querySelector('.item'); if (!n) return 'dp1:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp1:' + n.classList.contains('bh-lean') + '|' + (parseFloat(n.style.getPropertyValue('--ry')) > 2) + '|' + (getComputedStyle(n).transform !== 'none'); })()
 wait 500
 shot f13a-home-tile-leaning
@@ -159,6 +160,7 @@ wait 400
 eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp3:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp3:' + document.body.classList.contains('flat') + '|' + n.classList.contains('bh-lean'); })()
 eval home 'dp9:' + getComputedStyle(document.querySelector('.card:not([hidden])')).boxShadow + '|' + getComputedStyle(document.querySelector('.item .tile, .fav .tile'), '::after').content
 eval bar 'dp10:' + document.body.classList.contains('flat') + '|' + getComputedStyle(document.getElementById('omni')).boxShadow
+eval chrome 'dp12:' + getComputedStyle(document.getElementById('new')).boxShadow + '|' + getComputedStyle(document.querySelector('footer .icon')).boxShadow
 shot f13c-home-flat
 cmd {"cmd":"set_depth","on":true}
 wait 400
@@ -255,7 +257,9 @@ Check ((Ev dp4) -match 'dp4:false') 'depth: back to the 3D style'
 Check ((Ev dp7) -match 'dp7:true\|true\|true') 'depth: in 3D the sections and the tiles of the start page have a relief at rest'
 Check ((Ev dp8) -match 'dp8:false\|true') 'depth: in 3D the address field is a well in the top bar'
 Check ((Ev dp9) -match 'dp9:none\|none') 'depth: the flat style has no relief on the start page'
-Check ((Ev dp10) -match 'dp10:true\|')'depth: the flat style reaches the top bar'
+Check ((Ev dp10) -match 'dp10:true\|') 'depth: the flat style reaches the top bar'
+Check ((Ev dp11) -match 'dp11:true\|true\|true') 'depth: in 3D New tab and the foot buttons of the sidebar have a relief, a tab at rest has none'
+Check ((Ev dp12) -match 'dp12:none\|none') 'depth: the flat style has no relief in the sidebar'
 Check ((Ev dp5) -match 'dp5:Flat=false,3D=true') 'depth: Settings > Appearance offers Flat and 3D, 3D chosen'
 Check ((Ev rc0) -match 'rc0:recall\|A few words') 'Recall: the command bar opens in its mode'
 Check ((Ev rc1) -match 'rc1:[1-9]\d*\|Black hole') 'Recall: a page read is found from words of its text'

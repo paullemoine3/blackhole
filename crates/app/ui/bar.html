@@ -84,8 +84,8 @@
   .ext { animation: pop .25s cubic-bezier(.2,1.4,.4,1) backwards; }
   /* Relief (3D style of the interface; shadows from depth.js): the address field is a well cut
      in the bar, what sits in the bar stands off it. */
-  body:not(.flat) #omni { background-color: rgba(0,0,0,.24); border-color: rgba(255,255,255,.07); box-shadow: var(--bh-relief-sunk); }
-  body:not(.flat) #omni:hover { background-color: rgba(0,0,0,.16); box-shadow: var(--bh-relief-sunk), 0 6px 18px -10px var(--glow); }
+  body:not(.flat) #omni { background-color: rgba(0,0,0,.16); border-color: rgba(255,255,255,.08); box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) #omni:hover { background-color: rgba(0,0,0,.1); box-shadow: var(--bh-relief-sunk), 0 6px 18px -10px var(--glow); }
   body:not(.flat) #zoom, body:not(.flat) .priv { box-shadow: var(--bh-relief-raised); }
   body:not(.flat) #notice { box-shadow: var(--bh-relief-raised), 0 6px 18px -10px var(--nt); }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }

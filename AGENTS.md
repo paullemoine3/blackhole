@@ -314,12 +314,19 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   non concerné. Le 3D se voit aussi au repos : `depth.js` donne les ombres du relief
   (`--bh-relief-panel` / `-raised` / `-key` / `-key-down` / `-sunk`, `--bh-sheen`, `--bh-sheen-soft`),
   chaque page les pose sous `body:not(.flat)` (sections et cartes détachées de la page, tuiles
-  en touches éclairées d'en haut, champs et choix segmentés en creux, barre du haut comprise ;
+  éclairées d'en haut, champs et choix segmentés en creux, barre du haut comprise ;
   l'ombre d'une carte penchée fuit le pointeur). Le relief n'est pas un mouvement : il reste
   avec les animations coupées. Une surface dont le `box-shadow` dit un état (téléchargement
-  terminé, réunion en cours) ne reçoit que `--bh-sheen-soft`. Une tuile de 50 px ne paraît
-  penchée qu'avec une perspective courte (150–240 px) et 20° : ne pas revenir à 500 px.
-  Test : `scripts\test-features.ps1` (`dp1`–`dp10`).
+  terminé, réunion en cours) ne reçoit que `--bh-sheen-soft`. Le relief est bas par choix
+  (arêtes d'un pixel, ombres courtes et légères, reflet faible ; tuiles penchées de 12° au plus) :
+  il doit se lire comme de la profondeur, jamais comme un décor. Ne pas le remonter.
+  Barre latérale : onglets et accès rapide restent discrets (on les regarde toute la journée,
+  et il peut y en avoir beaucoup) : une tuile d'accès rapide, l'onglet affiché, la ligne survolée
+  et « New tab » n'ont que `--bh-relief-row` (deux arêtes fines, sans ombre portée ni reflet) ;
+  un onglet au repos n'a pas de bande, les lignes ne penchent pas, une tuile penche de 12° au
+  plus. Boutons du pied détachés et enfoncés à la pression, séparateurs en rainure. Toute règle
+  `body:not(.flat) .tab…` doit laisser gagner `.tab.split` (trait d'accent) et `.tab.gliding`.
+  Test : `scripts\test-features.ps1` (`dp1`–`dp12`).
 - Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
   (`split_shown`, appelé par `sync` : paire d'onglets nouvelle, pas un simple changement de focus)
   fait glisser le volet droit depuis la droite ; un lien pilote (`pilot_sent`) fait monter le

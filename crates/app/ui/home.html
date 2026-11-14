@@ -123,27 +123,27 @@
   .item:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.14); box-shadow: 0 10px 24px -16px rgba(124,92,255,.7); }
   /* Depth: a tile leans towards the pointer and its icon stands out of it (depth.js). */
   .fav, .item { transform-style: preserve-3d; }
-  .fav.bh-lean { transform: perspective(240px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(6px); }
-  .fav.bh-lean .tile { transform: translateZ(24px) scale(1.04); }
-  .fav.bh-lean .name { transform: translateZ(10px); }
-  .item.bh-lean { transform: perspective(420px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(6px);
-    background-image: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(124,92,255,.28), transparent 70%); }
+  .fav.bh-lean { transform: perspective(320px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(3px); }
+  .fav.bh-lean .tile { transform: translateZ(12px) scale(1.03); }
+  .fav.bh-lean .name { transform: translateZ(5px); }
+  .item.bh-lean { transform: perspective(600px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(3px);
+    background-image: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(124,92,255,.2), transparent 70%); }
   .item .tile, .item .meta, .fav .name { transition: transform .26s cubic-bezier(.3,1.4,.5,1), box-shadow .26s ease; }
-  .item.bh-lean .tile { transform: translateZ(22px); }
-  .item.bh-lean .meta { transform: translateZ(10px); }
+  .item.bh-lean .tile { transform: translateZ(10px); }
+  .item.bh-lean .meta { transform: translateZ(5px); }
   /* Relief (3D style, at rest too; shadows from depth.js): sections stand off the page, rows off
-     their section, and a tile is a key lit from above, whose shadow runs away from the pointer. */
-  body:not(.flat) .card { background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.035)); box-shadow: var(--bh-relief-panel); }
+     their section, and a tile catches a little light from above; its shadow runs away from the pointer. */
+  body:not(.flat) .card { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04)); box-shadow: var(--bh-relief-panel); }
   body:not(.flat) .news { background: linear-gradient(135deg, rgba(124,92,255,.26), rgba(255,255,255,.04)); }
   body:not(.flat) .item { background-color: rgba(255,255,255,.045); box-shadow: var(--bh-relief-raised); }
   body:not(.flat) .item.live { background-color: rgba(124,92,255,.14); }
-  body:not(.flat) .item:hover { background-color: rgba(255,255,255,.1); box-shadow: var(--bh-relief-raised), 0 14px 26px -16px rgba(124,92,255,.8); }
+  body:not(.flat) .item:hover { background-color: rgba(255,255,255,.1); box-shadow: var(--bh-relief-raised), 0 10px 24px -16px rgba(124,92,255,.7); }
   body:not(.flat) .tile { position: relative; box-shadow: var(--bh-relief-key); }
   body:not(.flat) .tile::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: var(--bh-sheen); }
   body:not(.flat) .fav:hover:not(.bh-lean) .tile { box-shadow: var(--bh-relief-key); }
-  body:not(.flat) .item .tile { box-shadow: var(--bh-relief-face), 0 2px 0 #00000080, 0 6px 10px -5px #000000cc; }
-  body:not(.flat) .bh-lean .tile { box-shadow: var(--bh-relief-face), 0 3px 0 #00000080, calc(var(--ry, 0) * -.8px) calc(var(--rx, 0) * .8px + 18px) 22px -8px #000000e6; }
-  body:not(.flat) .bh-lean .tile::after { background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), #ffffff66, transparent 62%), var(--bh-sheen); }
+  body:not(.flat) .item .tile { box-shadow: var(--bh-relief-face), 0 1px 0 #00000052, 0 4px 8px -6px #00000099; }
+  body:not(.flat) .bh-lean .tile { box-shadow: var(--bh-relief-face), 0 1px 0 #00000052, calc(var(--ry, 0) * -.5px) calc(var(--rx, 0) * .5px + 10px) 16px -8px #000000b3; }
+  body:not(.flat) .bh-lean .tile::after { background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), #ffffff2e, transparent 62%), var(--bh-sheen); }
   body:not(.flat) :is(.fav, .item):active .tile { box-shadow: var(--bh-relief-key-down); }
   body:not(.flat) #wait .tile { box-shadow: var(--bh-relief-key); }
   .fav:active, .item:active { transform: scale(.97); }
@@ -335,7 +335,7 @@ window.bh = {
     timer = setTimeout(reset, 3000);
   };
 }
-if (window.bhDepth) { bhDepth('.fav', 20); bhDepth('.item', 9); }
+if (window.bhDepth) { bhDepth('.fav', 12); bhDepth('.item', 5); }
 send({ cmd: 'ready' });
 </script>
 </body>

@@ -3,7 +3,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
     (
         "0.8.12",
         &[
-            "The 3D style of the interface now shows at rest, not only under the pointer: sections and cards stand off the page, coloured tiles are keys lit from above, the address field, the fields and the segmented choices of the Settings are wells, in the sidebar, the top bar, the start page, the Library, the Settings, the command bar and the Easel. A tile leans further towards the pointer, with a shadow that runs away from it. The Flat style is unchanged",
+            "The 3D style of the interface now shows at rest, not only under the pointer: sections and cards stand off the page, coloured tiles catch a little light from above, the address field, the fields and the segmented choices of the Settings are wells. The sidebar stays quiet: quick access tiles and the tab shown only get two fine edges, the lines between the parts are grooves and the buttons of the foot stand out. All of it in the sidebar, the top bar, the start page, the Library, the Settings, the command bar and the Easel. A tile leans a little further towards the pointer, with a shadow that runs away from it. The relief is kept low, so that it reads as depth and not as decoration. The Flat style is unchanged",
         ],
     ),
     (
