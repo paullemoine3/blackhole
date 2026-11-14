@@ -119,8 +119,15 @@
     transition: transform var(--bh-duration-spring) var(--bh-ease-press), box-shadow var(--bh-duration-spring) var(--bh-ease-standard), border-color var(--bh-duration-hover); }
   .ec:hover { transform: translateY(-2px); box-shadow: var(--bh-shadow-item-hover); border-color: var(--bh-accent-border); }
   /* Depth: tiles and Easel cards lean towards the pointer (depth.js); a press flattens them. */
-  .tile.bh-lean, .ec.bh-lean { transform: perspective(700px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(8px); }
-  .ec.bh-lean { background-image: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), var(--bh-accent-glow-soft), transparent 70%); }
+  .tile.bh-lean, .ec.bh-lean { transform: perspective(600px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(4px); }
+  /* Relief (3D style, at rest too; shadows from depth.js): lists stand off the page, tiles and
+     cards off their grid, and the shadow of the one that leans runs away from the pointer. */
+  body:not(.flat) .card { background-image: var(--bh-sheen-soft); box-shadow: var(--bh-relief-panel); }
+  body:not(.flat) .tile, body:not(.flat) .ec { background-image: var(--bh-sheen-soft); box-shadow: var(--bh-relief-raised); }
+  body:not(.flat) .tile:hover { box-shadow: var(--bh-relief-raised), var(--bh-shadow-tile-lift); }
+  body:not(.flat) .ec:hover { box-shadow: var(--bh-relief-raised), var(--bh-shadow-item-hover); }
+  body:not(.flat) .tile.bh-lean, body:not(.flat) .ec.bh-lean { box-shadow: var(--bh-relief-raised), calc(var(--ry, 0) * -1px) calc(var(--rx, 0) * 1px + 12px) 22px -12px #000000b3; }
+  body:not(.flat) .ec.bh-lean { background-image: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), var(--bh-accent-glow-soft), transparent 70%), var(--bh-sheen-soft); }
   .tile:active, .ec:active { transform: scale(.98); }
   .ec .head { display: flex; align-items: center; gap: var(--bh-space-8); }
   .ec .head b { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

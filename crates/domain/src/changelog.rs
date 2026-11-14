@@ -1,6 +1,12 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.12",
+        &[
+            "The 3D style of the interface now shows at rest, not only under the pointer: sections and cards stand off the page, coloured tiles catch a little light from above, the address field, the fields and the segmented choices of the Settings are wells. The sidebar stays quiet: quick access tiles and the tab shown only get two fine edges, the lines between the parts are grooves and the buttons of the foot stand out. All of it in the sidebar, the top bar, the start page, the Library, the Settings, the command bar and the Easel. A tile leans a little further towards the pointer, with a shadow that runs away from it. The relief is kept low, so that it reads as depth and not as decoration. The Flat style is unchanged",
+        ],
+    ),
+    (
         "0.8.11",
         &[
             "Two styles for the interface, in Settings > Appearance: 3D, where the tiles of the start page, of quick access and of the Library and the notes of the Easel lean towards the pointer and the command bar and menus swing in, and Flat, the look you know",

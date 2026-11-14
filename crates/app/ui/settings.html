@@ -88,6 +88,19 @@
   .seg button:hover { opacity: 1; }
   .seg button.on { background: var(--bh-accent); color: var(--bh-text-on-accent); opacity: 1; box-shadow: var(--bh-shadow-switch-knob); }
 
+  /* Relief (3D style of the interface, the choice just above in Appearance; shadows from
+     depth.js): cards stand off the page, buttons off their card and go down when pressed, a
+     field, a switch and a segmented choice are wells the chosen value stands in. */
+  body:not(.flat) .card { background-image: var(--bh-sheen-soft); box-shadow: var(--bh-relief-panel); }
+  body:not(.flat) .btn { background-image: var(--bh-sheen-soft); box-shadow: var(--bh-relief-raised); }
+  body:not(.flat) .btn:is(.primary, .armed) { box-shadow: var(--bh-relief-key); }
+  body:not(.flat) .btn:active:not(:disabled) { box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) .seg, body:not(.flat) .field, body:not(.flat) .switch { box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) .field:focus { box-shadow: var(--bh-relief-sunk), 0 0 0 3px var(--bh-accent-wash); }
+  body:not(.flat) .seg button.on { box-shadow: var(--bh-relief-face), 0 1px 3px #00000073; }
+  body:not(.flat) .opt.sel .switch { box-shadow: var(--bh-relief-sunk), var(--bh-shadow-switch-on); }
+  body:not(.flat) .switch i { box-shadow: inset 0 -1px 0 #0000001f, 0 1px 3px #00000073; }
+
   /* Buttons and fields */
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--bh-space-6); height: 32px; padding: 0 var(--bh-space-14); border: 0; border-radius: var(--bh-radius-control);
     background: var(--bh-fill-control); font: var(--bh-text-body-shell); white-space: nowrap;

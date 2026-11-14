@@ -65,7 +65,12 @@
   /* Depth: a note or a clip leans a little towards the pointer (depth.js), never while it is
      written in, dragged or recoloured, and never a live card: its native view does not turn. */
   .card.note, .card.clip { transition: box-shadow .25s ease, transform .3s cubic-bezier(.2,.85,.25,1); }
-  .card.bh-lean:not(:focus-within):not(.drag):not(.pick) { transform: perspective(900px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)); }
+  .card.bh-lean:not(:focus-within):not(.drag):not(.pick) { transform: perspective(700px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)); }
+  /* Relief (3D style, at rest too): a card has an edge and lies higher above the board; the
+     shadow of the one that leans runs away from the pointer. A live card keeps its own glow. */
+  body:not(.flat) .card:not(.live) { box-shadow: inset 0 1px 0 #ffffff24, 0 1px 0 #00000052, 0 8px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.1); }
+  body:not(.flat) .card:not(.live):is(:hover, :focus-within, .drag) { box-shadow: inset 0 1px 0 #ffffff24, 0 1px 0 #00000052, 0 16px 38px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.16); }
+  body:not(.flat) .card.bh-lean:not(:focus-within):not(.drag):not(.pick) { box-shadow: inset 0 1px 0 #ffffff24, 0 1px 0 #00000052, calc(var(--ry, 0) * -1.5px) calc(var(--rx, 0) * 1.5px + 16px) 38px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.16); }
   /* Note: paper, tinted by its colour. */
   .card.note { background: color-mix(in srgb, var(--c) 16%, #f4f4f6); color: #222; }
   .card.note.plain { background: #f4f4f6; }
@@ -359,7 +364,7 @@ $('title').onkeydown = (ev) => { if (ev.key === 'Enter') ev.target.blur(); };
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); flush(); send({ cmd: state.embedded ? 'close_easel_tab' : 'close_easel' }); }
 });
-if (window.bhDepth) bhDepth('.card.note, .card.clip', 4);
+if (window.bhDepth) bhDepth('.card.note, .card.clip', 5);
 send({ cmd: 'ready' });
 </script>
 </body>

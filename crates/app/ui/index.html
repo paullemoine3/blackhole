@@ -318,8 +318,38 @@
   /* Depth: a quick access tile leans towards the pointer, its icon stands out (depth.js). */
   #pinned .tab { transform-style: preserve-3d; transition: transform .26s cubic-bezier(.3,1.4,.5,1), background-color .18s ease; }
   #pinned .tab .dot { transition: transform .26s cubic-bezier(.3,1.4,.5,1); }
-  #pinned .tab.bh-lean { transform: perspective(260px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(4px); }
-  #pinned .tab.bh-lean .dot { transform: translateZ(16px) scale(1.1); }
+  #pinned .tab.bh-lean { transform: perspective(220px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(2px); }
+  #pinned .tab.bh-lean .dot { transform: translateZ(10px) scale(1.04); }
+  /* Relief (3D style, at rest too; shadows from depth.js). Tabs and quick access are what is
+     looked at all day, and there can be many: they stay quiet. A quick access tile has two fine
+     edges and no cast shadow; at rest a tab has no strip at all, only the tab shown and the line
+     under the pointer get the same two edges. Nothing here shines or leans far. */
+  body:not(.flat) #pinned .tab { box-shadow: var(--bh-relief-row); }
+  body:not(.flat) #pinned .tab.active { box-shadow: var(--bh-relief-row), 0 0 0 1px rgba(255,255,255,.2), 0 8px 18px -8px var(--glow); }
+  body:not(.flat) #pinned .tab:active:not(.dragging) { box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) .new { background-color: rgba(255,255,255,.028); box-shadow: var(--bh-relief-row); }
+  body:not(.flat) .tab:hover:not(.active, .split), body:not(.flat) .new:hover, body:not(.flat) .fh:hover { box-shadow: var(--bh-relief-row); }
+  body:not(.flat) .tab.active, body:not(.flat) .tab-glide { box-shadow: var(--bh-relief-row); }
+  body:not(.flat) .tab.split.active { box-shadow: inset 3px 0 0 var(--accent), var(--bh-relief-row); }
+  body:not(.flat) .tab.ghost { box-shadow: var(--bh-relief-row), 0 8px 24px rgba(0,0,0,.5); }
+  body:not(.flat) :is(.tab, .new, .fh):active:not(.dragging) { box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) .tab .dot, body:not(.flat) .mc .dot { box-shadow: 0 1px 2px #00000059; }
+  body:not(.flat) .fb { border-left-color: #00000059; box-shadow: inset 1px 0 0 #ffffff14; }
+  body:not(.flat) #pinsep, body:not(.flat) #foldsep { background: #0000004d; box-shadow: 0 1px 0 #ffffff14; }
+  body:not(.flat) footer { border-top-color: #0000004d; box-shadow: inset 0 1px 0 #ffffff14; }
+  body:not(.flat) footer :is(.icon, .shield) { background-color: rgba(255,255,255,.04); box-shadow: var(--bh-relief-row); }
+  body:not(.flat) footer :is(.icon, .shield):hover { background-color: rgba(255,255,255,.11); box-shadow: var(--bh-relief-row); }
+  body:not(.flat) footer :is(.icon, .shield):active, body:not(.flat) .mini:active { box-shadow: var(--bh-relief-sunk); }
+  body:not(.flat) .mini:hover { box-shadow: var(--bh-relief-row); }
+  body:not(.flat) .update { box-shadow: var(--bh-relief-face), 0 0 0 1px rgba(255,255,255,.14), 0 1px 0 #00000052, 0 6px 12px -8px #00000099; }
+  body:not(.flat) .update:hover, body:not(.flat) .update.hov { box-shadow: var(--bh-relief-face), 0 0 0 1px rgba(255,255,255,.3), 0 1px 0 #00000052, 0 6px 20px var(--glow); }
+  body:not(.flat) #toast { box-shadow: var(--bh-relief-raised), 0 10px 22px -12px #000000b3; }
+  body:not(.flat).flyout { box-shadow: inset -1px 0 0 #ffffff12, 6px 0 24px rgba(0,0,0,.45); }
+  /* #spaces scrolls sideways and clips two pixels under its cards: an edge, no cast shadow. */
+  body:not(.flat) .space:not(.sdrop-before, .sdrop-after) { box-shadow: var(--bh-relief-face), 0 1px 0 #00000052; }
+  body:not(.flat) .space.active:not(.sdrop-before, .sdrop-after) { box-shadow: var(--bh-relief-face), 0 0 0 2px rgba(255,255,255,.92), 0 5px 14px color-mix(in srgb, var(--c) 60%, transparent); }
+  body:not(.flat) #tidy .td, body:not(.flat) #meet .mt, body:not(.flat) .mc, body:not(.flat) .dl, body:not(.flat) .sg { background-image: var(--bh-sheen-soft); }
+  body:not(.flat) #tidy .td, body:not(.flat) .mc, body:not(.flat) .sg, body:not(.flat) .dl:not(.ok, .bad) { box-shadow: inset 0 0 0 1px var(--bh-border-card), var(--bh-relief-raised); }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   /* Icons (ui/icons.js) on the scale of the design system: 16 px in buttons, 12 px inline marks. */
@@ -1374,7 +1404,7 @@ document.addEventListener('mousemove', (e) => {
 // stays while it is.
 document.addEventListener('mouseenter', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: true }); });
 document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: false }); });
-if (window.bhDepth) bhDepth('#pinned .tab', 14);
+if (window.bhDepth) bhDepth('#pinned .tab', 12);
 send({ cmd: 'ready' });
 </script>
 </body>
