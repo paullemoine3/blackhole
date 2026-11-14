@@ -87,7 +87,19 @@ Police système, sans fichier embarqué : `-apple-system, "Segoe UI", system-ui,
 - Teinte : `duration-tint` (.45s) sur `--accent`, `--glow`, `--glow2`, `--tint1`, `--tint2`.
 - Ambiance : logo calme au repos (anneau en orbite, 9s) qui avale les étoiles voisines au survol (bureau) ou au toucher (Android) ; splash (`duration-splash`, 1,75s sur Android) : effondrement des étoiles, naissance du trou, nom lettre par lettre, puis le trou atterrit sur le logo de l’accueil. `duration-breathe` reste la pulsation de la carte Meet.
 
-**Deux styles : Flat et 3D.** Le réglage « Interface style » (Réglages > Appearance) pose `body.flat` quand il vaut Flat. En 3D, une carte penche vers le pointeur (`ui/depth.js` : classe `bh-lean`, angles `--rx` / `--ry` de 4° pour une carte de l’Easel à 14° pour une tuile d’accès rapide, perspective de 260 à 900px selon la taille) et son icône se détache en `translateZ` ; la palette et les menus arrivent basculés de 16 à 20° autour de leur bord haut. Une pression remet la carte à plat. Toute nouvelle carte cliquable d’une page interne se déclare avec `bhDepth(sélecteur, degrés)` et écrit sa transformation sous `.bh-lean`.
+**Deux styles : Flat et 3D.** Le réglage « Interface style » (Réglages > Appearance) pose `body.flat` quand il vaut Flat. En 3D, une carte penche vers le pointeur (`ui/depth.js` : classe `bh-lean`, angles `--rx` / `--ry` de 7° pour une carte de l’Easel à 20° pour une tuile d’accès rapide, perspective de 150 à 700px selon la taille : plus la carte est petite, plus la perspective est courte, sinon l’inclinaison ne se voit pas) et son icône se détache en `translateZ` ; son ombre fuit le pointeur (`--rx` / `--ry` dans le décalage du `box-shadow`). La palette et les menus arrivent basculés de 16 à 20° autour de leur bord haut. Une pression remet la carte à plat. Toute nouvelle carte cliquable d’une page interne se déclare avec `bhDepth(sélecteur, degrés)` et écrit sa transformation sous `.bh-lean`.
+
+Le 3D se voit aussi au repos, par le relief, éclairé d’en haut. `ui/depth.js` en donne les ombres, qu’une page pose sous `body:not(.flat)` :
+
+| Variable | Pour |
+| --- | --- |
+| `--bh-relief-panel` | grande surface détachée de la page (section de l’accueil, carte des Réglages, liste de la Bibliothèque) |
+| `--bh-relief-raised` | rangée ou contrôle translucide détaché de son panneau (ligne récente, tuile d’accès rapide, onglet affiché, bouton) |
+| `--bh-relief-key`, `--bh-relief-key-down` | tuile de couleur épaisse comme une touche, au repos et enfoncée (`--bh-relief-face` : ses seuls reflets) |
+| `--bh-relief-sunk` | creux dans la surface (champ d’adresse, champ, interrupteur, choix segmenté ; bouton enfoncé) |
+| `--bh-sheen`, `--bh-sheen-soft` | lumière sur une face de couleur (`::after`) ou sur une surface translucide (`background-image`) |
+
+Le relief n’est pas un mouvement : il reste quand les animations sont coupées. Une surface dont le `box-shadow` dit un état (téléchargement terminé, réunion en cours, dépôt d’un espace) le garde et ne reçoit que `--bh-sheen-soft`. En Flat, aucune de ces règles ne s’applique : l’interface est celle d’avant.
 
 **Couper les animations.** Le réglage « Black hole animations » envoie `animations: false` ; la page pose alors une classe qui annule toute animation et transition. Le système d’exploitation peut aussi demander `prefers-reduced-motion: reduce`. Toute nouvelle page interne doit gérer les deux :
 

@@ -181,7 +181,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 16 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir, `f13a` une tuile penchée, `f13b` le réglage Flat / 3D ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 17 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir, `f13a` une tuile penchée, `f13b` le réglage Flat / 3D, `f13c` l'accueil en Flat ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -200,7 +200,15 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   carte en cours de saisie, de glisser ou de choix de couleur). La palette et les menus
   s'ouvrent en perspective (`palette-in`, `menuin` ; variantes `-flat`). Rien ne penche en
   `body.flat`, `noanim`, `still`, `dragging`, sous `prefers-reduced-motion` ni au doigt. Android
-  non concerné. Test : `scripts	est-features.ps1` (`dp1`–`dp5`).
+  non concerné. Le 3D se voit aussi au repos : `depth.js` donne les ombres du relief
+  (`--bh-relief-panel` / `-raised` / `-key` / `-key-down` / `-sunk`, `--bh-sheen`, `--bh-sheen-soft`),
+  chaque page les pose sous `body:not(.flat)` (sections et cartes détachées de la page, tuiles
+  en touches éclairées d'en haut, champs et choix segmentés en creux, barre du haut comprise ;
+  l'ombre d'une carte penchée fuit le pointeur). Le relief n'est pas un mouvement : il reste
+  avec les animations coupées. Une surface dont le `box-shadow` dit un état (téléchargement
+  terminé, réunion en cours) ne reçoit que `--bh-sheen-soft`. Une tuile de 50 px ne paraît
+  penchée qu'avec une perspective courte (150–240 px) et 20° : ne pas revenir à 500 px.
+  Test : `scripts\test-features.ps1` (`dp1`–`dp10`).
 - Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
   (`split_shown`, appelé par `sync` : paire d'onglets nouvelle, pas un simple changement de focus)
   fait glisser le volet droit depuis la droite ; un lien pilote (`pilot_sent`) fait monter le
