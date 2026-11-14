@@ -7,6 +7,9 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; background: #100f17; font: 12.5px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; color: #eceaf5; user-select: none; -webkit-user-select: none; }
   main { height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 3px 0 3px; }
+  /* A slot stays, its pane is drawn again at every render: what moves is the slot. */
+  .slot { position: relative; display: grid; min-width: 0; }
+  .in { display: grid; min-width: 0; }
   .pane { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 6px 0 10px; border-radius: 9px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.06); }
   .pane.focus { background: rgba(255,255,255,.12); box-shadow: inset 0 -2px 0 var(--accent); }
   .dot { flex: none; width: 14px; height: 14px; border-radius: 5px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: #fff; }
@@ -16,10 +19,29 @@
   button.pilot:hover { background: var(--bh-fill-hover-strong, rgba(255,255,255,.16)); }
   button.pilot.on { opacity: 1; color: var(--bh-text-on-accent, #fff); background: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+  /* A split shows up: the right pane comes in from the right, as its page does below. */
+  main.open #right { animation: pane-in .42s cubic-bezier(.2,.85,.25,1) both; }
+  main.open #left { animation: pane-fit .42s cubic-bezier(.2,.85,.25,1) both; }
+  /* A pilot link: the pilot's arrow gives, a line of light crosses the pane the page opens in. */
+  .sweep { position: absolute; inset: auto 9px 1px 9px; height: 2px; border-radius: 2px; overflow: hidden; pointer-events: none; opacity: 0; }
+  .sweep::before { content: ""; position: absolute; inset: 0; width: 55%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), #fff, var(--accent), transparent); }
+  .slot.to .sweep { animation: sweep-show .7s ease-out both; }
+  .slot.to .sweep::before { animation: sweep .7s cubic-bezier(.2,.85,.25,1) both; }
+  #left.to .sweep { transform: scaleX(-1); }
+  .slot.to .pane { animation: lit .7s ease-out both; }
+  .slot.from button.pilot { animation: ping .45s cubic-bezier(.2,1.3,.4,1) both; }
+  @keyframes pane-in { from { opacity: 0; transform: translateX(26%); } }
+  @keyframes pane-fit { from { opacity: .55; } }
+  @keyframes sweep { from { transform: translateX(-110%); } to { transform: translateX(190%); } }
+  @keyframes sweep-show { 0%, 100% { opacity: 0; } 15%, 70% { opacity: 1; } }
+  @keyframes lit { 30% { background: color-mix(in srgb, var(--accent) 30%, transparent); } }
+  @keyframes ping { 40% { transform: scale(1.35); } }
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<main id="m"></main>
+<main id="m"><div class="slot" id="left"><div class="in"></div><i class="sweep"></i></div><div class="slot" id="right"><div class="in"></div><i class="sweep"></i></div></main>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
@@ -46,11 +68,36 @@ function pane(side, p, focus, other) {
 }
 let last = null;
 addEventListener('bhlang', () => last && bh.render(last));
+// Plays a class once: it comes off when its animation is over, so a later render (the panes
+// are drawn again) does not replay it.
+const timers = new Map();
+function play(node, cls, ms) {
+  clearTimeout(timers.get(node.id + cls));
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+  timers.set(node.id + cls, setTimeout(() => node.classList.remove(cls), ms));
+}
+// What the shell has shown so far: `opened` and `sent.n` only grow when something moves.
+let seen = null;
 window.bh = {
   render(s) {
     last = s;
     document.documentElement.style.setProperty('--accent', s.color);
-    document.getElementById('m').replaceChildren(pane('left', s.left, true, s.right), pane('right', s.right, false, s.left));
+    document.body.classList.toggle('noanim', s.animations === false);
+    const $ = (id) => document.getElementById(id);
+    $('left').firstElementChild.replaceChildren(pane('left', s.left, true, s.right));
+    $('right').firstElementChild.replaceChildren(pane('right', s.right, false, s.left));
+    const sent = s.sent || { n: 0, side: 'right' };
+    if (seen && s.opened !== seen.opened) play($('m'), 'open', 500);
+    if (seen && sent.n !== seen.sent) {
+      play($(sent.side), 'to', 760);
+      play($(sent.side === 'left' ? 'right' : 'left'), 'from', 500);
+    }
+    // A bar loaded for a split that is opening has nothing to compare with: it plays too.
+    if (!seen && s.opened) play($('m'), 'open', 500);
+    seen = { opened: s.opened, sent: sent.n };
+    bh.played = { open: s.opened || 0, sent: sent.n, side: sent.side };
   },
 };
 send({ cmd: 'ready' });

@@ -121,6 +121,16 @@
   .fav .tile { transition: transform .26s cubic-bezier(.3,1.6,.5,1), box-shadow .26s ease; }
   .fav:hover .tile { transform: scale(1.08); box-shadow: 0 10px 22px -10px rgba(0,0,0,.7); }
   .item:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.14); box-shadow: 0 10px 24px -16px rgba(124,92,255,.7); }
+  /* Depth: a tile leans towards the pointer and its icon stands out of it (depth.js). */
+  .fav, .item { transform-style: preserve-3d; }
+  .fav.bh-lean { transform: perspective(520px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(8px); }
+  .fav.bh-lean .tile { transform: translateZ(26px) scale(1.08); }
+  .fav.bh-lean .name { transform: translateZ(12px); }
+  .item.bh-lean { transform: perspective(760px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(6px);
+    background-image: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(124,92,255,.2), transparent 70%); }
+  .item .tile, .item .meta, .fav .name { transition: transform .26s cubic-bezier(.3,1.4,.5,1); }
+  .item.bh-lean .tile { transform: translateZ(20px); }
+  .item.bh-lean .meta { transform: translateZ(10px); }
   .fav:active, .item:active { transform: scale(.97); }
   .more { transition: opacity .15s ease, background-color .15s ease; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.97); } }
@@ -256,6 +266,7 @@ window.bh = {
     last = s;
     if (s.favicons) favicons = s.favicons;
     document.body.classList.toggle('noanim', !s.animations);
+    document.body.classList.toggle('flat', s.depth === false);
     const notes = s.releaseNotes || [];
     $('news').hidden = !notes.length;
     $('news').replaceChildren(...notes.map(r => {
@@ -309,6 +320,7 @@ window.bh = {
     timer = setTimeout(reset, 3000);
   };
 }
+if (window.bhDepth) { bhDepth('.fav', 13); bhDepth('.item', 6); }
 send({ cmd: 'ready' });
 </script>
 </body>

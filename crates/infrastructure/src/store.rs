@@ -72,6 +72,14 @@ struct ItemDto {
     selector: String,
     #[serde(default)]
     color: String,
+    /// Width of the page a live area was picked in (absent in older files).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    viewport: f64,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 #[derive(Serialize, Deserialize)]
@@ -126,6 +134,7 @@ impl EaselStore {
                                 url: i.url,
                                 selector: i.selector,
                                 color: i.color,
+                                viewport: i.viewport,
                             })
                         })
                         .collect(),
@@ -158,6 +167,7 @@ impl EaselStore {
                         url: i.url.clone(),
                         selector: i.selector.clone(),
                         color: i.color.clone(),
+                        viewport: i.viewport,
                     })
                     .collect(),
             })

@@ -63,7 +63,7 @@ eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
 eval easel document.querySelector('.card.live .play svg').dataset.i
-eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(), tol = Math.max(2, innerWidth * .004); return 'crop ' + (Math.abs(r.left) < tol && Math.abs(r.top) < tol && r.width <= innerWidth + 3 && r.height <= innerHeight + 3) + ' fill ' + (r.width >= innerWidth * .97 && r.height >= innerHeight * .9) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ' in ' + innerWidth + 'x' + innerHeight + ' at ' + r.left.toFixed(1) + ',' + r.top.toFixed(1); })()
 shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
@@ -84,7 +84,7 @@ eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'
 eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
-eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'tabcrop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50); })()
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(), tol = Math.max(2, innerWidth * .004); return 'tabcrop ' + (Math.abs(r.left) < tol && Math.abs(r.top) < tol && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50) + ' at ' + r.left.toFixed(1) + ',' + r.top.toFixed(1); })()
 shot 04-easel-tab
 cmd {"cmd":"close_easel_tab"}
 wait 800
@@ -157,6 +157,7 @@ check 11 'picked' "live: area clicked"
 check 12 'Paused' "live: card added, paused until played"
 check 13 'pause' "live: playing"
 check 14 'crop true' "live: view shows the picked area, scaled to fill the card"
+check 14 'fill true' "live: the area fills the card (the page is laid out at the width it was picked in)"
 check 15 'play' "live: paused again"
 check 16 'x' "folder: created"
 check 17 'dragged' "sidebar: easel dragged onto a folder"

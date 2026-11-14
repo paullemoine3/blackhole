@@ -118,7 +118,10 @@
     border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card); background: var(--bh-fill-card); cursor: pointer;
     transition: transform var(--bh-duration-spring) var(--bh-ease-press), box-shadow var(--bh-duration-spring) var(--bh-ease-standard), border-color var(--bh-duration-hover); }
   .ec:hover { transform: translateY(-2px); box-shadow: var(--bh-shadow-item-hover); border-color: var(--bh-accent-border); }
-  .ec:active { transform: scale(.98); }
+  /* Depth: tiles and Easel cards lean towards the pointer (depth.js); a press flattens them. */
+  .tile.bh-lean, .ec.bh-lean { transform: perspective(700px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(8px); }
+  .ec.bh-lean { background-image: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), var(--bh-accent-glow-soft), transparent 70%); }
+  .tile:active, .ec:active { transform: scale(.98); }
   .ec .head { display: flex; align-items: center; gap: var(--bh-space-8); }
   .ec .head b { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ec small { font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); }
@@ -490,6 +493,7 @@ function render() {
   if (!S) return;
   document.documentElement.style.setProperty('--accent', S.accent || '#7c5cff');
   document.body.classList.toggle('noanim', S.animations === false);
+  document.body.classList.toggle('flat', S.depth === false);
   document.querySelectorAll('.nav').forEach((b) => { const on = b.dataset.s === sec; b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false'); });
   counts();
   const m = $('m');
@@ -504,6 +508,7 @@ function render() {
 }
 
 const cv = $('fx'), cx = cv.getContext('2d'); let raf = 0;
+if (window.bhDepth) bhDepth('.tile, .ec', 7);
 const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.body.classList.contains('noanim');
 // Particles are pulled into a black hole (accretion ring included) then the hole closes.
 function fx(full) {

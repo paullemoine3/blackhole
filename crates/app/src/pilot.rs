@@ -3,6 +3,7 @@
 //! shell decides where it goes.
 
 use crate::i18n::t;
+use crate::pane_motion::Side;
 use crate::{Running, TabId};
 use blackhole_application::NavigationOutcome;
 use blackhole_domain::pilot;
@@ -43,6 +44,18 @@ impl Running {
             self.pilot_mark(tab);
             self.toast(&t("toast.pilot_on"));
         }
+        self.ui_splitbar();
+    }
+
+    /// A link went to the other pane: that pane rises into place and the split bar shows the
+    /// way it took. Nothing when motion is switched off.
+    fn pilot_sent(&mut self, destination: TabId) {
+        if !self.svc.settings().animations {
+            return;
+        }
+        let side = if self.split_tab() == Some(destination) { Side::Right } else { Side::Left };
+        self.panes.rise(side);
+        self.pilot_sent = (self.pilot_sent.0.wrapping_add(1), side);
         self.ui_splitbar();
     }
 
@@ -97,6 +110,9 @@ impl Running {
                     // Nothing to load: WebKit would refuse it without a word.
                 } else if let Some(view) = self.tabs.get(&destination) {
                     let _ = view.load_url(url.as_str());
+                    if destination != tab {
+                        self.pilot_sent(destination);
+                    }
                 }
             }
             NavigationOutcome::Blocked(why) => {

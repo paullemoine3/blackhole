@@ -55,7 +55,7 @@
     const selector = selectorOf(el);
     stop();
     try {
-      window.__bhipc.postMessage(JSON.stringify({ cmd: 'live_pick', selector, w: r.width, h: r.height }));
+      window.__bhipc.postMessage(JSON.stringify({ cmd: 'live_pick', selector, w: r.width, h: r.height, vw: document.documentElement.clientWidth || innerWidth }));
     } catch (_) {}
   };
   const key = (e) => {

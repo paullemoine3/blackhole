@@ -168,6 +168,9 @@ impl Running {
                     "easelWindow": self.easel.is_some(),
                     "current": self.easel_current.and_then(|id| self.easels.get(id)).map(|e| &e.name),
                     "split": self.split_tab().is_some(),
+                    "paneMotion": self.panes.moving(),
+                    "splitOpened": self.split_opened,
+                    "pilotSent": self.pilot_sent.0,
                     "panel": self.easel_panel.view.as_ref().and_then(|v| v.bounds().ok()).map(|b| format!("{:?} {:?}", b.position, b.size)),
                     "main": format!("{:?}", self.content_rects().0.size),
                 });

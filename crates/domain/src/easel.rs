@@ -9,8 +9,13 @@ pub const MAX_NAME: usize = 80;
 pub const MAX_TEXT: usize = 20_000;
 pub const MAX_TITLE: usize = 300;
 pub const MAX_SELECTOR: usize = 500;
-/// Height of a card's title bar and footer: live cards add it to the captured area's height.
-pub const BAR_HEIGHT: f64 = 44.0;
+/// Height of a live card's title bar (30) and footer (24) in `ui/easel.html`: a live card adds
+/// it to the captured area's height, so its slot has the proportions of the area.
+pub const BAR_HEIGHT: f64 = 54.0;
+/// A page narrower or wider than this was not measured by a real window.
+const VIEWPORT: (f64, f64) = (200.0, 8000.0);
+/// How far the live view may be zoomed to show the page at the width it was picked in.
+const LIVE_ZOOM: (f64, f64) = (0.25, 3.0);
 /// Board coordinates are clamped so a bad value can never push an item out of reach.
 pub const COORD_LIMIT: f64 = 100_000.0;
 pub const MIN_SIZE: (f64, f64) = (120.0, 80.0);
@@ -63,6 +68,9 @@ pub struct Item {
     /// CSS selector of the captured region (live cards only, empty otherwise).
     pub selector: String,
     pub color: String,
+    /// Width of the page when the region was picked (live cards; 0: not known). The live view
+    /// lays the page out at this width again, so the region keeps its shape.
+    pub viewport: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -112,6 +120,25 @@ fn coord(v: f64) -> f64 {
     }
 }
 
+fn viewport(width: f64) -> f64 {
+    if width.is_finite() && width >= VIEWPORT.0 && width <= VIEWPORT.1 {
+        width
+    } else {
+        0.0
+    }
+}
+
+/// The zoom of a live view `slot` pixels wide, for a region picked in a page `viewport` pixels
+/// wide: at this zoom the page is laid out at the width it had, and the region has the shape
+/// the card was sized after. 1 when the width is not known (cards made before it was kept).
+pub fn live_zoom(viewport: f64, slot: f64) -> f64 {
+    if viewport > 0.0 && slot.is_finite() && slot > 0.0 {
+        (slot / viewport).clamp(LIVE_ZOOM.0, LIVE_ZOOM.1)
+    } else {
+        1.0
+    }
+}
+
 fn size(v: f64, (lo, hi): (f64, f64)) -> f64 {
     if v.is_finite() {
         v.clamp(lo, hi)
@@ -148,6 +175,7 @@ impl Easels {
             for item in &mut easel.items {
                 item.x = coord(item.x);
                 item.y = coord(item.y);
+                item.viewport = viewport(item.viewport);
                 item.w = size(item.w, (MIN_SIZE.0, MAX_SIZE.0));
                 item.h = size(item.h, (MIN_SIZE.1, MAX_SIZE.1));
                 item.text = clean(&item.text, MAX_TEXT);
@@ -263,6 +291,7 @@ impl Easels {
             url: None,
             selector: String::new(),
             color: COLORS[0].to_owned(),
+            viewport: 0.0,
         });
         Some(id)
     }
@@ -307,6 +336,7 @@ impl Easels {
             url: Some(url),
             selector: String::new(),
             color: COLORS[1].to_owned(),
+            viewport: 0.0,
         });
         Ok(id)
     }
@@ -352,6 +382,7 @@ impl Easels {
             url: Some(url),
             selector,
             color: COLORS[3].to_owned(),
+            viewport: 0.0,
         });
         Ok(id)
     }
@@ -382,6 +413,11 @@ impl Easels {
             i.w = size(w, (MIN_SIZE.0, MAX_SIZE.0));
             i.h = size(h, (MIN_SIZE.1, MAX_SIZE.1));
         })
+    }
+
+    /// The width of the page a live card was picked in (reported by the page: checked).
+    pub fn set_viewport(&mut self, easel: u64, item: u64, width: f64) -> bool {
+        self.with_item(easel, item, |i| i.viewport = viewport(width))
     }
 
     /// Colours come from a fixed palette: the value is never trusted as CSS.
@@ -565,6 +601,32 @@ Rating | 4.5");
     }
 
     #[test]
+    fn a_live_view_shows_the_page_at_the_width_it_was_picked_in() {
+        let (mut easels, id) = board();
+        let live = easels
+            .capture_live(id, "https://a.com/p", "", "p", (600.0, 120.0))
+            .unwrap();
+        let viewport = |e: &Easels| e.get(id).unwrap().items[0].viewport;
+        assert_eq!(viewport(&easels), 0.0);
+        assert!(easels.set_viewport(id, live, 1200.0));
+        assert_eq!(viewport(&easels), 1200.0);
+        // A card 600 wide shows a page 1200 wide at half its size: same layout, same shape.
+        assert_eq!(live_zoom(1200.0, 600.0), 0.5);
+        assert_eq!(live_zoom(1200.0, 1200.0), 1.0);
+        // Unknown width: as before. Extreme ratios stay within what an engine accepts.
+        assert_eq!(live_zoom(0.0, 600.0), 1.0);
+        assert_eq!(live_zoom(1200.0, f64::NAN), 1.0);
+        assert_eq!(live_zoom(8000.0, 240.0), LIVE_ZOOM.0);
+        assert_eq!(live_zoom(200.0, 1200.0), LIVE_ZOOM.1);
+        // The page reports the width: nonsense is dropped.
+        for bad in [f64::NAN, f64::INFINITY, -5.0, 10.0, 1e9] {
+            assert!(easels.set_viewport(id, live, bad));
+            assert_eq!(viewport(&easels), 0.0);
+        }
+        assert!(!easels.set_viewport(id, 999, 1200.0));
+    }
+
+    #[test]
     fn stored_data_is_sanitised_on_load() {
         let bad = |kind, url: Option<&str>| Item {
             id: 1,
@@ -578,6 +640,7 @@ Rating | 4.5");
             url: url.map(str::to_owned),
             selector: "h1".into(),
             color: "javascript:x".into(),
+            viewport: f64::NAN,
         };
         let easels = Easels::from_stored(vec![Easel {
             id: 3,

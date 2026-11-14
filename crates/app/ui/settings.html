@@ -209,7 +209,7 @@
     <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1 data-i18n="settings.general">General</h1><p class="lead"><span data-i18n="settings.general_lead">How BlackHole looks, searches and saves memory.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.language">Language</h2><div class="rows" id="langs" role="radiogroup" data-i18n-aria="settings.language"></div></div>
     <div class="card"><h2 data-i18n="settings.search_engine">Default search engine</h2><div class="rows" id="engines" role="radiogroup" data-i18n-aria="settings.search_engine"></div></div>
-    <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
+    <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="style"></div><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
     <div class="card"><h2 data-i18n="settings.tabs_memory">Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
     <div class="card" id="hwcard" hidden><h2 data-i18n="settings.performance">Performance</h2><div class="rows" id="hw"></div></div>
     <div class="card"><h2 data-i18n="settings.system">System</h2>
@@ -590,12 +590,15 @@ window.bh = {
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
     document.body.classList.toggle('noanim', s.animations === false);
+    document.body.classList.toggle('flat', s.depth === false);
     renderShortcuts();
     // Languages are named in their own words; "System" says which one it gives.
     const own = (code) => (s.languages.find(l => l.id === code) || {}).label || code;
     put($('langs'), ...[{ id: 'system', label: bhT('settings.lang_system', { name: own(s.systemLanguage) }) }, ...s.languages].map(l =>
       option(l.label, l.id === s.language, () => { if (l.id !== s.language) send({ cmd: 'set_language', language: l.id }); })));
     put($('engines'), ...s.engines.map(e => option(e.label, e.id === s.engine, () => send({ cmd: 'set_engine', id: e.id }))));
+    put($('style'), choice(bhT('settings.style'), bhT('settings.style_sub'), [false, true], s.depth !== false,
+      v => bhT(v ? 'settings.style_3d' : 'settings.style_flat'), v => send({ cmd: 'set_depth', on: v })));
     put($('anim'), option(bhT('settings.animations'), s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true, bhT('settings.animations_sub')));
     put($('sbw'), choice(bhT('settings.sidebar_width'), null, s.sidebarWidths, s.sidebarWidth, w => bhT('unit.px', { n: w }), w => send({ cmd: 'set_sidebar_width', width: w })));
     put($('sleep'), choice(bhT('settings.sleep_after'), null, s.tabSleepChoices, s.tabSleep, m => bhT('unit.min', { n: m }), m => send({ cmd: 'set_tab_sleep', minutes: m })));

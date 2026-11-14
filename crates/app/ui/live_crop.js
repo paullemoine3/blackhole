@@ -19,8 +19,12 @@
     if (!r.width || !r.height) return;
     const s = Math.min(innerWidth / r.width, innerHeight / r.height);
     const b = document.body;
+    // The transform turns around the body's own corner, which is not the page's when the body
+    // is centred or has a margin: the element is brought to that corner, scaled, and the corner
+    // to the view's.
+    const o = b.getBoundingClientRect();
     b.style.setProperty('transform-origin', '0 0', 'important');
-    b.style.setProperty('transform', `scale(${s}) translate(${-(r.left + scrollX)}px, ${-(r.top + scrollY)}px)`, 'important');
+    b.style.setProperty('transform', `translate(${-o.left}px, ${-o.top}px) scale(${s}) translate(${-(r.left - o.left)}px, ${-(r.top - o.top)}px)`, 'important');
     window.__bhLiveFit = { s, left: r.left, top: r.top };
   };
   const again = () => {

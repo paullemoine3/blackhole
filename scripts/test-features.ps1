@@ -67,7 +67,10 @@ eval chrome 'bh7:' + state.tabs.filter(t => t.burner).length + '|' + state.tabs.
 cmd {"cmd":"open","input":"https://www.iana.org/help/example-domains"}
 wait 6000
 eval chrome (send({ cmd: 'split', id: state.tabs.find(t => t.url.includes('example.org')).id }), 'pl0:sent')
-wait 2500
+wait 150
+state
+shot f04a-split-opening
+wait 2300
 cmd {"cmd":"pilot"}
 wait 800
 eval splitbar 'pl1:' + document.querySelectorAll('button.pilot').length + '|' + document.querySelectorAll('button.pilot.on').length + '|' + document.querySelector('.pane button.pilot').getAttribute('aria-pressed')
@@ -76,10 +79,22 @@ eval content (document.querySelector('a[href*="rfc2606"], a[href*="rfc"]').click
 wait 7000
 eval chrome 'pl3:' + state.tabs.find(t => t.id === state.activeTab).url + ' >> ' + state.tabs.filter(t => t.split && t.id !== state.activeTab).map(t => t.url).join(',')
 shot f05-pilot-link-in-other-pane
+eval splitbar 'pm1:' + JSON.stringify(bh.played)
+state
 cmd {"cmd":"pilot"}
 wait 600
 eval splitbar 'pl4:' + document.querySelectorAll('button.pilot.on').length
 cmd {"cmd":"close_split"}
+wait 1200
+# The same split with motion switched off: nothing moves.
+cmd {"cmd":"set_animations","on":false}
+eval chrome (send({ cmd: 'split', id: state.tabs.find(t => t.id !== state.activeTab && !t.pinned).id }), 'pm2:sent')
+wait 150
+state
+wait 600
+eval splitbar 'pm3:' + document.body.classList.contains('noanim') + '|' + JSON.stringify(bh.played)
+cmd {"cmd":"close_split"}
+cmd {"cmd":"set_animations","on":true}
 wait 1200
 # ---- highlights ----
 eval content (() => { const p = [...document.querySelectorAll('p')].find(p => p.textContent.trim().length > 60); const r = document.createRange(); r.selectNodeContents(p); getSelection().removeAllRanges(); getSelection().addRange(r); return 'hl0:' + String(getSelection()).trim().length; })()
@@ -127,6 +142,29 @@ wait 1500
 cmd {"cmd":"home"}
 wait 1500
 eval home 'hn1:' + !document.getElementById('now').hidden + '|' + document.querySelectorAll('#nowlist .item').length + '|' + (document.querySelector('#nowlist .item .t') || {}).textContent
+# Depth: a tile of the start page leans towards the pointer, and stays flat with animations off.
+eval home (() => { const n = document.querySelector('.fav') || document.querySelector('.item'); if (!n) return 'dp1:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp1:' + n.classList.contains('bh-lean') + '|' + (parseFloat(n.style.getPropertyValue('--ry')) > 2) + '|' + (getComputedStyle(n).transform !== 'none'); })()
+wait 500
+shot f13a-home-tile-leaning
+cmd {"cmd":"set_animations","on":false}
+wait 400
+eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp2:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp2:' + n.classList.contains('bh-lean') + '|' + n.style.getPropertyValue('--ry'); })()
+cmd {"cmd":"set_animations","on":true}
+# The flat style of the interface: nothing leans either, and the command bar opens flat.
+cmd {"cmd":"set_depth","on":false}
+wait 400
+eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp3:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp3:' + document.body.classList.contains('flat') + '|' + n.classList.contains('bh-lean'); })()
+cmd {"cmd":"set_depth","on":true}
+wait 400
+eval home 'dp4:' + document.body.classList.contains('flat')
+cmd {"cmd":"open_settings","tab":"general"}
+wait 2500
+eval settings 'dp5:' + [...document.querySelectorAll('#style .seg button')].map(b => b.textContent + '=' + b.getAttribute('aria-checked')).join(',')
+eval settings (document.getElementById('style').scrollIntoView({ block: 'center' }), 'dp6:scrolled')
+wait 400
+shots f13b-settings-style
+cmd {"cmd":"close_settings"}
+wait 600
 shot f13-home-now
 # ---- Recall ----
 cmd {"cmd":"open","input":"https://en.wikipedia.org/wiki/Black_hole"}
@@ -188,6 +226,12 @@ Check ((Ev bh7) -match 'bh7:0\|2') 'black hole tab: closed, it is gone'
 Check ((Ev pl1) -match 'pl1:2\|1\|true') 'pilot split: a button on each pane, the active pane pilots'
 Check ((Ev pl3) -match 'pl3:https://www\.iana\.org/help/example-domains >> https?://[^,]*rfc') 'pilot split: a link clicked in the pilot pane opens in the other pane'
 Check ((Ev pl4) -match 'pl4:0') 'pilot split: it stops'
+$states = @($log | Where-Object { $_ -match '\[dev\] state ->' })
+Check ($states.Count -ge 3 -and $states[0] -match 'paneMotion":true' -and $states[0] -match 'splitOpened":1[,}]') 'split motion: the right pane is on its way in just after the split'
+Check ($states.Count -ge 3 -and $states[1] -match 'paneMotion":false' -and $states[1] -match 'pilotSent":1[,}]') 'split motion: a pilot link moved the other pane, which is back in place'
+Check ((Ev pm1) -match 'sent.*:1' -and (Ev pm1) -match 'right') 'split motion: the split bar showed the link going to the right pane'
+Check ($states.Count -ge 3 -and $states[2] -match 'split":true' -and $states[2] -match 'paneMotion":false' -and $states[2] -match 'splitOpened":1[,}]') 'split motion: nothing moves with animations off'
+Check ((Ev pm3) -match 'pm3:true') 'split motion: the split bar is still with animations off'
 Check ((Ev hl0) -notmatch 'hl0:0"' -and (Ev hl1) -match 'hl1:1') 'highlights: the selection is highlighted'
 Check ((Ev hl2) -match 'hl2:1') 'highlights: found again after the page is loaded again'
 Check ((Ev hl3) -match 'hl3:Highlights\|1\|highlights') 'highlights: listed in the Library'
@@ -198,6 +242,11 @@ Check ((Ev us3) -match 'us3:1\|1') 'one search: Ctrl+Enter keeps the result in t
 Check ((Ev sg1) -match 'sg1:1\|Phone\|Meet at the station at 6') 'signals: a text received stays as a card of the sidebar'
 Check ((Ev sg3) -match 'sg3:0\|2') 'signals: its Easel button keeps the text and the card leaves'
 Check ((Ev hn1) -match 'hn1:true\|[1-9]\d*\|Weekly sync') 'start page: Now shows the meeting going on'
+Check ((Ev dp1) -match 'dp1:true\|true\|true') 'depth: a tile of the start page leans towards the pointer'
+Check ((Ev dp2) -match 'dp2:false\|"') 'depth: nothing leans with animations off'
+Check ((Ev dp3) -match 'dp3:true\|false') 'depth: the flat style of the interface leaves the tiles flat'
+Check ((Ev dp4) -match 'dp4:false') 'depth: back to the 3D style'
+Check ((Ev dp5) -match 'dp5:Flat=false,3D=true') 'depth: Settings > Appearance offers Flat and 3D, 3D chosen'
 Check ((Ev rc0) -match 'rc0:recall\|A few words') 'Recall: the command bar opens in its mode'
 Check ((Ev rc1) -match 'rc1:[1-9]\d*\|Black hole') 'Recall: a page read is found from words of its text'
 Check ((Ev rc3) -match 'rc3:0\|No ') 'Recall: no match, no result'
@@ -207,6 +256,6 @@ $burnt = @(Get-ChildItem (Join-Path $tmp 'bh_data\webview') -Recurse -Directory 
 Check ($burnt.Count -eq 0) "black hole tab: no engine profile left on disk ($($burnt.Count))"
 $clear = @(Get-ChildItem (Join-Path $tmp 'bh_data\recall') -File -ErrorAction SilentlyContinue | Where-Object { (Get-Content $_.FullName -Raw) -match 'horizon' })
 Check ((Test-Path (Join-Path $tmp 'bh_data\recall')) -and $clear.Count -eq 0) 'Recall: its files exist and hold no readable text'
-Check ($saved.Count -eq 13) "screenshots saved ($($saved.Count)/13)"
+Check ($saved.Count -eq 16) "screenshots saved ($($saved.Count)/16)"
 if ($fail) { Write-Host "evals:"; $all }
 exit [int]$fail
