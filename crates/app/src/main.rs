@@ -17,6 +17,7 @@ mod media;
 mod compare;
 mod meet;
 mod notices;
+mod pane_motion;
 mod handoff;
 mod highlights;
 mod i18n;
@@ -198,6 +199,16 @@ fn sliding(main: wry::Rect, window: &winit::dpi::LogicalSize<f64>) -> wry::Rect 
     let at = main.position.to_logical::<f64>(scale);
     let size = main.size.to_logical::<f64>(scale);
     views::rect(at.x, at.y, (window.width - 2.0 * CARD_GAP).max(1.0), size.height)
+}
+
+/// A pane of the split on its way into place: moved, never resized.
+fn shifted(pane: wry::Rect, by: pane_motion::Shift) -> wry::Rect {
+    if by == pane_motion::Shift::default() {
+        return pane;
+    }
+    let at = pane.position.to_logical::<f64>(1.0);
+    let size = pane.size.to_logical::<f64>(1.0);
+    views::rect(at.x + by.x, at.y + by.y, size.width, size.height)
 }
 
 /// Where the command bar lives: the whole window while open, a parked 1x1 view otherwise. A hidden
@@ -483,6 +494,14 @@ struct Running {
     burner_next: bool,
     /// Pilot split: the tab whose links open in the other pane (session only).
     pilot: Option<TabId>,
+    /// The panes of the split view on their way into place (`pane_motion`).
+    panes: pane_motion::PaneMotion,
+    /// The two tabs of the split on screen last time (lower id first): a new pair slides in.
+    split_seen: Option<(TabId, TabId)>,
+    /// Splits opened and pilot links sent with motion, with the side the last link went to:
+    /// the split bar plays its part when a number changes.
+    split_opened: u32,
+    pilot_sent: (u32, pane_motion::Side),
     /// Links cleaned on the way this session (the privacy report's count).
     links_cleaned: u32,
     /// The space or folder deleted last, for the toast's Undo.
@@ -491,10 +510,10 @@ struct Running {
     library_jump: (u32, &'static str),
     /// Whether the Settings and Easel windows are maximized, last time their page was told.
     panels_maxed: (bool, bool),
-    /// When the sidebar's last frame was drawn (motion pacing).
+    /// When the last frame of a motion was drawn (sidebar, panes: pacing).
     last_frame: Instant,
     /// A live capture area waiting for the user to choose its Easel.
-    live_pending: Option<(TabId, String, (f64, f64))>,
+    live_pending: Option<(TabId, String, (f64, f64, f64))>,
     /// The tab about to be opened from a page: its address and the `Referer` of its first load.
     referrer_next: Option<(Url, String)>,
     /// The picker was armed to watch the area (page menu), not to ask where it goes.
@@ -932,6 +951,10 @@ impl Running {
             media_hold: media::Linger::new(media::LINGER),
             burner_next: false,
             pilot: None,
+            panes: pane_motion::PaneMotion::default(),
+            split_seen: None,
+            split_opened: 0,
+            pilot_sent: (0, pane_motion::Side::Right),
             links_cleaned: 0,
             undo: None,
             library_jump: (0, ""),
@@ -1179,12 +1202,20 @@ impl Running {
         } else {
             main
         };
+        // Only the two tabs of a split move (`pane_motion`): an Easel beside a tab stays put,
+        // its live views are placed from its own layout.
+        let split = self.split_tab();
+        let main = if split.is_some() {
+            shifted(main, self.panes.shift(pane_motion::Side::Left))
+        } else {
+            main
+        };
         let _ = self.active_view().set_bounds(main);
         self.place_panels();
         self.apply_slots();
-        if let (Some(id), Some(rect)) = (self.split_tab(), side) {
+        if let (Some(id), Some(rect)) = (split, side) {
             if let Some(view) = self.tabs.get(&id) {
-                let _ = view.set_bounds(rect);
+                let _ = view.set_bounds(shifted(rect, self.panes.shift(pane_motion::Side::Right)));
             }
         }
         self.round_cards(all);
@@ -1341,10 +1372,36 @@ impl Running {
         self.dl_navs.get(&tab).is_some_and(|at| at.elapsed() < DOWNLOAD_NAV)
     }
 
-    fn tick_sidebar(&mut self) {
-        if self.sidebar.moving() {
+    /// One frame of what moves in the window: the sidebar, the panes of a split.
+    fn tick_motion(&mut self) {
+        let sidebar = self.sidebar.moving();
+        if sidebar {
             self.sidebar.tick();
+        }
+        let panes = self.panes.moving();
+        if panes {
+            self.panes.tick();
+        }
+        if sidebar || panes {
             self.layout(false);
+        }
+    }
+
+    /// A split that shows up (a tab split just now, or a tab shown again with its other pane)
+    /// slides its right pane in; swapping the focus between its two panes moves nothing.
+    fn split_shown(&mut self, active: Option<TabId>, split: Option<TabId>) {
+        let pair = active.zip(split).map(|(a, b)| if a.0 <= b.0 { (a, b) } else { (b, a) });
+        if pair == self.split_seen {
+            return;
+        }
+        self.split_seen = pair;
+        self.panes.stop();
+        if pair.is_none() || !self.svc.settings().animations {
+            return;
+        }
+        if let (_, Some(side)) = self.content_rects() {
+            self.panes.open(side.size.to_logical::<f64>(1.0).width + SPLIT_GAP);
+            self.split_opened = self.split_opened.wrapping_add(1);
         }
     }
 
@@ -1448,8 +1505,12 @@ impl Running {
         let right = other.map(pane).or(easel);
         let _ = splitbar.set_visible(active.is_some() && right.is_some());
         if let (Some(left), Some(right)) = (active, right) {
-            let state =
-                json!({"left": pane(left), "right": right, "color": ws.active_space().color});
+            let state = json!({
+                "left": pane(left), "right": right, "color": ws.active_space().color,
+                "animations": self.svc.settings().animations,
+                "opened": self.split_opened,
+                "sent": {"n": self.pilot_sent.0, "side": self.pilot_sent.1.id()},
+            });
             let _ = splitbar.evaluate_script(&format!("window.bh&&bh.render({state})"));
         }
     }
@@ -2125,6 +2186,16 @@ impl Running {
             (0.0, 0.0)
         };
         let _ = view.set_bounds(views::rect(ox + slot.x, oy + slot.y, slot.w, slot.h));
+        // The page is laid out at the width it had when the area was picked, whatever the
+        // width of the card: the area keeps its shape and fills the slot.
+        let viewport = self
+            .easel_current
+            .and_then(|id| self.easels.get(id))
+            .and_then(|e| e.items.iter().find(|i| i.id == item))
+            .map_or(0.0, |i| i.viewport);
+        if viewport > 0.0 && slot.w >= 2.0 {
+            let _ = view.zoom(blackhole_domain::easel::live_zoom(viewport, slot.w));
+        }
         // The palette and the peek only cover the main window: an Easel window of its own keeps
         // its live views.
         let embedded = self.easel_tab || self.easel_side();
@@ -2167,7 +2238,7 @@ impl Running {
 
     /// An area was picked: ask which Easel of the space it goes to (or a new one), or whether
     /// to watch it for changes.
-    fn live_picked(&mut self, tab: TabId, selector: String, size: (f64, f64)) {
+    fn live_picked(&mut self, tab: TabId, selector: String, size: (f64, f64, f64)) {
         // Picked from "Watch an area…": nothing more to ask.
         if std::mem::take(&mut self.pick_watches) {
             self.watch_area(tab, &selector);
@@ -2438,8 +2509,9 @@ impl Running {
     }
 
     /// Adds a live card for `selector` of the page of `tab` to `easel` (`None`: a new Easel);
-    /// the address comes from the engine.
-    fn capture_live(&mut self, tab: TabId, selector: &str, size: (f64, f64), easel: Option<u64>) {
+    /// the address comes from the engine. `size`: the area's width and height, then the width
+    /// of the page it was measured in.
+    fn capture_live(&mut self, tab: TabId, selector: &str, size: (f64, f64, f64), easel: Option<u64>) {
         let page = self.tabs.get(&tab).and_then(|v| v.url().ok());
         let title = self
             .svc
@@ -2467,9 +2539,10 @@ impl Running {
         };
         match self
             .easels
-            .capture_live(easel, &url, &title, selector, size)
+            .capture_live(easel, &url, &title, selector, (size.0, size.1))
         {
-            Ok(_) => {
+            Ok(item) => {
+                self.easels.set_viewport(easel, item, size.2);
                 self.easel_changed(true);
                 self.notify(notices::Notice::Easel, &t("toast.live_added"), serde_json::Value::Null);
             }
@@ -2685,6 +2758,7 @@ impl Running {
                 // The Easel window's own top bar (not drawn when embedded as a tab).
                 "os": std::env::consts::OS,
                 "spaceColor": self.svc.workspace().active_space().color,
+                "animations": self.svc.settings().animations,
                 "maximized": self.easel.as_ref().is_some_and(|w| w.window.is_maximized()),
             })
         };
@@ -2925,11 +2999,11 @@ impl Running {
                 self.pick_watches = false;
                 self.live_pick_start();
             }
-            UiCommand::CaptureLive { selector, w, h } => {
+            UiCommand::CaptureLive { selector, w, h, vw } => {
                 let tab = self.svc.workspace().active_tab().map(|t| t.id);
                 match tab {
                     Some(tab) if !self.home_shown() => {
-                        self.live_picked(tab, selector, (w, h));
+                        self.live_picked(tab, selector, (w, h, vw));
                     }
                     _ => self.toast(&t("toast.open_page_for_area")),
                 }
@@ -3947,6 +4021,7 @@ impl Running {
             .home
             .set_visible((active.is_none() || waiting.is_some()) && !self.easel_tab && !self.library);
         self.ui_wait();
+        self.split_shown(active, split);
         self.layout(true);
         self.apply_focus();
         self.ui_state();
@@ -6048,9 +6123,9 @@ impl Running {
                     self.open_peek(&url);
                 }
             }
-            Msg::Page(tab, PageEvent::LivePick { selector, w, h }) => {
+            Msg::Page(tab, PageEvent::LivePick { selector, w, h, vw }) => {
                 if self.live_pick.take() == Some(tab) {
-                    self.live_picked(tab, selector, (w, h));
+                    self.live_picked(tab, selector, (w, h, vw));
                 }
             }
             Msg::Page(tab, PageEvent::OpenLink { url }) => {
@@ -6505,13 +6580,13 @@ impl ApplicationHandler<Wake> for App {
                 }
                 wake = wake.min(Duration::from_millis(200));
             }
-            if app.sidebar.moving() {
+            if app.sidebar.moving() || app.panes.moving() {
                 let since = app.last_frame.elapsed();
                 if since < FRAME {
                     std::thread::sleep(FRAME - since);
                 }
                 app.last_frame = Instant::now();
-                app.tick_sidebar();
+                app.tick_motion();
                 animating = true;
             }
             #[cfg(feature = "devtools")]
@@ -6522,7 +6597,7 @@ impl ApplicationHandler<Wake> for App {
                 }
             }
         }
-        // While the sidebar moves, the loop runs frame after frame (paced above).
+        // While the sidebar or a pane moves, the loop runs frame after frame (paced above).
         event_loop.set_control_flow(if animating {
             ControlFlow::Poll
         } else {

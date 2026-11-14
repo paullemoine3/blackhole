@@ -686,6 +686,9 @@ pub enum UiCommand {
         w: f64,
         #[serde(default)]
         h: f64,
+        /// Width of the page the area was measured in (0: not known).
+        #[serde(default)]
+        vw: f64,
     },
     EaselLivePlay {
         item: u64,
@@ -830,6 +833,9 @@ pub enum PageEvent {
         w: f64,
         #[serde(default)]
         h: f64,
+        /// Width of the page when the area was picked: the live card lays it out the same.
+        #[serde(default)]
+        vw: f64,
     },
 }
 

@@ -64,7 +64,7 @@ eval easel JSON.stringify([...document.querySelectorAll('.card.live .slot')].map
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
 eval easel document.querySelector('.card.live .play svg').dataset.i
-eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'crop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3); })()
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(), tol = Math.max(2, innerWidth * .004); return 'crop ' + (Math.abs(r.left) < tol && Math.abs(r.top) < tol && r.width <= innerWidth + 3 && r.height <= innerHeight + 3) + ' fill ' + (r.width >= innerWidth * .97 && r.height >= innerHeight * .9) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ' in ' + innerWidth + 'x' + innerHeight + ' at ' + r.left.toFixed(1) + ',' + r.top.toFixed(1); })()
 shote 03-easel-live
 cmd {"cmd":"easel_live_stop","item":2}
 wait 500
@@ -82,7 +82,7 @@ eval etab JSON.stringify({ embedded: document.body.classList.contains('embedded'
 eval chrome JSON.stringify({ home: state.home, open: state.easels.map(e => e.open) })
 cmd {"cmd":"easel_live_play","item":2}
 wait 8000
-eval live (() => { const r = document.querySelector('p').getBoundingClientRect(); return 'tabcrop ' + (Math.abs(r.left) < 2 && Math.abs(r.top) < 2 && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50); })()
+eval live (() => { const r = document.querySelector('p').getBoundingClientRect(), tol = Math.max(2, innerWidth * .004); return 'tabcrop ' + (Math.abs(r.left) < tol && Math.abs(r.top) < tol && r.width <= innerWidth + 3 && r.height <= innerHeight + 3 && innerWidth > 50) + ' at ' + r.left.toFixed(1) + ',' + r.top.toFixed(1); })()
 shot 04-easel-tab
 cmd {"cmd":"close_easel_tab"}
 wait 800
@@ -164,6 +164,7 @@ Check ($evals[11] -match 'picked') 'live: area clicked'
 Check ($evals[12] -match 'Paused') 'live: card added, paused until played'
 Check ($evals[13] -match 'pause') 'live: playing'
 Check ($evals[14] -match 'crop true') 'live: view shows the picked area, scaled to fill the card'
+Check ($evals[14] -match 'fill true') 'live: the area fills the card (the page is laid out at the width it was picked in)'
 Check ($evals[15] -match 'play') 'live: paused again'
 Check ($evals[17] -match 'dragged') 'sidebar: easel dragged onto a folder'
 Check ($evals[18] -match 'inFolder.:1') 'sidebar: easel now lives in the folder'

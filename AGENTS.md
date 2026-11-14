@@ -292,7 +292,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 13 captures `f01`–`f13` ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 14 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -301,6 +301,21 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Split pilote : `domain/pilot.rs`, `app/pilot.rs` (`Running::pilot`, session). La page ne fait
   que signaler un clic (`PageEvent::PilotLink`, drapeau `__bhPilot` posé par le shell) : c'est le
   shell qui vérifie le pilote et évalue l'adresse. Reposer le drapeau à chaque chargement.
+- Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
+  (`split_shown`, appelé par `sync` : paire d'onglets nouvelle, pas un simple changement de focus)
+  fait glisser le volet droit depuis la droite ; un lien pilote (`pilot_sent`) fait monter le
+  volet de destination. Les vues ne sont que déplacées (`shifted` dans `layout`), jamais
+  redimensionnées ; la boucle les cadence avec la barre latérale (`tick_motion`, `FRAME`). La
+  barre de split joue sa part quand `opened` ou `sent.n` de son état changent (`play`, classes
+  retirées à la fin : les volets sont redessinés à chaque rendu). Rien sans le réglage
+  `animations`. Devtools : `state` donne `paneMotion`, `splitOpened`, `pilotSent`. L'Easel à
+  côté d'un onglet ne bouge pas.
+- Carte en direct de l'Easel (0.8.11) : `Item::viewport` = largeur de la page au moment du
+  choix (`vw` de `live_pick`, non fiable : `Easels::set_viewport` l'écarte hors 200–8000) ;
+  `apply_slot` zoome la vue (`easel::live_zoom` = largeur de l'emplacement / `viewport`, borné
+  0,25–3) pour que la page garde sa mise en page et que la zone remplisse la carte.
+  `easel::BAR_HEIGHT` (54) doit rester égal à la barre + le pied de `.card.live` dans
+  `easel.html`, et `.slot` sans marge latérale. Cartes d'avant : `viewport` 0, zoom 1.
 - Onglet trou noir : `Workspace::open_burner` / `is_burner` (session, jamais écrit), `Store::Burner`
   (macOS : magasin éphémère par vue ; Windows : profil InPrivate `BlackHole-burn-<lancement>-<id>`,
   `delete_profile` dans `drop_view`, `remove_burner_profiles` au démarrage). Jamais mis en veille
