@@ -1,6 +1,12 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.11",
+        &[
+            "BlackHole has a home page: a tour of what the browser does, in French and in English, and the downloads for Windows, macOS and Android",
+        ],
+    ),
+    (
         "0.8.10",
         &[
             "A download that starts from a page already shown (a \"your download starts in a moment\" page, a link redirected to the file) no longer replaces the page with Site unreachable: the file is saved and the page stays",
