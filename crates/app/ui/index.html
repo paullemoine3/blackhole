@@ -315,6 +315,11 @@
   .tab-glide { position: fixed; z-index: 5; pointer-events: none; border-radius: 9px; background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.04); }
   .tab.gliding { background: transparent !important; box-shadow: none !important; }
   #scroll::-webkit-scrollbar-thumb { transition: background-color .2s ease; }
+  /* Depth: a quick access tile leans towards the pointer, its icon stands out (depth.js). */
+  #pinned .tab { transform-style: preserve-3d; transition: transform .26s cubic-bezier(.3,1.4,.5,1), background-color .18s ease; }
+  #pinned .tab .dot { transition: transform .26s cubic-bezier(.3,1.4,.5,1); }
+  #pinned .tab.bh-lean { transform: perspective(260px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(4px); }
+  #pinned .tab.bh-lean .dot { transform: translateZ(16px) scale(1.1); }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   /* Icons (ui/icons.js) on the scale of the design system: 16 px in buttons, 12 px inline marks. */
@@ -1070,6 +1075,7 @@ window.bh = {
       if (grew) { bn.classList.remove('roll'); void bn.offsetWidth; bn.classList.add('roll'); }
     }
     document.body.classList.toggle('noanim', s.animations === false);
+    document.body.classList.toggle('flat', s.depth === false);
     if (before) motion.play(before, prev, s);
     if (switched) motion.spaces(prev.activeSpace, s.activeSpace);
     renderUpdate(s.update, s.version);
@@ -1368,6 +1374,7 @@ document.addEventListener('mousemove', (e) => {
 // stays while it is.
 document.addEventListener('mouseenter', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: true }); });
 document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: false }); });
+if (window.bhDepth) bhDepth('#pinned .tab', 14);
 send({ cmd: 'ready' });
 </script>
 </body>

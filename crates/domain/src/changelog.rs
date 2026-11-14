@@ -3,6 +3,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
     (
         "0.8.11",
         &[
+            "Two styles for the interface, in Settings > Appearance: 3D, where the tiles of the start page, of quick access and of the Library and the notes of the Easel lean towards the pointer and the command bar and menus swing in, and Flat, the look you know",
             "The Easel's cards have a new look, one per kind: a note is a sheet of paper, a captured page sits under a band of its colour with the site's tile, a live area is framed in its colour with a dot that beats while it plays. A card without a colour follows its space, and the tools show when the pointer is on the card",
             "A live area of the Easel has the shape of what you picked: its page is laid out at the width it had when you picked the area, then scaled to the card, instead of being squeezed to the card's width with an empty band beside it. Live areas made before keep their look",
             "Split view moves: the right pane slides in when a tab is split or shown again with its other pane, and in pilot mode the pane a link opens in rises into place while a line of light crosses its header. Nothing moves with animations off",

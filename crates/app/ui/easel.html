@@ -62,6 +62,10 @@
   .card textarea { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 6px 12px 10px; }
   .card .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.3) 50%); opacity: .5; transition: opacity .15s ease; }
   .card:hover .grip { opacity: 1; }
+  /* Depth: a note or a clip leans a little towards the pointer (depth.js), never while it is
+     written in, dragged or recoloured, and never a live card: its native view does not turn. */
+  .card.note, .card.clip { transition: box-shadow .25s ease, transform .3s cubic-bezier(.2,.85,.25,1); }
+  .card.bh-lean:not(:focus-within):not(.drag):not(.pick) { transform: perspective(900px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)); }
   /* Note: paper, tinted by its colour. */
   .card.note { background: color-mix(in srgb, var(--c) 16%, #f4f4f6); color: #222; }
   .card.note.plain { background: #f4f4f6; }
@@ -307,6 +311,7 @@ window.bh = {
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
     document.body.classList.toggle('noanim', s.animations === false);
+    document.body.classList.toggle('flat', s.depth === false);
     state = s;
     document.body.classList.toggle('embedded', !!s.embedded);
     const e = current();
@@ -354,6 +359,7 @@ $('title').onkeydown = (ev) => { if (ev.key === 'Enter') ev.target.blur(); };
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); flush(); send({ cmd: state.embedded ? 'close_easel_tab' : 'close_easel' }); }
 });
+if (window.bhDepth) bhDepth('.card.note, .card.clip', 4);
 send({ cmd: 'ready' });
 </script>
 </body>

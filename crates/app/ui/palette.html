@@ -11,7 +11,8 @@
   /* Opening is one movement, on the tokens of the design system: the panel glides down into
      place (`duration-panel`, `ease-glide`) and its rows rise after it, 14 ms apart. A new tab
      adds the black hole's own light, once: an accretion glow that swells behind the panel and
-     is gone (`duration-bloom`). Nothing squashes, spins or blurs. */
+     is gone (`duration-bloom`). The panel comes from behind: tipped back around its top edge,
+     it swings up to face you as it lands. Nothing squashes or blurs. */
   #hole { position: absolute; left: 50%; top: 19vh; width: min(calc(var(--bh-size-palette) + 180px), 100vw); height: 240px; margin-top: -92px;
     transform: translateX(-50%); display: none; pointer-events: none; }
   #hole i { position: absolute; inset: 0; border-radius: 50%; opacity: 0;
@@ -30,7 +31,13 @@
   body.pop #panel { animation: palette-in var(--bh-duration-panel) var(--bh-ease-glide) both; }
   body.pop .row { animation: row-in var(--bh-duration-quick) var(--bh-ease-glide) both; animation-delay: calc(var(--i, 0) * 14ms + 80ms); }
   @keyframes scrim-in { from { opacity: 0; } }
-  @keyframes palette-in { from { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.97); } }
+  @keyframes palette-in {
+    from { opacity: 0; transform: translateX(-50%) perspective(1100px) rotateX(-20deg) translateY(-14px) scale(.96); }
+    to { transform: translateX(-50%) perspective(1100px) rotateX(0deg) translateY(0) scale(1); }
+  }
+  /* Flat style of the interface (Settings > Appearance): the panel only glides down. */
+  body.flat.pop #panel { animation-name: palette-in-flat; }
+  @keyframes palette-in-flat { from { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.97); } }
   @keyframes row-in { from { opacity: 0; transform: translateY(6px); } }
   /* The "animations" setting and the system's reduced motion stop all of it. */
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
@@ -73,7 +80,13 @@
   body.menuing #menu { display: block; animation: menuin .22s cubic-bezier(.2,1.2,.35,1) both; }
   body.menuing #panel { display: none; }
   body.menuing #scrim { background: transparent; animation: none; }
-  @keyframes menuin { from { opacity: 0; transform: scale(.88); } }
+  /* A menu unfolds from the point it was asked at, tipped back like the panel. */
+  @keyframes menuin {
+    from { opacity: 0; transform: perspective(700px) rotateX(-16deg) scale(.88); }
+    to { transform: perspective(700px) rotateX(0deg) scale(1); }
+  }
+  body.flat.menuing #menu { animation-name: menuin-flat; }
+  @keyframes menuin-flat { from { opacity: 0; transform: scale(.88); } }
   /* The rows rise one after the other behind the panel; closing fades the menu out instead of
      cutting it (`close` waits for it before the shell hides the view). */
   body.menuing #menu > * { animation: menurow .22s var(--bh-ease-glide) both; animation-delay: calc(40ms + var(--i, 0) * 28ms); }
@@ -605,6 +618,7 @@ window.bh = {
     root.setProperty('--sel', rgba(s.color, .85));
     document.body.classList.add('open');
     document.body.classList.toggle('noanim', !s.animations);
+    document.body.classList.toggle('flat', s.depth === false);
     const authing = s.mode === 'auth' && !!s.auth;
     document.body.classList.toggle('authing', authing);
     if (authing) {

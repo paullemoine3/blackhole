@@ -292,7 +292,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 14 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 16 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir, `f13a` une tuile penchée, `f13b` le réglage Flat / 3D ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -301,6 +301,17 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Split pilote : `domain/pilot.rs`, `app/pilot.rs` (`Running::pilot`, session). La page ne fait
   que signaler un clic (`PageEvent::PilotLink`, drapeau `__bhPilot` posé par le shell) : c'est le
   shell qui vérifie le pilote et évalue l'adresse. Reposer le drapeau à chaque chargement.
+- Style de l'interface, Flat ou 3D (0.8.11) : `Settings::depth` (vrai par défaut), commande
+  `set_depth`, Réglages > Appearance (`#style`), champ `depth` de l'état des pages, qui posent
+  `body.flat`. `ui/depth.js` (injecté avec `theme.js` par `ui_view` et `panel_view`) : une page
+  déclare ce qui penche vers le pointeur (`bhDepth('.fav', 13)`), le script pose la classe
+  `bh-lean` et `--rx` / `--ry` / `--mx` / `--my`, la page écrit la transformation. Penchent :
+  tuiles et lignes de l'accueil, tuiles d'accès rapide, tuiles et cartes de la Bibliothèque,
+  notes et clips de l'Easel (jamais une carte en direct : sa vue native ne tourne pas, ni une
+  carte en cours de saisie, de glisser ou de choix de couleur). La palette et les menus
+  s'ouvrent en perspective (`palette-in`, `menuin` ; variantes `-flat`). Rien ne penche en
+  `body.flat`, `noanim`, `still`, `dragging`, sous `prefers-reduced-motion` ni au doigt. Android
+  non concerné. Test : `scripts	est-features.ps1` (`dp1`–`dp5`).
 - Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
   (`split_shown`, appelé par `sync` : paire d'onglets nouvelle, pas un simple changement de focus)
   fait glisser le volet droit depuis la droite ; un lien pilote (`pilot_sent`) fait monter le

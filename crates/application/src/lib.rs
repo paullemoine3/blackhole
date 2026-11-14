@@ -315,6 +315,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    /// The style of the interface: 3D (`true`) or flat.
+    pub fn set_depth(&mut self, on: bool) {
+        self.settings.depth = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     pub fn set_tab_sleep_minutes(&mut self, minutes: u32) {
         if Settings::SLEEP_CHOICES.contains(&minutes) {
             self.settings.tab_sleep_minutes = minutes;

@@ -24,6 +24,8 @@ const HIGHLIGHTS_JS: &str = include_str!("../ui/highlights.js");
 const KEYS_JS: &str = include_str!("../ui/keys.js");
 /// Look shared by BlackHole's own pages: design tokens (`--bh-*`), icon scale, scroll bars.
 const THEME_JS: &str = include_str!("../ui/theme.js");
+/// Cards that lean towards the pointer in BlackHole's own pages (`bhDepth`).
+const DEPTH_JS: &str = include_str!("../ui/depth.js");
 /// Icons of BlackHole's own pages (`bhIcon`), drawn at the scale set by `THEME_JS`.
 const ICONS_JS: &str = include_str!("../ui/icons.js");
 /// The component that draws a notice (`bhNotice`): the sidebar's toast, the top bar's capsule.
@@ -230,6 +232,7 @@ pub fn ui_view(
         .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_initialization_script_for_main_only(i18n_script(), true)
         .with_initialization_script_for_main_only(THEME_JS, true)
+        .with_initialization_script_for_main_only(DEPTH_JS, true)
         .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_initialization_script_for_main_only(NOTICE_JS, true)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
@@ -262,6 +265,7 @@ pub fn panel_view(
         .with_initialization_script_for_main_only(KEYS_JS, true)
         .with_initialization_script_for_main_only(i18n_script(), true)
         .with_initialization_script_for_main_only(THEME_JS, true)
+        .with_initialization_script_for_main_only(DEPTH_JS, true)
         .with_initialization_script_for_main_only(ICONS_JS, true)
         .with_ipc_handler(move |request| {
             if let Ok(command) = serde_json::from_str::<UiCommand>(request.body()) {

@@ -22,6 +22,10 @@ pub enum UiCommand {
     SetAnimations {
         on: bool,
     },
+    /// Style of the interface: 3D (`on`) or flat.
+    SetDepth {
+        on: bool,
+    },
     /// Interface language: a code of `i18n::LANGUAGES` or "system".
     SetLanguage {
         language: String,

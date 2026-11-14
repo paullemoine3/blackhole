@@ -1436,6 +1436,7 @@ impl Running {
             "sidebarOpen": self.sidebar.is_open(),
             "engine": self.svc.settings().search_engine.id(),
             "animations": self.svc.settings().animations,
+            "depth": self.svc.settings().depth,
             "tabSleep": self.svc.settings().tab_sleep_minutes,
             "tabSleepChoices": Settings::SLEEP_CHOICES,
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
@@ -1508,6 +1509,7 @@ impl Running {
             let state = json!({
                 "left": pane(left), "right": right, "color": ws.active_space().color,
                 "animations": self.svc.settings().animations,
+                "depth": self.svc.settings().depth,
                 "opened": self.split_opened,
                 "sent": {"n": self.pilot_sent.0, "side": self.pilot_sent.1.id()},
             });
@@ -1586,6 +1588,7 @@ impl Running {
         // gives on this computer.
         state["recall"] = self.recall_state();
         state["language"] = json!(settings.language);
+        state["depth"] = json!(settings.depth);
         state["languages"] = json!(blackhole_domain::i18n::LANGUAGES
             .iter()
             .map(|(id, label)| json!({"id": id, "label": label}))
@@ -2657,6 +2660,7 @@ impl Running {
             // A section to show, applied once per request (the page keeps its own choice after).
             "jump": json!([self.library_jump.0, self.library_jump.1]),
             "animations": self.svc.settings().animations,
+            "depth": self.svc.settings().depth,
             "watches": self.watches_json(),
             // The Easel ticked in the "Add to an Easel" menus.
             "easelCurrent": self.easel_current,
@@ -2759,6 +2763,7 @@ impl Running {
                 "os": std::env::consts::OS,
                 "spaceColor": self.svc.workspace().active_space().color,
                 "animations": self.svc.settings().animations,
+                "depth": self.svc.settings().depth,
                 "maximized": self.easel.as_ref().is_some_and(|w| w.window.is_maximized()),
             })
         };
@@ -3143,6 +3148,7 @@ impl Running {
             "engine": self.svc.settings().search_engine.label(),
             "extensions": self.bar_exts,
             "animations": self.svc.settings().animations,
+            "depth": self.svc.settings().depth,
             "side": self.bar_notice_state().0,
             "waiting": self.bar_notice_state().1,
         });
@@ -3219,6 +3225,7 @@ impl Running {
         let mut state = json!({
             "engine": self.svc.settings().search_engine.label(),
             "animations": self.svc.settings().animations,
+            "depth": self.svc.settings().depth,
             "favorites": self.svc.favorites().iter()
                 .map(|f| json!({
                     "name": f.name, "url": f.url.as_str(),
@@ -4704,6 +4711,7 @@ impl Running {
             "burner": self.burner_next,
             "recall": self.recall_state(),
             "animations": self.svc.settings().animations,
+            "depth": self.svc.settings().depth,
             "url": url,
             "engine": self.svc.settings().search_engine.label(),
             "color": space.color,
@@ -5221,6 +5229,11 @@ impl Running {
             UiCommand::SetAnimations { on } => {
                 self.svc.set_animations(on);
                 self.ui_state();
+            }
+            UiCommand::SetDepth { on } => {
+                self.svc.set_depth(on);
+                self.ui_state();
+                self.ui_easel();
             }
             UiCommand::SetLanguage { language } => {
                 if self.svc.set_language(&language) {

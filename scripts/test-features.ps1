@@ -142,6 +142,29 @@ wait 1500
 cmd {"cmd":"home"}
 wait 1500
 eval home 'hn1:' + !document.getElementById('now').hidden + '|' + document.querySelectorAll('#nowlist .item').length + '|' + (document.querySelector('#nowlist .item .t') || {}).textContent
+# Depth: a tile of the start page leans towards the pointer, and stays flat with animations off.
+eval home (() => { const n = document.querySelector('.fav') || document.querySelector('.item'); if (!n) return 'dp1:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp1:' + n.classList.contains('bh-lean') + '|' + (parseFloat(n.style.getPropertyValue('--ry')) > 2) + '|' + (getComputedStyle(n).transform !== 'none'); })()
+wait 500
+shot f13a-home-tile-leaning
+cmd {"cmd":"set_animations","on":false}
+wait 400
+eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp2:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp2:' + n.classList.contains('bh-lean') + '|' + n.style.getPropertyValue('--ry'); })()
+cmd {"cmd":"set_animations","on":true}
+# The flat style of the interface: nothing leans either, and the command bar opens flat.
+cmd {"cmd":"set_depth","on":false}
+wait 400
+eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp3:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp3:' + document.body.classList.contains('flat') + '|' + n.classList.contains('bh-lean'); })()
+cmd {"cmd":"set_depth","on":true}
+wait 400
+eval home 'dp4:' + document.body.classList.contains('flat')
+cmd {"cmd":"open_settings","tab":"general"}
+wait 2500
+eval settings 'dp5:' + [...document.querySelectorAll('#style .seg button')].map(b => b.textContent + '=' + b.getAttribute('aria-checked')).join(',')
+eval settings (document.getElementById('style').scrollIntoView({ block: 'center' }), 'dp6:scrolled')
+wait 400
+shots f13b-settings-style
+cmd {"cmd":"close_settings"}
+wait 600
 shot f13-home-now
 # ---- Recall ----
 cmd {"cmd":"open","input":"https://en.wikipedia.org/wiki/Black_hole"}
@@ -219,6 +242,11 @@ Check ((Ev us3) -match 'us3:1\|1') 'one search: Ctrl+Enter keeps the result in t
 Check ((Ev sg1) -match 'sg1:1\|Phone\|Meet at the station at 6') 'signals: a text received stays as a card of the sidebar'
 Check ((Ev sg3) -match 'sg3:0\|2') 'signals: its Easel button keeps the text and the card leaves'
 Check ((Ev hn1) -match 'hn1:true\|[1-9]\d*\|Weekly sync') 'start page: Now shows the meeting going on'
+Check ((Ev dp1) -match 'dp1:true\|true\|true') 'depth: a tile of the start page leans towards the pointer'
+Check ((Ev dp2) -match 'dp2:false\|"') 'depth: nothing leans with animations off'
+Check ((Ev dp3) -match 'dp3:true\|false') 'depth: the flat style of the interface leaves the tiles flat'
+Check ((Ev dp4) -match 'dp4:false') 'depth: back to the 3D style'
+Check ((Ev dp5) -match 'dp5:Flat=false,3D=true') 'depth: Settings > Appearance offers Flat and 3D, 3D chosen'
 Check ((Ev rc0) -match 'rc0:recall\|A few words') 'Recall: the command bar opens in its mode'
 Check ((Ev rc1) -match 'rc1:[1-9]\d*\|Black hole') 'Recall: a page read is found from words of its text'
 Check ((Ev rc3) -match 'rc3:0\|No ') 'Recall: no match, no result'
@@ -228,6 +256,6 @@ $burnt = @(Get-ChildItem (Join-Path $tmp 'bh_data\webview') -Recurse -Directory 
 Check ($burnt.Count -eq 0) "black hole tab: no engine profile left on disk ($($burnt.Count))"
 $clear = @(Get-ChildItem (Join-Path $tmp 'bh_data\recall') -File -ErrorAction SilentlyContinue | Where-Object { (Get-Content $_.FullName -Raw) -match 'horizon' })
 Check ((Test-Path (Join-Path $tmp 'bh_data\recall')) -and $clear.Count -eq 0) 'Recall: its files exist and hold no readable text'
-Check ($saved.Count -eq 14) "screenshots saved ($($saved.Count)/14)"
+Check ($saved.Count -eq 16) "screenshots saved ($($saved.Count)/16)"
 if ($fail) { Write-Host "evals:"; $all }
 exit [int]$fail

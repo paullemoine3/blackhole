@@ -411,6 +411,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 Settings::DEFAULT_SIDEBAR_WIDTH
             },
             animations: dto.animations,
+            depth: dto.depth,
             hardware_acceleration: dto.hardware_acceleration,
             tab_sleep_minutes: if Settings::SLEEP_CHOICES.contains(&dto.tab_sleep_minutes) {
                 dto.tab_sleep_minutes
@@ -476,6 +477,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             search_engine: settings.search_engine.id().to_owned(),
             sidebar_width: settings.sidebar_width,
             animations: settings.animations,
+            depth: settings.depth,
             hardware_acceleration: settings.hardware_acceleration,
             tab_sleep_minutes: settings.tab_sleep_minutes,
             max_live_tabs: settings.max_live_tabs,
@@ -568,6 +570,9 @@ struct SettingsDto {
     sidebar_width: u32,
     #[serde(default = "default_true")]
     animations: bool,
+    /// 3D interface (absent in older files: on).
+    #[serde(default = "default_true")]
+    depth: bool,
     #[serde(default = "default_true")]
     hardware_acceleration: bool,
     #[serde(default)]
@@ -808,6 +813,7 @@ mod tests {
             search_engine: SearchEngine::Brave,
             sidebar_width: 280,
             animations: false,
+            depth: false,
             hardware_acceleration: false,
             tab_sleep_minutes: 15,
             max_live_tabs: 8,
@@ -850,7 +856,7 @@ mod tests {
         let old = repo.load_settings().unwrap().unwrap();
         assert_eq!(old.search_engine, SearchEngine::Qwant);
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
-        assert!(old.animations && old.hardware_acceleration);
+        assert!(old.animations && old.hardware_acceleration && old.depth);
         assert_eq!(old.tab_sleep_minutes, 10);
         assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
         assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);
