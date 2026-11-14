@@ -44,25 +44,58 @@
   #board { position: relative; overflow: auto; background-color: #14131c; background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 24px 24px; }
   #surface { position: relative; min-width: 100%; min-height: 100%; }
   #empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; opacity: .5; pointer-events: none; padding: 40px; }
-  .card { position: absolute; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.14); overflow: hidden; }
-  .card .bar { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; background: rgba(0,0,0,.25); cursor: grab; user-select: none; -webkit-user-select: none; }
+  /* Cards. A note is a sheet of paper, a clip a page under a band of its colour, a live area a
+     framed screen. `--c` is the colour picked for the card; the first one of the list (`plain`)
+     follows the space. Nothing moves a card but the pointer: the native live view sits on `.slot`. */
+  .card { position: absolute; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; --tone: var(--c); background: #1b1a26; box-shadow: 0 6px 22px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.1); transition: box-shadow .25s ease; }
+  .card.plain { --tone: var(--accent); }
+  .card:hover, .card:focus-within, .card.drag { box-shadow: 0 16px 38px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.16); }
+  .card.drag { z-index: 1; }
+  .card .bar { display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 3px 6px 3px 12px; cursor: grab; user-select: none; -webkit-user-select: none; }
   .card.drag .bar { cursor: grabbing; }
-  .card .kind { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .07em; flex: 1; }
-  .card .tool { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; width: 24px; height: 22px; padding: 0; display: grid; place-items: center; opacity: .7; }
-  .card .tool:hover { background: rgba(255,255,255,.18); opacity: 1; }
+  .card .kind { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+  .card .tool { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 6px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; opacity: 0; transition: opacity .15s ease, background-color .15s ease; }
+  .card:hover .tool, .card:focus-within .tool, .card.pick .tool, .card.drag .tool { opacity: .7; }
+  .card .tool:hover, .card .tool:focus-visible { background: rgba(255,255,255,.18); opacity: 1; }
   /* A live card that is also watched: told when its area changes. */
-  .card .tool.on { opacity: 1; background: rgba(255,255,255,.22); }
-  .card .link { display: block; padding: 8px 10px 0; font-weight: 600; color: #fff; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .tool.on { opacity: 1; background: color-mix(in srgb, var(--tone) 45%, transparent); }
+  .card textarea { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 6px 12px 10px; }
+  .card .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.3) 50%); opacity: .5; transition: opacity .15s ease; }
+  .card:hover .grip { opacity: 1; }
+  /* Note: paper, tinted by its colour. */
+  .card.note { background: color-mix(in srgb, var(--c) 16%, #f4f4f6); color: #222; }
+  .card.note.plain { background: #f4f4f6; }
+  .card.note:not(.plain)::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--c); }
+  .card.note .kind { opacity: 0; transition: opacity .15s ease; }
+  .card.note:hover .kind, .card.note:focus-within .kind { opacity: .5; }
+  .card.note .tool:hover, .card.note .tool:focus-visible { background: rgba(0,0,0,.1); }
+  .card.note textarea::placeholder { color: #666; }
+  .card.note .grip { background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.22) 50%); }
+  .card.note .dot { border-color: rgba(0,0,0,.3); }
+  /* Clip: the band is the handle, the site's tile sits astride it. */
+  .card.clip .bar { min-height: 48px; align-items: flex-start; background: linear-gradient(130deg, var(--tone), color-mix(in srgb, var(--tone) 40%, #2f6fb5)); }
+  .card.clip .kind { opacity: .9; color: #fff; min-height: 24px; }
+  .card.clip .site { position: absolute; left: 12px; top: 32px; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; box-shadow: 0 0 0 2px #1b1a26, 0 4px 10px rgba(0,0,0,.4); pointer-events: none; }
+  .card .link { display: block; padding: 20px 12px 0; font-weight: 600; color: #fff; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .link:hover { text-decoration: underline; }
-  .card .host { padding: 0 10px 4px; font-size: 11.5px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card textarea { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: inherit; font: inherit; padding: 8px 10px; }
+  .card .host { padding: 0 12px 2px; font-size: 11.5px; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Live: a ring of its colour, a dot that beats while the area plays. */
+  .card.live { box-shadow: 0 6px 22px rgba(0,0,0,.35), 0 0 0 1px color-mix(in srgb, var(--tone) 55%, transparent), 0 0 20px -8px var(--tone); }
+  .card.live:hover, .card.live:focus-within, .card.live.drag { box-shadow: 0 16px 38px rgba(0,0,0,.6), 0 0 0 1px var(--tone), 0 0 24px -6px var(--tone); }
   .card.live .bar { height: 30px; box-sizing: border-box; }
-  .card .slot { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; opacity: .8; background: rgba(0,0,0,.18); overflow: hidden; }
-  .card .foot { height: 14px; flex: none; display: flex; align-items: center; padding: 0 22px 0 10px; font-size: 10.5px; opacity: .6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .card .grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,.4) 50%); }
+  .card.live .kind::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .card.live.playing .kind { color: #ff8a8a; opacity: 1; }
+  .card.live.playing .kind::before { background: #ff5a5a; animation: live 1.6s ease-in-out infinite; }
+  .card.live .tool.play { opacity: .7; }
+  .card .slot { flex: 1; min-height: 0; margin: 0 8px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; opacity: .8; background: rgba(0,0,0,.3); overflow: hidden; }
+  .card .foot { height: 24px; flex: none; display: flex; align-items: center; padding: 0 22px 0 12px; font-size: 11px; opacity: .6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .card .foot:hover { opacity: 1; }
   .colors { display: none; gap: 4px; padding: 0 4px; }
   .card.pick .colors { display: flex; }
   .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); cursor: pointer; padding: 0; }
+  @keyframes live { 50% { opacity: .3; } }
+  body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2b2a3a; border: 1px solid rgba(255,255,255,.14); padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.on { opacity: 1; }
 </style>
@@ -112,6 +145,7 @@ function queueText(item, text) {
 }
 const current = () => state.easels.find(e => e.id === state.current) || null;
 const host = (url) => { try { return new URL(url).host; } catch (_) { return ''; } };
+const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
 
 function drag(card, item, mode) {
   return (ev) => {
@@ -143,7 +177,7 @@ function drag(card, item, mode) {
   };
 }
 function place(card, item) {
-  card.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px;background:${item.color}`;
+  card.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px;--c:${item.color}`;
 }
 // The surface always extends past the farthest card so the board can scroll to it.
 function fit() {
@@ -153,7 +187,7 @@ function fit() {
   $('surface').style.height = Math.max(0, ...items.map(i => i.y + i.h)) + 200 + 'px';
 }
 function card(item) {
-  const c = el('div', 'card ' + item.kind);
+  const c = el('div', 'card ' + item.kind + (item.color === state.colors[0] ? ' plain' : '') + (item.playing ? ' playing' : ''));
   c.dataset.id = item.id;
   place(c, item);
   const bar = el('div', 'bar');
@@ -191,7 +225,10 @@ function card(item) {
     const link = el('a', 'link', item.title);
     link.title = item.url;
     link.onclick = (e) => { e.preventDefault(); send({ cmd: 'easel_open_link', item: item.id }); };
-    c.append(link, el('div', 'host', host(item.url)));
+    // The site's tile: its initial on a hue computed from the host, as on the start page.
+    const site = el('span', 'site', (host(item.url).replace(/^www\./, '')[0] || '•').toUpperCase());
+    site.style.background = hue(host(item.url));
+    c.append(site, link, el('div', 'host', host(item.url)));
   }
   if (item.kind === 'live') {
     const slot = el('div', 'slot', bhT(item.playing ? 'easel.loading' : 'easel.paused'));
@@ -259,7 +296,8 @@ window.bh = {
   render(s) {
     for (const e of s.easels) for (const i of e.items) if (pending.has(i.id) && e.id === s.current) i.text = pending.get(i.id);
     flush();
-    if (s.spaceColor && !s.embedded) {
+    // The accent tints the cards too, in the window and in a tab.
+    if (s.spaceColor) {
       const root = document.documentElement.style;
       root.setProperty('--accent', s.spaceColor);
       root.setProperty('--glow', rgba(s.spaceColor, .5));
@@ -268,6 +306,7 @@ window.bh = {
     document.body.classList.toggle('macos', s.os === 'macos');
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
+    document.body.classList.toggle('noanim', s.animations === false);
     state = s;
     document.body.classList.toggle('embedded', !!s.embedded);
     const e = current();

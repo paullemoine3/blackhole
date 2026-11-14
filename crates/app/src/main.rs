@@ -2685,6 +2685,7 @@ impl Running {
                 // The Easel window's own top bar (not drawn when embedded as a tab).
                 "os": std::env::consts::OS,
                 "spaceColor": self.svc.workspace().active_space().color,
+                "animations": self.svc.settings().animations,
                 "maximized": self.easel.as_ref().is_some_and(|w| w.window.is_maximized()),
             })
         };

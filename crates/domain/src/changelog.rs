@@ -3,6 +3,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
     (
         "0.8.11",
         &[
+            "The Easel's cards have a new look, one per kind: a note is a sheet of paper, a captured page sits under a band of its colour with the site's tile, a live area is framed in its colour with a dot that beats while it plays. A card without a colour follows its space, and the tools show when the pointer is on the card",
             "BlackHole has a home page: a tour of what the browser does, in French and in English, and the downloads for Windows, macOS and Android",
         ],
     ),
