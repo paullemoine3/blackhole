@@ -65,7 +65,7 @@
        border-radius:10px;box-shadow:0 8px 28px #0008;font:13px -apple-system,system-ui,sans-serif;padding:4px;display:none}
     .h{padding:4px 8px;font-size:11px;color:#9b99b5}
     .i{padding:7px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .i:hover{background:#34325a}
+    .i:hover,.i.on{background:#34325a}
   `;
   try {
     const sheet = new CSSStyleSheet();
@@ -78,8 +78,14 @@
   }
   const menu = document.createElement('div');
   menu.className = 'm';
+  menu.setAttribute('role', 'listbox');
   root.appendChild(menu);
   let target = null;
+  // The entries on screen, with what each one sends; `active` is the one the arrow keys reached
+  // (-1: none, so Enter still belongs to the page's form).
+  let rows = [];
+  let active = -1;
+  let shown = false;
 
   const place = () => {
     if (!target || menu.style.display === 'none') return;
@@ -89,11 +95,23 @@
   };
   const hide = () => {
     menu.style.display = 'none';
+    shown = false;
+    active = -1;
+  };
+  const mark = (i) => {
+    active = i;
+    rows.forEach((r, k) => {
+      r.row.classList.toggle('on', k === i);
+      r.row.setAttribute('aria-selected', String(k === i));
+    });
   };
   const item = (label, message) => {
     const row = document.createElement('div');
     row.className = 'i';
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', 'false');
     row.textContent = label;
+    rows.push({ row, message });
     // Keep focus in the page field while clicking.
     apply(listen, row, ['mousedown', (e) => e.preventDefault()]);
     apply(listen, row, [
@@ -112,9 +130,13 @@
     const token = (m && m.token) || '';
     if (!target || (!list.length && !m.locked && !m.generate)) return hide();
     menu.replaceChildren();
+    rows = [];
+    active = -1;
     const h = document.createElement('div');
     h.className = 'h';
     h.textContent = T('page.saved_passwords');
+    h.setAttribute('role', 'presentation');
+    menu.setAttribute('aria-label', T('page.saved_passwords'));
     menu.append(h);
     for (let index = 0; index < list.length; index++) {
       item(list[index] || T('settings.no_username'), { cmd: 'autofill_fill', index, token });
@@ -122,6 +144,7 @@
     if (m.locked) item(T('page.unlock_passwords'), { cmd: 'autofill_unlock', token });
     if (m.generate) item(T('page.strong_password'), { cmd: 'autofill_generate', token });
     menu.style.display = 'block';
+    shown = true;
     if (!host.isConnected) document.documentElement.append(host);
     place();
   };
@@ -192,7 +215,25 @@
     true,
   );
   document.addEventListener('focusout', () => setTimeout(hide, 150), true);
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && hide(), true);
+  // The keyboard, as in every browser: ↓ / ↑ walk the entries from the field, Enter picks the
+  // one reached (a real key press, `isTrusted`, like the click), Escape closes the menu.
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Escape') return hide();
+      if (!shown || !e.isTrusted || e.target !== target || !rows.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const n = rows.length;
+        mark(e.key === 'ArrowDown' ? (active + 1) % n : (active <= 0 ? n : active) - 1);
+      } else if (e.key === 'Enter' && active >= 0) {
+        post(rows[active].message);
+        hide();
+      } else return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
   addEventListener('scroll', place, true);
   addEventListener('resize', place);
 

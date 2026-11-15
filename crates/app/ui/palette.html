@@ -74,10 +74,10 @@
   .none { padding: 18px; text-align: center; opacity: .5; }
   /* Grouped results (highlights, watched areas, Recall, archive, downloads): a quiet head per
      group, never selected. */
-  .ghead { padding: 9px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .45; }
+  .ghead { padding: 9px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
   body.pop .ghead { animation: row-in var(--bh-duration-quick) var(--bh-ease-glide) both; animation-delay: calc(var(--i, 0) * 14ms + 80ms); }
   #fkeep[hidden] { display: none; }
-  .foot { display: flex; gap: 16px; padding: 9px 18px; border-top: 1px solid rgba(255,255,255,.07); font-size: 12px; opacity: .5; }
+  .foot { display: flex; gap: 16px; padding: 9px 18px; border-top: 1px solid rgba(255,255,255,.07); font-size: 12px; opacity: .7; }
   kbd { font: inherit; padding: 0 5px; border-radius: 5px; background: rgba(255,255,255,.12); }
 
   /* Context menu (anchored at the click, clamped inside the window) */
@@ -109,7 +109,7 @@
   #menu button .mi.sw { width: 16px; height: 16px; margin: 0 1px; border-radius: 50%; background: var(--sw); color: #fff; opacity: 1; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
   #menu button .mi.sw svg { --bh-icon-stroke: 2px; }
   #menu .msep { height: 1px; margin: 4px 6px; background: rgba(255,255,255,.1); }
-  #menu .mhead { padding: 5px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .45; }
+  #menu .mhead { padding: 5px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
 
   /* Boost editor */
   #boost { display: none; padding: 18px 20px 14px; }
@@ -227,7 +227,7 @@ const keepKey = (e) => (bhMac ? e.metaKey : e.ctrlKey);
 let items = [], sel = 0, pristine = true, target = null;
 // Recall: the last query sent, its answer, and the timer that waits for the typing to pause.
 let recallSeq = 0, recallHits = [], recallNow = 0, recallTimer = 0, recallAsked = '';
-const RECALL_FROM = 3, PER_GROUP = 3;
+const RECALL_FROM = 3, PER_GROUP = 3, ACTION_ROWS = 3;
 const EMOJIS = ['🏠','💼','🎮','📚','🎓','🛒','💰','🎵','🎬','📷','✈️','🍳','🧪','💻','🛠️','🎨','📰','🔒','❤️','⭐','🚀','🌍','🔥','🌱','☕','🧠','📁','📌','🗂️','🧩','🎯','💡','🧳','🏋️','🐱','🐶','🌙','☀️','🍀','🎁'];
 
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
@@ -290,27 +290,62 @@ function build() {
       : { glyph: 'search', title: q, sub: bhT('palette.search_with', { engine: S.engine }), hint: bhT('palette.search'), run: () => enter(q) });
   }
   const match = (...f) => !q || f.some(v => (v || '').toLowerCase().includes(ql));
+  // How well a row answers the query, lower is better: a name that starts with it, then a word
+  // of the name, then anywhere in the name, then only in the address. -1 for no match.
+  const rank = (names, url) => {
+    let best = -1;
+    for (const n of names) {
+      const v = (n || '').toLowerCase();
+      const i = v.indexOf(ql);
+      if (i < 0) continue;
+      const r = i === 0 ? 0 : /[\s\-_./·:(]/.test(v[i - 1]) ? 1 : 2;
+      if (best < 0 || r < best) best = r;
+    }
+    if (best < 0 && url && url.toLowerCase().includes(ql)) best = 3;
+    return best;
+  };
+  const rows = [];
+  const add = (r, row) => { if (!q || r >= 0) rows.push({ r, n: rows.length, row }); };
   const seen = new Set();
   for (const t of S.tabs) {
-    if (!match(t.title, t.url)) continue;
+    const r = q ? rank([t.title], t.url) : 0;
+    if (q && r < 0) continue;
     seen.add(t.url);
-    out.push(site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
+    add(r, site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
   }
   const pool = q ? [...S.favorites, ...(S.bookmarks || []), ...S.recent] : S.favorites;
   for (const e of pool) {
-    if (seen.has(e.url) || !match(e.title, e.name, e.url)) continue;
+    if (seen.has(e.url)) continue;
+    const r = q ? rank([e.title, e.name], e.url) : 0;
+    if (q && r < 0) continue;
     seen.add(e.url);
-    out.push(site(e.url, e.title || e.name || host(e.url), host(e.url), () => enter(e.url)));
+    add(r, site(e.url, e.title || e.name || host(e.url), host(e.url), () => enter(e.url)));
   }
   for (const a of S.actions) {
-    if (!match(a.label)) continue;
-    out.push({
+    const r = q ? rank([a.label]) : 0;
+    if (q && r < 0) continue;
+    // An action named by what was typed comes first: "zoom" finds "Zoom in" before zoom.us.
+    const row = {
       glyph: 'bolt', title: a.label, sub: '', hint: a.keys ? bhKeys(a.keys) : a.hint || bhT('palette.action'),
-      confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }),
-    });
+      confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }), action: true,
+    };
+    rows.push({ r: r === 0 ? -1 : r, n: rows.length, row });
   }
-  const base = out.slice(0, q ? 9 : 10);
-  return q ? [...base, ...groups(q, match)] : base;
+  if (!q) return [...out, ...rows.map(x => x.row)].slice(0, 10);
+  rows.sort((a, b) => a.r - b.r || a.n - b.n);
+  // Nine rows at most, the search row included; however much history matches, the best few
+  // actions keep a place (up to ACTION_ROWS) so a command is never hidden behind sites.
+  const room = 9 - out.length;
+  let picked = rows.slice(0, room);
+  const actions = rows.filter(x => x.row.action);
+  const want = Math.min(ACTION_ROWS, actions.length);
+  const have = picked.filter(x => x.row.action).length;
+  if (have < want) {
+    const extra = actions.filter(x => !picked.includes(x)).slice(0, want - have);
+    const sites = picked.filter(x => !x.row.action).slice(0, room - have - extra.length);
+    picked = [...picked.filter(x => x.row.action), ...extra, ...sites].sort((a, b) => a.r - b.r || a.n - b.n);
+  }
+  return [...out, ...picked.map(x => x.row), ...groups(q, match)];
 }
 // One search for everything: what the Library keeps (highlights, watched areas, archive,
 // downloads) and what Recall finds, a few rows per group under its own head. Their text comes

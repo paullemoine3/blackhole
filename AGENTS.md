@@ -156,7 +156,16 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Windows : les vues d'onglet désactivent les raccourcis navigateur de WebView2
   (`with_browser_accelerator_keys(false)`), sinon Ctrl+F/G/P, F5, Alt+←/→ n'atteignent pas la
   page ; `ui/shortcuts.js` les reprend. Ctrl/⌘+F/G passent d'abord par la page (Google Docs
-  garde sa recherche) ; `ui/find.js` surligne via CSS Custom Highlight sans voler le focus.
+  garde sa recherche) ; `ui/find.js` surligne via CSS Custom Highlight sans voler le focus. Il cherche
+  dans le texte visible mis bout à bout (espaces ramenés à un, limite de bloc = espace) : une
+  correspondance peut traverser un lien ou un `<b>` ; 80 ms d'attente à la frappe.
+- Onglets au clavier : Mod+1…8 / Mod+9 (`Workspace::nth_tab`, ordre de la barre latérale, 9 = dernier),
+  Ctrl+Maj+Tab et Mod+Maj+[ / ] (onglet du dessus / dessous), menu natif Fenêtre sur macOS (⌘M).
+  Lignes de la barre latérale, en-têtes de dossier et tuiles de l'accueil focusables (Entrée, Suppr,
+  Maj+F10) ; leurs boutons se montrent aussi au focus clavier. L'icône d'un dossier le plie comme sa
+  ligne (l'emoji se change par son menu).
+- Échap avance d'un cran : dans les Réglages il vide d'abord le champ rempli, puis ferme l'éditeur de
+  mot de passe, puis la fenêtre ; dans la Bibliothèque il vide la recherche avant de fermer.
 - Une vue masquée pleine taille capte les glisser-déposer de la page (macOS) : palette,
   Bibliothèque et panneau Easel sont parqués en 1×1 quand ils sont masqués.
 - Cartes de la barre latérale (lecteur, téléchargements) : mises à jour en place, jamais
@@ -187,8 +196,13 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   (archive), « delete » (un conteneur et son contenu). Casse de phrase, sauf noms propres (Easel, Library).
 - Action irréversible : `confirm: '…'` sur l'élément de menu ou l'action de palette, ou deux clics en
   3 s dans les pages ; les onglets d'un espace ou d'un dossier supprimé vont à l'archive.
-- Annuler : `Workspace::snapshot_space` / `snapshot_folder` avant suppression, puis `undo_removal`
-  (toast « Undo », 15 s) ; les entrées d'archive correspondantes sont retirées.
+- Annuler : `Workspace::snapshot_space` / `snapshot_folder` / `snapshot_tabs` avant suppression, puis
+  `undo_removal` (toast « Undo », 15 s) ; les entrées d'archive correspondantes sont retirées.
+  « Close other tabs » (bureau et Android) passe par `Removed::Tabs`, sans double clic. Bibliothèque et
+  Easel (surlignage, zone surveillée, onglet archivé, carte, Easel entier) : `app/trash.rs`
+  (`Trashed`, `undo_trash`, un seul élément gardé, même délai), suppression en un clic. Un onglet
+  archivé garde son dossier (`ArchivedTab::folder`) : rouvert, il y retourne. Android : `Closed::saved`
+  (l'onglet lui-même, son espace et sa place) pour l'Annuler d'une fermeture.
 - Palette : une action `key:<raccourci>` rejoue le raccourci (`shortcut`), avec `keys` pour l'affichage.
   Aucune ligne sélectionnée à l'ouverture (`sel = -1`) : Entrée sur l'adresse intacte recharge la
   page (`submit`) ; la première ligne est sélectionnée dès qu'on tape.
@@ -461,8 +475,9 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Un seul point d'entrée : `Running::notify(kind, message, actions)` (`app/src/notices.rs` ; `notify_action`
   pour un bouton, `toast` = `Notice::Info`). Ne plus écrire `bh.toast(…)` depuis Rust.
 - Les types sont déclarés à un seul endroit, `domain/notice.rs` (`Kind` : info, problem, download, done,
-  watch, easel, device, password, undo, meeting ; icône de `ui/icons.js`, ton, durée 2,2 s ou 8 s avec
-  boutons). Ajouter un type = une variante, son icône, `ALL` ; les tests vérifient l'icône.
+  watch, easel, device, password, undo, meeting ; icône de `ui/icons.js`, ton, durée `stay_ms` : 2,2 s,
+  8 s avec boutons, 6 s pour un problème, au moins 60 ms par caractère, 15 s au plus ; le temps
+  s'arrête sous le pointeur ou le focus, `held`). Ajouter un type = une variante, son icône, `ALL` ; les tests vérifient l'icône.
 - Un seul composant de dessin, `ui/notice.js` (`bhNotice(host, send)`, injecté par `ui_view`) : icône,
   texte (`textContent`), boutons, ligne du temps restant (`toast-time`). Deux hôtes : `#toast` de la barre
   latérale (`index.html`) et `#notice` de la barre du haut (`bar.html`), où le champ d'adresse devient la

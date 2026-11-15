@@ -8,6 +8,7 @@
 //! an app-bundle swap on macOS).
 
 use crate::catalog;
+use blackhole_domain::i18n::message;
 use std::{
     fs,
     io::Read,
@@ -149,6 +150,26 @@ fn read_limited(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Why GitHub did not answer, as a message the interface renders in its own language
+/// (no connection, too slow, GitHub's own error): never the transport's raw English text.
+fn reach_error(e: ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(code, _) => message("msg.update_github_error", &[("code", &code.to_string())]),
+        ureq::Error::Transport(t) => {
+            let timed_out = std::error::Error::source(&t)
+                .and_then(|s| s.downcast_ref::<std::io::Error>())
+                .is_some_and(|io| matches!(io.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock));
+            match t.kind() {
+                _ if timed_out => message("msg.update_timeout", &[]),
+                ureq::ErrorKind::Dns | ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::ProxyConnect => {
+                    message("msg.update_offline", &[])
+                }
+                _ => message("msg.update_unreachable", &[]),
+            }
+        }
+    }
+}
+
 /// Blocking. `Ok(None)` means up to date (or nothing published yet). Run it off the UI thread.
 pub fn check(current: &str) -> Result<Option<Release>, String> {
     let agent = agent();
@@ -156,7 +177,7 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
     let resp = agent
         .head(&latest_url())
         .call()
-        .map_err(|e| e.to_string())?;
+        .map_err(reach_error)?;
     let Some(tag) = tag_of_latest(resp.get_url()).map(str::to_owned) else {
         return Ok(None);
     };
@@ -167,7 +188,7 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
         agent
             .get(&download_url(&tag, SUMS))
             .call()
-            .map_err(|e| e.to_string())?,
+            .map_err(reach_error)?,
         1 << 20,
     )?;
     let sums = String::from_utf8_lossy(&sums);
@@ -191,7 +212,7 @@ pub fn download(data: &Path, release: &Release) -> Result<PathBuf, String> {
     let resp = agent()
         .get(&release.url)
         .call()
-        .map_err(|e| e.to_string())?;
+        .map_err(reach_error)?;
     let bytes = read_limited(resp, MAX_BYTES)?;
     catalog::verify(&bytes, &release.sha256)?;
     let name = Path::new(&release.asset)

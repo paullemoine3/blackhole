@@ -17,7 +17,7 @@
     --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.3,1.15);
   }
   :root[data-theme="light"] {
-    --bg: #f4f3f8; --panel: #ffffff; --ink: #1a1924; --mute: rgba(26,25,36,.55);
+    --bg: #f4f3f8; --panel: #ffffff; --ink: #1a1924; --mute: rgba(26,25,36,.7); /* 4.5:1 at least on --bg */
     --line: rgba(0,0,0,.08); --fill: rgba(0,0,0,.04); --fill2: rgba(0,0,0,.07); --glow: rgba(124,92,255,.22); --ok: #17894c; --bad: #c8283c;
   }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
@@ -102,7 +102,8 @@
   #omni .u .p { color: var(--mute); }
   #omni #site { display: grid; place-items: center; flex: none; }
   #omni .tile { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; }
-  #shield { color: var(--ok); display: grid; place-items: center; position: relative; }
+  /* A button of its own, big enough to touch apart from the address next to it. */
+  #shield { color: var(--ok); display: grid; place-items: center; position: relative; min-width: 36px; min-height: 44px; flex: none; }
   #shield b { position: absolute; right: -7px; top: -6px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--ok); color: #0b2a18;
     font-size: 9.5px; line-height: 15px; font-weight: 800; text-align: center; animation: pop .35s var(--spring); }
   #shield.warn { color: var(--bad); }
@@ -137,7 +138,7 @@
     box-shadow: none; touch-action: pan-y; will-change: transform; }
   #drawer.on { transform: none; box-shadow: 24px 0 48px rgba(0,0,0,.35); }
   .spaces { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .sp { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 14px; font-weight: 700; background: var(--fill2);
+  .sp { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; font-size: 14px; font-weight: 700; background: var(--fill2);
     transition: transform .2s var(--spring), box-shadow .2s; }
   .sp.on { color: #fff; box-shadow: 0 0 14px var(--glow); }
   .sp:active { transform: scale(.88); }
@@ -192,7 +193,10 @@
   .tc .h { display: flex; align-items: center; gap: 6px; padding: 7px 6px 7px 9px; font-size: 12px; background: var(--fill2); position: relative; z-index: 1; }
   .tc .h span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tc .h .tile { width: 16px; height: 16px; border-radius: 5px; font-size: 9px; }
-  .tc .h .x { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--mute); }
+  .tc .h .x { position: relative; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--mute); }
+  /* Touch targets (48 dp guideline): small controls keep their look and take the touch around them. */
+  .tc .h .x::after, .chips button::after, .mini::after, .swatches button::after { content: ""; position: absolute; }
+  .tc .h .x::after { inset: -8px; }
   .tc .h .x svg { width: 16px; height: 16px; }
   .tc .shot { position: absolute; inset: 34px 0 0; background: var(--fill) center top / cover no-repeat; display: grid; place-items: center; }
   .tc .shot .tile { width: 52px; height: 52px; border-radius: 16px; font-size: 20px; opacity: .85; }
@@ -280,12 +284,14 @@
     transition: transform .3s var(--spring); }
   .sw.on { background: var(--accent); box-shadow: 0 0 12px var(--glow); }
   .sw.on::after { transform: translateX(18px); }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
-  .chips button { padding: 6px 11px; border-radius: 10px; background: var(--fill2); font-size: 12.5px; transition: background .2s; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
+  .chips button { position: relative; min-height: 40px; padding: 8px 13px; border-radius: 11px; background: var(--fill2); font-size: 13px; transition: background .2s; }
+  .chips button::after { inset: -4px -4px; }
   .chips button.on { background: var(--accent); color: #fff; }
   #themes { flex-wrap: nowrap; }
-  .swatches { display: flex; gap: 9px; margin-left: auto; }
-  .swatches button { width: 24px; height: 24px; border-radius: 50%; transition: transform .2s var(--spring); }
+  .swatches { display: flex; gap: 14px; margin-left: auto; }
+  .swatches button { position: relative; width: 26px; height: 26px; border-radius: 50%; transition: transform .2s var(--spring); }
+  .swatches button::after { inset: -9px -7px; }
   .swatches button.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ink); transform: scale(1.08); }
   .opt.danger { color: var(--bad); }
   .opt.armed { background: rgba(255,90,90,.18); }
@@ -296,7 +302,8 @@
   .dev .nm small { display: block; font-size: 12px; color: var(--mute); }
   .dev .row3 { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding-left: 19px; }
   .dev .row3 .chips { margin-left: 0; }
-  .mini { padding: 6px 11px; border-radius: 10px; background: var(--fill2); font-size: 12.5px; }
+  .mini { position: relative; min-height: 40px; padding: 8px 13px; border-radius: 11px; background: var(--fill2); font-size: 13px; }
+  .mini::after { inset: -4px -4px; }
   .mini:disabled { opacity: .4; }
   .mini.armed { background: rgba(255,90,90,.25); color: var(--bad); }
   .code { font: 700 26px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .12em; text-align: center; padding: 16px 8px 6px;
@@ -413,7 +420,7 @@
   <div class="row2">
     <button class="ib" id="b-menu" aria-label="Sidebar" data-i18n-aria="sidebar"><svg class="i"><use href="#i-menu"/></svg></button>
     <div id="omni" role="button" aria-label="Address" data-i18n-aria="address">
-      <span id="shield" hidden><svg class="i" style="width:18px;height:18px"><use href="#i-shield"/></svg><b id="shield-n" hidden></b></span>
+      <button type="button" id="shield" hidden aria-label="Privacy report" data-i18n-aria="privacy_report"><svg class="i" style="width:18px;height:18px"><use href="#i-shield"/></svg><b id="shield-n" hidden></b></button>
       <span id="site" hidden></span>
       <span class="u ph" id="url">Search or enter address</span>
       <i id="progress"></i>
@@ -1209,6 +1216,8 @@ function renderSettings() {
 // Paired devices (their keys never reach this page).
 function renderDevices(d) {
   $('#devices').hidden = !d.available;
+  // Without the Keystore there is nothing to pair: the drawer does not offer it either.
+  for (const go of document.querySelectorAll('[data-go="devices"]')) go.hidden = !d.available;
   if (!d.available) return;
   $('#dev-empty').hidden = !!d.list.length;
   sync($('#devlist'), d.list, (dev) => dev.id, () => {
@@ -1270,7 +1279,7 @@ function actions() {
   const add = (label, ic, run, extra) => l.append(enter(row(label, ic, run, extra)));
   const p = S && S.private;
   add(p ? T('new_private_tab') : T('new_tab'), 'plus', () => newTab('new'));
-  add(p ? T('leave_private') : T('new_private_tab'), 'mask', () => { if (p) { close('sheet'); send({ cmd: 'close_private' }); } else newTab('private'); });
+  if (!p) add(T('new_private_tab'), 'mask', () => newTab('private'));
   if (S && S.current != null) {
     const cur = list().find((t) => t.id === S.current);
     if (!p && cur) add(cur.pinned ? T('remove_quick_access') : T('add_quick_access'), 'pin', () => { send({ cmd: 'pin', tab: S.current }); close('sheet'); });
@@ -1287,6 +1296,21 @@ function actions() {
   }
   add(T('history'), 'clock', () => { close('sheet'); openHistory(); });
   add(T('settings'), 'gear', () => { close('sheet'); setOpen('settings', true); });
+  // Last, far from "New private tab", and said for what it is: every private tab closes and
+  // its sessions are wiped, so it takes a second tap (as in menus), then a toast says so.
+  if (p) {
+    const n = list().length;
+    const label = Tn('close_private_tabs', n);
+    const b = row(label, 'mask', () => {
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed'); b.children[1].textContent = T('tap_again');
+        setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.children[1].textContent = label; } }, 3000);
+        return;
+      }
+      close('sheet'); send({ cmd: 'close_private' });
+    }, { cls: 'danger' });
+    l.append(enter(b));
+  }
 }
 // 'new' or 'private': what the next address opens (a new tab), until the sheet closes.
 let mode = null;
@@ -1668,8 +1692,9 @@ function receive(m) {
     case 'report': report(m); break;
     case 'downloads': downloads(m); break;
     case 'back': closeTop(); break;
-    case 'error_menu': menu(m.host, m.hsts
-      ? [{ label: T('requires_secure'), icon: 'lock', run: () => {} }]
+    // HSTS: nothing to grant, so the reason is said in the title and the one action is Back.
+    case 'error_menu': menu(m.hsts ? m.host + ' · ' + T('requires_secure') : m.host, m.hsts
+      ? [{ label: T('go_back'), icon: 'left', run: () => send({ cmd: 'back' }) }]
       : [{ label: T('continue_anyway'), icon: 'warn', danger: true, run: () => send({ cmd: 'error_proceed', tab: m.tab }) },
          { label: T('go_back'), icon: 'left', run: () => send({ cmd: 'back' }) }]); break;
     case 'sync_offer': menu(T('sync_offer', { name: m.name, what: m.text }), [

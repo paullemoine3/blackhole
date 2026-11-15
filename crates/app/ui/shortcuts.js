@@ -13,8 +13,9 @@
 
   // The shortcut a key press stands for, or null.
   const shortcutOf = (e) => {
-    // Ctrl+Tab (Ctrl on every system, as in other browsers) goes back to the previous tab.
-    if (e.key === 'Tab' && e.ctrlKey && !e.metaKey && !e.altKey) return 'recent_tab';
+    // Ctrl+Tab (Ctrl on every system, as in other browsers) goes back to the previous tab;
+    // Ctrl+Shift+Tab goes the other way, to the tab above in the sidebar.
+    if (e.key === 'Tab' && e.ctrlKey && !e.metaKey && !e.altKey) return e.shiftKey ? 'prev_tab' : 'recent_tab';
     // Mod+Alt+↓/↑ walks the sidebar, like Arc.
     if ((mac ? e.metaKey : e.ctrlKey) && e.altKey && !e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       return e.key === 'ArrowDown' ? 'next_tab' : 'prev_tab';
@@ -29,6 +30,14 @@
       return e.key === 'ArrowLeft' ? '[' : ']';
     }
     if ((mac ? !e.metaKey : !e.ctrlKey) || e.altKey) return null;
+    // Mod+1…8: that tab of the space, Mod+9: the last one. By the physical key, so AZERTY
+    // layouts (digits under Shift) work too.
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
+    if (digit) return 'tab_' + digit[1];
+    // Mod+Shift+[ / ]: the tab above / below, as in Safari and Chrome on macOS.
+    if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+      return e.code === 'BracketLeft' ? 'prev_tab' : 'next_tab';
+    }
     // AZERTY layouts type digits with Shift: the physical key tells it is a zero.
     const key = e.code === 'Digit0' || e.code === 'Numpad0' ? '0' : e.key.toLowerCase();
     if (ZOOM[key]) return ZOOM[key];

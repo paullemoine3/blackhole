@@ -104,13 +104,19 @@ impl Core {
                     .filter(|t| t.id != TabId(tab) && !t.pinned && t.folder.is_none())
                     .map(|t| t.id.0)
                     .collect();
+                // Taken first: the toast's Undo puts them all back, in their places.
+                let ids: Vec<TabId> = others.iter().map(|&t| TabId(t)).collect();
+                let snapshot = self.svc.workspace().snapshot_tabs(&ids);
                 for &other in &others {
                     out.extend(self.close(other).into_iter().filter(
                         |e| !matches!(e, Effect::Ui { msg } if msg["type"] == "toast" || msg["type"] == "state"),
                     ));
                 }
-                if !others.is_empty() {
-                    out.push(Self::toast(&self.tn("tabs_closed", others.len()), false));
+                if let Some(snapshot) = snapshot {
+                    // They come back through the Undo, not one by one from the closed list.
+                    self.closed.retain(|c| !others.contains(&c.tab));
+                    self.organize.removed = Some((snapshot, now_unix()));
+                    out.push(self.undo_toast(&self.tn("tabs_closed", others.len()), "undo_removal"));
                 }
             }
             C::RenameSpace { space, name } if !name_of(&name).is_empty() => {
@@ -124,7 +130,7 @@ impl Core {
                 };
                 let name = match &snapshot {
                     Removed::Space { space, .. } => space.name.clone(),
-                    Removed::Folder { .. } => String::new(),
+                    Removed::Folder { .. } | Removed::Tabs { .. } => String::new(),
                 };
                 let was_active = ws.active_space().id == SpaceId(space);
                 let Some(tabs) = self.svc.delete_space(SpaceId(space)) else {
@@ -167,7 +173,7 @@ impl Core {
                 };
                 let name = match &snapshot {
                     Removed::Folder { folders, .. } => folders.first().map(|(_, f)| f.name.clone()).unwrap_or_default(),
-                    Removed::Space { .. } => String::new(),
+                    Removed::Space { .. } | Removed::Tabs { .. } => String::new(),
                 };
                 // A folder goes with what it holds, like on the desktop.
                 let tree = ws.folder_tree(FolderId(folder));

@@ -224,6 +224,18 @@ function empty(iconName, text) {
   e.append(h, el('p', null, text));
   return e;
 }
+// An empty list says why: nothing there yet (`text`), or a search or filter that kept nothing
+// out of `total` entries, with a button that clears it. Never "nothing here" for a typed word.
+function emptyFor(iconName, text, total) {
+  const narrowed = q || (sec === 'downloads' && filter !== 'all');
+  if (!total || !narrowed) return empty(iconName, text);
+  const e = empty('search', q ? bhT('library.no_match', { q }) : bhT('library.no_match_filter'));
+  const b = el('button', 'btn');
+  b.type = 'button'; b.append(icon('close'), el('span', null, bhT(q ? 'library.clear_search' : 'library.show_all')));
+  b.onclick = () => { q = ''; filter = 'all'; render(); const f = $('q'); if (f) f.focus(); };
+  e.append(b);
+  return e;
+}
 // The host's clock when the state came, moved on by the page's own: "checked 3 min ago" keeps
 // counting while the Library stays open (spans `.ago` are refreshed in place, not re-rendered).
 let gotAt = Date.now();
@@ -318,7 +330,7 @@ const VIEWS = {
   media() {
     const l = S.media.filter((x) => has(x.name));
     const out = [header(bhTn('library.items', S.media.length)), tools(bhT('library.search_media'))];
-    if (!l.length) return [...out, empty('image', bhT('library.empty'))];
+    if (!l.length) return [...out, emptyFor('image', bhT('library.empty'), S.media.length)];
     const g = el('div', 'grid');
     for (const x of l) {
       const t = el('button', 'tile'); t.type = 'button'; t.title = x.name;
@@ -333,7 +345,7 @@ const VIEWS = {
   downloads() {
     const l = S.downloads.filter((d) => has(d.name) && (filter === 'all' || (filter === 'completed' ? d.done && d.ok : d.done && !d.ok)));
     const out = [header(bhTn('library.items', S.downloads.length)), tools(bhT('library.search_downloads'), true, 'downloads')];
-    if (!l.length) return [...out, empty('download', bhT('library.empty'))];
+    if (!l.length) return [...out, emptyFor('download', bhT('library.empty'), S.downloads.length)];
     const card = el('div', 'card');
     for (const d of l) {
       const state = !d.done ? 'live' : d.ok ? (d.exists ? 'ok' : '') : 'bad';
@@ -399,7 +411,7 @@ const VIEWS = {
   history() {
     const l = (S.history || []).filter((a) => has(a.title + a.url)).slice(0, 400);
     const out = [header(null), tools(bhT('library.search_history'), false, 'history')];
-    if (!l.length) return [...out, empty('history', bhT('library.empty'))];
+    if (!l.length) return [...out, emptyFor('history', bhT('library.empty'), (S.history || []).length)];
     return [...out, ...byDay(l, (a) => a.at, (a) => row(null, a.title || a.url, a.url,
       () => send({ cmd: 'open', input: a.url }),
       [iconButton('close', bhT('library.forget'), () => send({ cmd: 'forget_history', url: a.url }))]))];
@@ -408,7 +420,7 @@ const VIEWS = {
     // Areas of pages read again every half hour; a change shows the value before and after.
     const l = (S.watches || []).filter((w) => has(w.title + w.url + w.value));
     const out = [header(null), tools(bhT('library.search_watches'))];
-    if (!l.length) return [...out, empty('eye', bhT('library.watches_empty'))];
+    if (!l.length) return [...out, emptyFor('eye', bhT('library.watches_empty'), (S.watches || []).length)];
     const card = el('div', 'card');
     for (const w of l) {
       const title = el('b', null, w.title || host(w.url));
@@ -440,7 +452,7 @@ const VIEWS = {
       .filter((p) => p.marks.length);
     const total = ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0);
     const out = [header(bhTn('library.items', total)), tools(bhT('library.search_highlights'), false, total ? 'highlights' : null)];
-    if (!pages.length) return [...out, empty('marker', bhT('library.highlights_empty'))];
+    if (!pages.length) return [...out, emptyFor('marker', bhT('library.highlights_empty'), total)];
     for (const p of pages) {
       out.push(el('div', 'day', p.title || host(p.url)));
       const card = el('div', 'card');
@@ -477,7 +489,7 @@ const VIEWS = {
   archive() {
     const l = S.archive.filter((a) => has(a.title + a.url));
     const out = [header(bhTn('library.items', S.archive.length)), tools(bhT('library.search_archive'), false, 'archive')];
-    if (!l.length) return [...out, empty('archive', bhT('library.empty'))];
+    if (!l.length) return [...out, emptyFor('archive', bhT('library.empty'), S.archive.length)];
     return [...out, ...byDay(l, (a) => a.at, (a) => row(null, a.title || a.url, a.url,
       () => send({ cmd: 'reopen_archived', index: a.index }),
       [iconButton('close', bhT('library.remove'), () => send({ cmd: 'delete_archived', index: a.index }))]))];
@@ -581,7 +593,12 @@ $('rail').addEventListener('keydown', (e) => {
 });
 $('back').onclick = () => send({ cmd: 'close_library' });
 addEventListener('bhlang', () => render());
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') send({ cmd: 'close_library' }); });
+// Escape empties a search first (its results come back), then closes the Library.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (q) { e.preventDefault(); q = ''; render(); return; }
+  send({ cmd: 'close_library' });
+});
 $('m').addEventListener('input', (e) => { if (e.target.id === 'q') { q = e.target.value; render(); } });
 // `jump` [n, section]: the shell asked for a section; applied once per request number.
 let jumped = 0;

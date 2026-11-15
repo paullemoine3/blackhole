@@ -355,6 +355,9 @@ pub struct ArchivedTab {
     pub space: u64,
     /// Unix seconds.
     pub at: u64,
+    /// The folder it was in: reopened (Cmd+Shift+T, Library) it goes back there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<u64>,
 }
 
 const LIBRARY_CAP: usize = 500;
@@ -640,12 +643,18 @@ mod tests {
             url: format!("https://a.test/{n}"),
             space: 1,
             at: n as u64,
+            folder: (n == 7).then_some(4),
         };
         let all: Vec<_> = (0..LIBRARY_CAP + 3).map(tab).collect();
         store.save(&all).unwrap();
         let back = store.load();
         assert_eq!(back.len(), LIBRARY_CAP);
         assert_eq!(back[0].title, "3");
+        assert_eq!(back[4].folder, Some(4), "the folder is kept");
+        assert_eq!(back[5].folder, None);
+        // An archive written before the folder was kept still reads.
+        let old: ArchivedTab = serde_json::from_str(r#"{"title":"t","url":"https://a.test/","space":1,"at":2}"#).unwrap();
+        assert_eq!(old.folder, None);
         assert!(DownloadStore::new(&t.path().join("none")).load().is_empty());
     }
 

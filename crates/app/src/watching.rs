@@ -235,13 +235,29 @@ impl Running {
             .collect::<Vec<_>>())
     }
 
+    /// The Undo of a removed watch: back in the list, read again at its turn.
+    pub(crate) fn watch_put_back(&mut self, at: usize, watch: blackhole_domain::watch::Watch) -> bool {
+        let ok = self.watching.list.put_back(at, watch);
+        if ok {
+            self.watching.save();
+        }
+        ok
+    }
+
     pub(crate) fn handle_watch(&mut self, command: UiCommand) {
         match command {
             UiCommand::WatchRemove { id } => {
                 if self.watching.probe.as_ref().is_some_and(|p| p.0 == id) {
                     self.watching.probe = None;
                 }
-                self.watching.list.remove(id);
+                if let Some((at, watch)) = self.watching.list.take(id) {
+                    let name = if watch.title.is_empty() { watch.url.clone() } else { watch.title.clone() };
+                    self.watching.save();
+                    self.ui_library();
+                    self.ui_easel();
+                    self.trash(&tf("toast.watch_removed", &[("name", &name)]), crate::trash::Trashed::Watch(at, watch));
+                }
+                return;
             }
             UiCommand::WatchCheck { id } => {
                 // Its page already answered and only lingers: read it again in a fresh one.

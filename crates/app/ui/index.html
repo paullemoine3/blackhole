@@ -32,11 +32,12 @@
   .icon:hover { background: rgba(255,255,255,.1); opacity: 1; }
   .icon.on { color: var(--accent); opacity: 1; }
   .grow { flex: 1; }
-  .section { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .5; padding: 4px 8px 0; white-space: nowrap; }
+  .section { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; padding: 4px 8px 0; white-space: nowrap; }
   #pinned { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-radius: 12px; }
   #pinned:empty { display: none; }
   body.dragging #pinned:empty { display: grid; place-items: center; min-height: 56px; border: 1px dashed rgba(255,255,255,.3); background: rgba(255,255,255,.04); }
-  body.dragging #pinned:empty::after { content: 'Drop here to pin'; font-size: 12px; opacity: .55; }
+  /* The words come from the catalog (applyFolds sets data-drop). */
+  body.dragging #pinned:empty::after { content: attr(data-drop); font-size: 12px; opacity: .7; }
   body.dragging #pinned { min-height: 56px; }
   #pinned .tab { justify-content: center; height: 48px; padding: 0; background: rgba(255,255,255,.07); }
   #pinsep { height: 1px; flex: none; margin: 0 6px; background: rgba(255,255,255,.14); }
@@ -48,7 +49,7 @@
   .fold:hover { opacity: 1; }
   body:not(.dragging) #pinned.collapsed, body:not(.dragging) #folders.collapsed { display: none; }
   .secrow { display: flex; justify-content: space-between; align-items: center; padding-right: 2px; }
-  .mini { font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 6px; opacity: .8; display: inline-flex; align-items: center; gap: 4px; }
+  .mini { font-size: 11px; text-transform: none; letter-spacing: 0; padding: 2px 8px; min-height: 24px; opacity: .8; display: inline-flex; align-items: center; gap: 4px; }
   .mini:hover { background: rgba(255,255,255,.1); }
   .folder { display: flex; flex-direction: column; border-radius: 10px; }
   .fh { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; cursor: pointer; }
@@ -58,7 +59,7 @@
   .fh.idle .fname, .fh.idle .ficon { opacity: .5; }
   .fh.idle:hover .fname, .fh.idle:hover .ficon { opacity: 1; }
   .fname { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .count { font-size: 11px; opacity: .5; }
+  .count { font-size: 11px; opacity: .65; }
   .sedit { width: 110px; flex: none; }
   .fedit { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit; background: rgba(255,255,255,.12); border: 1px solid var(--accent); border-radius: 6px; padding: 1px 6px; outline: none; user-select: text; -webkit-user-select: text; }
   .fb { display: flex; flex-direction: column; gap: 2px; margin-left: 12px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.12); }
@@ -221,7 +222,6 @@
   .space .gl { font-size: 18px; }
   .space:not(.emoji) .gl { font-size: 14px; }
   .ficon { flex: none; width: 20px; height: 20px; display: grid; place-items: center; line-height: 1; font-size: 14px; border-radius: 6px; }
-  .ficon:hover { background: rgba(255,255,255,.14); }
   .ficon.def { opacity: .6; filter: grayscale(1); }
   .tab.split { box-shadow: inset 3px 0 0 var(--accent); background: rgba(255,255,255,.09); }
   .tab .burn { flex: none; display: grid; place-items: center; width: var(--bh-space-16); height: var(--bh-space-16); color: var(--accent); opacity: var(--bh-opacity-secondary); }
@@ -235,8 +235,11 @@
   .tab.split .sp { opacity: 1; color: var(--accent); }
   #pinned .sp { display: none; }
   /* Idle tabs give the room of their hover buttons to the title, which truncates later. */
-  .tab:not(:hover) :is(.x, .mo) { display: none; }
-  .tab:not(:hover):not(.split) .sp { display: none; }
+  .tab:not(:hover):not(:focus-visible):not(:has(:focus-visible)) :is(.x, .mo) { display: none; }
+  .tab:not(:hover):not(.split):not(:focus-visible):not(:has(:focus-visible)) .sp { display: none; }
+  /* Keyboard: a row reached with Tab shows its buttons, and where the focus is. */
+  .tab:is(:focus-visible, :has(:focus-visible)) :is(.x, .mo, .sp) { opacity: .7; }
+  .tab:focus-visible, .tab button:focus-visible, .mini:focus-visible, .fh:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .tab { gap: 6px; }
   .shield { font-size: 11px; opacity: .7; padding: 0 8px; height: 32px; display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; border: 0; border-radius: 8px; background: transparent; color: inherit; white-space: nowrap; }
   .shield:hover { opacity: 1; background: rgba(255,255,255,.12); }
@@ -481,6 +484,24 @@ function tabNode(t) {
     send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id });
   };
   n.oncontextmenu = (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); };
+  // Keyboard: Tab reaches the row, Enter or Space shows the tab, Delete closes it (or puts it
+  // to sleep, like its button), Shift+F10 or the menu key opens its menu, ↑ / ↓ go to the
+  // next row.
+  n.tabIndex = 0;
+  n.setAttribute('role', 'button');
+  if (t.id === state.activeTab) n.setAttribute('aria-current', 'page');
+  n.onkeydown = (e) => {
+    if (e.target !== n) return;
+    if (e.key === 'Enter' || e.key === ' ') send({ cmd: 'activate', id: t.id });
+    else if (e.key === 'Delete' || e.key === 'Backspace') send(keep ? { cmd: 'close_instance', id: t.id } : { cmd: 'close', id: t.id });
+    else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { const r = n.getBoundingClientRect(); tabMenu(t, r.left + 12, r.bottom - 4); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const rows = [...document.querySelectorAll('.tab[tabindex]')].filter((r) => r.offsetParent);
+      const next = rows[rows.indexOf(n) + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (next) next.focus();
+    } else return;
+    e.preventDefault();
+  };
   return n;
 }
 
@@ -517,14 +538,16 @@ function tabMenu(t, x, y) {
   }
   items.push({ sep: true });
   const loose = state.tabs.filter(o => o.id !== t.id && !o.pinned && o.folder == null).length;
-  if (loose) items.push({ icon: 'close', label: bhT('menu.close_others'), confirm: bhTn('menu.close_others_confirm', loose), run: { cmd: 'close_other_tabs', id: t.id } });
+  if (loose) items.push({ icon: 'close', label: bhT('menu.close_others'), run: { cmd: 'close_other_tabs', id: t.id } });
   if (t.pinned) {
     // Closing a quick access tab never takes it off the list (like Cmd/Ctrl+W): it only stops
     // its page. "Remove from quick access" above is the way to take it off.
-    if (!t.asleep) items.push({ icon: 'close', label: bhT('menu.close_tab'), run: { cmd: 'close_instance', id: t.id } });
+    if (!t.asleep) items.push({ icon: 'sleep', label: bhT('menu.sleep'), run: { cmd: 'close_instance', id: t.id } });
   } else {
+    // A folder tab: Cmd/Ctrl+W puts it to sleep; closing it for good also takes it out of the
+    // folder, and the label says so.
     if (keep && !t.asleep) items.push({ icon: 'sleep', label: bhT('menu.sleep'), run: { cmd: 'close_instance', id: t.id } });
-    items.push({ icon: 'close', label: bhT('menu.close_tab'), danger: true, run: { cmd: 'close', id: t.id } });
+    items.push({ icon: 'close', label: bhT(keep ? 'menu.close_out_of_folder' : 'menu.close_tab'), danger: true, run: { cmd: 'close', id: t.id } });
   }
   openMenu(x, y, items);
 }
@@ -579,7 +602,7 @@ function createMenu(x, y) {
     { icon: 'space', label: bhT('palette.new_space'), run: { cmd: 'action', id: 'new_space' } },
     { icon: 'easel', label: bhT('menu.new_easel'), run: { cmd: 'action', id: 'new_easel' } },
     { icon: 'video', label: bhT('palette.new_meet'), run: { cmd: 'open_meet' } },
-    ...(easels.length ? [{ sep: true }, { head: 'Easels' }] : []),
+    ...(easels.length ? [{ sep: true }, { head: bhT('easel.easels') }] : []),
     ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
 }
@@ -617,9 +640,8 @@ function folderNode(f, tabs, easels = [], subs = []) {
   chev.append(bhIcon(f.collapsed ? 'collapse' : 'expand', 'xs'));
   const ficon = el('span', 'ficon' + (f.icon ? '' : ' def'), f.icon || null);
   if (!f.icon) ficon.append(bhIcon('folder'));
-  ficon.title = bhT('menu.change_emoji');
-  ficon.onmousedown = (e) => e.stopPropagation();
-  ficon.onclick = (e) => { e.stopPropagation(); send({ cmd: 'pick_icon', kind: 'folder', id: f.id }); };
+  // A click on the icon folds the folder like the rest of its row; its emoji is changed from
+  // its menu ("Change emoji").
   const name = el('span', 'fname', f.name);
   h.title = bhT('sidebar.folder_hint', { name: f.name });
   h.append(chev, ficon, name, el('span', 'count', tabs.length + easels.length ? String(tabs.length + easels.length) : ''));
@@ -627,6 +649,17 @@ function folderNode(f, tabs, easels = [], subs = []) {
   h.onmousedown = (e) => { if (e.button === 0 && !editing) down = { folder: f.id, node: box, x: e.clientX, y: e.clientY }; };
   h.ondblclick = () => editFolder(h, name, f);
   h.oncontextmenu = (e) => { e.preventDefault(); folderMenu(f, e.clientX, e.clientY); };
+  // Keyboard: Enter or Space folds or unfolds, Shift+F10 or the menu key opens its menu.
+  h.tabIndex = 0;
+  h.setAttribute('role', 'button');
+  h.setAttribute('aria-expanded', f.collapsed ? 'false' : 'true');
+  h.onkeydown = (e) => {
+    if (e.target !== h || editing) return;
+    if (e.key === 'Enter' || e.key === ' ') send({ cmd: 'toggle_folder', id: f.id });
+    else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { const r = h.getBoundingClientRect(); folderMenu(f, r.left + 12, r.bottom - 4); }
+    else return;
+    e.preventDefault();
+  };
   const body = el('div', 'fb');
   body.dataset.folder = f.id;
   body.append(...subs, ...tabs.map(tabNode), ...easels.map(easelNode));
@@ -1373,7 +1406,8 @@ function applyFolds(list) {
   $('folders').classList.toggle('collapsed', folders);
   $('pinhead').hidden = !$('pinned').children.length;
   $('pinfold').replaceChildren(bhIcon(pinned ? 'collapse' : 'expand', 'xs'), bhT('sidebar.quick_access'));
-  $('foldfold').replaceChildren(bhIcon(folders ? 'collapse' : 'expand', 'xs'), bhT('sidebar.pinned'));
+  $('foldfold').replaceChildren(bhIcon(folders ? 'collapse' : 'expand', 'xs'), bhT('sidebar.folders'));
+  $('pinned').dataset.drop = bhT('sidebar.drop_to_pin');
 }
 function toggleFold(section) {
   const list = new Set((state && state.collapsed) || []);

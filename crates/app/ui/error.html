@@ -58,7 +58,7 @@
   .drip { animation: drip 2.4s linear infinite; }
   .glitch { animation: glitch 2.2s steps(1, end) infinite; }
   h1 { font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
-  .url { max-width: min(560px, 86vw); font-size: 13px; opacity: .55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .url { max-width: min(560px, 86vw); font-size: 13px; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   p.hint { max-width: 460px; font-size: 13px; opacity: .7; }
   p.hint + p.hint { margin-top: -6px; }
   .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
@@ -511,6 +511,11 @@ const main = ACTIONS[page.main];
 $('actions').append(button(T(main[0]), main[1]));
 if (page.second) $('actions').append(button(T(ACTIONS[page.second][0]), ACTIONS[page.second][1], 'ghost'));
 if (page.main === 'back' && !page.second && kind !== 'blocked') $('actions').append(button(T('error.retry'), retry, 'ghost'));
+// A redirect loop: the desktop shell can clear the site's cookies, which the hint advises.
+if (kind === 'redirects' && cfg.clearCookies && live) {
+  for (const b of $('actions').children) b.classList.add('ghost');
+  $('actions').prepend(button(T('error.clear_cookies_retry'), () => post({ cmd: 'error_clear_cookies' })));
+}
 // `cfg.allow === false`: a shell without exceptions for the Shields (Android) offers none.
 if (page.allow && cfg.allow !== false) $('actions').append(button(T('error.allow_site'), ask, 'risky'));
 
