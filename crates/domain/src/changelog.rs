@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.13",
+        &[
+            "Find in page finds a phrase even when it runs across a link, a bold word or a line break",
+            "Deleting a highlight, a watched area, an archived tab, a card or a whole Easel, and closing the other tabs, can be undone from the message that follows. A tab reopened from the archive goes back to its folder",
+            "Keyboard: Ctrl/Cmd+1 to 8 shows that tab, 9 the last one, Ctrl+Shift+Tab and Cmd+Shift+[ ] go to the tab above or below. The start page, the tabs and the folders of the sidebar and the menu of saved logins work from the keyboard. Escape in the Settings and the Library empties a field before it closes anything",
+            "The command bar shows the commands named by what you type before the history. A search in the Library that finds nothing says so, with a button to clear it",
+            "A password whose site is refused stays in the editor, with the reason under the field. On the Too many redirects page, a button clears the site's cookies and tries again",
+            "Messages stay long enough to be read, longer for a problem, and wait while the pointer is on them. Small buttons are easier to hit, secondary texts easier to read, and the last English words of the French interface are translated",
+            "Android: closing the private tabs is said for what it is and asks a second tap, Undo brings a closed tab back in its space and place, and the controls are easier to touch",
+        ],
+    ),
+    (
         "0.8.12",
         &[
             "The 3D style of the interface now shows at rest, not only under the pointer: sections and cards stand off the page, coloured tiles catch a little light from above, the address field, the fields and the segmented choices of the Settings are wells. The sidebar stays quiet: quick access tiles and the tab shown only get two fine edges, the lines between the parts are grooves and the buttons of the foot stand out. All of it in the sidebar, the top bar, the start page, the Library, the Settings, the command bar and the Easel. A tile leans a little further towards the pointer, with a shadow that runs away from it. The relief is kept low, so that it reads as depth and not as decoration. The Flat style is unchanged",
