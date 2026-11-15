@@ -23,6 +23,9 @@
   .bh-notice button.alt:hover { background: var(--bh-fill-control-hover, rgba(255,255,255,.2)); }
   .bh-notice .tbar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--nt); transform-origin: 0 0; transform: scaleX(0); }
   .bh-notice.show .tbar { animation: toast-time var(--t, 2200ms) linear both; }
+  /* Under the pointer or the keyboard focus, the time stops: a notice is never taken away
+     while it is being read or answered. */
+  .bh-notice.held .tbar { animation-play-state: paused; }
   @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
   @keyframes bh-notice-icon { from { opacity: 0; transform: scale(.4) rotate(-30deg); } }
   @media (prefers-reduced-motion: reduce) { .bh-notice, .bh-notice * { animation: none !important; transition: none !important; } }
@@ -38,6 +41,8 @@
   }
   // Too little time left to read anything: a host that takes over then shows nothing.
   const WORTH = 400;
+  // Time given back when the pointer or the focus leaves a held notice, at the least.
+  const AFTER_HOLD = 1500;
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -46,11 +51,34 @@
   };
   window.bhNotice = (host, send) => {
     host.classList.add('bh-notice');
-    let cur = null, timer = 0, on = true;
+    let cur = null, timer = 0, on = true, held = false;
     const hide = () => { clearTimeout(timer); host.classList.remove('show'); };
+    // Held: the time left is kept aside and the timer stopped; let go, it starts again.
+    const hold = () => {
+      if (held) return;
+      held = true;
+      host.classList.add('held');
+      clearTimeout(timer);
+      if (cur) cur.left = cur.until - Date.now();
+    };
+    const release = () => {
+      if (!held) return;
+      held = false;
+      host.classList.remove('held');
+      if (!cur || !host.classList.contains('show')) return;
+      const left = Math.max(cur.left == null ? cur.until - Date.now() : cur.left, AFTER_HOLD);
+      cur.until = Date.now() + left;
+      cur.left = null;
+      clearTimeout(timer);
+      timer = setTimeout(hide, left);
+    };
+    host.addEventListener('mouseenter', hold);
+    host.addEventListener('mouseleave', release);
+    host.addEventListener('focusin', hold);
+    host.addEventListener('focusout', (e) => { if (!host.contains(e.relatedTarget)) release(); });
     const draw = () => {
       clearTimeout(timer);
-      const left = cur ? cur.until - Date.now() : 0;
+      const left = cur ? (held && cur.left != null ? cur.left : cur.until - Date.now()) : 0;
       if (!on || left < WORTH) return hide();
       const icon = el('span', 'nic');
       try { icon.append(bhIcon(cur.icon || 'info', 'sm')); } catch (e) {}
@@ -75,7 +103,8 @@
       host.classList.toggle('good', cur.tone === 'good');
       host.classList.toggle('bad', cur.tone === 'bad');
       host.classList.add('show');
-      timer = setTimeout(hide, left);
+      if (held) cur.left = left;
+      else timer = setTimeout(hide, left);
     };
     return {
       show(n) {

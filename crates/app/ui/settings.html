@@ -127,7 +127,9 @@
 
   .note { font: var(--bh-text-body-small); opacity: var(--bh-opacity-tertiary); padding: var(--bh-space-10) var(--bh-space-16) var(--bh-space-14); }
   .card > .note + .note { padding-top: 0; }
-  .status:empty { display: none; }
+  .status:empty, .fielderr:empty { display: none; }
+  .fielderr { font: var(--bh-text-body-small); color: var(--bh-danger-text); padding: 0 var(--bh-space-16) var(--bh-space-6); margin: 0; }
+  .status .btn { margin-left: var(--bh-space-8); }
   .status { font: var(--bh-text-body-small); padding: var(--bh-space-10) var(--bh-space-16); background: var(--bh-fill-faint); border-top: 1px solid var(--bh-border-hairline); }
   section > .status { border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card-sm); margin-bottom: var(--bh-space-16); }
   b, strong { font-weight: 600; }
@@ -242,7 +244,7 @@
     <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1 data-i18n="settings.privacy">Privacy</h1><p class="lead"><span data-i18n="settings.privacy_lead">No telemetry, trackers blocked, history stays on this machine.</span></p></div></header>
     <div class="card"><h2 data-i18n="menu.shields">Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
       <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). Clean links drop the tracking parameters of an address and skip the redirect pages of search engines and social networks. The https upgrade stays on. Pages already open keep their behaviour until reloaded.</span></p></div>
-    <div class="card"><h2>Recall</h2><div class="rows" id="recall"></div>
+    <div class="card"><h2 data-i18n="settings.recall_title">Recall</h2><div class="rows" id="recall"></div>
       <div class="list rows" id="recallsites"></div>
       <div class="actions"><input class="field" id="recallsite" placeholder="example.com" spellcheck="false" autocomplete="off" data-i18n-aria="settings.recall_never"><button class="btn" id="recalladd"><span data-i18n="settings.recall_never">Never remember this site</span></button><button class="btn" id="recallclear"><i data-icon="trash"></i><span data-i18n="settings.recall_clear">Forget everything</span></button></div>
       <p class="status" id="recallcount" aria-live="polite"></p>
@@ -268,9 +270,11 @@
         <div class="list rows" id="pwlist"></div>
       </div>
       <div class="card" id="pwedit" hidden><h2 id="pwedittitle"></h2>
-        <div class="actions"><input class="field" id="pworigin" data-i18n-placeholder="settings.pw_website_ph" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_website"></div>
+        <div class="actions"><input class="field" id="pworigin" data-i18n-placeholder="settings.pw_website_ph" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_website" aria-describedby="pworigin-err"></div>
+        <p class="fielderr" id="pworigin-err" role="alert"></p>
         <div class="actions"><input class="field" id="pwuser" data-i18n-placeholder="settings.pw_user_ph" autocomplete="off" spellcheck="false" data-i18n-aria="settings.pw_user"></div>
-        <div class="actions"><input class="field" id="pwpass" type="password" data-i18n-placeholder="palette.password" autocomplete="off" spellcheck="false" data-i18n-aria="palette.password"><button class="btn" id="pwshowpass"></button><button class="btn" id="pwgen"><span data-i18n="settings.pw_generate">Generate</span></button></div>
+        <div class="actions"><input class="field" id="pwpass" type="password" data-i18n-placeholder="palette.password" autocomplete="off" spellcheck="false" data-i18n-aria="palette.password" aria-describedby="pwpass-err"><button class="btn" id="pwshowpass"></button><button class="btn" id="pwgen"><span data-i18n="settings.pw_generate">Generate</span></button></div>
+        <p class="fielderr" id="pwpass-err" role="alert"></p>
         <div class="actions"><textarea class="field" id="pwnotes" rows="3" data-i18n-placeholder="settings.pw_notes" spellcheck="false" data-i18n-aria="settings.pw_notes"></textarea></div>
         <div class="actions"><button class="btn primary" id="pwsave"><span data-i18n="toast.pw_save_button">Save</span></button><button class="btn" id="pwcancel"><span data-i18n="common.cancel">Cancel</span></button></div>
       </div>
@@ -556,6 +560,10 @@ function renderShortcuts() {
     [T('palette.reopen_closed'), 'mod+shift+t'],
     [T('keys.previous_tab'), 'ctrl+tab'],
     [T('keys.next_tab'), 'mod+alt+down up'],
+    [T('keys.next_tab'), 'mod+shift+[ ]'],
+    [T('keys.tab_above'), 'ctrl+shift+tab'],
+    [T('keys.nth_tab'), 'mod+1 mod+8'],
+    [T('keys.last_tab'), 'mod+9'],
     [T('keys.hard_reload'), 'mod+r'],
     [T('keys.back_forward'), 'mod+[ ]'],
     ...(mac ? [] : [[T('keys.reload'), 'F5'], [T('keys.back_forward'), 'alt+left right']]),
@@ -581,7 +589,7 @@ function renderShortcuts() {
     [T('keys.peek'), [bhKeyParts('shift')[0], T('keys.m_click')]],
     [T('keys.split_from_tab'), [T('keys.m_split_button')]],
     [T('keys.space_emoji'), [T('keys.m_right_click')]],
-    [T('keys.folder_emoji'), [T('keys.m_click_icon')]],
+    [T('keys.folder_emoji'), [T('keys.m_right_click')]],
     [T('keys.quick_access'), [T('keys.m_right_click')]],
     [T('keys.boost'), [T('keys.m_command_bar')]],
   ]);
@@ -880,8 +888,20 @@ let PW = { entries: [] };
 const pwShown = new Map();
 let pwEditing = null; // null: closed, '': new entry, else the id being edited
 let pwWantEdit = null;
+let pwSaving = false; // a save sent, the shell's answer (bh.passwordSaved) not back yet
+// One error under one field of the editor; none clears both.
+function pwFieldError(field, text) {
+  for (const id of ['pworigin', 'pwpass']) {
+    $(id + '-err').textContent = id === field ? text : '';
+    $(id).toggleAttribute('aria-invalid', id === field);
+  }
+}
+// Save is offered once the site and the password are both filled in.
+const pwCanSave = () => { $('pwsave').disabled = pwSaving || !$('pworigin').value.trim() || !$('pwpass').value; };
 function pwCloseEditor() {
   pwEditing = null;
+  pwSaving = false;
+  pwFieldError();
   $('pwedit').hidden = true;
   ['pworigin', 'pwuser', 'pwpass', 'pwnotes'].forEach((id) => { $(id).value = ''; });
   $('pwpass').type = 'password';
@@ -895,6 +915,9 @@ function pwOpenEditor(entry, password, notes) {
   $('pwuser').value = entry ? entry.username : '';
   $('pwpass').value = password || '';
   $('pwnotes').value = notes || '';
+  pwSaving = false;
+  pwFieldError();
+  pwCanSave();
   $('pwedit').hidden = false;
   $(entry ? 'pwpass' : 'pworigin').focus();
 }
@@ -906,6 +929,12 @@ function renderPasswords(p) {
   $('pwopen').hidden = p.state !== 'open';
   const fallback = p.state === 'busy' ? bhT('settings.pw_working') : p.state === 'error' ? bhT('settings.pw_error') : '';
   $('pwstatus').textContent = [p.readOnly ? bhT('settings.pw_read_only') : '', p.status || fallback].filter(Boolean).join(' ');
+  if (p.undo != null && p.state === 'open') {
+    // The deletion's Undo, here too: the toast is in the main window, not in this one.
+    const undo = el('button', 'btn small', bhT('toast.undo'));
+    undo.onclick = () => pwSend({ op: 'undo' });
+    $('pwstatus').append(document.createTextNode(bhT('toast.pw_deleted', { host: p.undo }) + ' '), undo);
+  }
   $('pwadd').hidden = !!p.readOnly;
   $('pwsetmaster').hidden = p.master || p.readOnly;
   $('pwmasteron').hidden = !p.master;
@@ -967,7 +996,18 @@ bh.passwordGenerated = (password) => {
   $('pwpass').value = password;
   $('pwpass').type = 'text';
   pwShowLabel();
+  pwFieldError();
+  pwCanSave();
 };
+// The shell's answer to a save: null when it is saved, else the field to fix and why.
+bh.passwordSaved = (error) => {
+  pwSaving = false;
+  if (!error) return pwCloseEditor();
+  pwFieldError(error.field, error.text);
+  pwCanSave();
+  $(error.field).focus();
+};
+for (const id of ['pworigin', 'pwpass']) $(id).addEventListener('input', () => { pwFieldError(); pwCanSave(); });
 $('pwq').addEventListener('input', drawPasswords);
 $('pwadd').onclick = () => pwOpenEditor(null);
 $('pwcancel').onclick = pwCloseEditor;
@@ -978,9 +1018,11 @@ $('pwshowpass').onclick = () => {
 };
 $('pwgen').onclick = () => pwSend({ op: 'generate', length: 20, digits: true, symbols: true });
 $('pwsave').onclick = () => {
-  if (pwEditing == null || !$('pworigin').value.trim() || !$('pwpass').value) return;
+  if (pwEditing == null || pwSaving || !$('pworigin').value.trim() || !$('pwpass').value) return;
+  // The editor stays open until the shell has accepted the site (bh.passwordSaved).
+  pwSaving = true;
+  pwCanSave();
   pwSend({ op: 'save', id: pwEditing, origin: $('pworigin').value, username: $('pwuser').value, password: $('pwpass').value, notes: $('pwnotes').value });
-  pwCloseEditor();
 };
 $('pwunlockbtn').onclick = () => {
   const password = $('pwunlock').value;
@@ -999,7 +1041,19 @@ $('pwmset').onclick = () => {
 $('pwlocknow').onclick = () => pwSend({ op: 'lock' });
 confirmClick($('pwmremove'), 'settings.remove_it_confirm', () => pwSend({ op: 'remove_master' }));
 addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w')) { e.preventDefault(); send({ cmd: 'close_settings' }); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w') { e.preventDefault(); send({ cmd: 'close_settings' }); return; }
+  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+  e.preventDefault();
+  // Escape steps back one level at a time: a filled field is emptied first, then the password
+  // editor is closed, and only then the window. Nothing typed is lost to one stray press.
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.value && !t.readOnly && !t.disabled) {
+    t.value = '';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
+  if (!$('pwedit').hidden) { pwCloseEditor(); return; }
+  send({ cmd: 'close_settings' });
 });
 renderShortcuts();
 pwShowLabel();

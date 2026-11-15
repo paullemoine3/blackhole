@@ -79,6 +79,21 @@ impl Watches {
         before != self.list.len()
     }
 
+    /// Removes a watch and returns it with its place, for an undo (`put_back`).
+    pub fn take(&mut self, id: u64) -> Option<(usize, Watch)> {
+        let at = self.list.iter().position(|w| w.id == id)?;
+        Some((at, self.list.remove(at)))
+    }
+
+    /// Puts a removed watch back; refused if its id is in use again or the list is full.
+    pub fn put_back(&mut self, at: usize, watch: Watch) -> bool {
+        if self.list.len() >= MAX_WATCHES || self.get(watch.id).is_some() {
+            return false;
+        }
+        self.list.insert(at.min(self.list.len()), watch);
+        true
+    }
+
     pub fn get(&self, id: u64) -> Option<&Watch> {
         self.list.iter().find(|w| w.id == id)
     }
@@ -148,6 +163,19 @@ impl Watches {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taken_watch_comes_back_in_its_place() {
+        let mut w = Watches::default();
+        let a = w.add("https://a.test", "#p", "A", 0).unwrap();
+        w.add("https://b.test", "#p", "B", 0).unwrap();
+        let before = w.clone();
+        let (at, watch) = w.take(a).unwrap();
+        assert_eq!(w.all().len(), 1);
+        assert!(w.put_back(at, watch.clone()));
+        assert_eq!(w, before);
+        assert!(!w.put_back(at, watch), "already there");
+    }
 
     #[test]
     fn the_first_reading_is_the_reference_and_a_change_is_told_once() {

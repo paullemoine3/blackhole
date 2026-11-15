@@ -425,6 +425,38 @@ impl Easels {
         COLORS.contains(&color) && self.with_item(easel, item, |i| i.color = color.to_owned())
     }
 
+    /// Removes a card and returns it with its place, for an undo (`put_item_back`).
+    pub fn take_item(&mut self, easel: u64, item: u64) -> Option<(usize, Item)> {
+        let e = self.get_mut(easel)?;
+        let at = e.items.iter().position(|i| i.id == item)?;
+        Some((at, e.items.remove(at)))
+    }
+
+    /// Puts a removed card back; refused if its Easel is gone, full or has the id again.
+    pub fn put_item_back(&mut self, easel: u64, at: usize, item: Item) -> bool {
+        let Some(e) = self.get_mut(easel) else { return false };
+        if e.items.len() >= MAX_ITEMS || e.items.iter().any(|i| i.id == item.id) {
+            return false;
+        }
+        e.items.insert(at.min(e.items.len()), item);
+        true
+    }
+
+    /// Deletes an Easel and returns it with its place, for an undo (`put_back`).
+    pub fn take(&mut self, id: u64) -> Option<(usize, Easel)> {
+        let at = self.easels.iter().position(|e| e.id == id)?;
+        Some((at, self.easels.remove(at)))
+    }
+
+    /// Puts a deleted Easel back; refused if its id is in use again.
+    pub fn put_back(&mut self, at: usize, easel: Easel) -> bool {
+        if self.get(easel.id).is_some() {
+            return false;
+        }
+        self.easels.insert(at.min(self.easels.len()), easel);
+        true
+    }
+
     pub fn remove_item(&mut self, easel: u64, item: u64) -> bool {
         self.get_mut(easel).is_some_and(|e| {
             let before = e.items.len();
@@ -437,6 +469,23 @@ impl Easels {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn taken_cards_and_easels_come_back_in_their_places() {
+        let (mut easels, id) = board();
+        let a = easels.add_note(id, None).unwrap();
+        easels.add_note(id, None).unwrap();
+        let before = easels.clone();
+        let (at, item) = easels.take_item(id, a).unwrap();
+        assert!(easels.put_item_back(id, at, item.clone()));
+        assert_eq!(easels, before);
+        assert!(!easels.put_item_back(id, at, item), "already there");
+        let (at, easel) = easels.take(id).unwrap();
+        assert!(easels.get(id).is_none());
+        assert!(easels.put_back(at, easel.clone()));
+        assert_eq!(easels, before);
+        assert!(!easels.put_back(at, easel));
+    }
 
     fn board() -> (Easels, u64) {
         let mut easels = Easels::default();

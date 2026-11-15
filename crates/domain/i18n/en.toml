@@ -61,6 +61,7 @@ write = "Write something…"
 watch = "Tell me when this area changes"
 unwatch = "Stop watching this area"
 watch_change = "Before: {before}\nNow: {after}"
+easels = "Easels"
 
 [error]
 advanced = "Advanced"
@@ -116,6 +117,7 @@ unauthorized_hint = "“{host}” asks you to identify yourself to open this pag
 unauthorized_title = "Sign-in required"
 unreachable_hint = "The connection got lost in the void. Check your network or VPN, then try again."
 unreachable_title = "Site unreachable"
+clear_cookies_retry = "Clear this site’s cookies and try again"
 
 [extdesc]
 bitwarden = "Password manager (popup in the toolbar)."
@@ -171,6 +173,9 @@ split = "Split view with another tab (press again to close)"
 split_from_tab = "Split view from a tab"
 switch_space = "Switch space"
 zoom = "Zoom in / out / reset"
+tab_above = "Tab above in the sidebar"
+nth_tab = "Tab 1 to 8 of the space"
+last_tab = "Last tab of the space"
 
 [library]
 add_to = "Add to"
@@ -215,6 +220,10 @@ to_easel = "Clip to the current Easel"
 watches = "Watched Areas"
 watches_empty = "Pick an area of a page (Live capture) and choose “Watch this area for changes”."
 send_to_device = "Send to a device"
+no_match = "No results for “{q}”"
+no_match_filter = "No downloads match this filter"
+clear_search = "Clear search"
+show_all = "Show all"
 
 [menu]
 tab_home = "Back to its own page"
@@ -303,6 +312,7 @@ watch_area = "Watch this area for changes"
 page_send_to = "Send this page to {name}"
 link_send_to = "Send link to {name}"
 link_to_easel = "Add link to the Easel"
+close_out_of_folder = "Close and take out of the folder"
 
 [mobile]
 add_quick_access = "Add to quick access"
@@ -540,6 +550,10 @@ update_error = "Update: {why}"
 update_no_apk = "Release {tag} has no APK signed like this app"
 updates = "Updates"
 version = "Version {version}"
+close_private_tabs.one = "Close the private tab ({n})"
+close_private_tabs.other = "Close the private tabs ({n})"
+private_tabs_closed.one = "{n} private tab closed"
+private_tabs_closed.other = "{n} private tabs closed"
 
 [msg]
 beam_cannot_save = "The received file could not be saved"
@@ -572,6 +586,10 @@ passwords_locked = "Passwords are locked"
 too_many_to_sync = "Too many tabs to synchronize at once"
 type_code = "Type the 12 characters shown on the other device"
 wrong_master = "Wrong master password"
+update_offline = "no connection to the internet"
+update_timeout = "it took too long to answer"
+update_github_error = "GitHub answered with an error ({code})"
+update_unreachable = "the connection failed"
 
 [native]
 about = "About BlackHole"
@@ -585,6 +603,10 @@ quit = "Quit BlackHole"
 redo = "Redo"
 select_all = "Select All"
 undo = "Undo"
+window = "Window"
+minimize = "Minimize"
+zoom = "Zoom"
+bring_all_to_front = "Bring All to Front"
 
 [page]
 next = "Next"
@@ -949,6 +971,8 @@ updates_available.one = "{n} update available"
 updates_available.other = "{n} updates available"
 updating = "Updating…"
 video_ads = "Skip video ads (YouTube)"
+pw_save_failed = "This password could not be saved."
+recall_title = "Recall"
 
 [sidebar]
 asleep = "{title} (sleeping — reloads when opened)"
@@ -1001,6 +1025,8 @@ update_to = "Update to v{version}"
 updating = "Updating to v{version}…"
 usage = "{mem} · {cpu}% CPU"
 signal_notes = "The meeting has a notes Easel ready"
+folders = "Folders"
+drop_to_pin = "Drop here for quick access"
 
 [split]
 close_easel_pane = "Close this pane (the Easel stays in the sidebar)"
@@ -1109,6 +1135,12 @@ zoom = "Zoom {n}%"
 burner_keeps_nothing = "A black hole tab keeps nothing: open the page in an ordinary tab to keep it"
 to_easel = "To the Easel"
 beam_text_gone = "This text is no longer kept"
+highlight_removed = "Highlight removed"
+watch_removed = "Stopped watching “{name}”"
+archived_removed = "Removed from the archive"
+card_removed = "Card removed"
+easel_deleted = "Easel “{name}” deleted"
+site_cookies_cleared = "Cookies of {host} cleared"
 
 [unit]
 gb = "{n} GB"

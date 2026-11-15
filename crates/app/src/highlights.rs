@@ -302,18 +302,32 @@ impl Running {
         }
     }
 
+    /// The Undo of a removed highlight: back in the list and painted again on its page.
+    pub(crate) fn marks_put_back(&mut self, taken: blackhole_domain::highlights::TakenMark) -> bool {
+        let page = Url::parse(&taken.url).ok();
+        if !self.marks.list.put_back(taken) {
+            return false;
+        }
+        self.marks.save();
+        if let Some(page) = page {
+            self.marks_repaint(&page);
+        }
+        true
+    }
+
     pub(crate) fn handle_marks(&mut self, command: UiCommand) {
         let page_of = |list: &Highlights, id| list.get(id).and_then(|(p, _)| Url::parse(&p.url).ok());
         match command {
             UiCommand::HighlightSelection { tab } => self.mark_selection(tab.map(TabId)),
             UiCommand::HighlightRemove { id } => {
                 let page = page_of(&self.marks.list, id);
-                if self.marks.list.remove(id) {
+                if let Some(taken) = self.marks.list.take(id) {
                     self.marks.save();
                     if let Some(page) = page {
                         self.marks_repaint(&page);
                     }
                     self.ui_library();
+                    self.trash(&t("toast.highlight_removed"), crate::trash::Trashed::Highlight(taken));
                 }
             }
             UiCommand::HighlightNote { id, note } => {

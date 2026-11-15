@@ -257,6 +257,8 @@ impl Passwords {
             "state": state,
             "master": self.protection == Some(Protection::Password),
             "readOnly": self.read_only,
+            // A deletion that can still be undone: the Settings window offers it too.
+            "undo": self.undo.as_ref().map(|e| display_host(&e.origin)),
             "status": crate::i18n::render(&self.status),
             "lockMinutes": settings.password_lock_minutes,
             "lockChoices": Settings::LOCK_CHOICES,
@@ -633,11 +635,15 @@ impl Running {
                 let p = &mut self.passwords;
                 let typed = origin.trim();
                 let with_scheme = if typed.contains("://") { typed.to_owned() } else { format!("https://{typed}") };
+                // The editor stays open until this answer: a refused site keeps what was typed.
                 let Some(origin) = origin_of_saved(&with_scheme) else {
-                    p.status = message("settings.pw_enter_site", &[]);
-                    return self.ui_settings();
+                    self.settings_js(&saved_js(Some(("pworigin", &t("settings.pw_enter_site")))));
+                    return;
                 };
-                let (Some(u), false) = (p.open.as_mut(), p.read_only) else { return };
+                let (Some(u), false) = (p.open.as_mut(), p.read_only) else {
+                    self.settings_js(&saved_js(Some(("pwpass", &t("settings.pw_save_failed")))));
+                    return;
+                };
                 let device = u.device().to_owned();
                 let kind = u.data.get(&id).map_or(Kind::Web, |e| e.kind.clone());
                 let draft = Draft {
@@ -650,11 +656,14 @@ impl Running {
                 if id.is_empty() {
                     u.data.add(wallet::new_id(), &draft, now, &device);
                 } else if !u.data.edit(&id, &draft, now, &device) {
+                    self.settings_js(&saved_js(Some(("pwpass", &t("settings.pw_save_failed")))));
                     return;
                 }
+                p.undo = None;
                 p.status = message("settings.pw_saved", &[]);
                 p.touch();
                 p.persist();
+                self.settings_js(&saved_js(None));
             }
             PasswordAction::Delete { id } => {
                 let p = &mut self.passwords;
@@ -740,5 +749,14 @@ impl Running {
             }
         }
         self.ui_settings();
+    }
+}
+
+/// The Settings page's answer to a save: `None` closes the editor, `Some((field, text))` keeps
+/// it open and shows `text` under that field.
+fn saved_js(error: Option<(&str, &str)>) -> String {
+    match error {
+        None => "window.bh&&bh.passwordSaved(null)".to_owned(),
+        Some((field, text)) => format!("window.bh&&bh.passwordSaved({})", json!({ "field": field, "text": text })),
     }
 }

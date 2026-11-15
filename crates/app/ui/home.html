@@ -47,7 +47,10 @@
   .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
   .fav, .item { position: relative; }
   .more { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: inherit; display: grid; place-items: center; padding: 0; cursor: pointer; opacity: 0; transition: opacity .12s; }
-  .fav:hover .more, .item:hover .more { opacity: .7; } .more:hover { background: rgba(255,255,255,.14); opacity: 1 !important; }
+  .fav:hover .more, .item:hover .more, .fav:focus-within .more, .item:focus-within .more { opacity: .7; } .more:hover, .more:focus-visible { background: rgba(255,255,255,.14); opacity: 1 !important; }
+  /* Keyboard: tiles and rows are reached with Tab and show where the focus is. */
+  .fav:focus-visible, .item:focus-visible, .more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .fav:focus-visible { background: rgba(255,255,255,.09); }
   .fav:hover, .item:hover { background: rgba(255,255,255,.09); }
   .tile img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
   .tile.ico { background: rgba(255,255,255,.1) !important; padding: 7px; box-sizing: border-box; }
@@ -189,8 +192,25 @@ function menu(x, y, items) { send({ cmd: 'menu', origin: 'home', x, y, items });
 function more(open) {
   const b = el('button', 'more');
   b.append(bhIcon('more')); b.title = bhT('common.options');
+  b.setAttribute('aria-label', bhT('common.options'));
   b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect(); open(r.left, r.bottom + 4); };
   return b;
+}
+// A tile or a row works from the keyboard like a link: Tab reaches it, Enter or Space opens
+// it, Shift+F10 or the menu key opens its menu where it is.
+function activable(n, open, menuAt) {
+  n.tabIndex = 0;
+  n.setAttribute('role', 'link');
+  n.addEventListener('keydown', (e) => {
+    if (e.target !== n) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    else if (menuAt && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+      e.preventDefault();
+      const r = n.getBoundingClientRect();
+      menuAt(r.left + 12, r.bottom - 4);
+    }
+  });
+  return n;
 }
 // Same words and icons as the sidebar menus: a pinned site is in "quick access".
 function favMenu(f, x, y) {
@@ -221,7 +241,7 @@ function nowRow(t, title, sub, open, menuItems, live) {
     n.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, e.clientY, menuItems); };
     n.append(more((x, y) => menu(x, y, menuItems)));
   }
-  return n;
+  return activable(n, open, menuItems && ((x, y) => menu(x, y, menuItems)));
 }
 function glyphTile(name) { const t = el('div', 'tile glyph'); t.append(bhIcon(name, 'md')); return t; }
 function renderNow(now) {
@@ -298,7 +318,7 @@ window.bh = {
       n.onclick = () => send({ cmd: 'open', input: f.url });
       n.oncontextmenu = (e) => { e.preventDefault(); favMenu(f, e.clientX, e.clientY); };
       n.append(more((x, y) => favMenu(f, x, y)));
-      return n;
+      return activable(n, n.onclick, (x, y) => favMenu(f, x, y));
     }));
     const items = s.recent.map(r => {
       const n = el('div', 'item'); n.title = r.url;
@@ -308,7 +328,7 @@ window.bh = {
       n.onclick = () => send({ cmd: 'open', input: r.url });
       n.oncontextmenu = (e) => { e.preventDefault(); recentMenu(r, e.clientX, e.clientY); };
       n.append(more((x, y) => recentMenu(r, x, y)));
-      return n;
+      return activable(n, n.onclick, (x, y) => recentMenu(r, x, y));
     });
     $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', bhT('home.empty'))]));
     // Tiles rise one after another as the start page emerges from the launch splash. A render

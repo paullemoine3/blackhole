@@ -35,6 +35,16 @@ pub struct Page {
     pub marks: Vec<Highlight>,
 }
 
+/// A highlight just removed, with its page and places (see `Highlights::take`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TakenMark {
+    pub url: String,
+    pub title: String,
+    pub page_at: usize,
+    pub mark_at: usize,
+    pub mark: Highlight,
+}
+
 /// Highlights by page, the page marked last first.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Highlights {
@@ -218,6 +228,37 @@ impl Highlights {
         true
     }
 
+    /// Removes a highlight and returns it with its places, for an undo (`put_back`).
+    pub fn take(&mut self, id: u64) -> Option<TakenMark> {
+        let page_at = self.pages.iter().position(|p| p.marks.iter().any(|m| m.id == id))?;
+        let page = &mut self.pages[page_at];
+        let mark_at = page.marks.iter().position(|m| m.id == id)?;
+        let mark = page.marks.remove(mark_at);
+        let taken = TakenMark { url: page.url.clone(), title: page.title.clone(), page_at, mark_at, mark };
+        if self.pages[page_at].marks.is_empty() {
+            self.pages.remove(page_at);
+        }
+        Some(taken)
+    }
+
+    /// Puts a removed highlight back where it was; refused if its id is in use again.
+    pub fn put_back(&mut self, taken: TakenMark) -> bool {
+        if self.get(taken.mark.id).is_some() {
+            return false;
+        }
+        match self.pages.iter_mut().find(|p| p.url == taken.url) {
+            Some(page) => {
+                let at = taken.mark_at.min(page.marks.len());
+                page.marks.insert(at, taken.mark);
+            }
+            None => {
+                let at = taken.page_at.min(self.pages.len());
+                self.pages.insert(at, Page { url: taken.url, title: taken.title, marks: vec![taken.mark] });
+            }
+        }
+        true
+    }
+
     /// Writes (or, when blank, erases) the note of a highlight.
     pub fn set_note(&mut self, id: u64, note: &str) -> bool {
         let mark = self
@@ -242,6 +283,26 @@ impl Highlights {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taken_highlight_goes_back_to_its_page_and_place() {
+        let mut list = Highlights::default();
+        let page = Url::parse("https://a.test/").unwrap();
+        let a = list.add(&page, "A", "first", "", "", 1).unwrap();
+        let b = list.add(&page, "A", "second", "", "", 2).unwrap();
+        let before = list.clone();
+        let taken = list.take(a).expect("it is there");
+        assert!(list.get(a).is_none());
+        assert!(list.put_back(taken.clone()));
+        assert_eq!(list, before);
+        // The last one of its page: the page goes, and comes back with it.
+        list.take(a);
+        let last = list.take(b).unwrap();
+        assert!(list.put_back(last));
+        assert!(list.get(b).is_some());
+        assert!(!list.put_back(list.clone().take(b).unwrap()), "already there");
+        let _ = taken;
+    }
 
     fn u(raw: &str) -> Url {
         Url::parse(raw).unwrap()

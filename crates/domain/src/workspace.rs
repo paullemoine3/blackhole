@@ -545,6 +545,37 @@ impl Workspace {
     /// order: quick-access tabs, tabs of unfolded folders, then the other tabs. Wraps around.
     pub fn sibling_tab(&self, step: isize) -> Option<TabId> {
         let space = self.active_space();
+        let order = self.sidebar_order();
+        if order.is_empty() {
+            return None;
+        }
+        let len = order.len() as isize;
+        let here = space
+            .active_tab
+            .and_then(|a| order.iter().position(|t| *t == a));
+        let at = match here {
+            Some(i) => (i as isize + step).rem_euclid(len),
+            None if step < 0 => len - 1,
+            None => 0,
+        };
+        order.get(at as usize).copied()
+    }
+
+    /// Mod+1…Mod+9, as in every browser: the `n`-th tab of the space in sidebar order (from 1),
+    /// and 9 the last one whatever their number.
+    pub fn nth_tab(&self, n: usize) -> Option<TabId> {
+        let order = self.sidebar_order();
+        match n {
+            9 => order.last().copied(),
+            1..=8 => order.get(n - 1).copied(),
+            _ => None,
+        }
+    }
+
+    /// The tabs of the active space a reader sees, top to bottom: quick access, the tabs of
+    /// unfolded folders, then the other tabs.
+    fn sidebar_order(&self) -> Vec<TabId> {
+        let space = self.active_space();
         let unfolded = |f: Option<FolderId>| {
             let mut at = f;
             let mut hops = 0;
@@ -560,7 +591,7 @@ impl Workspace {
             }
             true
         };
-        let order: Vec<TabId> = space
+        space
             .tabs
             .iter()
             .filter(|t| t.pinned)
@@ -577,20 +608,7 @@ impl Workspace {
                     .filter(|t| !t.pinned && t.folder.is_none()),
             )
             .map(|t| t.id)
-            .collect();
-        if order.is_empty() {
-            return None;
-        }
-        let len = order.len() as isize;
-        let here = space
-            .active_tab
-            .and_then(|a| order.iter().position(|t| *t == a));
-        let at = match here {
-            Some(i) => (i as isize + step).rem_euclid(len),
-            None if step < 0 => len - 1,
-            None => 0,
-        };
-        order.get(at as usize).copied()
+            .collect()
     }
 
     /// Remembers that `id` was just shown.
@@ -999,10 +1017,58 @@ impl Workspace {
         })
     }
 
+    /// Tabs of the active space, with their places, taken before they are closed together
+    /// ("Close other tabs"): `None` when none of them is there.
+    pub fn snapshot_tabs(&self, ids: &[TabId]) -> Option<Removed> {
+        let space = self.active_space();
+        let tabs: Vec<(usize, Tab)> = space
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| ids.contains(&t.id))
+            .map(|(i, t)| (i, t.clone()))
+            .collect();
+        (!tabs.is_empty()).then_some(Removed::Tabs {
+            space: space.id,
+            tabs,
+        })
+    }
+
+    /// One tab, wherever it is, with its place in its space: what closing it would lose
+    /// (title given, folder, address of origin), for an undo that brings the tab itself back.
+    pub fn snapshot_tab(&self, id: TabId) -> Option<Removed> {
+        self.spaces.iter().find_map(|s| {
+            let at = s.tabs.iter().position(|t| t.id == id)?;
+            Some(Removed::Tabs {
+                space: s.id,
+                tabs: vec![(at, s.tabs[at].clone())],
+            })
+        })
+    }
+
     /// Puts back a deleted space or folder (undo), at its former place. Refused when it is
     /// still there or its space is gone; tabs that exist again are left alone.
     pub fn undo_removal(&mut self, removed: Removed) -> bool {
         match removed {
+            Removed::Tabs { space, tabs } => {
+                let Some(target) = self.spaces.iter_mut().find(|s| s.id == space) else {
+                    return false;
+                };
+                let mut back = false;
+                for (i, mut tab) in tabs {
+                    if target.tabs.iter().any(|t| t.id == tab.id) {
+                        continue;
+                    }
+                    // Its folder may have gone meanwhile: the tab then comes back loose.
+                    if tab.folder.is_some_and(|f| !target.folders.iter().any(|x| x.id == f)) {
+                        tab.folder = None;
+                    }
+                    let at = i.min(target.tabs.len());
+                    target.tabs.insert(at, tab);
+                    back = true;
+                }
+                back
+            }
             Removed::Space { space, at } => {
                 if self.spaces.iter().any(|s| s.id == space.id) {
                     return false;
@@ -1142,6 +1208,11 @@ pub enum Removed {
         folders: Vec<(usize, Folder)>,
         tabs: Vec<(usize, Tab)>,
     },
+    /// Tabs closed together, each with its place in the space.
+    Tabs {
+        space: SpaceId,
+        tabs: Vec<(usize, Tab)>,
+    },
 }
 
 /// Synchronization with paired devices (see `crate::sync`).
@@ -1257,7 +1328,15 @@ impl Removed {
     pub fn tabs(&self) -> Vec<&Tab> {
         match self {
             Removed::Space { space, .. } => space.tabs.iter().collect(),
-            Removed::Folder { tabs, .. } => tabs.iter().map(|(_, t)| t).collect(),
+            Removed::Folder { tabs, .. } | Removed::Tabs { tabs, .. } => tabs.iter().map(|(_, t)| t).collect(),
+        }
+    }
+
+    /// The space it belongs to.
+    pub fn space(&self) -> SpaceId {
+        match self {
+            Removed::Space { space, .. } => space.id,
+            Removed::Folder { space, .. } | Removed::Tabs { space, .. } => *space,
         }
     }
 }
@@ -1641,6 +1720,41 @@ mod tests {
         ws.activate_tab(a);
         assert_eq!(ws.sibling_tab(1), Some(p), "wraps around");
         assert_eq!(ws.sibling_tab(-1), Some(b));
+    }
+
+    #[test]
+    fn closed_tabs_come_back_in_their_places() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let c = ws.open_tab(u("https://c.test"));
+        let before: Vec<TabId> = ws.active_space().tabs.iter().map(|t| t.id).collect();
+        let snap = ws.snapshot_tabs(&[a, c]).expect("both are there");
+        assert_eq!(snap.tabs().len(), 2);
+        ws.close_tab(a);
+        ws.close_tab(c);
+        assert!(ws.undo_removal(snap.clone()));
+        let after: Vec<TabId> = ws.active_space().tabs.iter().map(|t| t.id).collect();
+        assert_eq!(after, before, "same tabs, same order");
+        assert!(!ws.undo_removal(snap), "a second undo changes nothing");
+        assert!(ws.snapshot_tabs(&[TabId(9999)]).is_none());
+        let _ = b;
+    }
+
+    #[test]
+    fn mod_digits_pick_tabs_in_sidebar_order_and_nine_is_the_last() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let p = ws.open_tab(u("https://p.test"));
+        ws.toggle_pin(p);
+        // Sidebar: p | b, a (a new tab goes on top of the list)
+        assert_eq!(ws.nth_tab(1), Some(p));
+        assert_eq!(ws.nth_tab(2), Some(b));
+        assert_eq!(ws.nth_tab(3), Some(a));
+        assert_eq!(ws.nth_tab(4), None);
+        assert_eq!(ws.nth_tab(9), Some(a), "9 is the last tab, however many there are");
+        assert_eq!(ws.nth_tab(0), None);
     }
 
     #[test]

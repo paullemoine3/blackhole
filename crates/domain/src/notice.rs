@@ -50,6 +50,12 @@ pub enum Kind {
 pub const STAY_MS: u64 = 2200;
 /// One that asks something stays longer.
 pub const STAY_ASKING_MS: u64 = 8000;
+/// A problem stays at least this long: it says why something did not happen.
+pub const STAY_PROBLEM_MS: u64 = 6000;
+/// Time to read one character, and the longest any notice stays (its line of time then pauses
+/// under the pointer or the keyboard focus anyway).
+pub const READ_MS_PER_CHAR: u64 = 60;
+pub const STAY_MAX_MS: u64 = 15_000;
 
 impl Kind {
     pub const ALL: [Kind; 10] = [
@@ -89,13 +95,16 @@ impl Kind {
         }
     }
 
-    /// How long the notice stays: longer when it has buttons to answer.
-    pub fn stay_ms(self, asking: bool) -> u64 {
-        if asking {
-            STAY_ASKING_MS
-        } else {
-            STAY_MS
-        }
+    /// How long a notice of `chars` characters stays: long enough to be read, longer when it
+    /// has buttons to answer, and a problem long enough to tell why.
+    pub fn stay_ms(self, asking: bool, chars: usize) -> u64 {
+        let base = match (asking, self.tone()) {
+            (true, _) => STAY_ASKING_MS,
+            (false, Tone::Bad) => STAY_PROBLEM_MS,
+            (false, _) => STAY_MS,
+        };
+        let reading = (chars as u64).saturating_mul(READ_MS_PER_CHAR);
+        base.max(reading).min(STAY_MAX_MS.max(base))
     }
 }
 
@@ -128,8 +137,17 @@ mod tests {
     #[test]
     fn a_notice_that_asks_stays_longer() {
         for kind in Kind::ALL {
-            assert!(kind.stay_ms(true) > kind.stay_ms(false));
+            assert!(kind.stay_ms(true, 10) > kind.stay_ms(false, 10));
         }
+    }
+
+    #[test]
+    fn a_long_notice_stays_long_enough_to_be_read_and_a_problem_longer() {
+        assert_eq!(Kind::Info.stay_ms(false, 10), STAY_MS);
+        let long = "Close a black hole tab first: each one keeps its page alive".chars().count();
+        assert!(Kind::Info.stay_ms(false, long) >= long as u64 * READ_MS_PER_CHAR);
+        assert!(Kind::Problem.stay_ms(false, 5) >= 6000);
+        assert_eq!(Kind::Info.stay_ms(false, 10_000), STAY_MAX_MS, "bounded");
     }
 
     #[test]

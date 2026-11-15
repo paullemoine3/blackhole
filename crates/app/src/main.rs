@@ -27,6 +27,7 @@ mod pilot;
 mod recall;
 mod sidebar;
 mod stats;
+mod trash;
 mod views;
 
 use i18n::{message, t, tf, tn};
@@ -506,6 +507,8 @@ struct Running {
     links_cleaned: u32,
     /// The space or folder deleted last, for the toast's Undo.
     undo: Option<(Instant, Removed)>,
+    /// What the Library or an Easel deleted last, for its toast's Undo (`trash.rs`).
+    trashed: Option<(Instant, trash::Trashed)>,
     /// Library section asked for by the command bar ("Open History"), with a request number.
     library_jump: (u32, &'static str),
     /// Whether the Settings and Easel windows are maximized, last time their page was told.
@@ -666,7 +669,8 @@ fn main_title() -> String {
     }
 }
 
-/// The Edit menu is what routes Cmd+C/V/X/A/Z to the focused web view on macOS.
+/// The Edit menu is what routes Cmd+C/V/X/A/Z to the focused web view on macOS; the Window
+/// menu gives Cmd+M and the system's list of open windows.
 #[cfg(target_os = "macos")]
 fn install_menu() -> muda::Menu {
     use i18n::t;
@@ -691,8 +695,16 @@ fn install_menu() -> muda::Menu {
         &Item::paste(Some(&t("native.paste"))),
         &Item::select_all(Some(&t("native.select_all"))),
     ]);
-    let _ = menu.append_items(&[&app, &edit]);
+    let window = Submenu::new(t("native.window"), true);
+    let _ = window.append_items(&[
+        &Item::minimize(Some(&t("native.minimize"))),
+        &Item::maximize(Some(&t("native.zoom"))),
+        &Item::separator(),
+        &Item::bring_all_to_front(Some(&t("native.bring_all_to_front"))),
+    ]);
+    let _ = menu.append_items(&[&app, &edit, &window]);
     menu.init_for_nsapp();
+    window.set_as_windows_menu_for_nsapp();
     menu
 }
 
@@ -957,6 +969,7 @@ impl Running {
             pilot_sent: (0, pane_motion::Side::Right),
             links_cleaned: 0,
             undo: None,
+            trashed: None,
             library_jump: (0, ""),
             panels_maxed: (false, false),
             last_frame: Instant::now(),
@@ -1763,7 +1776,7 @@ impl Running {
             UpdateState::Available(r) => json!({"state": "available", "version": r.version}),
             UpdateState::Downloading(r) => json!({"state": "downloading", "version": r.version}),
             UpdateState::Failed(r, why) => {
-                json!({"state": "error", "version": r.version, "error": why})
+                json!({"state": "error", "version": r.version, "error": i18n::render(why)})
             }
         }
     }
@@ -1782,7 +1795,8 @@ impl Running {
         json!({
             "state": state,
             "version": version,
-            "error": error,
+            // A network failure is a message of the updater, said in the interface's language.
+            "error": error.map(|why| i18n::render(why)),
             "installable": can_self_update(),
             "page": format!("https://github.com/{}/releases/latest", updater::REPO),
         })
@@ -2734,6 +2748,7 @@ impl Running {
             url: tab.url.to_string(),
             space: space.id.0,
             at: now_secs(),
+            folder: tab.folder.map(|f| f.0),
         };
         self.archive
             .retain(|a| !(a.url == rec.url && a.space == rec.space));
@@ -2921,6 +2936,17 @@ impl Running {
                         self.svc.switch_space(space);
                     }
                     self.open(&rec.url);
+                    // And in its folder, when the folder is still there.
+                    let ws = self.svc.workspace();
+                    let folder = rec
+                        .folder
+                        .map(FolderId)
+                        .filter(|f| ws.active_space().id == space && ws.active_space().folders.iter().any(|x| x.id == *f));
+                    let tab = ws.active_tab().filter(|t| t.folder.is_none() && !t.pinned).map(|t| t.id);
+                    if let (Some(folder), Some(tab)) = (folder, tab) {
+                        self.svc.move_tab(tab, None, Some(folder), false);
+                        self.sync();
+                    }
                 }
             }
             UiCommand::ForgetHistory { url } => {
@@ -2932,9 +2958,10 @@ impl Running {
             }
             UiCommand::DeleteArchived { index } => {
                 if index < self.archive.len() {
-                    self.archive.remove(index);
+                    let rec = self.archive.remove(index);
                     self.save_archive();
                     self.ui_library();
+                    self.trash(&t("toast.archived_removed"), trash::Trashed::Archived(index, rec));
                 }
             }
             UiCommand::LibraryOpenTab { space, id } => {
@@ -2996,8 +3023,12 @@ impl Running {
                 self.easel_changed(ok);
             }
             UiCommand::DeleteEasel { id } => {
-                let ok = self.easels.delete(id);
-                self.easel_changed(ok);
+                let taken = self.easels.take(id);
+                self.easel_changed(taken.is_some());
+                if let Some((at, easel)) = taken {
+                    let name = easel.name.clone();
+                    self.trash(&tf("toast.easel_deleted", &[("name", &name)]), trash::Trashed::Easel(at, easel));
+                }
             }
             UiCommand::CaptureToEasel => self.capture_to_easel(),
             UiCommand::LivePick => {
@@ -3069,7 +3100,14 @@ impl Running {
                     UiCommand::EaselColor { item, color } => {
                         self.easels.set_color(easel, item, &color)
                     }
-                    UiCommand::EaselRemove { item } => self.easels.remove_item(easel, item),
+                    UiCommand::EaselRemove { item } => match self.easels.take_item(easel, item) {
+                        Some((at, item)) => {
+                            self.easel_changed(true);
+                            self.trash(&t("toast.card_removed"), trash::Trashed::Card { easel, at, item });
+                            return;
+                        }
+                        None => false,
+                    },
                     _ => false,
                 };
                 self.easel_changed(changed);
@@ -3304,10 +3342,7 @@ impl Running {
         if at.elapsed() > UNDO_FOR {
             return;
         }
-        let space = match &removed {
-            Removed::Space { space, .. } => space.id.0,
-            Removed::Folder { space, .. } => space.0,
-        };
+        let space = removed.space().0;
         let urls: HashSet<String> = removed.tabs().iter().map(|t| t.url.to_string()).collect();
         if self.svc.undo_removal(removed) {
             self.archive
@@ -5338,13 +5373,14 @@ impl Running {
                     if let Some(snapshot @ Removed::Space { .. }) = snapshot {
                         let name = match &snapshot {
                             Removed::Space { space, .. } => space.name.clone(),
-                            Removed::Folder { .. } => String::new(),
+                            Removed::Folder { .. } | Removed::Tabs { .. } => String::new(),
                         };
                         self.toast_undo(&tf("toast.space_deleted", &[("name", &name)]), snapshot);
                     }
                 }
             }
             UiCommand::UndoRemoval => self.undo_removal(),
+            UiCommand::UndoTrash => self.undo_trash(),
             UiCommand::NoticeDone => self.notice_done(),
             UiCommand::PrivacyReport { x, y } => self.privacy_report((x, y + BAR_HEIGHT)),
             UiCommand::WatchPick => {
@@ -5538,6 +5574,8 @@ impl Running {
                     .filter(|t| t.id.0 != id && !t.pinned && t.folder.is_none())
                     .map(|t| t.id)
                     .collect();
+                // Taken first: the toast's Undo puts them all back, in their places.
+                let snapshot = self.svc.workspace().snapshot_tabs(&others);
                 for &tab in &others {
                     self.archive_tab(tab);
                     self.svc.close_tab(tab);
@@ -5547,7 +5585,10 @@ impl Running {
                 self.home_visible = false;
                 self.sync();
                 let n = others.len();
-                self.toast(&tn("toast.tabs_closed", n, &[]));
+                match snapshot {
+                    Some(snapshot) => self.toast_undo(&tn("toast.tabs_closed", n, &[]), snapshot),
+                    None => self.toast(&tn("toast.tabs_closed", n, &[])),
+                }
             }
             UiCommand::ClosePane { side } if self.easel_side() => {
                 // Closing the tab's pane leaves the easel alone, in the content area.
@@ -5708,7 +5749,7 @@ impl Running {
                             Removed::Folder { folders, .. } => {
                                 folders.first().map(|(_, f)| f.name.clone()).unwrap_or_default()
                             }
-                            Removed::Space { .. } => String::new(),
+                            Removed::Space { .. } | Removed::Tabs { .. } => String::new(),
                         };
                         self.toast_undo(&tf("toast.folder_deleted", &[("name", &name)]), snapshot);
                     }
@@ -6001,6 +6042,12 @@ impl Running {
             "w" => self.close_active_tab(),
             "shift+t" => self.reopen_closed(),
             "recent_tab" | "next_tab" | "prev_tab" => self.switch_tab(key),
+            _ if key.starts_with("tab_") => {
+                let n = key["tab_".len()..].parse().unwrap_or(0);
+                if let Some(id) = self.svc.workspace().nth_tab(n) {
+                    self.handle_ui(UiCommand::Activate { id: id.0 });
+                }
+            }
             "r" => self.with_active_tab(views::hard_reload),
             "reload" => self.handle_ui(UiCommand::Reload),
             "b" => self.handle_ui(UiCommand::Lock),
@@ -6251,6 +6298,7 @@ impl Running {
             Msg::Page(tab, PageEvent::ErrorMenu { x, y }) => self.error_menu(tab, x, y),
             Msg::Page(tab, PageEvent::ErrorBack { length }) => self.error_back(tab, length),
             Msg::Page(tab, PageEvent::ErrorRetry) => self.error_retry(tab),
+            Msg::Page(tab, PageEvent::ErrorClearCookies) => self.error_clear_cookies(tab),
             Msg::Auth(tab, challenge, reply) => {
                 self.errors_auth_asked(tab);
                 self.on_auth(tab, &challenge, reply);

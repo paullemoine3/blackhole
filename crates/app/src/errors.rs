@@ -405,6 +405,8 @@ impl Running {
             "hsts": page.can_bypass() && error_page::hsts_preloaded(&host),
             // The shell answers the page's "back" and "retry" (see `error_back`).
             "shell": true,
+            // A redirect loop: the page offers to clear the site's cookies (error_clear_cookies).
+            "clearCookies": matches!(page, ErrorPage::TooManyRedirects),
             "steps": trail.steps(),
         });
         if let ErrorPage::ServerError(status) = page {
@@ -490,6 +492,24 @@ impl Running {
                 let _ = view.load_url(shown.url.as_str());
             }
         }
+    }
+
+    /// "Clear this site's cookies and try again", from the "Too many redirects" page only: the
+    /// cookies of the site that loops (its own, its subdomains', its parents') go from the
+    /// tab's store (its space, private or black hole profile), then the address is tried again.
+    pub(crate) fn error_clear_cookies(&mut self, tab: TabId) {
+        let (Some(shown), Some(view)) = (self.errors.shown.get(&tab), self.tabs.get(&tab)) else { return };
+        if !matches!(shown.page, ErrorPage::TooManyRedirects) {
+            return;
+        }
+        let host = shown.url.host_str().unwrap_or_default().to_owned();
+        for cookie in view.cookies().unwrap_or_default() {
+            if cookie.domain().is_some_and(|d| error_page::cookie_of_site(d, &host)) {
+                let _ = view.delete_cookie(&cookie);
+            }
+        }
+        self.toast(&tf("toast.site_cookies_cleared", &[("host", &blackhole_domain::site_key(&host))]));
+        self.error_retry(tab);
     }
 
     /// The risky button of an error page: the shell's menu asks, so a page cannot grant an

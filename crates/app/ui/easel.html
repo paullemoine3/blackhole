@@ -99,9 +99,14 @@
   .card .slot { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; opacity: .8; background: rgba(0,0,0,.3); overflow: hidden; }
   .card .foot { height: 24px; flex: none; display: flex; align-items: center; padding: 0 22px 0 12px; font-size: 11px; opacity: .6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .card .foot:hover { opacity: 1; }
-  .colors { display: none; gap: 4px; padding: 0 4px; }
+  .colors { display: none; gap: 10px; padding: 0 8px; }
   .card.pick .colors { display: flex; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); cursor: pointer; padding: 0; }
+  /* A 14 px swatch, clicked anywhere in 24 px around it (Fitts). */
+  .dot { position: relative; width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5); cursor: pointer; padding: 0; }
+  .dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; }
+  .dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Away from the brush: a click beside it never deletes the card (and Undo is there anyway). */
+  .card .tool.remove { margin-left: 8px; }
   @keyframes live { 50% { opacity: .3; } }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -111,7 +116,7 @@
 </head>
 <body>
 <header id="top">
-  <div class="brand"><span class="logo"></span>Easels</div>
+  <div class="brand"><span class="logo"></span><span data-i18n="easel.easels">Easels</span></div>
   <div class="win">
     <button id="wmin" data-i18n-title="window.minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
     <button id="wmax" data-i18n-title="window.maximize"><svg class="square" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg><svg class="restore" viewBox="0 0 10 10"><rect x=".5" y="2.5" width="7" height="7"/><path d="M2.5 2.5v-2h7v7h-2"/></svg></button>

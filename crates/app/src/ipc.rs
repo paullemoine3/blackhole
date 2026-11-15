@@ -141,6 +141,8 @@ pub enum UiCommand {
     },
     /// Puts back the space or folder deleted a moment ago (the toast's Undo button).
     UndoRemoval,
+    /// Puts back the highlight, watched area, archived tab, card or Easel just deleted.
+    UndoTrash,
     /// A button of a notice was pressed: every page that shows the notice drops it.
     NoticeDone,
     /// Link menu: `target` is "tab" (background), "front" (new tab shown), "window", "private"
@@ -818,6 +820,9 @@ pub enum PageEvent {
     /// "Try again" of BlackHole's error page (same condition): the shell reloads the address
     /// that failed.
     ErrorRetry,
+    /// "Clear this site's cookies and try again" of the "Too many redirects" page (same
+    /// condition, and that page only): the site's cookies in the tab's own store, then a retry.
+    ErrorClearCookies,
     /// A video left Picture in Picture, paused or not (untrusted: only acted on for a tab the
     /// shell floated). `stream`: a live stream, which WebView2 cannot pause when its window is
     /// closed.

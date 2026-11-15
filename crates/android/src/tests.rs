@@ -197,7 +197,24 @@ fn closing_shows_the_successor_and_undo_brings_it_back() {
     assert!(out.contains(&Effect::Show { tab: Some(a) }));
     assert_eq!(ui(&out, "toast").unwrap()["undo"], json!(true));
     let undo = c.command(C::UndoClose);
-    assert_eq!(opened(&undo).map(|o| o.1), Some("https://b.example/".into()));
+    // The tab itself comes back (same id, so its title and place), not a new one.
+    assert_eq!(opened(&undo).map(|o| (o.0, o.1)), Some((b, "https://b.example/".into())));
+}
+
+#[test]
+fn undo_puts_a_closed_tab_back_in_its_own_space() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = core(&dir);
+    go(&mut c, "https://a.example/");
+    let b = go(&mut c, "https://b.example/");
+    let home = c.svc.workspace().active_space().id;
+    c.command(C::Close { tab: b });
+    let other = c.svc.add_space("Other", "#fff");
+    c.svc.switch_space(other);
+    let undo = c.command(C::UndoClose);
+    assert_eq!(opened(&undo).map(|o| o.0), Some(b));
+    assert_eq!(c.svc.workspace().active_space().id, home, "back in the space it was closed from");
+    assert!(c.svc.workspace().active_space().tabs.iter().any(|t| t.id.0 == b));
 }
 
 #[test]
@@ -886,6 +903,7 @@ fn a_sign_in_popup_keeps_its_opener_and_a_plain_window_loads_in_the_tab() {
     assert_eq!(ui(&out, "state").unwrap()["private"], json!(true));
     let out = c.command(C::ClosePrivate);
     assert!(out.contains(&Effect::Show { tab: None }));
+    assert!(has_toast(&out, "1 private tab closed"), "said, since it cannot be undone");
     assert_eq!(ui(&out, "state").unwrap()["popup"], json!(false));
 }
 
@@ -1082,4 +1100,9 @@ fn other_tabs_close_at_once_and_loose_tabs_are_tidied_by_site() {
     let left: Vec<u64> = state["tabs"].as_array().unwrap().iter().map(|t| t["id"].as_u64().unwrap()).collect();
     assert_eq!(left.len(), 2);
     assert!(left.contains(&pinned) && left.contains(&extra));
+    // Its toast's Undo brings the five back.
+    assert_eq!(ui(&out, "toast").unwrap()["action"], json!("undo_removal"));
+    c.command(C::UndoRemoval);
+    let state = ui(&c.command(C::Ready), "state").unwrap();
+    assert_eq!(state["tabs"].as_array().unwrap().len(), 7);
 }

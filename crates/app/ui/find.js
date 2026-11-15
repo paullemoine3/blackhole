@@ -17,10 +17,16 @@
   let at = -1;
   let last = '';
 
+  // A block boundary between two text nodes reads as a space, as in the engines' own find.
+  const BLOCK = 'p,div,li,dt,dd,td,th,tr,h1,h2,h3,h4,h5,h6,section,article,header,footer,nav,aside,blockquote,pre,figcaption,label,option,br';
+  const SPACE = /\s/;
+  // Every visible text node is read into one string, each run of white space (in a node or
+  // across nodes) as a single space, with the node and offset of every character kept beside
+  // it: a match can then cross a link, a `<b>` or a line break of the HTML source.
   const collect = (text) => {
-    const needle = text.toLowerCase();
+    const needle = text.toLowerCase().replace(/\s+/g, ' ').trim();
     const out = [];
-    if (!document.body) return out;
+    if (!document.body || !needle) return out;
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => {
         const p = n.parentElement;
@@ -29,14 +35,36 @@
         return NodeFilter.FILTER_ACCEPT;
       },
     });
-    for (let n = walk.nextNode(); n && out.length < MAX; n = walk.nextNode()) {
-      const hay = n.data.toLowerCase();
-      for (let i = hay.indexOf(needle); i !== -1 && out.length < MAX; i = hay.indexOf(needle, i + needle.length)) {
-        const r = document.createRange();
-        r.setStart(n, i);
-        r.setEnd(n, i + needle.length);
-        out.push(r);
+    const nodes = [];
+    const nodeOf = [];
+    const offOf = [];
+    let hay = '';
+    let block = null;
+    const push = (c, ni, off) => {
+      if (c === ' ' && (hay === '' || hay[hay.length - 1] === ' ')) return;
+      hay += c;
+      nodeOf.push(ni);
+      offOf.push(off);
+    };
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const b = n.parentElement.closest(BLOCK);
+      const ni = nodes.length;
+      nodes.push(n);
+      if (ni > 0 && b !== block) push(' ', ni, 0);
+      block = b;
+      const data = n.data;
+      for (let i = 0; i < data.length; i++) {
+        // Lower-cased one character at a time: a few grow (İ), the offsets stay the node's.
+        if (SPACE.test(data[i])) push(' ', ni, i);
+        else for (const c of data[i].toLowerCase()) push(c, ni, i);
       }
+    }
+    for (let i = hay.indexOf(needle); i !== -1 && out.length < MAX; i = hay.indexOf(needle, i + needle.length)) {
+      const end = i + needle.length - 1;
+      const r = document.createRange();
+      r.setStart(nodes[nodeOf[i]], offOf[i]);
+      r.setEnd(nodes[nodeOf[end]], offOf[end] + 1);
+      out.push(r);
     }
     return out;
   };
@@ -109,7 +137,8 @@
     const CSS_TEXT = `      .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(32,32,40,.96);
         box-shadow:0 6px 24px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.12);font:13px -apple-system,Segoe UI,sans-serif;color:#eee}
       input{width:190px;background:rgba(255,255,255,.1);border:0;border-radius:6px;padding:5px 8px;color:#fff;font:inherit;outline:none}
-      button{background:none;border:0;color:#ddd;font-size:15px;cursor:pointer;border-radius:5px;padding:2px 7px}
+      button{background:none;border:0;color:#ddd;font-size:15px;cursor:pointer;border-radius:5px;padding:2px 7px;min-width:28px;min-height:28px}
+      button:focus-visible{outline:2px solid #8ab4ff;outline-offset:1px}
       button:hover{background:rgba(255,255,255,.14)}
       .n{min-width:52px;font-size:12px;text-align:right}
     `;
@@ -139,14 +168,21 @@
       node('button', { 'data-x': '', title: T('window.close') }, '\u2715'),
     );
     root.appendChild(bar);
+    // Each search reads the whole page: wait for a pause in the typing.
+    let typing = 0;
     input.addEventListener('input', () => {
-      if (!HL) getSelection().removeAllRanges();
-      last = '';
-      run(false);
+      clearTimeout(typing);
+      typing = setTimeout(() => {
+        if (!input) return;
+        if (!HL) getSelection().removeAllRanges();
+        last = '';
+        run(false);
+      }, 80);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
+        clearTimeout(typing);
         run(e.shiftKey);
       } else if (e.key === 'Escape') {
         e.preventDefault();

@@ -264,6 +264,22 @@ const HSTS_SITES: &[&str] = &[
     "paypal.com", "dropbox.com", "torproject.org",
 ];
 
+/// Whether a cookie set for `domain` (as the engine reports it, a leading dot or not) belongs
+/// to `host`'s site: the site's own, one of its subdomains', or a parent domain's. "Too many
+/// redirects" clears these and nothing else (`www.` counts as the site).
+pub fn cookie_of_site(domain: &str, host: &str) -> bool {
+    let domain = domain.trim().trim_start_matches('.').trim_end_matches('.').to_ascii_lowercase();
+    let site = crate::site_key(host.trim_end_matches('.'));
+    if domain.is_empty() || site.is_empty() {
+        return false;
+    }
+    let domain = crate::site_key(&domain);
+    // A parent must still be a registrable name, never a bare suffix ("com").
+    domain == site
+        || domain.ends_with(&format!(".{site}"))
+        || (domain.contains('.') && site.ends_with(&format!(".{domain}")))
+}
+
 pub fn hsts_preloaded(host: &str) -> bool {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
     let tld = host.rsplit('.').next().unwrap_or_default();
@@ -367,6 +383,18 @@ impl Bypasses {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cookies_of_a_site_are_its_own_its_subdomains_and_its_parents() {
+        assert!(cookie_of_site(".example.com", "www.example.com"));
+        assert!(cookie_of_site("example.com", "example.com"));
+        assert!(cookie_of_site("login.example.com", "example.com"));
+        assert!(cookie_of_site(".example.com", "shop.example.com"));
+        assert!(!cookie_of_site("example.org", "example.com"));
+        assert!(!cookie_of_site("notexample.com", "example.com"));
+        assert!(!cookie_of_site(".com", "example.com"), "never a bare suffix");
+        assert!(!cookie_of_site("", "example.com"));
+    }
 
     #[test]
     fn restricted_ports_are_the_fetch_bad_ports() {

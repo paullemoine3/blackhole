@@ -9,7 +9,7 @@ use blackhole_domain::error_page::{
     self, classify, classify_status, is_bare_error_body, is_engine_error_page, Bypasses, ErrorPage, Failure,
 };
 use blackhole_domain::{
-    privacy_grade, resolve_input, BlockLog, PrivacyDecision, PrivacyPolicy, SearchEngine, SpaceId,
+    privacy_grade, resolve_input, BlockLog, Removed, PrivacyDecision, PrivacyPolicy, SearchEngine, SpaceId,
     TabId,
 };
 use blackhole_infrastructure::{default_privacy_policy, flush_writes, write_later, JsonWorkspaceRepository};
@@ -112,8 +112,12 @@ pub(crate) struct PrivateTab {
 }
 
 pub(crate) struct Closed {
+    pub(crate) tab: u64,
     url: Url,
     private: bool,
+    /// The tab itself (space, place, title given, folder), taken as it closed: Undo brings
+    /// this tab back, not a new one on the same address in whatever space is shown.
+    saved: Option<Removed>,
 }
 
 pub struct Core {
@@ -575,6 +579,7 @@ impl Core {
             None => Vec::new(),
         };
         let private = Self::is_private(tab);
+        let mut saved = None;
         if private {
             self.private.retain(|t| t.id != tab);
             if self.private.is_empty() {
@@ -594,6 +599,7 @@ impl Core {
             let done = if pinned {
                 self.svc.release_tab(TabId(tab))
             } else {
+                saved = self.svc.workspace().snapshot_tab(TabId(tab));
                 self.svc.close_tab(TabId(tab))
             };
             if !done && !pinned {
@@ -609,7 +615,7 @@ impl Core {
         out.extend(self.permissions_of_closed(tab));
         out.extend(self.auth_of_closed(tab));
         out.push(Effect::Drop { tab });
-        self.closed.push(Closed { url, private });
+        self.closed.push(Closed { tab, url, private, saved });
         if self.closed.len() > MAX_CLOSED {
             self.closed.remove(0);
         }
@@ -634,6 +640,19 @@ impl Core {
         let Some(c) = self.closed.pop() else {
             return Vec::new();
         };
+        // The tab itself back in its space, at its place, with its title and folder.
+        if let Some(saved) = c.saved {
+            let space = saved.space();
+            if self.svc.undo_removal(saved) {
+                if self.svc.workspace().active_space().id != space {
+                    self.svc.switch_space(space);
+                }
+                self.svc.activate_tab(TabId(c.tab));
+                let mut out = self.show(c.tab, None);
+                out.push(self.state());
+                return out;
+            }
+        }
         let mut out = if c.private {
             self.open_private(c.url)
         } else {
@@ -659,7 +678,7 @@ impl Core {
             })
             .map(|&tab| Effect::Drop { tab })
             .collect();
-        for id in ids {
+        for &id in &ids {
             out.extend(self.permissions_of_closed(id));
             out.extend(self.auth_of_closed(id));
         }
@@ -671,6 +690,9 @@ impl Core {
         out.push(Effect::ClearProfile {
             profile: "private".into(),
         });
+        if !ids.is_empty() {
+            out.push(Self::toast(&self.tn("private_tabs_closed", ids.len()), false));
+        }
         out.push(self.state());
         out
     }

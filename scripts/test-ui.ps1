@@ -592,6 +592,37 @@ wait 1500
 eval palette 'bm2:' + document.getElementById('q').placeholder
 cmd {"cmd":"palette_close"}
 wait 500
+# ---- UX review: find across nodes, Mod+digit, palette ranking, Library, Settings ----
+cmd {"cmd":"open","input":"https://example.com"}
+wait 3500
+eval content 'fn1:' + (() => { const p = document.createElement('p'); p.append('Read the ', Object.assign(document.createElement('a'), { textContent: 'New York', href: '#' }), ' Times\n  today'); document.body.append(p); const t = document.createElement('textarea'); t.value = 'new york times'; document.body.append(t); t.focus(); t.select(); window.__bhFind(); t.remove(); const h = CSS.highlights.get('bh-find'); return (h ? h.size : 0) + '|' + (h ? [...h][0].toString().replace(/\s+/g, ' ') : ''); })()
+eval content 'ky0:' + (dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), document.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', ctrlKey: true, bubbles: true, cancelable: true })), 'sent')
+wait 1200
+eval chrome 'ky1:' + (() => { const first = [...document.querySelectorAll('.tab[data-tab]')].find(n => n.offsetParent); return String(first && +first.dataset.tab === state.activeTab); })()
+cmd {"cmd":"palette","mode":"new"}
+wait 1200
+eval palette 'pa1:' + (() => { const q = document.getElementById('q'); q.value = 'zoom'; q.dispatchEvent(new Event('input', { bubbles: true })); return 'typed'; })()
+wait 600
+eval palette 'pa2:' + items.filter(i => i.title).slice(0, 9).map(i => i.title).join('/')
+cmd {"cmd":"palette_close"}
+wait 600
+cmd {"cmd":"open_library","section":"history"}
+wait 1800
+eval library 'lb1:' + (() => { const f = document.getElementById('q'); f.value = 'zzqq-no-such-page'; f.dispatchEvent(new Event('input', { bubbles: true })); const e = document.querySelector('.empty'); return (e ? e.textContent : 'none') + '|' + !!(e && e.querySelector('button')); })()
+eval library 'lb2:' + (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })), document.getElementById('q').value + '|' + !document.querySelector('.empty button'))
+shot 46-library-no-match
+cmd {"cmd":"close_library"}
+wait 600
+cmd {"cmd":"open_settings","tab":"passwords"}
+wait 1500
+eval settings 'es1:' + (() => { const q = document.getElementById('pwq'); q.value = 'abc'; q.focus(); q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return q.value + '|open'; })()
+eval settings 'es2:' + (document.getElementById('pwadd').click(), document.getElementById('pworigin').value = 'mon site', document.getElementById('pwpass').value = 'x', document.getElementById('pwpass').dispatchEvent(new Event('input')), document.getElementById('pwsave').click(), 'saving')
+wait 800
+eval settings 'es3:' + !document.getElementById('pwedit').hidden + '|' + document.getElementById('pwpass').value + '|' + document.getElementById('pworigin-err').textContent
+shots 47-settings-password-error
+eval settings 'es4:' + (document.activeElement.blur(), document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })), document.getElementById('pwedit').hidden)
+cmd {"cmd":"close_settings"}
+wait 500
 quit
 '@
 # HTTP authentication: a local server answers 401 Basic (test-only credentials from the fixture).
@@ -874,9 +905,16 @@ Check ((Named an5) -match 'an5:false') 'menu motion: with animations off the men
 Check ((Named an6) -match 'an6:toast-time\|2200ms') 'toast: a line shows the time it stays'
 Check ((Named an7) -match 'an7:true\|\d+>\d+') 'shield count: the figure rolls from the old one to the new one'
 Check ((Named an8) -match 'an8:true\|true') 'active tab: the highlight glides from the tab left to the tab shown'
+Check ((Named fn1) -match 'fn1:1\|New York Times') 'find in page: a phrase across a link and a line break is found'
+Check ((Named ky1) -match 'ky1:true') 'shortcuts: Mod+1 shows the first tab of the sidebar'
+Check ((Named pa2) -match 'pa2:[^/]*(/[^/]*){0,3}/Zoom in') 'palette: an action named by the query is among the first rows, before the history'
+Check ((Named lb1) -match 'lb1:No results for .*zzqq-no-such-page.*\|true' -and (Named lb2) -match 'lb2:\|true') 'Library: a search that keeps nothing says so, offers to clear it, and Escape clears it'
+Check ((Named es1) -match 'es1:\|open') 'settings: Escape in a filled field empties it, the window stays'
+Check ((Named es3) -match 'es3:true\|x\|Enter the website') 'settings: a refused site keeps the editor and the password, the reason under the field'
+Check ((Named es4) -match 'es4:true') 'settings: Escape away from a field closes the password editor first'
 # The test file landed in the real Downloads folder: removed.
 $dlDir = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
 Get-ChildItem $dlDir -Filter 'bh-test-download*.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq 4000 } | Remove-Item -Force
-Check ($saved.Count -eq 45) "screenshots saved ($($saved.Count)/45)"
+Check ($saved.Count -eq 47) "screenshots saved ($($saved.Count)/47)"
 if ($fail) { Write-Host "evals:"; $evals }
 exit [int]$fail

@@ -14,11 +14,12 @@ impl Running {
     /// `actions` is a list of `{label, run}` buttons (`run`: a `UiCommand`), or `Value::Null`.
     pub(crate) fn notify(&self, kind: Notice, message: &str, actions: Value) {
         let asking = actions.as_array().is_some_and(|a| !a.is_empty());
+        let text = i18n::render(message);
         let notice = json!({
-            "text": i18n::render(message),
+            "stay": kind.stay_ms(asking, text.chars().count()),
+            "text": text,
             "icon": kind.icon(),
             "tone": kind.tone().id(),
-            "stay": kind.stay_ms(asking),
             "actions": if asking { actions } else { json!([]) },
         });
         // Every host gets it and keeps its time: the sidebar pages always draw it, the top bar
