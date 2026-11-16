@@ -400,6 +400,22 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `anchoredAlive`, `live`, `learned`, `allowed`). Windows : code commun, non testé
   (`test-features.ps1` `dp*` peut attendre l'inclinaison des tuiles d'accès rapide).
 
+## 0.8.15 : extensions Windows, page blanche, bouclier Android
+
+- Popups d'extension (Windows) : WebView2 fait de chaque vue un onglet dans sa propre fenêtre, la
+  popup comprise ; `tabs.query({active, currentWindow|lastFocusedWindow})` y répondait la popup
+  elle-même (`chrome-extension://…`), d'où « pas un site Web » dans uBlock Origin Lite et Ghostery.
+  `ui/ext_tabs.js` (injecté par `views::extension_popup`, adresse de la page devant passée par
+  `show_ext_popup`, rien sur l'accueil) répond par l'onglet de cette page (même adresse, sinon la page
+  web vue en dernier, `lastFocusedWindow`/`lastAccessed`). Harnais : cible `eval extpopup` ;
+  test `scripts	est-ext.ps1` (popup uBOL sur example.com).
+- Extension d'exemple `cookie-banner-hider` (`app/src/extensions.rs`) : sélecteurs en
+  `:is(…):not(html, body)` (glosbe.com met `cookie-consent` sur `<body>` : page blanche) ;
+  `refresh_sample` remplace au lancement une copie installée laissée telle quelle (`OLD_SAMPLE_CSS`).
+- Android : le compteur du bouclier est une capsule à côté de l'icône, dans la hauteur du champ
+  d'adresse (la pastille en coin était coupée par `#omni`, `overflow: hidden`) ; jeton `--on-ok` pour
+  son texte en thème clair. Contrôle `shieldfit` de `test-android.ps1`.
+
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.

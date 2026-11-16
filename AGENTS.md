@@ -701,6 +701,22 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   `anchoredAlive`, `live`, `learned`, `allowed`). Windows : code commun, non testé
   (`test-features.ps1` `dp*` peut attendre l'inclinaison des tuiles d'accès rapide).
 
+## 0.8.15 : extensions Windows, page blanche, bouclier Android
+
+- Popups d'extension (Windows) : WebView2 fait de chaque vue un onglet dans sa propre fenêtre, la
+  popup comprise ; `tabs.query({active, currentWindow|lastFocusedWindow})` y répondait la popup
+  elle-même (`chrome-extension://…`), d'où « pas un site Web » dans uBlock Origin Lite et Ghostery.
+  `ui/ext_tabs.js` (injecté par `views::extension_popup`, adresse de la page devant passée par
+  `show_ext_popup`, rien sur l'accueil) répond par l'onglet de cette page (même adresse, sinon la page
+  web vue en dernier, `lastFocusedWindow`/`lastAccessed`). Harnais : cible `eval extpopup` ;
+  test `scripts	est-ext.ps1` (popup uBOL sur example.com).
+- Extension d'exemple `cookie-banner-hider` (`app/src/extensions.rs`) : sélecteurs en
+  `:is(…):not(html, body)` (glosbe.com met `cookie-consent` sur `<body>` : page blanche) ;
+  `refresh_sample` remplace au lancement une copie installée laissée telle quelle (`OLD_SAMPLE_CSS`).
+- Android : le compteur du bouclier est une capsule à côté de l'icône, dans la hauteur du champ
+  d'adresse (la pastille en coin était coupée par `#omni`, `overflow: hidden`) ; jeton `--on-ok` pour
+  son texte en thème clair. Contrôle `shieldfit` de `test-android.ps1`.
+
 ## Livraison et entretien
 
 - Préserver les changements utilisateur déjà présents ; limiter les modifications

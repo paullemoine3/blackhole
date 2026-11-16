@@ -11,14 +11,14 @@
   :root {
     --bg: #0c0b12; --panel: #13121b; --ink: #eceaf5; --mute: rgba(236,234,245,.55);
     --line: rgba(255,255,255,.09); --fill: rgba(255,255,255,.06); --fill2: rgba(255,255,255,.1);
-    --accent: #7c5cff; --glow: rgba(124,92,255,.35); --amber: #ffb020; --ok: #8ff0b4; --bad: #ff6070;
+    --accent: #7c5cff; --glow: rgba(124,92,255,.35); --amber: #ffb020; --ok: #8ff0b4; --on-ok: #0b2a18; --bad: #ff6070;
     /* Safe areas; --kb: the keyboard's height; --bb: what the bar stands on (the keyboard of a page, else --sb). */
     --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --kb: 0px; --bb: 0px; --bar: 64px;
     --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.3,1.15);
   }
   :root[data-theme="light"] {
     --bg: #f4f3f8; --panel: #ffffff; --ink: #1a1924; --mute: rgba(26,25,36,.7); /* 4.5:1 at least on --bg */
-    --line: rgba(0,0,0,.08); --fill: rgba(0,0,0,.04); --fill2: rgba(0,0,0,.07); --glow: rgba(124,92,255,.22); --ok: #17894c; --bad: #c8283c;
+    --line: rgba(0,0,0,.08); --fill: rgba(0,0,0,.04); --fill2: rgba(0,0,0,.07); --glow: rgba(124,92,255,.22); --ok: #17894c; --on-ok: #fff; --bad: #c8283c;
   }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; background: transparent; color: var(--ink);
@@ -102,11 +102,14 @@
   #omni .u .p { color: var(--mute); }
   #omni #site { display: grid; place-items: center; flex: none; }
   #omni .tile { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; }
-  /* A button of its own, big enough to touch apart from the address next to it. */
-  #shield { color: var(--ok); display: grid; place-items: center; position: relative; min-width: 36px; min-height: 44px; flex: none; }
-  #shield b { position: absolute; right: -7px; top: -6px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--ok); color: #0b2a18;
-    font-size: 9.5px; line-height: 15px; font-weight: 800; text-align: center; animation: pop .35s var(--spring); }
+  /* A button of its own, big enough to touch apart from the address next to it. The count sits
+     beside the shield, inside the field's height (a badge on its corner was cut by the field). */
+  #shield { color: var(--ok); display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 32px; min-height: 42px;
+    margin-left: -4px; padding: 0 2px; flex: none; }
+  #shield b { display: block; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ok); color: var(--on-ok);
+    font-size: 10.5px; line-height: 18px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; animation: pop .35s var(--spring); }
   #shield.warn { color: var(--bad); }
+  #shield.warn b { background: var(--bad); color: #fff; }
   #progress { position: absolute; left: 0; bottom: 0; height: 2.5px; width: 0; background: linear-gradient(90deg, var(--accent), var(--amber));
     box-shadow: 0 0 8px var(--accent); opacity: 0; transition: width .3s ease, opacity .4s ease .2s; }
   #progress.on { opacity: 1; transition: width .3s ease; }
