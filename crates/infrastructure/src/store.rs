@@ -451,6 +451,63 @@ impl WatchStore {
     }
 }
 
+/// Trackers learned while browsing and the hosts the user allowed (`trackers.json`), written on
+/// the background thread.
+pub struct TrackerStore {
+    path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct TrackersDto {
+    #[serde(default)]
+    learned: Vec<String>,
+    #[serde(default)]
+    allowed: Vec<String>,
+    #[serde(default)]
+    watched: std::collections::BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    visited: Vec<String>,
+}
+
+impl TrackerStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("trackers.json"),
+        }
+    }
+
+    pub fn load(&self) -> blackhole_domain::trackers::Trackers {
+        crate::flush_writes();
+        let dto: TrackersDto = fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        blackhole_domain::trackers::Trackers::restore(
+            dto.watched.into_iter().map(|(d, sites)| (d, sites.into_iter().collect())).collect(),
+            dto.learned,
+            dto.allowed,
+            dto.visited,
+        )
+    }
+
+    /// Queues the lists to be written (atomically, off the UI thread).
+    pub fn save(&self, trackers: &blackhole_domain::trackers::Trackers) {
+        let dto = TrackersDto {
+            learned: trackers.learned().iter().cloned().collect(),
+            allowed: trackers.allowed().iter().cloned().collect(),
+            watched: trackers
+                .watched()
+                .iter()
+                .map(|(d, sites)| (d.clone(), sites.iter().cloned().collect()))
+                .collect(),
+            visited: trackers.visited().iter().cloned().collect(),
+        };
+        if let Ok(json) = serde_json::to_string(&dto) {
+            crate::write_later(self.path.clone(), json);
+        }
+    }
+}
+
 /// Highlights and notes on pages (`highlights.json`), written on the background thread.
 pub struct HighlightStore {
     path: PathBuf,
@@ -585,6 +642,23 @@ impl ArchiveStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn learned_trackers_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = TrackerStore::new(dir.path());
+        assert!(store.load().learned().is_empty(), "no file: nothing learned");
+        let mut t = blackhole_domain::trackers::Trackers::default();
+        let pixel = url::Url::parse("https://px.spy.example/collect").unwrap();
+        for site in ["a.com", "b.com", "c.com"] {
+            t.observe(&pixel, "img", site, false);
+        }
+        t.observe(&url::Url::parse("https://px.other.example/pixel").unwrap(), "img", "a.com", false);
+        t.allow("cdn.listed.example");
+        t.visit("news.example");
+        store.save(&t);
+        assert_eq!(store.load(), t);
+    }
 
     #[test]
     fn watches_survive_a_restart_and_odd_entries_are_dropped() {

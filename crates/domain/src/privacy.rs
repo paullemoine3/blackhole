@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use url::Url;
 
 /// What the page itself is asked to clean up (Brave-style "shields"), on top of the blocked
@@ -74,6 +74,26 @@ pub struct PrivacyPolicy {
     blocking: Arc<AtomicBool>,
     ads: Arc<AtomicBool>,
     shields: Arc<AtomicU8>,
+    /// Trackers learned while browsing and the hosts the user allowed (`trackers`), shared by
+    /// every clone so a change reaches the views that already exist.
+    learned: Arc<RwLock<Learned>>,
+}
+
+#[derive(Debug, Default)]
+struct Learned {
+    /// Blocked like the tracker list, on its switch.
+    hosts: HashSet<String>,
+    /// Never blocked, listed or learned: the user's exceptions.
+    allowed: HashSet<String>,
+}
+
+/// A short stable fingerprint of a list of hosts, so a changed list compiles under a new name.
+fn fingerprint(hosts: &[String]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in hosts.iter().flat_map(|s| s.bytes().chain([0])) {
+        h = (h ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{:08x}", h as u32)
 }
 
 impl Default for PrivacyPolicy {
@@ -99,7 +119,47 @@ impl PrivacyPolicy {
             blocking: Arc::new(AtomicBool::new(true)),
             ads: Arc::new(AtomicBool::new(true)),
             shields: Arc::new(AtomicU8::new(Shields::default().bits())),
+            learned: Arc::default(),
         }
+    }
+
+    /// Replaces the learned trackers and the allowed hosts (lower case, without `www.`).
+    pub fn set_learned(
+        &self,
+        hosts: impl IntoIterator<Item = String>,
+        allowed: impl IntoIterator<Item = String>,
+    ) {
+        let lower = |h: String| h.trim().trim_start_matches("www.").to_lowercase();
+        if let Ok(mut l) = self.learned.write() {
+            l.hosts = hosts.into_iter().map(lower).filter(|h| !h.is_empty()).collect();
+            l.allowed = allowed.into_iter().map(lower).filter(|h| !h.is_empty()).collect();
+        }
+    }
+
+    /// `host` or a domain above it is in `set`.
+    fn under(set: &HashSet<String>, host: &str) -> bool {
+        let mut candidate = host;
+        loop {
+            if set.contains(candidate) {
+                return true;
+            }
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => return false,
+            }
+        }
+    }
+
+    /// The user allowed `host` (or a domain above it): no list blocks it.
+    pub fn is_allowed(&self, host: &str) -> bool {
+        let host = host.to_lowercase();
+        self.learned.read().is_ok_and(|l| Self::under(&l.allowed, &host))
+    }
+
+    /// `host` (or a domain above it) is on one of the built-in lists, whatever the switches.
+    pub fn is_listed(&self, host: &str) -> bool {
+        let host = host.to_lowercase();
+        Self::under(&self.blocked_domains, &host) || Self::under(&self.ad_domains, &host)
     }
 
     /// Turns the tracker blocklist on or off (the https upgrade and the clean links stay).
@@ -141,26 +201,49 @@ impl PrivacyPolicy {
 
     /// The lists that are on, each under a stable name, for engines that block natively
     /// (hosts sorted, so the same list always compiles to the same rules).
-    pub fn active_lists(&self) -> Vec<(&'static str, Vec<&str>)> {
-        fn sorted(set: &HashSet<String>) -> Vec<&str> {
-            let mut hosts: Vec<&str> = set.iter().map(String::as_str).collect();
-            hosts.sort_unstable();
-            hosts
-        }
+    /// The allowed hosts are left out; a list they shortened (and the learned one, which
+    /// changes while browsing) is named after its content, so it compiles again when it changes.
+    pub fn active_lists(&self) -> Vec<(String, Vec<String>)> {
+        let learned = self.learned.read();
+        let empty = HashSet::new();
+        let (hosts, allowed) = match &learned {
+            Ok(l) => (&l.hosts, &l.allowed),
+            Err(_) => (&empty, &empty),
+        };
+        let sorted = |name: &str, set: &HashSet<String>, always_named: bool| {
+            let mut list: Vec<String> = set.iter().filter(|h| !Self::under(allowed, h)).cloned().collect();
+            list.sort_unstable();
+            let name = if always_named || list.len() != set.len() {
+                format!("{name}-{}", fingerprint(&list))
+            } else {
+                name.to_owned()
+            };
+            (name, list)
+        };
         let mut lists = Vec::new();
         if self.is_blocking() {
-            lists.push(("trackers", sorted(&self.blocked_domains)));
+            lists.push(sorted("trackers", &self.blocked_domains, false));
+            let learned = sorted("learned", hosts, true);
+            if !learned.1.is_empty() {
+                lists.push(learned);
+            }
         }
         if self.is_blocking_ads() {
-            lists.push(("ads", sorted(&self.ad_domains)));
+            lists.push(sorted("ads", &self.ad_domains, false));
         }
         lists
     }
 
     /// Every listed host, whatever the switches: for engines that register the hosts to watch
     /// once and ask for the decision at each request.
-    pub fn listed_domains(&self) -> impl Iterator<Item = &str> {
-        self.blocked_domains.iter().chain(&self.ad_domains).map(String::as_str)
+    /// Learned trackers included (as they were when asked).
+    pub fn listed_domains(&self) -> Vec<String> {
+        let learned: Vec<String> = self
+            .learned
+            .read()
+            .map(|l| l.hosts.iter().cloned().collect())
+            .unwrap_or_default();
+        self.blocked_domains.iter().chain(&self.ad_domains).cloned().chain(learned).collect()
     }
 
     /// Why `host` (or a domain above it) is blocked, if it is.
@@ -170,6 +253,14 @@ impl PrivacyPolicy {
             return None;
         }
         let host = host.to_lowercase();
+        if let Ok(l) = self.learned.read() {
+            if Self::under(&l.allowed, &host) {
+                return None;
+            }
+            if trackers && Self::under(&l.hosts, &host) {
+                return Some("tracker blocked");
+            }
+        }
         let mut candidate = host.as_str();
         loop {
             if trackers && self.blocked_domains.contains(candidate) {
@@ -272,6 +363,8 @@ pub struct BlockLog {
     total: u32,
     /// Per site, how often each blocked host was tried (the privacy report of a site).
     by_site: Vec<(String, Vec<(String, u32)>)>,
+    /// Per space (its id), what its tabs blocked: the sidebar counts the space shown.
+    by_space: Vec<(u64, u32)>,
 }
 
 /// A site's privacy grade from what it tried this session: A (nothing) to E (a lot). A tracker
@@ -362,6 +455,20 @@ impl BlockLog {
         self.total
     }
 
+    /// Counts a blocked request of a tab of `space` (see `record`).
+    pub fn record_in(&mut self, space: u64, host: &str, site: &str) {
+        self.record(host, site);
+        match self.by_space.iter_mut().find(|(s, _)| *s == space) {
+            Some((_, n)) => *n += 1,
+            None => self.by_space.push((space, 1)),
+        }
+    }
+
+    /// What the tabs of `space` blocked this session.
+    pub fn total_in(&self, space: u64) -> u32 {
+        self.by_space.iter().find(|(s, _)| *s == space).map_or(0, |(_, n)| *n)
+    }
+
     /// Most frequently blocked hosts first.
     pub fn entries(&self) -> Vec<&BlockedHost> {
         let mut out: Vec<_> = self.entries.iter().collect();
@@ -371,6 +478,22 @@ impl BlockLog {
 
     pub fn clear(&mut self) {
         *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+mod space_tests {
+    #[test]
+    fn each_space_counts_what_its_tabs_blocked() {
+        let mut log = super::BlockLog::default();
+        log.record_in(1, "t.example", "a.test");
+        log.record_in(1, "t.example", "a.test");
+        log.record_in(2, "ads.example", "b.test");
+        log.record("x.example", "");
+        assert_eq!((log.total_in(1), log.total_in(2), log.total_in(3)), (2, 1, 0));
+        assert_eq!(log.total(), 4, "the session total counts everything");
+        log.clear();
+        assert_eq!(log.total_in(1), 0);
     }
 }
 
@@ -435,13 +558,38 @@ mod tests {
     }
 
     #[test]
+    fn learned_trackers_are_blocked_and_allowed_hosts_never_are() {
+        let p = PrivacyPolicy::with_ads(["t.example".to_owned()], ["ads.example".to_owned()]);
+        let clone = p.clone();
+        let url = |s: &str| Url::parse(s).unwrap();
+        assert_eq!(p.evaluate(&url("https://px.learned.example/c")), PrivacyDecision::Allow);
+        p.set_learned(["learned.example".to_owned()], ["www.ads.example".to_owned()]);
+        // A clone made before sees the change: views that already exist follow it.
+        assert_eq!(clone.evaluate(&url("https://px.learned.example/c")), PrivacyDecision::Block("tracker blocked"));
+        assert_eq!(p.evaluate(&url("https://cdn.ads.example/x")), PrivacyDecision::Allow, "allowed by the user");
+        assert!(p.is_allowed("CDN.ads.example") && !p.is_allowed("t.example"));
+        assert!(p.is_listed("x.t.example") && !p.is_listed("learned.example"));
+        // Native lists: the allowed host is left out and the learned list has its own name.
+        let lists = p.active_lists();
+        let names: Vec<&str> = lists.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names[0], "trackers");
+        assert!(names[1].starts_with("learned-") && names[2].starts_with("ads-"));
+        assert!(lists[2].1.is_empty());
+        // The learned list follows the tracker switch.
+        p.set_blocking(false);
+        assert_eq!(p.evaluate(&url("https://px.learned.example/c")), PrivacyDecision::Allow);
+        assert!(!p.active_lists().iter().any(|(n, _)| n.starts_with("learned")));
+    }
+
+    #[test]
     fn listed_domains_ignore_the_switches() {
         let p = PrivacyPolicy::with_ads(["t.example".to_owned()], ["ads.example".to_owned()]);
         p.set_blocking(false);
         p.set_ad_blocking(false);
-        let mut all: Vec<&str> = p.listed_domains().collect();
+        p.set_learned(["learned.example".to_owned()], []);
+        let mut all = p.listed_domains();
         all.sort_unstable();
-        assert_eq!(all, ["ads.example", "t.example"]);
+        assert_eq!(all, ["ads.example", "learned.example", "t.example"]);
     }
 
     #[test]
@@ -450,12 +598,13 @@ mod tests {
             ["z.example".to_owned(), "A.example".to_owned()],
             ["ads.example".to_owned()],
         );
+        let owned = |name: &str, hosts: &[&str]| (name.to_owned(), hosts.iter().map(|h| (*h).to_owned()).collect::<Vec<_>>());
         assert_eq!(
             p.active_lists(),
-            vec![("trackers", vec!["a.example", "z.example"]), ("ads", vec!["ads.example"])]
+            vec![owned("trackers", &["a.example", "z.example"]), owned("ads", &["ads.example"])]
         );
         p.set_blocking(false);
-        assert_eq!(p.active_lists(), vec![("ads", vec!["ads.example"])]);
+        assert_eq!(p.active_lists(), vec![owned("ads", &["ads.example"])]);
         p.set_ad_blocking(false);
         assert!(p.active_lists().is_empty());
     }

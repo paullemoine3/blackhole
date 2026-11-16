@@ -44,7 +44,7 @@
   } catch (e) {}
   const rules = [];
   const VARS = ['--rx', '--ry', '--mx', '--my'];
-  let on = null;
+  let on = null, onMax = 0, base = null;
   const still = () => {
     const b = document.body;
     return !b || b.classList.contains('flat') || b.classList.contains('noanim') || b.classList.contains('still') || b.classList.contains('dragging')
@@ -55,7 +55,12 @@
     on.classList.remove('bh-lean');
     for (const v of VARS) on.style.removeProperty(v);
     on = null;
+    base = null;
   };
+  // Where the card was before it leaned: a turned card moves its own edges, and judging by
+  // them made a card at the pointer's edge lean, lose the pointer, fall flat, find it again…
+  // forever. The card keeps the pointer while it is inside this rectangle.
+  const inside = (r, e) => r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   const move = (e) => {
     let hit = null, max = 0;
     if (e.pointerType !== 'touch' && e.target && e.target.closest && !still()) {
@@ -65,15 +70,25 @@
         if (n && (!hit || hit.contains(n))) { hit = n; max = degrees; }
       }
     }
+    if (on && hit !== on && (!hit || hit.contains(on)) && inside(base, e) && !still() && e.pointerType !== 'touch') {
+      hit = on; max = onMax;
+    }
     if (on !== hit) rest();
     if (!hit) return;
-    const r = hit.getBoundingClientRect();
-    if (!r.width || !r.height) return;
+    if (!base) {
+      const r0 = hit.getBoundingClientRect();
+      if (!r0.width || !r0.height) return;
+      base = { left: r0.left, top: r0.top, right: r0.right, bottom: r0.bottom, width: r0.width, height: r0.height };
+    }
+    const r = base;
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    // Calm near the edges, where the buttons are (close, menu): the card is flat under them.
+    const edge = Math.min(x, 1 - x, y, 1 - y), calm = Math.max(0, Math.min(1, (edge - .04) / .14));
     on = hit;
+    onMax = max;
     hit.classList.add('bh-lean');
-    hit.style.setProperty('--ry', ((x - .5) * 2 * max).toFixed(2));
-    hit.style.setProperty('--rx', ((.5 - y) * 2 * max).toFixed(2));
+    hit.style.setProperty('--ry', ((x - .5) * 2 * max * calm).toFixed(2));
+    hit.style.setProperty('--rx', ((.5 - y) * 2 * max * calm).toFixed(2));
     hit.style.setProperty('--mx', (x * 100).toFixed(1) + '%');
     hit.style.setProperty('--my', (y * 100).toFixed(1) + '%');
   };

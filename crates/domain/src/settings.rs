@@ -62,6 +62,12 @@ pub struct Settings {
     /// Page zoom of each site, in percent (one of `ZOOM_STEPS`, 100 never stored), keyed by
     /// host without `www.` (`site_key`). Remembered between launches, like other browsers.
     pub site_zoom: BTreeMap<String, u32>,
+    /// The built-in password manager offers saved logins on login fields and offers to save
+    /// new ones. Off: it stays out of the pages (the saved passwords are kept). On by default.
+    pub password_manager: bool,
+    /// Third-party hosts that track the user across sites are learned while browsing and
+    /// blocked like the listed trackers (see `trackers`). On by default.
+    pub tracker_learning: bool,
 }
 
 /// Page zoom steps in percent, like the other browsers (100% is the fifth).
@@ -164,6 +170,8 @@ impl Default for Settings {
             recall: false,
             recall_exclude: BTreeSet::new(),
             site_zoom: BTreeMap::new(),
+            password_manager: true,
+            tracker_learning: true,
         }
     }
 }

@@ -41,6 +41,10 @@
     color: #ffb3bd; background: rgba(220,40,70,.22); border: 1px solid rgba(255,96,110,.4); pointer-events: none; white-space: nowrap; }
   #insecure[hidden] { display: none; }
   body.insecure #omni { padding-left: 108px; }
+  /* The zoom badge sits inside the field, on the right: the address keeps clear of it (the same
+     space on both sides, so it stays centred; --zw is the badge's width, measured). */
+  body.zoomed #omni { padding-left: max(30px, var(--zw, 96px)); padding-right: var(--zw, 96px); }
+  body.zoomed.insecure #omni { padding-left: max(108px, var(--zw, 96px)); padding-right: max(108px, var(--zw, 96px)); }
   .priv { flex: none; align-self: center; margin-left: 8px; margin-right: 0; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgba(255,255,255,.14); }
   .priv[hidden] { display: none; }
   .win { display: none; flex: none; align-self: stretch; margin-right: -12px; margin-left: 6px; }
@@ -198,6 +202,8 @@ window.bh = {
     const zoom = s.zoom || 100;
     $('zoom').hidden = zoom === 100;
     $('zoomn').textContent = zoom + '%';
+    document.body.classList.toggle('zoomed', zoom !== 100);
+    if (zoom !== 100) document.documentElement.style.setProperty('--zw', Math.ceil($('zoom').offsetWidth + 16) + 'px');
     document.body.classList.toggle('secure', s.url.startsWith('https:') && !s.insecure);
     document.body.classList.toggle('insecure', !!s.insecure);
     $('insecure').hidden = !s.insecure;

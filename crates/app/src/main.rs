@@ -25,6 +25,7 @@ mod watching;
 mod passwords;
 mod pilot;
 mod recall;
+mod trackers;
 mod sidebar;
 mod stats;
 mod trash;
@@ -123,7 +124,9 @@ const MEDIA_HINT_FOR: Duration = Duration::from_secs(5);
 /// A page whose engine process dies again this soon after a reload is not reloaded again.
 const CRASH_LOOP: Duration = Duration::from_secs(30);
 /// Spare page views kept ready, and how long the app must stay quiet before building them.
-const SPARES_DELAY: Duration = Duration::from_millis(900);
+pub(crate) const SPARES_DELAY: Duration = Duration::from_millis(900);
+/// Anchored tabs wake in the background this long after launch, once the shown page started.
+const ANCHORS_DELAY: Duration = Duration::from_secs(3);
 const EASEL_HTML: &str = include_str!("../ui/easel.html");
 const LIBRARY_HTML: &str = include_str!("../ui/library.html");
 /// The sections of the Library page, in its rail's order.
@@ -420,6 +423,8 @@ struct Running {
     /// Blank hidden page views ready to take the next tabs (see `views::spare_tab_view`).
     spares: Vec<(views::Store, views::TabSlot, WebView)>,
     spares_due: Option<Instant>,
+    /// When the anchored tabs are woken at launch (once, after the window settles).
+    anchors_due: Option<Instant>,
     /// The password wallet: autofill, save offers, Settings › Passwords.
     passwords: passwords::Passwords,
     last_active: HashMap<TabId, Instant>,
@@ -529,6 +534,8 @@ struct Running {
     watching: watching::Watching,
     /// Recall: the pages read, searchable by what they said (see recall.rs).
     recall: recall::Recall,
+    /// Trackers learned while browsing (see trackers.rs).
+    trackers: trackers::Learning,
     /// Highlights and notes on pages (see highlights.rs).
     marks: highlights::Marks,
     /// The tab comparator (see compare.rs).
@@ -616,6 +623,9 @@ struct Running {
     /// must be dropped before it: declared first).
     live: HashMap<u64, WebView>,
     live_slots: HashMap<u64, ipc::LiveSlot>,
+    /// The live views are children of the main window (Easel shown as a tab or beside one),
+    /// not of the Easel window: leaving that Easel must drop them, or they stay over the page.
+    live_embedded: bool,
     /// Tab whose area picker is armed.
     live_pick: Option<TabId>,
     /// The Easel page shown in the content area, in place of a web page, while `easel_tab`.
@@ -775,6 +785,13 @@ impl Running {
                 exts.map(|h| h.join().unwrap_or_default()),
             )
         });
+        // Learned trackers are blocked from the first page; a private window reads the main
+        // profile's and writes nothing.
+        let learning = trackers::Learning::new(&profile, private_mode());
+        svc.policy().set_learned(
+            learning.data.learned().iter().cloned(),
+            learning.data.allowed().iter().cloned(),
+        );
         views::prepare_blocking(svc.policy());
         // A private window has no extensions unless the main profile's settings allow them.
         let ext_src = if private_mode() {
@@ -923,6 +940,7 @@ impl Running {
             tabs: HashMap::new(),
             spares: Vec::new(),
             spares_due: Some(Instant::now() + SPARES_DELAY),
+            anchors_due: Some(Instant::now() + ANCHORS_DELAY),
             last_active: HashMap::new(),
             zoom: HashMap::new(),
             zoomed: HashSet::new(),
@@ -980,6 +998,7 @@ impl Running {
             nearby: handoff::Nearby::new(&data, private_mode()),
             watching: watching::Watching::new(&data),
             recall: recall::Recall::new(&data, private_mode()),
+            trackers: learning,
             marks: highlights::Marks::new(&data, private_mode()),
             comparing: compare::Comparing::new(),
             tidied: None,
@@ -1054,6 +1073,7 @@ impl Running {
             easel_store,
             live: HashMap::new(),
             live_slots: HashMap::new(),
+            live_embedded: false,
             live_pick: None,
             easel_panel: LazyView::new(),
             easel_tab: false,
@@ -1459,7 +1479,8 @@ impl Running {
             "color": space.color,
             "activeTab": if self.home_shown() { None } else { space.active_tab.map(|t| t.0) },
             "home": self.home_shown(),
-            "blocked": self.blocked.total(),
+            // What the tabs of the space shown blocked: each space has its own counter.
+            "blocked": self.blocked.total_in(space.id.0),
             "version": env!("CARGO_PKG_VERSION"),
             "update": self.update_json(),
             "downloads": self.downloads_json(),
@@ -1476,6 +1497,7 @@ impl Running {
                 "split": Some(t.id) == self.split_tab() || (self.split_tab().is_some() && Some(t.id) == space.active_tab),
                 "asleep": !self.tabs.contains_key(&t.id),
                 "away": t.away(),
+                "anchored": t.anchored,
                 "burner": ws.is_burner(t.id),
                 // Its menu offers "Continue on …" (`domain::verbs`, the rule of every menu).
                 "send": verbs::allows(Target::Tab, verbs::Context {
@@ -1600,6 +1622,7 @@ impl Running {
         // General > Language: the setting, the languages in their own words, and what "System"
         // gives on this computer.
         state["recall"] = self.recall_state();
+        state["trackers"] = self.trackers_json();
         state["language"] = json!(settings.language);
         state["depth"] = json!(settings.depth);
         state["languages"] = json!(blackhole_domain::i18n::LANGUAGES
@@ -2180,6 +2203,7 @@ impl Running {
             &self.mailbox,
         ) {
             Ok(view) => {
+                self.live_embedded = self.easel_tab || self.easel_side();
                 self.live.insert(item, view);
                 self.apply_slot(item);
             }
@@ -2189,6 +2213,18 @@ impl Running {
             }
         }
         self.ui_easel();
+    }
+
+    /// The Easel that held live views in the main window is no longer shown (another tab, the
+    /// start page, the Library…): its live views go with it, whatever path left it.
+    fn drop_stray_live(&mut self) {
+        if self.live_embedded && !(self.easel_tab || self.easel_side()) {
+            self.live.clear();
+            self.live_slots.clear();
+        }
+        if self.live.is_empty() {
+            self.live_embedded = false;
+        }
     }
 
     fn apply_slot(&self, item: u64) {
@@ -2318,6 +2354,8 @@ impl Running {
             .ok()
             .filter(|u| matches!(u.scheme(), "http" | "https"));
         let selection = clean_selection(text);
+        // Copy keeps the selection as it is (lines included), not the one-line search text.
+        let copied = blackhole_domain::selection::copy_text(text);
         let mut items = Vec::new();
         if let Some(text) = &selection {
             let short = excerpt(text, 30);
@@ -2331,7 +2369,7 @@ impl Running {
             items.push(json!({"icon": icon, "label": label,
                 "run": {"cmd": "open_link", "url": url, "target": "front"},
                 "background": {"cmd": "open_link", "url": url, "target": "tab"}}));
-            items.push(json!({"icon": "copy", "label": t("menu.copy"), "copy": text}));
+            items.push(json!({"icon": "copy", "label": t("menu.copy"), "copy": copied.as_deref().unwrap_or(text)}));
             let can = verbs::verbs(Target::Selection, self.verb_context(tab));
             if can.contains(&Verb::Send) {
                 items.extend(self.beam_menu_items(text));
@@ -3478,6 +3516,15 @@ impl Running {
         }
     }
 
+    /// The id of the space `tab` belongs to (the space shown for an unknown tab).
+    fn space_of_tab(&self, tab: TabId) -> u64 {
+        let ws = self.svc.workspace();
+        ws.spaces()
+            .iter()
+            .find(|s| s.tabs.iter().any(|t| t.id == tab))
+            .map_or(ws.active_space().id.0, |s| s.id.0)
+    }
+
     fn store_of_tab(&self, tab: TabId) -> views::Store {
         if self.svc.workspace().is_burner(tab) {
             return views::Store::Burner(tab.0);
@@ -3832,6 +3879,42 @@ impl Running {
         }
     }
 
+    /// Wakes the anchored tabs once, shortly after launch, behind the page shown: their mail or
+    /// chat is live without opening them. One the user puts to sleep afterwards stays asleep
+    /// until it is shown again.
+    fn wake_anchored(&mut self) {
+        if !self.anchors_due.is_some_and(|due| Instant::now() >= due) {
+            return;
+        }
+        self.anchors_due = None;
+        let ws = self.svc.workspace();
+        let tabs: Vec<blackhole_domain::Tab> = ws
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .filter(|t| t.anchored && !self.tabs.contains_key(&t.id))
+            .filter(|t| matches!(t.url.scheme(), "http" | "https"))
+            .cloned()
+            .collect();
+        if tabs.is_empty() {
+            return;
+        }
+        let shown: Vec<TabId> = ws.active_tab().map(|t| t.id).into_iter().chain(self.split_tab()).collect();
+        for tab in tabs {
+            self.ensure_view(&tab);
+            if !shown.contains(&tab.id) {
+                if let Some(view) = self.tabs.get(&tab.id) {
+                    let _ = view.set_visible(false);
+                    views::set_background(view, true);
+                }
+                // The loading cover is only for a tab on screen.
+                self.splash.remove(&tab.id);
+            }
+            self.last_active.insert(tab.id, Instant::now());
+        }
+        self.ui_state();
+    }
+
     /// Frees the engine view of tabs left in the background; they reload when selected again.
     fn discard_idle_tabs(&mut self) {
         self.ensure_panels();
@@ -3863,9 +3946,16 @@ impl Running {
             self.busy_seen.insert(id, now);
         }
         // Releasing the page of a black hole tab would end its session: it stays alive until
-        // the tab is closed (their number is capped, see `open_burner`).
+        // the tab is closed (their number is capped, see `open_burner`). An anchored tab stays
+        // alive by choice.
         let ws = self.svc.workspace();
-        let holes: Vec<TabId> = self.tabs.keys().filter(|id| ws.is_burner(**id)).copied().collect();
+        let anchored = ws.anchored_tabs();
+        let holes: Vec<TabId> = self
+            .tabs
+            .keys()
+            .filter(|id| ws.is_burner(**id) || anchored.contains(id))
+            .copied()
+            .collect();
         for id in holes {
             self.busy_seen.insert(id, now);
         }
@@ -3980,6 +4070,7 @@ impl Running {
 
     pub(crate) fn sync(&mut self) {
         self.pilot_sync();
+        self.drop_stray_live();
         self.icons_for_ui.set(true);
         self.icons_for_home.set(true);
         self.ensure_active_view();
@@ -5397,6 +5488,10 @@ impl Running {
             | UiCommand::RecallExclude { .. }
             | UiCommand::RecallForget { .. }
             | UiCommand::RecallClear) => self.handle_recall(command),
+            command @ (UiCommand::SetTrackerLearning { .. }
+            | UiCommand::TrackerAllow { .. }
+            | UiCommand::TrackerBlock { .. }
+            | UiCommand::TrackersForget) => self.handle_trackers(command),
             command @ (UiCommand::HighlightSelection { .. }
             | UiCommand::HighlightRemove { .. }
             | UiCommand::HighlightNote { .. }
@@ -5520,6 +5615,11 @@ impl Running {
                         let _ = view.load_url(url.as_str());
                     }
                     self.sync();
+                }
+            }
+            UiCommand::TabAnchor { id } => {
+                if self.svc.toggle_anchor(TabId(id)) {
+                    self.ui_state();
                 }
             }
             UiCommand::TabSetHome { id } => {
@@ -6235,8 +6335,10 @@ impl Running {
             }
             Msg::Page(tab, PageEvent::Blocked { host }) => {
                 let site = self.site_of(tab);
-                self.on_blocked("", &host, &site);
+                let space = self.space_of_tab(tab);
+                self.on_blocked("", &host, &site, space);
             }
+            Msg::Page(tab, PageEvent::Requests { list }) => self.tracker_requests(tab, list),
             Msg::Url(tab, url) => {
                 self.pilot_mark(tab);
                 self.page_url(tab, url);
@@ -6443,7 +6545,11 @@ impl Running {
                 self.notify(kind, &t(key), serde_json::Value::Null);
                 self.ui_library();
             }
-            Msg::Blocked { why, host } => self.on_blocked(why, &host, ""),
+            // A navigation the user started: the space shown.
+            Msg::Blocked { why, host } => {
+                let space = self.svc.workspace().active_space().id.0;
+                self.on_blocked(why, &host, "", space);
+            }
         }
     }
 
@@ -6498,9 +6604,12 @@ impl Running {
                     items.push(json!({"icon": "check", "label": t("menu.nothing_followed")}));
                 } else {
                     items.push(json!({"sep": true}));
-                    items.push(json!({"head": t("menu.blocked_hosts")}));
+                    // A host that breaks the page can be allowed from here (Settings › Privacy
+                    // lists it and blocks it again).
+                    items.push(json!({"head": t("menu.blocked_hosts_allow")}));
                     items.extend(hosts.iter().take(8).map(|(host, n)| {
-                        json!({"icon": if is_ad(host) { "close" } else { "eye" }, "label": format!("{host} · {n}")})
+                        json!({"icon": if is_ad(host) { "close" } else { "eye" }, "label": format!("{host} · {n}"),
+                            "run": {"cmd": "tracker_allow", "host": host}})
                     }));
                 }
             }
@@ -6530,8 +6639,8 @@ impl Running {
             .to_owned()
     }
 
-    fn on_blocked(&mut self, why: &str, host: &str, site: &str) {
-        self.blocked.record(host, site);
+    fn on_blocked(&mut self, why: &str, host: &str, site: &str, space: u64) {
+        self.blocked.record_in(space, host, site);
         // `why` is the domain's reason ("tracker blocked"…), shown in the interface language.
         if !why.is_empty() {
             self.toast(&t(&format!("blocked.{}", why.replace(' ', "_"))));
@@ -6587,6 +6696,7 @@ impl ApplicationHandler<Wake> for App {
             }
             if app.last_flush.elapsed() >= Duration::from_secs(1) {
                 app.svc.flush();
+                app.trackers.flush();
                 app.last_flush = Instant::now();
             }
             if app.quit {
@@ -6601,6 +6711,7 @@ impl ApplicationHandler<Wake> for App {
                 // Only the cards on screen: the hidden tabs are rounded when they are shown.
                 app.round_cards(false);
             }
+            app.wake_anchored();
             app.discard_idle_tabs();
             if app.flush_raise(false) {
                 wake = wake.min(RAISE_DELAY);

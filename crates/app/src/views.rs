@@ -14,6 +14,7 @@ use wry::{
 
 const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
+const TRACKER_WATCH_JS: &str = include_str!("../ui/tracker_watch.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
@@ -83,7 +84,8 @@ fn rule_list_id(name: &str) -> String {
 pub fn prepare_blocking(policy: &PrivacyPolicy) {
     #[cfg(target_os = "macos")]
     for (name, hosts) in policy.active_lists() {
-        blackhole_macos_webext::compile_hosts(&rule_list_id(name), &hosts);
+        let hosts: Vec<&str> = hosts.iter().map(String::as_str).collect();
+        blackhole_macos_webext::compile_hosts(&rule_list_id(&name), &hosts);
     }
     #[cfg(not(target_os = "macos"))]
     let _ = policy;
@@ -100,7 +102,8 @@ fn block_natively(view: &WebView, policy: &PrivacyPolicy) {
         return;
     };
     for (name, hosts) in policy.active_lists() {
-        blackhole_macos_webext::block_hosts(ptr, &rule_list_id(name), &hosts);
+        let hosts: Vec<&str> = hosts.iter().map(String::as_str).collect();
+        blackhole_macos_webext::block_hosts(ptr, &rule_list_id(&name), &hosts);
     }
 }
 
@@ -109,7 +112,8 @@ fn block_natively(view: &WebView, policy: &PrivacyPolicy) {
 /// ones itself; `report` gets their host. No script in the page, nothing for other requests.
 #[cfg(windows)]
 fn block_natively(view: &WebView, policy: &PrivacyPolicy, report: impl Fn(String) + 'static) {
-    let hosts: Vec<&str> = policy.listed_domains().collect();
+    let listed = policy.listed_domains();
+    let hosts: Vec<&str> = listed.iter().map(String::as_str).collect();
     let policy = policy.clone();
     blackhole_macos_webext::block_hosts(view, &hosts, move |raw, page| {
         let Ok(target) = Url::parse(raw) else {
@@ -603,6 +607,7 @@ fn build_tab(
             true,
         )
         .with_initialization_script_for_main_only(HIGHLIGHTS_JS, true)
+        .with_initialization_script_for_main_only(TRACKER_WATCH_JS, true)
         .with_initialization_script_for_main_only(
             if cfg!(debug_assertions) { DEBUG_LOG_JS } else { "" },
             false,
@@ -610,7 +615,7 @@ fn build_tab(
         .with_ipc_handler(move |request| {
             crate::trace(|| {
                 let body: String = request.body().chars().take(400).collect();
-                if body.contains("\"media\"") || body.contains("login_submitted") || body.contains("autofill") {
+                if body.contains("\"media\"") || body.contains("\"requests\"") || body.contains("login_submitted") || body.contains("autofill") {
                     String::new()
                 } else {
                     format!("page event tab={} {body}", id(&s_ipc).0)

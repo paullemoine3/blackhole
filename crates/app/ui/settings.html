@@ -61,6 +61,7 @@
   /* Cards and rows */
   .card { background: var(--bh-fill-card); border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card); margin-bottom: var(--bh-space-16); overflow: hidden; }
   .card > h2 { font: var(--bh-text-section-label); letter-spacing: .09em; text-transform: uppercase; opacity: var(--bh-opacity-section); padding: var(--bh-space-14) var(--bh-space-16) var(--bh-space-6); }
+  .card > h3.subhead { font: var(--bh-text-section-label); opacity: var(--bh-opacity-section); padding: var(--bh-space-14) var(--bh-space-16) var(--bh-space-6); }
   .card .rows > * + *, .card > .rows + .rows { border-top: 1px solid var(--bh-border-hairline); }
   .opt { display: flex; align-items: center; gap: var(--bh-space-12); width: 100%; min-height: 48px; padding: var(--bh-space-10) var(--bh-space-16); border: 0; background: transparent;
     text-align: left; transition: background-color var(--bh-duration-hover) var(--bh-ease-standard); }
@@ -244,6 +245,12 @@
     <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1 data-i18n="settings.privacy">Privacy</h1><p class="lead"><span data-i18n="settings.privacy_lead">No telemetry, trackers blocked, history stays on this machine.</span></p></div></header>
     <div class="card"><h2 data-i18n="menu.shields">Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
       <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). Clean links drop the tracking parameters of an address and skip the redirect pages of search engines and social networks. The https upgrade stays on. Pages already open keep their behaviour until reloaded.</span></p></div>
+    <div class="card"><h2 data-i18n="settings.learned_title">Learned trackers</h2><div class="rows" id="learning"></div>
+      <div class="list rows" id="learnedlist"></div>
+      <h3 class="subhead" data-i18n="settings.allowed_hosts">Allowed hosts</h3>
+      <div class="list rows" id="allowedlist"></div>
+      <div class="actions"><input class="field" id="allowhost" placeholder="tracker.example" spellcheck="false" autocomplete="off" data-i18n-aria="settings.allow_host"><button class="btn" id="allowadd"><span data-i18n="settings.allow_host">Allow this host</span></button><button class="btn" id="learnforget"><i data-icon="trash"></i><span data-i18n="settings.learned_forget">Forget what was learned</span></button></div>
+      <p class="note"><span data-i18n="settings.learned_note">A site that is on no list but tracks you on several sites you visit (beacons, pixels, visitor ids) is learned and blocked like the listed trackers. Services pages need (videos, fonts, sign-in, CDNs) and the sites you visit yourself are never learned. If a page breaks, allow its host here or from the shield's report. Never in private windows nor black hole tabs.</span></p></div>
     <div class="card"><h2 data-i18n="settings.recall_title">Recall</h2><div class="rows" id="recall"></div>
       <div class="list rows" id="recallsites"></div>
       <div class="actions"><input class="field" id="recallsite" placeholder="example.com" spellcheck="false" autocomplete="off" data-i18n-aria="settings.recall_never"><button class="btn" id="recalladd"><span data-i18n="settings.recall_never">Never remember this site</span></button><button class="btn" id="recallclear"><i data-icon="trash"></i><span data-i18n="settings.recall_clear">Forget everything</span></button></div>
@@ -259,6 +266,7 @@
 
   <section id="passwords" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="key" data-size="md"></i></span><div><h1 data-i18n="settings.passwords">Passwords</h1><p class="lead"><span data-i18n="settings.passwords_lead">Logins saved on this device, encrypted. BlackHole offers them on the login fields of the exact site (https only) and only fills one when you pick it.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.pw_manager">Password manager</h2><div class="rows" id="pwmanager"></div></div>
     <p class="status" id="pwstatus" aria-live="polite"></p>
     <div class="card" id="pwlock" hidden><h2 data-i18n="settings.pw_locked">Locked</h2>
       <div class="empty"><span class="halo"><i data-icon="lock" data-size="lg"></i></span><span data-i18n="settings.pw_type_master">Type the master password to open your saved passwords.</span></div>
@@ -636,6 +644,7 @@ window.bh = {
     renderDevices(s.devices);
     renderPasswords(s.passwords);
     renderRecall(s.recall);
+    renderTrackers(s.trackers);
     const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
     put($('shields'), 
       shield(bhT('settings.block_ads'), 'ads', s.adBlocking),
@@ -750,6 +759,35 @@ function toggleOnly(name, on, run) {
 
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
+// Learned trackers: the switch, what was learned (allow one) and the user's exceptions (block
+// one again). Forgetting asks for a second click.
+function renderTrackers(t) {
+  if (!t) return;
+  put($('learning'), option(bhT('settings.learn_trackers'), t.learning && t.available, () => send({ cmd: 'set_tracker_learning', on: !t.learning }), true,
+    t.available ? bhTn('settings.learned_count', t.learned.length) : bhT('settings.learned_private')));
+  const hostRow = (host, label, cmd) => {
+    const row = el('div', 'row');
+    const text = el('div', 'grow');
+    text.append(el('div', 'host', host));
+    const b = el('button', 'btn small', label);
+    b.onclick = () => send({ cmd, host });
+    row.append(text, b);
+    return row;
+  };
+  put($('learnedlist'), ...(t.learned.length ? t.learned.map(h => hostRow(h, bhT('settings.allow'), 'tracker_allow')) : [empty('shield', bhT('settings.learned_none'))]));
+  put($('allowedlist'), ...(t.allowed.length ? t.allowed.map(h => hostRow(h, bhT('settings.block_again'), 'tracker_block')) : [empty('check', bhT('settings.allowed_none'))]));
+  $('allowadd').disabled = $('learnforget').disabled = !t.available;
+}
+$('allowadd').onclick = () => { const h = $('allowhost').value.trim(); if (h) { send({ cmd: 'tracker_allow', host: h }); $('allowhost').value = ''; } };
+$('allowhost').onkeydown = (e) => { if (e.key === 'Enter') $('allowadd').click(); };
+let forgetArmed = 0;
+$('learnforget').onclick = () => {
+  const now = Date.now();
+  if (now - forgetArmed < 3000) { forgetArmed = 0; $('learnforget').classList.remove('armed'); send({ cmd: 'trackers_forget' }); return; }
+  forgetArmed = now;
+  $('learnforget').classList.add('armed');
+  setTimeout(() => { if (Date.now() - forgetArmed >= 3000) $('learnforget').classList.remove('armed'); }, 3100);
+};
 // Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
 // `question` is a catalog key.
 function confirmClick(btn, question, run) {
@@ -947,6 +985,7 @@ function renderPasswords(p) {
   prot.append(ico, text);
   const label = (m) => m ? bhT('unit.min', { n: m }) : bhT('settings.on_quit');
   put($('pwprotect'), prot);
+  put($('pwmanager'), option(bhT('settings.pw_manager_on'), p.enabled !== false, () => pwSend({ op: 'enabled', on: p.enabled === false }), true, bhT('settings.pw_manager_sub')));
   put($('pwlockafter'), ...(p.master ? [choice(bhT('settings.lock_after'), bhT('settings.lock_after_sub'), p.lockChoices || [], p.lockMinutes, label, (m) => pwSend({ op: 'lock_after', minutes: m }))] : []));
   drawPasswords();
 }

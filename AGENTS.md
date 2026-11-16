@@ -135,7 +135,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-popup.sh` (popup avec `opener`, Trusted Types, serveur local),
   `bash scripts/test-settings.sh` (Réglages et icônes ; `BH_SHOTS_ONLY=1 BH_PREFIX=avant-` pour les seules captures),
   `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),
-  `bash scripts/test-blocking.sh` (blocage natif et sonde média, serveur local, étape `state`).
+  `bash scripts/test-blocking.sh` (blocage natif et sonde média, serveur local, étape `state`),
+  `bash scripts/test-0814.sh` (onglet ancré, traqueurs appris, mots de passe, Ctrl+F sur 30 000 lignes, zoom, accueil).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`, `scripts\test-features.ps1` (liens propres, trou noir, split pilote,
   surlignages, Recall).
@@ -320,7 +321,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `body.flat`. `ui/depth.js` (injecté avec `theme.js` par `ui_view` et `panel_view`) : une page
   déclare ce qui penche vers le pointeur (`bhDepth('.fav', 13)`), le script pose la classe
   `bh-lean` et `--rx` / `--ry` / `--mx` / `--my`, la page écrit la transformation. Penchent :
-  tuiles et lignes de l'accueil, tuiles d'accès rapide, tuiles et cartes de la Bibliothèque,
+  tuiles et lignes de l'accueil, tuiles et cartes de la Bibliothèque (plus les tuiles d'accès rapide depuis 0.8.14),
   notes et clips de l'Easel (jamais une carte en direct : sa vue native ne tourne pas, ni une
   carte en cours de saisie, de glisser ou de choix de couleur). La palette et les menus
   s'ouvrent en perspective (`palette-in`, `menuin` ; variantes `-flat`). Rien ne penche en
@@ -337,8 +338,8 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   Barre latérale : onglets et accès rapide restent discrets (on les regarde toute la journée,
   et il peut y en avoir beaucoup) : une tuile d'accès rapide, l'onglet affiché, la ligne survolée
   et « New tab » n'ont que `--bh-relief-row` (deux arêtes fines, sans ombre portée ni reflet) ;
-  un onglet au repos n'a pas de bande, les lignes ne penchent pas, une tuile penche de 12° au
-  plus. Boutons du pied détachés et enfoncés à la pression, séparateurs en rainure. Toute règle
+  un onglet au repos n'a pas de bande, ni les lignes ni les tuiles ne penchent (une tuile monte
+  d'un pixel au survol). Boutons du pied détachés et enfoncés à la pression, séparateurs en rainure. Toute règle
   `body:not(.flat) .tab…` doit laisser gagner `.tab.split` (trait d'accent) et `.tab.gliding`.
   Test : `scripts\test-features.ps1` (`dp1`–`dp12`).
 - Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
@@ -658,6 +659,47 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Scénarios : chaque script devtools fixe sa langue (`cmd {"cmd":"set_language",…}`) ;
   `scripts/test-errors.sh` en français, les autres en anglais ; `scripts/test-i18n.sh` bascule en
   direct et contrôle les textes.
+
+## 0.8.14 : onglet ancré, traqueurs appris, gestionnaire de mots de passe optionnel
+
+- Onglet ancré : `Tab::anchored` (`workspace.json` : `anchored`), `Workspace::toggle_anchor` /
+  `anchored_tabs` (refusé pour un trou noir), commande `tab_anchor`, entrée du menu d'onglet, ancre
+  `.anch` sur la ligne. Jamais mis en veille (`discard_idle_tabs` le traite comme occupé, plafond
+  `max_live_tabs` compris) ; réveillé en arrière-plan une fois, `ANCHORS_DELAY` après le lancement
+  (`wake_anchored`). Mis en veille à la main, il reste endormi jusqu'à ce qu'on l'affiche.
+- Gestionnaire de mots de passe : `Settings::password_manager` (vrai par défaut), `PasswordAction::Enabled`,
+  Réglages > Passwords (`#pwmanager`). Coupé : `autofill_query`, `login_submitted` et les identifiants
+  proposés à l'authentification HTTP ne font rien ; les mots de passe enregistrés restent.
+- Traqueurs appris (façon Privacy Badger) : règles pures `domain/trackers.rs` (`looks_like_tracking`,
+  `base_domain`, `Trackers::observe` : appris après `SITES_TO_LEARN` sites distincts ; jamais
+  `ESSENTIAL`, un site visité soi-même, un hôte déjà listé ou autorisé ; tout borné), fichier
+  `trackers.json` (`TrackerStore`, `write_later`). `ui/tracker_watch.js` (cadre principal) ne fait que
+  lire les `PerformanceResourceTiming` (aucune fonction de la page remplacée) et envoie
+  `PageEvent::Requests` ; `app/src/trackers.rs` relit l'adresse sur le moteur. `PrivacyPolicy::set_learned`
+  (partagé par les clones) : appris bloqués avec l'interrupteur des traqueurs, hôtes autorisés jamais
+  bloqués, listes comprises. `active_lists` nomme une liste raccourcie ou apprise d'après son contenu
+  (recompilée macOS) ; vues de réserve recréées à chaque changement ; les vues déjà ouvertes gardent
+  leurs listes natives (WebView2 décide en direct pour les hôtes déjà filtrés). Jamais en fenêtre privée
+  (lecture seule du profil principal) ni en trou noir. Réglages > Privacy (`#learning`, `#learnedlist`,
+  `#allowedlist`), rapport du bouclier : un hôte cliqué est autorisé (`tracker_allow`).
+- Compteur du bouclier par espace : `BlockLog::record_in` / `total_in` ; la barre latérale montre
+  l'espace affiché, le rapport et les Réglages gardent le total de la session.
+- Copier depuis le menu d'une sélection : `selection::copy_text` (lignes gardées, `MAX_COPY` 200 000
+  caractères), la page envoie autant ; la recherche garde `clean_selection` (500, une ligne).
+- Recherche dans la page : index du texte gardé tant que la barre est ouverte (invalidé par un
+  `MutationObserver`), tableaux typés, visibilité et bloc demandés une fois par parent, recherche
+  incrémentale quand le mot s'allonge.
+- `depth.js` : une carte garde le pointeur tant qu'il est dans son rectangle d'avant l'inclinaison, et
+  reste à plat près de ses bords (sinon elle oscillait sous un pointeur immobile). Les tuiles d'accès
+  rapide ne penchent plus : elles montent d'un pixel au survol (relief inchangé).
+- Easel : `live_embedded` ; `sync` → `drop_stray_live` libère les vues en direct de la fenêtre
+  principale dès que l'Easel n'y est plus affiché (elles restaient sur la page).
+- Accueil : ciel étoilé du site (`#sky`, canvas dessiné une fois, parallaxe au défilement et au
+  pointeur, immobile sans animations). Barre du haut : `body.zoomed` réserve la place du badge de zoom
+  (`--zw` mesuré). Carte de page : élévation renforcée en style 3D (`#cardshadow`).
+- Test macOS : `bash scripts/test-0814.sh` (serveur local 47981, page de 30 000 lignes, étape `state` :
+  `anchoredAlive`, `live`, `learned`, `allowed`). Windows : code commun, non testé
+  (`test-features.ps1` `dp*` peut attendre l'inclinaison des tuiles d'accès rapide).
 
 ## Livraison et entretien
 

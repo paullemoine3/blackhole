@@ -173,6 +173,11 @@ impl Running {
                     "pilotSent": self.pilot_sent.0,
                     "panel": self.easel_panel.view.as_ref().and_then(|v| v.bounds().ok()).map(|b| format!("{:?} {:?}", b.position, b.size)),
                     "main": format!("{:?}", self.content_rects().0.size),
+                    "live": self.live.len(),
+                    "anchoredAlive": ws.anchored_tabs().iter().filter(|id| self.tabs.contains_key(id)).count(),
+                    "liveTabs": self.tabs.len(),
+                    "learned": self.trackers.data.learned().len(),
+                    "allowed": self.trackers.data.allowed().len(),
                 });
                 eprintln!("[dev] state -> {state}");
             }

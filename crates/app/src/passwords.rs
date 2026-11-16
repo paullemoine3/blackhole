@@ -92,6 +92,10 @@ pub enum PasswordAction {
     LockAfter {
         minutes: u32,
     },
+    /// The password manager on or off (Settings › Passwords).
+    Enabled {
+        on: bool,
+    },
     /// The save toast: `choice` is `save` or `never`.
     Offer {
         tab: u64,
@@ -261,6 +265,7 @@ impl Passwords {
             "undo": self.undo.as_ref().map(|e| display_host(&e.origin)),
             "status": crate::i18n::render(&self.status),
             "lockMinutes": settings.password_lock_minutes,
+            "enabled": settings.password_manager,
             "lockChoices": Settings::LOCK_CHOICES,
             "entries": entries,
         })
@@ -349,7 +354,8 @@ impl Running {
     /// A login field got focus: offer the usernames saved for exactly this origin. `fresh`: a
     /// new-password field, where a generated password is offered too.
     pub(crate) fn autofill_query(&mut self, tab: TabId, fresh: bool) {
-        if !self.foreground(tab) {
+        // Switched off: the login fields are the page's alone.
+        if !self.foreground(tab) || !self.svc.settings().password_manager {
             return;
         }
         // A loaded password-manager extension owns the login fields: two menus would collide.
@@ -439,6 +445,9 @@ impl Running {
     /// A login form was submitted with these credentials (the page already has them): offer
     /// to save or update them in the sidebar.
     pub(crate) fn login_submitted(&mut self, tab: TabId, username: &str, password: &Secret) {
+        if !self.svc.settings().password_manager {
+            return;
+        }
         let Some(origin) = self.page_origin(tab) else { return };
         let p = &mut self.passwords;
         let Some(u) = p.open.as_ref().filter(|_| !p.read_only) else { return };
@@ -722,6 +731,14 @@ impl Running {
                 }
             }
             PasswordAction::LockAfter { minutes } => self.svc.set_password_lock(minutes),
+            PasswordAction::Enabled { on } => {
+                self.svc.set_password_manager(on);
+                if !on {
+                    // Nothing offered stays answerable, nothing submitted waits for a choice.
+                    self.passwords.offered.clear();
+                    self.passwords.pending.clear();
+                }
+            }
             PasswordAction::Offer { tab, choice } => {
                 let p = &mut self.passwords;
                 let Some(pending) = p.pending.remove(&TabId(tab)) else { return };
