@@ -38,6 +38,7 @@
     trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9"/>',
     copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V3.5c0-.6-.4-1-1-1h-6c-.6 0-1 .4-1 1v6c0 .6.4 1 1 1h2"/>',
     link: '<path d="M7 9a2.8 2.8 0 0 0 4 0l2-2a2.8 2.8 0 0 0-4-4l-.7.7M9 7a2.8 2.8 0 0 0-4 0l-2 2a2.8 2.8 0 0 0 4 4l.7-.7"/>',
+    anchor: '<circle cx="8" cy="3.5" r="1.5"/><path d="M8 5v8.5M5.5 7.5h5M3 9.5c0 2.3 2.2 4 5 4s5-1.7 5-4"/>',
     pin: '<path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5"/>',
     sleep: '<path d="M12.5 9.5A5 5 0 1 1 6.5 3.5a4 4 0 0 0 6 6z"/>',
     hole: '<circle cx="8" cy="8" r="2.3" fill="currentColor" stroke="none"/><ellipse cx="8" cy="8" rx="6.3" ry="2.7" transform="rotate(-22 8 8)"/>',

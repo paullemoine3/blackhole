@@ -226,6 +226,9 @@ struct TabDto {
     home: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     home_title: String,
+    /// Its page is never put to sleep.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    anchored: bool,
     // A former `locked` URL (removed feature) in older files is ignored on load.
 }
 
@@ -290,6 +293,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         renamed: t.renamed,
                         home: t.home.as_ref().map(|h| h.url.to_string()),
                         home_title: t.home.as_ref().map(|h| h.title.clone()).unwrap_or_default(),
+                        anchored: t.anchored,
                     })
                     .collect(),
                 folders: s
@@ -360,6 +364,7 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                                 .and_then(|h| Url::parse(h).ok())
                                 .filter(|u| matches!(u.scheme(), "http" | "https"))
                                 .map(|url| blackhole_domain::Home { url, title: t.home_title }),
+                            anchored: t.anchored,
                         })
                     })
                     .collect(),
@@ -469,6 +474,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .filter(|(site, z)| !site.is_empty() && *z != 100 && blackhole_domain::ZOOM_STEPS.contains(z))
                 .map(|(site, z)| (blackhole_domain::site_key(&site), z))
                 .collect(),
+            password_manager: dto.password_manager,
+            tracker_learning: dto.tracker_learning,
         }))
     }
 
@@ -508,6 +515,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             recall: settings.recall,
             recall_exclude: settings.recall_exclude.iter().cloned().collect(),
             site_zoom: settings.site_zoom.clone(),
+            password_manager: settings.password_manager,
+            tracker_learning: settings.tracker_learning,
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -625,6 +634,10 @@ struct SettingsDto {
     recall_exclude: Vec<String>,
     #[serde(default)]
     site_zoom: std::collections::BTreeMap<String, u32>,
+    #[serde(default = "default_true")]
+    password_manager: bool,
+    #[serde(default = "default_true")]
+    tracker_learning: bool,
 }
 
 fn default_language() -> String {
@@ -787,9 +800,11 @@ mod tests {
         ws.set_space_icon(space, "🚀");
         ws.set_folder_icon(folder, "📁");
         ws.set_split(a);
+        ws.toggle_anchor(a);
         repo.save(&ws).unwrap();
         let loaded = repo.load().unwrap().unwrap();
         assert_eq!(loaded, ws);
+        assert_eq!(loaded.anchored_tabs(), vec![a], "an anchored tab stays anchored");
         assert_eq!(loaded.active_space().icon, "🚀");
         assert_eq!(loaded.active_space().folders[0].icon, "📁");
         assert_eq!(loaded.split_tab(), Some(a));
@@ -845,6 +860,8 @@ mod tests {
             recall: true,
             recall_exclude: ["bank.test".to_owned()].into(),
             site_zoom: [("example.com".to_owned(), 125)].into(),
+            password_manager: false,
+            tracker_learning: false,
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -857,6 +874,7 @@ mod tests {
         assert_eq!(old.search_engine, SearchEngine::Qwant);
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration && old.depth);
+        assert!(old.password_manager && old.tracker_learning, "on in older files");
         assert_eq!(old.tab_sleep_minutes, 10);
         assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
         assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);

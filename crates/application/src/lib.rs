@@ -208,6 +208,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    /// Learning new trackers while browsing on or off (what was learned stays blocked).
+    pub fn set_tracker_learning(&mut self, on: bool) {
+        self.settings.tracker_learning = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     /// Calendar options by name: `reminders` (a toast when a meeting starts) or `card` (the next
     /// meeting in the sidebar). False for an unknown name.
     pub fn set_meeting_option(&mut self, name: &str, on: bool) -> bool {
@@ -259,6 +265,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
 
     /// Minutes before a wallet with a master password locks again; ignored unless one of
     /// `Settings::LOCK_CHOICES`.
+    /// The built-in password manager on or off (saved passwords are kept either way).
+    pub fn set_password_manager(&mut self, on: bool) {
+        self.settings.password_manager = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     pub fn set_password_lock(&mut self, minutes: u32) {
         if Settings::LOCK_CHOICES.contains(&minutes) {
             self.settings.password_lock_minutes = minutes;
@@ -506,6 +518,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     /// The page shown by a quick access or folder tab becomes its home.
     pub fn set_home(&mut self, id: TabId) -> bool {
         let ok = self.workspace.set_home(id);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
+    /// Anchors a tab (its page stays alive) or lets it sleep again.
+    pub fn toggle_anchor(&mut self, id: TabId) -> bool {
+        let ok = self.workspace.toggle_anchor(id);
         if ok {
             self.persist();
         }

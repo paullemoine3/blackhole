@@ -359,6 +359,47 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Ajouter une chaîne / une langue : voir `AGENTS.md`. Garder les noms propres (Easel, Boost, Air Traffic, Shields, Meet). Le changelog reste en anglais. Typographie française : espaces avant « : ; ? ! » et guillemets « », apostrophe ’.
 - Tests UI : `set_language` en tête de chaque script (`test-errors.sh` en français, les autres en anglais, `test-ui.ps1`/`test-easel.ps1` en anglais) ; `scripts/test-i18n.sh` (macOS) bascule anglais → français → anglais et lit les textes (Réglages, barre latérale, barre du haut, Easel, Bibliothèque, page d'erreur). Écran verrouillé : les captures CoreGraphics sont noires, les `eval` restent valables.
 
+## 0.8.14 : onglet ancré, traqueurs appris, gestionnaire de mots de passe optionnel
+
+- Onglet ancré : `Tab::anchored` (`workspace.json` : `anchored`), `Workspace::toggle_anchor` /
+  `anchored_tabs` (refusé pour un trou noir), commande `tab_anchor`, entrée du menu d'onglet, ancre
+  `.anch` sur la ligne. Jamais mis en veille (`discard_idle_tabs` le traite comme occupé, plafond
+  `max_live_tabs` compris) ; réveillé en arrière-plan une fois, `ANCHORS_DELAY` après le lancement
+  (`wake_anchored`). Mis en veille à la main, il reste endormi jusqu'à ce qu'on l'affiche.
+- Gestionnaire de mots de passe : `Settings::password_manager` (vrai par défaut), `PasswordAction::Enabled`,
+  Réglages > Passwords (`#pwmanager`). Coupé : `autofill_query`, `login_submitted` et les identifiants
+  proposés à l'authentification HTTP ne font rien ; les mots de passe enregistrés restent.
+- Traqueurs appris (façon Privacy Badger) : règles pures `domain/trackers.rs` (`looks_like_tracking`,
+  `base_domain`, `Trackers::observe` : appris après `SITES_TO_LEARN` sites distincts ; jamais
+  `ESSENTIAL`, un site visité soi-même, un hôte déjà listé ou autorisé ; tout borné), fichier
+  `trackers.json` (`TrackerStore`, `write_later`). `ui/tracker_watch.js` (cadre principal) ne fait que
+  lire les `PerformanceResourceTiming` (aucune fonction de la page remplacée) et envoie
+  `PageEvent::Requests` ; `app/src/trackers.rs` relit l'adresse sur le moteur. `PrivacyPolicy::set_learned`
+  (partagé par les clones) : appris bloqués avec l'interrupteur des traqueurs, hôtes autorisés jamais
+  bloqués, listes comprises. `active_lists` nomme une liste raccourcie ou apprise d'après son contenu
+  (recompilée macOS) ; vues de réserve recréées à chaque changement ; les vues déjà ouvertes gardent
+  leurs listes natives (WebView2 décide en direct pour les hôtes déjà filtrés). Jamais en fenêtre privée
+  (lecture seule du profil principal) ni en trou noir. Réglages > Privacy (`#learning`, `#learnedlist`,
+  `#allowedlist`), rapport du bouclier : un hôte cliqué est autorisé (`tracker_allow`).
+- Compteur du bouclier par espace : `BlockLog::record_in` / `total_in` ; la barre latérale montre
+  l'espace affiché, le rapport et les Réglages gardent le total de la session.
+- Copier depuis le menu d'une sélection : `selection::copy_text` (lignes gardées, `MAX_COPY` 200 000
+  caractères), la page envoie autant ; la recherche garde `clean_selection` (500, une ligne).
+- Recherche dans la page : index du texte gardé tant que la barre est ouverte (invalidé par un
+  `MutationObserver`), tableaux typés, visibilité et bloc demandés une fois par parent, recherche
+  incrémentale quand le mot s'allonge.
+- `depth.js` : une carte garde le pointeur tant qu'il est dans son rectangle d'avant l'inclinaison, et
+  reste à plat près de ses bords (sinon elle oscillait sous un pointeur immobile). Les tuiles d'accès
+  rapide ne penchent plus : elles montent d'un pixel au survol (relief inchangé).
+- Easel : `live_embedded` ; `sync` → `drop_stray_live` libère les vues en direct de la fenêtre
+  principale dès que l'Easel n'y est plus affiché (elles restaient sur la page).
+- Accueil : ciel étoilé du site (`#sky`, canvas dessiné une fois, parallaxe au défilement et au
+  pointeur, immobile sans animations). Barre du haut : `body.zoomed` réserve la place du badge de zoom
+  (`--zw` mesuré). Carte de page : élévation renforcée en style 3D (`#cardshadow`).
+- Test macOS : `bash scripts/test-0814.sh` (serveur local 47981, page de 30 000 lignes, étape `state` :
+  `anchoredAlive`, `live`, `learned`, `allowed`). Windows : code commun, non testé
+  (`test-features.ps1` `dp*` peut attendre l'inclinaison des tuiles d'accès rapide).
+
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.

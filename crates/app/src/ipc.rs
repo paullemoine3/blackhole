@@ -7,6 +7,16 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 
+/// One request a page reported (`PageEvent::Requests`).
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub struct ResourceHit {
+    #[serde(default)]
+    pub url: String,
+    /// How the page made it (`initiatorType`: `img`, `beacon`, `script`…).
+    #[serde(default)]
+    pub kind: String,
+}
+
 /// Commands sent by BlackHole's own pages (sidebar, top bar, start page).
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -39,6 +49,18 @@ pub enum UiCommand {
     SetTrackerBlocking {
         on: bool,
     },
+    /// Trackers learned while browsing (see `trackers.rs`): the switch, a host allowed (from
+    /// the privacy report or Settings), blocked again, and everything learned forgotten.
+    SetTrackerLearning {
+        on: bool,
+    },
+    TrackerAllow {
+        host: String,
+    },
+    TrackerBlock {
+        host: String,
+    },
+    TrackersForget,
     SetSectionCollapsed {
         section: String,
         collapsed: bool,
@@ -116,6 +138,10 @@ pub enum UiCommand {
     },
     /// Tab menu: the page shown becomes the address of that quick access or folder tab.
     TabSetHome {
+        id: u64,
+    },
+    /// Tab menu: anchors the tab (its page is never put to sleep) or releases it.
+    TabAnchor {
         id: u64,
     },
     /// Tab menu: reloads that tab (not only the one shown).
@@ -739,6 +765,12 @@ pub enum PageEvent {
     Favicon {
         url: String,
     },
+    /// Requests of the page to other hosts, from its resource timings (untrusted: the shell
+    /// reads the page's address on the engine and judges each one, see `trackers.rs`).
+    Requests {
+        #[serde(default)]
+        list: Vec<ResourceHit>,
+    },
     /// A request to `host` was blocked inside the page (untrusted, sanitised by `BlockLog`).
     Blocked {
         #[serde(default)]
@@ -1161,6 +1193,28 @@ mod tests {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
             assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
         }
+    }
+
+    #[test]
+    fn tracker_and_anchor_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"set_tracker_learning","on":false}"#,
+            r#"{"cmd":"tracker_allow","host":"px.spy.example"}"#,
+            r#"{"cmd":"tracker_block","host":"spy.example"}"#,
+            r#"{"cmd":"trackers_forget"}"#,
+            r#"{"cmd":"tab_anchor","id":3}"#,
+            r#"{"cmd":"passwords","action":{"op":"enabled","on":false}}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+        // What a page reports of its requests: the shell judges each one.
+        let event: PageEvent = serde_json::from_str(
+            r#"{"cmd":"requests","list":[{"url":"https://px.spy.example/collect","kind":"img"},{"url":"x"}]}"#,
+        )
+        .unwrap();
+        assert!(matches!(event, PageEvent::Requests { list } if list.len() == 2 && list[1].kind.is_empty()));
+        assert!(serde_json::from_str::<UiCommand>(r#"{"cmd":"requests","list":[]}"#).is_err());
     }
 
     #[test]

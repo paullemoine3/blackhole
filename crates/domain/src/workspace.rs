@@ -21,6 +21,9 @@ pub struct Tab {
     /// Where a quick access or pinned (folder) tab lives, like Arc: the page it had when it
     /// was put there. It may wander from it; it comes back to it when it wakes up.
     pub home: Option<Home>,
+    /// Anchored: its page stays alive (never put to sleep by the idle delay or the cap on live
+    /// tabs) and is woken at launch. For a mail, chat or music tab.
+    pub anchored: bool,
 }
 
 /// The address a kept tab returns to, with the title it had there.
@@ -441,6 +444,7 @@ impl Workspace {
                 folder: None,
                 renamed: false,
                 home: None,
+                anchored: false,
             },
         );
         space.active_tab = Some(copy);
@@ -480,6 +484,7 @@ impl Workspace {
                 folder: None,
                 renamed: false,
                 home: None,
+                anchored: false,
             },
         );
         space.active_tab = Some(id);
@@ -676,6 +681,29 @@ impl Workspace {
         true
     }
 
+    /// Anchors a tab (its page is never put to sleep) or lets it sleep again. A black hole tab
+    /// is always alive already: refused.
+    pub fn toggle_anchor(&mut self, id: TabId) -> bool {
+        if self.is_burner(id) {
+            return false;
+        }
+        let Some(tab) = self.spaces.iter_mut().flat_map(|s| s.tabs.iter_mut()).find(|t| t.id == id) else {
+            return false;
+        };
+        tab.anchored = !tab.anchored;
+        true
+    }
+
+    /// The anchored tabs, all spaces mixed: their pages stay alive.
+    pub fn anchored_tabs(&self) -> Vec<TabId> {
+        self.spaces
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .filter(|t| t.anchored)
+            .map(|t| t.id)
+            .collect()
+    }
+
     pub fn add_folder(&mut self, name: &str) -> FolderId {
         self.add_folder_in(name, None)
             .expect("a top-level folder is always allowed")
@@ -761,6 +789,7 @@ impl Workspace {
                 folder: Some(folder_id),
                 renamed: false,
                 home: None,
+                anchored: false,
             });
             if let Some(tab) = self.spaces[idx].tabs.last_mut() {
                 tab.settle();
@@ -1288,7 +1317,7 @@ impl Workspace {
                     let pos = tabs.iter().position(|t| !t.pinned).unwrap_or(tabs.len());
                     tabs.insert(
                         pos,
-                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false, home: None },
+                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false, home: None, anchored: false },
                     );
                     tabs[pos].settle();
                 }
@@ -1347,6 +1376,27 @@ mod tests {
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn an_anchored_tab_is_listed_until_released_and_a_black_hole_tab_is_never_anchored() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://mail.example.com/"));
+        let b = ws.open_tab(u("https://example.com/"));
+        assert!(ws.anchored_tabs().is_empty());
+        assert!(ws.toggle_anchor(a));
+        assert_eq!(ws.anchored_tabs(), vec![a]);
+        // Another space still keeps it alive.
+        let other = ws.add_space("Work", "#3aa0ff");
+        ws.switch_space(other);
+        assert_eq!(ws.anchored_tabs(), vec![a]);
+        assert!(ws.toggle_anchor(a));
+        assert!(ws.anchored_tabs().is_empty());
+        let hole = ws.open_burner(u("https://example.org/"));
+        assert!(!ws.toggle_anchor(hole), "a black hole tab is always alive already");
+        assert!(!ws.toggle_anchor(TabId(999)));
+        let copy = { ws.switch_space(ws.spaces()[0].id); ws.toggle_anchor(b); ws.duplicate_tab(b).unwrap() };
+        assert_eq!(ws.anchored_tabs(), vec![b], "a copy is not anchored ({copy:?})");
     }
 
     #[test]

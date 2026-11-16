@@ -325,7 +325,9 @@ impl Running {
     /// The user names saved for the sign-in prompt `id` (never a password).
     pub(crate) fn auth_saved_users(&self, id: u64) -> Vec<String> {
         match (self.auth_origins.get(&id), self.auth.get(id)) {
-            (Some(origin), Some(c)) => self.passwords.auth_users(origin, &c.realm),
+            (Some(origin), Some(c)) if self.svc.settings().password_manager => {
+                self.passwords.auth_users(origin, &c.realm)
+            }
             _ => Vec::new(),
         }
     }

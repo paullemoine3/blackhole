@@ -8,6 +8,23 @@ use crate::omnibox::{web_address, SearchEngine};
 /// Longest selection kept, in characters (a search query, not a document).
 pub const MAX_SELECTION: usize = 500;
 
+/// Longest selection copied by right click > Copy, in characters: CI logs and long pages are
+/// copied whole (as ⌘C/Ctrl+C would), the page sends no more than this.
+pub const MAX_COPY: usize = 200_000;
+
+/// The selection as the user selected it, for the clipboard: lines and tabs kept (Windows line
+/// ends become `\n`), invisible and control characters removed, cut at `MAX_COPY` characters.
+/// `None` when nothing is left but whitespace.
+pub fn copy_text(raw: &str) -> Option<String> {
+    let out: String = raw
+        .chars()
+        .filter(|c| *c != '\r')
+        .filter(|c| matches!(c, '\n' | '\t') || !is_invisible(*c))
+        .take(MAX_COPY)
+        .collect();
+    (!out.trim().is_empty()).then_some(out)
+}
+
 /// What a selection opens: the address it reads as, or a search for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionAction {
@@ -117,6 +134,16 @@ pub fn excerpt(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_copied_selection_keeps_its_lines_and_its_length() {
+        let log = "2026-11-16T10:00:00Z Run cargo test\r\n\tcompiling\u{200B} blackhole\n";
+        assert_eq!(copy_text(log).as_deref(), Some("2026-11-16T10:00:00Z Run cargo test\n\tcompiling blackhole\n"));
+        let long = "x".repeat(MAX_SELECTION * 10);
+        assert_eq!(copy_text(&long).unwrap().len(), MAX_SELECTION * 10, "not cut like a search");
+        assert_eq!(copy_text(&"y".repeat(MAX_COPY + 5)).unwrap().chars().count(), MAX_COPY);
+        assert_eq!(copy_text(" \n\t "), None);
+    }
 
     fn action(text: &str) -> SelectionAction {
         selection_action(&clean_selection(text).unwrap(), SearchEngine::DuckDuckGo)

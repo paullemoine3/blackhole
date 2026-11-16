@@ -23,7 +23,10 @@
   /* Elevation of the page card: it floats above the tinted frame; the shell sets --cl (its left edge).
      The view starts under the top bar, so the shadow fades in instead of being cut by that edge. */
   #cardshadow { position: fixed; inset: 0; z-index: -1; pointer-events: none; -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 14px, #000 44px); mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 14px, #000 44px); }
-  #cardshadow::before { content: ''; position: absolute; top: 0; right: 8px; bottom: 8px; left: var(--cl, 248px); border-radius: 14px; box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.07); }
+  #cardshadow::before { content: ''; position: absolute; top: 0; right: 8px; bottom: 8px; left: var(--cl, 248px); border-radius: 14px; box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.07); transition: box-shadow .45s ease; }
+  /* 3D style (0.8.14): the page stands clearly off the frame, in layers: a fine light edge, a
+     contact shadow, a long soft one and a faint halo of the space's colour around it. */
+  body:not(.flat) #cardshadow::before { box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 1px 0 1px rgba(0,0,0,.35), 0 4px 10px rgba(0,0,0,.45), 0 16px 34px -6px rgba(0,0,0,.7), 0 30px 60px -18px rgba(0,0,0,.65), 0 0 28px -8px var(--glow); }
   body.flyout #cardshadow { display: none; }
   aside { width: var(--sw, 240px); height: 100%; padding: 12px 10px 10px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
   button { font: inherit; color: inherit; border: 0; background: transparent; cursor: pointer; border-radius: 8px; padding: 0; line-height: 1; }
@@ -226,6 +229,7 @@
   .tab.split { box-shadow: inset 3px 0 0 var(--accent); background: rgba(255,255,255,.09); }
   .tab .burn { flex: none; display: grid; place-items: center; width: var(--bh-space-16); height: var(--bh-space-16); color: var(--accent); opacity: var(--bh-opacity-secondary); }
   .tab.active .burn { opacity: 1; }
+  .tab .anch { flex: none; display: grid; place-items: center; width: var(--bh-space-16); height: var(--bh-space-16); color: var(--bh-text-secondary, currentColor); opacity: var(--bh-opacity-secondary); }
   .tab.split.active { background: rgba(255,255,255,.2); }
   .mo { flex: none; width: 24px; height: 24px; margin: -2px 0; display: grid; place-items: center; border-radius: 6px; opacity: 0; }
   .tab:hover .mo { opacity: .7; } .mo:hover { background: rgba(255,255,255,.15); opacity: 1 !important; }
@@ -318,17 +322,18 @@
   .tab-glide { position: fixed; z-index: 5; pointer-events: none; border-radius: 9px; background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.04); }
   .tab.gliding { background: transparent !important; box-shadow: none !important; }
   #scroll::-webkit-scrollbar-thumb { transition: background-color .2s ease; }
-  /* Depth: a quick access tile leans towards the pointer, its icon stands out (depth.js). */
-  #pinned .tab { transform-style: preserve-3d; transition: transform .26s cubic-bezier(.3,1.4,.5,1), background-color .18s ease; }
-  #pinned .tab .dot { transition: transform .26s cubic-bezier(.3,1.4,.5,1); }
-  #pinned .tab.bh-lean { transform: perspective(220px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)) translateZ(2px); }
-  #pinned .tab.bh-lean .dot { transform: translateZ(10px) scale(1.04); }
+  /* A quick access tile does not lean (0.8.14): under the pointer it only rises a little off the
+     sidebar, its shadow growing beneath it. */
+  #pinned .tab { transition: transform .22s cubic-bezier(.3,1.3,.5,1), box-shadow .22s ease, background-color .18s ease; }
+  body:not(.noanim) #pinned .tab:hover:not(.dragging, .ghost) { transform: translateY(-1px); }
+  @media (prefers-reduced-motion: reduce) { #pinned .tab:hover { transform: none !important; } }
   /* Relief (3D style, at rest too; shadows from depth.js). Tabs and quick access are what is
      looked at all day, and there can be many: they stay quiet. A quick access tile has two fine
      edges and no cast shadow; at rest a tab has no strip at all, only the tab shown and the line
      under the pointer get the same two edges. Nothing here shines or leans far. */
   body:not(.flat) #pinned .tab { box-shadow: var(--bh-relief-row); }
   body:not(.flat) #pinned .tab.active { box-shadow: var(--bh-relief-row), 0 0 0 1px rgba(255,255,255,.2), 0 8px 18px -8px var(--glow); }
+  body:not(.flat) #pinned .tab:hover:not(.active, .dragging) { box-shadow: var(--bh-relief-row), 0 6px 12px -8px #000000b3; }
   body:not(.flat) #pinned .tab:active:not(.dragging) { box-shadow: var(--bh-relief-sunk); }
   body:not(.flat) .new { background-color: rgba(255,255,255,.028); box-shadow: var(--bh-relief-row); }
   body:not(.flat) .tab:hover:not(.active, .split), body:not(.flat) .new:hover, body:not(.flat) .fh:hover { box-shadow: var(--bh-relief-row); }
@@ -443,6 +448,16 @@ function tabNode(t) {
     const mark = el('span', 'burn'); mark.append(bhIcon('hole', 'xs')); mark.title = bhT('sidebar.burner');
     n.querySelector('.title').after(mark);
   }
+  // An anchored tab: its page never sleeps. A small anchor on a row; a tile only says it in its
+  // tooltip (a mark covered the tile's icon).
+  if (t.anchored) {
+    n.classList.add('anchored');
+    n.title += ' · ' + bhT('sidebar.anchored');
+    if (!t.pinned) {
+      const mark = el('span', 'anch'); mark.append(bhIcon('anchor', 'xs')); mark.title = bhT('sidebar.anchored');
+      n.querySelector('.title').after(mark);
+    }
+  }
   // No speaker on quick access tiles: it covered the tile, so a playing tab was hard to click.
   const md = !t.pinned && (state.media || []).find(m => m.id === t.id);
   if (md && (md.playing || md.muted)) {
@@ -524,6 +539,8 @@ function tabMenu(t, x, y) {
   // A quick access or folder tab that wandered from its own page: back to it, or adopt this one.
   if (t.away) items.push({ icon: 'home', label: bhT('menu.tab_home'), run: { cmd: 'tab_home', id: t.id } }, { icon: 'pin', label: bhT('menu.tab_set_home'), run: { cmd: 'tab_set_home', id: t.id } });
   if (!t.asleep) items.push({ icon: 'reload', label: bhT('bar.reload'), run: { cmd: 'reload_tab', id: t.id } });
+  // Anchored: the page stays alive (never put to sleep). A black hole tab always is.
+  if (!t.burner) items.push({ icon: 'anchor', label: bhT(t.anchored ? 'menu.unanchor' : 'menu.anchor'), run: { cmd: 'tab_anchor', id: t.id } });
   items.push({ icon: 'copy', label: bhT('menu.duplicate'), run: { cmd: 'duplicate_tab', id: t.id } });
   items.push({ icon: 'link', label: bhT('menu.copy_link'), copy: t.url });
   items.push({ icon: 'compare', label: bhT('menu.compare'), run: { cmd: 'action', id: 'compare' } });
@@ -1438,7 +1455,6 @@ document.addEventListener('mousemove', (e) => {
 // stays while it is.
 document.addEventListener('mouseenter', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: true }); });
 document.addEventListener('mouseleave', () => { if (window.bh.role === 'flyout') send({ cmd: 'peek', on: false }); });
-if (window.bhDepth) bhDepth('#pinned .tab', 12);
 send({ cmd: 'ready' });
 </script>
 </body>

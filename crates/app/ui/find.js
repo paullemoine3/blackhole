@@ -19,61 +19,120 @@
 
   // A block boundary between two text nodes reads as a space, as in the engines' own find.
   const BLOCK = 'p,div,li,dt,dd,td,th,tr,h1,h2,h3,h4,h5,h6,section,article,header,footer,nav,aside,blockquote,pre,figcaption,label,option,br';
-  const SPACE = /\s/;
+  // White space as `\s` sees it, by code unit (no regular expression per character).
+  const isSpace = (c) => c <= 32 || c === 160 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
   // Every visible text node is read into one string, each run of white space (in a node or
   // across nodes) as a single space, with the node and offset of every character kept beside
-  // it: a match can then cross a link, a `<b>` or a line break of the HTML source.
-  const collect = (text) => {
-    const needle = text.toLowerCase().replace(/\s+/g, ' ').trim();
-    const out = [];
-    if (!document.body || !needle) return out;
+  // it (typed arrays): a match can then cross a link, a `<b>` or a line break of the HTML
+  // source. The index is kept while the bar is open and rebuilt only after the page changed
+  // (`dirty`, from a MutationObserver): typing a word in a long CI log reads the page once.
+  let index = null;
+  let dirty = true;
+  let watcher = null;
+  const build_index = () => {
+    const nodes = [];
+    let cap = 1 << 16;
+    let nodeOf = new Int32Array(cap);
+    let offOf = new Int32Array(cap);
+    const parts = [];
+    let len = 0;
+    let lastSpace = true;
+    const grow = () => {
+      cap *= 2;
+      const n = new Int32Array(cap); n.set(nodeOf); nodeOf = n;
+      const o = new Int32Array(cap); o.set(offOf); offOf = o;
+    };
+    const push = (s, ni, off) => {
+      if (len === cap) grow();
+      parts.push(s);
+      nodeOf[len] = ni;
+      offOf[len] = off;
+      len++;
+    };
+    if (!document.body) return { hay: '', nodes, nodeOf, offOf };
+    // Many text nodes share a parent: its visibility and its block are asked once.
+    const shown = new Map();
+    const blockOf = new Map();
     const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => {
         const p = n.parentElement;
         if (!p || SKIP.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-        if (p.checkVisibility && !p.checkVisibility()) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
+        let v = shown.get(p);
+        if (v === undefined) { v = !p.checkVisibility || p.checkVisibility(); shown.set(p, v); }
+        return v ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
       },
     });
-    const nodes = [];
-    const nodeOf = [];
-    const offOf = [];
-    let hay = '';
     let block = null;
-    const push = (c, ni, off) => {
-      if (c === ' ' && (hay === '' || hay[hay.length - 1] === ' ')) return;
-      hay += c;
-      nodeOf.push(ni);
-      offOf.push(off);
-    };
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-      const b = n.parentElement.closest(BLOCK);
+      const p = n.parentElement;
+      let b = blockOf.get(p);
+      if (b === undefined) { b = p.closest(BLOCK); blockOf.set(p, b); }
       const ni = nodes.length;
       nodes.push(n);
-      if (ni > 0 && b !== block) push(' ', ni, 0);
+      if (ni > 0 && b !== block && !lastSpace) { push(' ', ni, 0); lastSpace = true; }
       block = b;
       const data = n.data;
-      for (let i = 0; i < data.length; i++) {
-        // Lower-cased one character at a time: a few grow (İ), the offsets stay the node's.
-        if (SPACE.test(data[i])) push(' ', ni, i);
-        else for (const c of data[i].toLowerCase()) push(c, ni, i);
+      const lower = data.toLowerCase();
+      if (lower.length === data.length) {
+        // Usual case: one character for one. Runs of letters go in as one slice.
+        let from = -1;
+        for (let i = 0; i < data.length; i++) {
+          if (isSpace(data.charCodeAt(i))) {
+            if (from !== -1) { flush(lower, from, i, ni); from = -1; }
+            if (!lastSpace) { push(' ', ni, i); lastSpace = true; }
+          } else if (from === -1) from = i;
+        }
+        if (from !== -1) flush(lower, from, data.length, ni);
+      } else {
+        // A few characters grow when lower-cased (İ): one at a time, offsets stay the node's.
+        for (let i = 0; i < data.length; i++) {
+          if (isSpace(data.charCodeAt(i))) {
+            if (!lastSpace) { push(' ', ni, i); lastSpace = true; }
+          } else for (const c of data[i].toLowerCase()) { push(c, ni, i); lastSpace = false; }
+        }
       }
     }
-    for (let i = hay.indexOf(needle); i !== -1 && out.length < MAX; i = hay.indexOf(needle, i + needle.length)) {
-      const end = i + needle.length - 1;
+    function flush(lower, from, to, ni) {
+      while (len + (to - from) > cap) grow();
+      parts.push(lower.slice(from, to));
+      for (let i = from; i < to; i++) { nodeOf[len] = ni; offOf[len] = i; len++; }
+      lastSpace = false;
+    }
+    return { hay: parts.join(''), nodes, nodeOf, offOf };
+  };
+  const collect = (text, previous) => {
+    const needle = text.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!document.body || !needle) return { needle, starts: [] };
+    if (dirty || !index) { index = build_index(); dirty = false; previous = null; }
+    const { hay } = index;
+    const starts = [];
+    if (previous && needle.startsWith(previous.needle) && previous.starts.length < MAX) {
+      // The word grew: only the places where the shorter one matched can still match.
+      for (const i of previous.starts) if (hay.startsWith(needle, i)) starts.push(i);
+    } else {
+      for (let i = hay.indexOf(needle); i !== -1 && starts.length < MAX; i = hay.indexOf(needle, i + needle.length)) starts.push(i);
+    }
+    return { needle, starts };
+  };
+  const rangesOf = (found) => {
+    const { nodes, nodeOf, offOf } = index;
+    const n = found.needle.length;
+    return found.starts.map((i) => {
+      const end = i + n - 1;
       const r = document.createRange();
       r.setStart(nodes[nodeOf[i]], offOf[i]);
       r.setEnd(nodes[nodeOf[end]], offOf[end] + 1);
-      out.push(r);
-    }
-    return out;
+      return r;
+    });
   };
+  let found = null;
   const clear = () => {
     if (HL) {
       CSS.highlights.delete('bh-find');
       CSS.highlights.delete('bh-find-cur');
     }
     ranges = [];
+    found = null;
     at = -1;
     last = '';
   };
@@ -95,7 +154,8 @@
       return;
     }
     if (text !== last) {
-      ranges = collect(text);
+      found = collect(text, found);
+      ranges = rangesOf(found);
       last = text;
       at = backwards ? ranges.length - 1 : 0;
     } else if (ranges.length) {
@@ -117,6 +177,10 @@
     if (!host) return;
     host.remove();
     host = input = info = null;
+    if (watcher) watcher.disconnect();
+    watcher = null;
+    index = null;
+    dirty = true;
     clear();
   };
   const build = () => {
@@ -196,6 +260,11 @@
       else run(b.dataset.d === '1');
     });
     document.documentElement.appendChild(host);
+    // The page changed (a log that streams, a list that scrolls): the next search reads it again.
+    try {
+      watcher = new MutationObserver(() => { dirty = true; });
+      watcher.observe(document.body || document.documentElement, { childList: true, subtree: true, characterData: true });
+    } catch (e) {}
   };
 
   window.__bhFind = (action) => {

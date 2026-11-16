@@ -8,7 +8,12 @@
   html { background: #0c0b12; }
   html, body { height: 100%; background: #0c0b12; color: #eceaf5; font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif; }
   body { overflow-y: auto; background: radial-gradient(800px 500px at 50% -10%, rgba(124,92,255,.22), transparent 70%), #0c0b12; }
-  main { max-width: 860px; margin: 0 auto; padding: 56px 28px 40px; }
+  main { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; padding: 56px 28px 40px; }
+  /* Sky, as on the project's site (docs/index.html): stars drawn once on a canvas, which drifts a
+     little with the scroll and the pointer (transform only). Still without animations. */
+  #sky { position: fixed; left: -3vw; top: -6vh; width: 106vw; height: 116vh; z-index: 0; pointer-events: none; opacity: .9;
+    transform: translate3d(var(--px, 0px), calc(var(--sy, 0) * -.06px + var(--py, 0px)), 0); transition: transform .8s cubic-bezier(.2,.7,.2,1); }
+  body.noanim #sky { transform: none; }
   .brand { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 26px; }
   /* The black hole is quiet at rest: only its ring turns. Under the pointer the disc swells, a
      second ring races and the stars around it are swallowed. Same logo as the Android start page
@@ -157,6 +162,7 @@
 </style>
 </head>
 <body>
+<canvas id="sky" aria-hidden="true"></canvas>
 <div id="splash"><i class="bgd"></i><div class="core"><i class="flash"></i><i class="shock"></i><i class="glow"></i><i class="disc"></i><i class="ring"></i></div><div class="word">BlackHole</div></div>
 <div id="wait"><div id="waittile"></div><div class="site" id="waitsite"></div><div class="track"><i></i></div></div>
 <main>
@@ -356,6 +362,36 @@ window.bh = {
   };
 }
 if (window.bhDepth) { bhDepth('.fav', 12); bhDepth('.item', 5); }
+// Sky: the same stars at every opening (a seeded draw), redrawn only when the window resizes.
+function sky() {
+  const c = $('sky'), d = Math.min(2, devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight, x = c.getContext('2d');
+  if (!w || !h) return;
+  c.width = w * d; c.height = h * d; x.scale(d, d);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < Math.round(w * h / 5200); i++) {
+    const r = rnd() * 1.1 + .2, a = rnd() * .7 + .1;
+    x.fillStyle = rnd() > .82 ? `rgba(190,170,255,${a})` : rnd() > .9 ? `rgba(255,205,120,${a})` : `rgba(255,255,255,${a * .8})`;
+    x.beginPath(); x.arc(rnd() * w, rnd() * h, r, 0, 7); x.fill();
+  }
+}
+{
+  let sized = 0, ticking = false;
+  addEventListener('resize', () => { clearTimeout(sized); sized = setTimeout(sky, 120); });
+  const calm = () => document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.body.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; document.body.style.setProperty('--sy', Math.min(document.body.scrollTop, 1400).toFixed(0)); });
+  }, { passive: true });
+  // The pointer moves the sky a few pixels the other way: depth without a single redraw.
+  addEventListener('pointermove', (e) => {
+    if (calm()) return;
+    const sx = document.body.style;
+    sx.setProperty('--px', ((.5 - e.clientX / innerWidth) * 14).toFixed(1) + 'px');
+    sx.setProperty('--py', ((.5 - e.clientY / innerHeight) * 10).toFixed(1) + 'px');
+  }, { passive: true });
+  sky();
+}
 send({ cmd: 'ready' });
 </script>
 </body>

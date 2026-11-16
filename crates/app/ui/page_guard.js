@@ -187,7 +187,8 @@
     for (let i = 0; i < sel.rangeCount; i++) {
       for (const r of sel.getRangeAt(i).getClientRects()) {
         if (e.clientX >= r.left - 2 && e.clientX <= r.right + 2 && e.clientY >= r.top - 2 && e.clientY <= r.bottom + 2) {
-          return String(sel).slice(0, 1000);
+          // Long enough for Copy to take a whole log (domain::selection::MAX_COPY).
+          return String(sel).slice(0, 200000);
         }
       }
     }

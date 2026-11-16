@@ -1,6 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.14",
+        &[
+            "Anchor a tab (its menu, Anchor): its page never goes to sleep and wakes with BlackHole, for a mail, a chat or a music tab",
+            "Trackers that are on no list are learned while you browse: a site that follows you on several of the sites you visit is blocked like the others. Allow a host back from the shield's report or in Settings > Privacy, where the learned trackers are listed. Each space now counts what its own tabs blocked",
+            "The built-in password manager can be switched off in Settings > Passwords, handy with another manager; your saved passwords stay",
+            "Copy in the menu of a selection copies it whole, line breaks included (CI logs were cut and joined into one line), and find in page no longer stalls on very long pages",
+            "The start page has the starry sky of BlackHole's home page. Quick access tiles no longer lean, they only rise a little under the pointer, and the page stands off the window more clearly in the 3D style",
+            "Fixed: a live area of the Easel stayed over the page after leaving the Easel, a card leaned back and forth when the pointer was on its edge, and the zoom level covered a long address",
+        ],
+    ),
+    (
         "0.8.13",
         &[
             "Find in page finds a phrase even when it runs across a link, a bold word or a line break",

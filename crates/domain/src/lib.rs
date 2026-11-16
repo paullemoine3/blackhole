@@ -24,6 +24,7 @@ pub mod selection;
 pub mod settings;
 pub mod signals;
 pub mod sync;
+pub mod trackers;
 pub mod verbs;
 pub mod watch;
 pub mod workspace;
