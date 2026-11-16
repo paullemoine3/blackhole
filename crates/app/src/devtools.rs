@@ -109,6 +109,15 @@ impl Running {
                     "home" => &self.home,
                     "palette" => &self.palette,
                     "peek" => self.peek.as_ref().map_or(&self.home, |p| &p.page),
+                    // The popup of an extension's button (Windows), when one is open.
+                    #[cfg(windows)]
+                    "extpopup" => match &self.ext_popup {
+                        Some(popup) => &popup.page,
+                        None => {
+                            eprintln!("[dev] eval -> \"no extension popup\"");
+                            return delay;
+                        }
+                    },
                     // `tabN`: the page of tab N, even in the background (PiP, media cards).
                     t if t.starts_with("tab") => {
                         let id = t[3..].parse().unwrap_or(0);

@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.15",
+        &[
+            "Windows: the buttons of uBlock Origin Lite, Ghostery and the other extensions see the page in front again; they said they were not on a web page",
+            "Fixed: the example extension Cookie banner hider left some sites blank (glosbe.com) when the page itself carries a cookie-consent mark. An installed copy left as written is updated at launch",
+            "Android: the number of requests blocked sits beside the shield, inside the address field, instead of a badge cut by the field",
+        ],
+    ),
+    (
         "0.8.14",
         &[
             "Anchor a tab (its menu, Anchor): its page never goes to sleep and wakes with BlackHole, for a mail, a chat or a music tab",

@@ -106,6 +106,8 @@ Wait 5000
 Shot '02-page'
 Eval page "S.url + ' ' + S.title"
 Eval blocked "S.blocked.site"
+# The shield's count stays inside the address field, beside the shield, clear of the address.
+Eval shieldfit "(() => { const q = (s) => document.querySelector(s).getBoundingClientRect(); const o = q('#omni'), b = q('#shield-n'), u = q('#url'); return [b.height > 0, b.top >= o.top, b.bottom <= o.bottom, b.right <= u.left].join(' '); })()"
 Eval favicon "icons.size + ' ' + !document.querySelector('#site').hidden"
 # Find in page (the bar's row becomes a search field).
 Run "startFind(); document.querySelector('#fq').value = 'Lorem'; document.querySelector('#fq').dispatchEvent(new Event('input'))"
@@ -370,6 +372,7 @@ function V($n) { if ($evals.ContainsKey($n)) { $evals[$n] } else { '<missing>' }
 Check ((V home) -eq 'true') 'start page shown at launch'
 Check ((V page) -match '127\.0\.0\.1:\d+/a Alpha page') 'address opens a tab (title shown)'
 Check ([int]((V blocked) -replace '\D', '0') -ge 1) 'Shields block the tracker of a page'
+Check ((V shieldfit) -match 'true true true true') 'the shield count fits in the address field'
 Check ((V second) -match '/b 1"$') 'address bar loads in the same tab'
 Check ((V favicon) -match '^"[1-9]\d* true"$') 'page icon kept and shown in the bar'
 Check ((V find) -match '^"1/\d+"$') 'find in page counts the matches'

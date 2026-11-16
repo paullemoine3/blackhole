@@ -1,5 +1,6 @@
 # Extension scenario on Windows (WebView2): installs Dark Reader from the catalog, checks it is
-# injected into a plain page and that its toolbar button is present. Uses the scratch profile
+# injected into a plain page and that its toolbar button is present; then uBlock Origin Lite,
+# whose popup must see the page in front as its active tab (WebView2 answers with the popup). Uses the scratch profile
 # %TEMP%\bh_data (wiped first); needs network access.
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
@@ -21,6 +22,17 @@ eval content (window.open('chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/p
 wait 2500
 eval chrome state.tabs.length
 shot ext-popout
+cmd {"cmd":"close_ext_popup"}
+cmd {"cmd":"install_catalog","id":"ublock-origin-lite"}
+wait 15000
+cmd {"cmd":"open","input":"https://example.com"}
+wait 8000
+cmd {"cmd":"ext_action","id":"ublock-origin-lite","x":900,"y":0,"w":30,"h":38}
+wait 4000
+eval extpopup (window.__front = '', chrome.tabs.query({active:true,currentWindow:true}).then(t => __front = t.map(x => x.url).join('|')), 'asked')
+wait 1000
+eval extpopup window.__front + '#' + document.body.innerText.replace(/\s+/g, ' ').slice(0, 120)
+shot ext-ubol
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -39,4 +51,5 @@ Check ($evals[0] -match '[1-9]') 'toolbar: extension button present'
 Check ($evals[1] -match 'rgb\(24, 26, 27\)') 'content: Dark Reader darkens the page'
 Check ($evals[2] -match 'Dark Reader' -and $evals[2] -notmatch '__MSG_') 'toolbar: the button carries the name of the extension'
 Check ($evals[3] -match '\d' -and ($evals[3] -replace '.*-> ', '') -eq ($evals[5] -replace '.*-> ', '')) 'popout: a window asked by an extension from a page opens as its popup, not as a tab'
+Check ($evals[7] -match 'https://example\.com/#' -and $evals[7] -notmatch 'pas un site|not a web') 'popup: the active tab of an extension popup is the page in front'
 if ($fail) { exit 1 }

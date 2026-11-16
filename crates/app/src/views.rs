@@ -19,6 +19,8 @@ const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
+#[cfg(windows)]
+const EXT_TABS_JS: &str = include_str!("../ui/ext_tabs.js");
 /// Paints the highlights the shell hands a page, and reads its selection on demand.
 const HIGHLIGHTS_JS: &str = include_str!("../ui/highlights.js");
 /// Shortcut notation shared by BlackHole's own pages (`bhKeys`).
@@ -787,11 +789,13 @@ pub fn extension_popup(
     window: &Window,
     ctx: &mut WebContext,
     url: &str,
+    page: Option<&Url>,
     bounds: Rect,
     mailbox: &Mailbox,
 ) -> wry::Result<WebView> {
     let links = mailbox.clone();
     builder(ctx)
+        .with_initialization_script(ext_tabs_script(page))
         .with_url(url)
         .with_bounds(bounds)
         .with_background_color(PAGE_BG)
@@ -804,6 +808,15 @@ pub fn extension_popup(
             NewWindowResponse::Deny
         })
         .build_as_child(window)
+}
+
+/// The script that makes an extension popup's "active tab" the page in front (`ui/ext_tabs.js`):
+/// `page` is that page's address, `None` on the home page (the popup then keeps the engine's answer).
+#[cfg(windows)]
+fn ext_tabs_script(page: Option<&Url>) -> String {
+    // A JSON string is a JavaScript string literal (the script is run as is, never in HTML).
+    let literal = serde_json::Value::from(page.map_or("", Url::as_str)).to_string();
+    EXT_TABS_JS.replace("__BH_PAGE__", &literal)
 }
 
 /// Puts views in front of every other view, in the order given, without recreating them.

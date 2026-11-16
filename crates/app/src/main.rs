@@ -773,8 +773,13 @@ impl Running {
         // Session, icons and extensions live in separate files: load them side by side.
         let (mut svc, favicons, preloaded_ext) = std::thread::scope(|scope| {
             let icons = scope.spawn(|| favicons::Favicons::load(&data));
-            let exts =
-                (!private_mode()).then(|| scope.spawn(|| load_extensions(&extensions_dir(&data))));
+            let exts = (!private_mode()).then(|| {
+                scope.spawn(|| {
+                    let dir = extensions_dir(&data);
+                    extensions::refresh_sample(&dir);
+                    load_extensions(&dir)
+                })
+            });
             let svc = BrowserService::start(
                 JsonWorkspaceRepository::new(data.clone()),
                 default_privacy_policy(),
@@ -5122,10 +5127,15 @@ impl Running {
             true,
             &self.mailbox,
         );
+        // The page in front, which the popup's "active tab" stands for (`ui/ext_tabs.js`).
+        let front = (!self.home_shown())
+            .then(|| self.svc.workspace().active_tab().map(|t| t.url.clone()))
+            .flatten();
         let page = views::extension_popup(
             &self.window,
             &mut self.web_context,
             url,
+            front.as_ref(),
             views::rect(x, BAR_HEIGHT - 4.0, width, height),
             &self.mailbox,
         );
