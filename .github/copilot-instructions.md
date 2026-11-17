@@ -423,6 +423,9 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   son `.dot` (icône) si l'hôte et l'icône sont les mêmes. Cache vidé sur un rendu forcé (`s === prev`,
   `listsStale` : langue, glisser). Les cartes d'espace ne sont recréées que si les espaces changent
   (`spacesSig`). L'icône n'a plus `decoding = 'async'` (une image neuve restait vide une image).
+- Rechercher dans la page (`find.js`) : les deux `Highlight` (`bh-find`, `bh-find-cur`) restent inscrits
+  dans `CSS.highlights` et sont vidés puis remplis sur place (`paint`). WebKit ne repeint pas les plages
+  d'un surlignage retiré du registre ou remplacé : les anciens résultats restaient peints.
 - Linux (aperçu, x86_64, X11 ou XWayland) : wry sur WebKitGTK 4.1. `main` force `GDK_BACKEND=x11`, appelle
   `gtk::init()` et crée la boucle winit en X11 (`with_x11`) ; `about_to_wait` vide la file GTK à chaque tour
   (`gtk::main_iteration_do`) et revient au plus tard après `GTK_PUMP` (8 ms). Trousseau : keyring

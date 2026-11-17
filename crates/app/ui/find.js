@@ -126,11 +126,27 @@
     });
   };
   let found = null;
-  const clear = () => {
-    if (HL) {
-      CSS.highlights.delete('bh-find');
-      CSS.highlights.delete('bh-find-cur');
+  // The two highlights stay registered and are emptied and filled in place: WebKit does not
+  // repaint the ranges of a highlight taken out of the registry (or replaced by a new one), so
+  // the old matches stayed painted ("nu" while "nullable" was typed, everything once the field
+  // was emptied). Emptying a highlight repaints its ranges.
+  let all = null;
+  let cur = null;
+  const paint = (list, current) => {
+    if (!HL) return;
+    if (!all) {
+      all = new Highlight();
+      cur = new Highlight();
+      CSS.highlights.set('bh-find', all);
+      CSS.highlights.set('bh-find-cur', cur);
     }
+    all.clear();
+    cur.clear();
+    for (const r of list) all.add(r);
+    if (current) cur.add(current);
+  };
+  const clear = () => {
+    paint([], null);
     ranges = [];
     found = null;
     at = -1;
@@ -162,13 +178,11 @@
       at = (at + (backwards ? -1 : 1) + ranges.length) % ranges.length;
     }
     if (!ranges.length) {
-      CSS.highlights.delete('bh-find');
-      CSS.highlights.delete('bh-find-cur');
+      paint([], null);
       show(T('page.no_match'), false);
       return;
     }
-    CSS.highlights.set('bh-find', new Highlight(...ranges));
-    CSS.highlights.set('bh-find-cur', new Highlight(ranges[at]));
+    paint(ranges, ranges[at]);
     const el = ranges[at].startContainer.parentElement;
     if (el) el.scrollIntoView({ block: 'center', inline: 'nearest' });
     show(`${at + 1}/${ranges.length}${ranges.length === MAX ? '+' : ''}`, true);

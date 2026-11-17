@@ -9,6 +9,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Fixed (macOS): an extension that opens a page in a new tab (Bitwarden's sign-in with a security key) did nothing; the page opens as a tab",
             "In the 3D style, cards and tiles no longer turn to follow the pointer: they only rise under it",
             "The sidebar no longer flickers when a tab opens or a page loads: the quick access icons and the rows that did not change stay as they are",
+            "Fixed (macOS): find in page left old matches highlighted, the \"nu\" of \"minutes\" while \"nullable\" was typed, and every match once the field was emptied",
         ],
     ),
     (
