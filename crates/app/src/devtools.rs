@@ -190,6 +190,19 @@ impl Running {
                 });
                 eprintln!("[dev] state -> {state}");
             }
+            // `inspect show|attach|detach|close`: the Web Inspector of the page on screen (macOS).
+            "inspect" => {
+                #[cfg(target_os = "macos")]
+                if let Some(ptr) = self
+                    .svc
+                    .workspace()
+                    .active_tab()
+                    .and_then(|t| self.tabs.get(&t.id))
+                    .and_then(crate::web_view_ptr)
+                {
+                    blackhole_macos_webext::inspector(ptr, rest.trim());
+                }
+            }
             "quit" => event_loop.exit(),
             _ => eprintln!("[dev] unknown step: {line}"),
         }
@@ -208,6 +221,12 @@ impl Running {
             None => eprintln!("[dev] screenshot failed"),
         }
     }
+}
+
+/// Linux: no capture yet (the scripted steps and `eval` still run).
+#[cfg(not(any(target_os = "macos", windows)))]
+fn capture_rgba(_window: &Window) -> Option<(u32, u32, Vec<u8>)> {
+    None
 }
 
 /// Grabs the window region in-process: CoreGraphics lets an app capture its own windows

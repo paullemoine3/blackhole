@@ -147,9 +147,9 @@ eval home 'hn1:' + !document.getElementById('now').hidden + '|' + document.query
 eval home 'dp7:' + (getComputedStyle(document.querySelector('.card:not([hidden])')).boxShadow !== 'none') + '|' + (getComputedStyle(document.querySelector('.item .tile, .fav .tile')).boxShadow !== 'none') + '|' + (getComputedStyle(document.querySelector('.item .tile, .fav .tile'), '::after').content !== 'none')
 eval bar 'dp8:' + document.body.classList.contains('flat') + '|' + (getComputedStyle(document.getElementById('omni')).boxShadow !== 'none')
 eval chrome (() => { const row = document.querySelector('#tabs .tab:not(.active):not(.split)'); return 'dp11:' + (getComputedStyle(document.getElementById('new')).boxShadow !== 'none') + '|' + (!row || row.matches(':hover') || getComputedStyle(row).boxShadow === 'none') + '|' + (getComputedStyle(document.querySelector('footer .icon')).boxShadow !== 'none'); })()
-eval home (() => { const n = document.querySelector('.fav') || document.querySelector('.item'); if (!n) return 'dp1:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp1:' + n.classList.contains('bh-lean') + '|' + (parseFloat(n.style.getPropertyValue('--ry')) > 2) + '|' + (getComputedStyle(n).transform !== 'none'); })()
+eval home (() => { const n = document.querySelector('.fav') || document.querySelector('.item'); if (!n) return 'dp1:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp1:' + n.classList.contains('bh-lean') + '|' + (n.style.getPropertyValue('--ry') === '0') + '|' + (getComputedStyle(n).transform !== 'none'); })()
 wait 500
-shot f13a-home-tile-leaning
+shot f13a-home-tile-raised
 cmd {"cmd":"set_animations","on":false}
 wait 400
 eval home (() => { const n = document.querySelector('.fav, .item'); if (!n) return 'dp2:none'; const r = n.getBoundingClientRect(); n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.left + r.width * .9, clientY: r.top + r.height * .2, pointerType: 'mouse' })); return 'dp2:' + n.classList.contains('bh-lean') + '|' + n.style.getPropertyValue('--ry'); })()
@@ -250,7 +250,7 @@ Check ((Ev us3) -match 'us3:1\|1') 'one search: Ctrl+Enter keeps the result in t
 Check ((Ev sg1) -match 'sg1:1\|Phone\|Meet at the station at 6') 'signals: a text received stays as a card of the sidebar'
 Check ((Ev sg3) -match 'sg3:0\|2') 'signals: its Easel button keeps the text and the card leaves'
 Check ((Ev hn1) -match 'hn1:true\|[1-9]\d*\|Weekly sync') 'start page: Now shows the meeting going on'
-Check ((Ev dp1) -match 'dp1:true\|true\|true') 'depth: a tile of the start page leans towards the pointer'
+Check ((Ev dp1) -match 'dp1:true\|true\|true') 'depth: a tile of the start page rises under the pointer, without turning'
 Check ((Ev dp2) -match 'dp2:false\|"') 'depth: nothing leans with animations off'
 Check ((Ev dp3) -match 'dp3:true\|false') 'depth: the flat style of the interface leaves the tiles flat'
 Check ((Ev dp4) -match 'dp4:false') 'depth: back to the 3D style'

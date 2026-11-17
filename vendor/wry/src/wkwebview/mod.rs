@@ -19,6 +19,8 @@ mod class;
 pub use class::wry_web_view::WryWebView;
 #[cfg(target_os = "macos")]
 use class::wry_web_view_parent::WryWebViewParent;
+#[cfg(target_os = "macos")]
+use class::wry_web_view_host::WryWebViewHost;
 use class::{
   document_title_changed_observer::*,
   url_scheme_handler,
@@ -199,6 +201,10 @@ pub(crate) struct InnerWebView {
   #[cfg(target_os = "macos")]
   // We need this to update the traffic light inset
   parent_view: Option<Retained<WryWebViewParent>>,
+  /// The view that holds a child web view (see `WryWebViewHost`): moved, hidden and removed in
+  /// its place.
+  #[cfg(target_os = "macos")]
+  host: Option<Retained<WryWebViewHost>>,
 }
 
 impl InnerWebView {
@@ -430,7 +436,7 @@ impl InnerWebView {
       }
 
       #[cfg(target_os = "macos")]
-      let webview = {
+      let (webview, host) = {
         let window = ns_view.window().unwrap();
 
         let scale_factor = window.backingScaleFactor();
@@ -484,7 +490,17 @@ impl InnerWebView {
           }
         }
 
-        webview
+        let host = is_child.then(|| {
+          let host = WryWebViewHost::new(mtm, frame);
+          webview.setFrame(CGRect {
+            origin: CGPoint::new(0.0, 0.0),
+            size: frame.size,
+          });
+          host.addSubview(&webview);
+          host
+        });
+
+        (webview, host)
       };
       #[cfg(target_os = "ios")]
       let webview = {
@@ -541,9 +557,13 @@ impl InnerWebView {
 
       #[cfg(target_os = "macos")]
       {
-        if is_child {
-          // fixed element
-          webview.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
+        if let Some(host) = &host {
+          // fixed element; the web view fills its host
+          host.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
+          webview.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewHeightSizable
+              | NSAutoresizingMaskOptions::ViewWidthSizable,
+          );
         } else {
           // Auto-resize
           webview.setAutoresizingMask(
@@ -573,6 +593,12 @@ impl InnerWebView {
       }
 
       if !attributes.visible {
+        #[cfg(target_os = "macos")]
+        match &host {
+          Some(host) => host.setHidden(true),
+          None => webview.setHidden(true),
+        }
+        #[cfg(target_os = "ios")]
         webview.setHidden(true);
       }
 
@@ -692,6 +718,8 @@ impl InnerWebView {
         is_child,
         #[cfg(target_os = "macos")]
         parent_view: None,
+        #[cfg(target_os = "macos")]
+        host: host.clone(),
       };
 
       if w.ipc_handler_delegate.is_some() {
@@ -725,8 +753,8 @@ impl InnerWebView {
       // Inject the web view into the window as main content
       #[cfg(target_os = "macos")]
       {
-        if is_child {
-          ns_view.addSubview(&webview);
+        if let Some(host) = &host {
+          ns_view.addSubview(host);
         } else {
           // inject the webview into the window
           let ns_window = ns_view.window().unwrap();
@@ -1085,12 +1113,22 @@ impl InnerWebView {
     Ok(())
   }
 
+  /// The view placed in the parent: the host of a child web view, or the web view itself.
+  fn outer(&self) -> &NSView {
+    #[cfg(target_os = "macos")]
+    if let Some(host) = &self.host {
+      return host;
+    }
+    &self.webview
+  }
+
   pub fn bounds(&self) -> crate::Result<Rect> {
     #[allow(unused_unsafe)]
     unsafe {
-      let parent = self.webview.superview().unwrap();
+      let outer = self.outer();
+      let parent = outer.superview().unwrap();
       let parent_frame = parent.frame();
-      let webview_frame = self.webview.frame();
+      let webview_frame = outer.frame();
 
       Ok(Rect {
         position: LogicalPosition::new(
@@ -1112,12 +1150,13 @@ impl InnerWebView {
       let (width, height) = bounds.size.to_logical::<i32>(scale_factor).into();
 
       unsafe {
-        let parent_view = self.webview.superview().unwrap();
+        let outer = self.outer();
+        let parent_view = outer.superview().unwrap();
         let frame = CGRect {
           origin: window_position(&parent_view, x, y, height),
           size: CGSize::new(width, height),
         };
-        self.webview.setFrame(frame);
+        outer.setFrame(frame);
       }
     }
 
@@ -1125,7 +1164,7 @@ impl InnerWebView {
   }
 
   pub fn set_visible(&self, visible: bool) -> Result<()> {
-    self.webview.setHidden(!visible);
+    self.outer().setHidden(!visible);
     Ok(())
   }
 
@@ -1368,7 +1407,7 @@ impl InnerWebView {
   pub(crate) fn reparent(&self, window: *mut NSWindow) -> crate::Result<()> {
     unsafe {
       let content_view = (*window).contentView().unwrap();
-      content_view.addSubview(&self.webview);
+      content_view.addSubview(self.outer());
     }
 
     Ok(())
@@ -1513,6 +1552,10 @@ impl Drop for InnerWebView {
         }
       }
       // Remove webview from window's NSView before dropping.
+      #[cfg(target_os = "macos")]
+      if let Some(host) = &self.host {
+        host.removeFromSuperview();
+      }
       self.webview.removeFromSuperview();
       self.webview.retain();
       self.manager.retain();

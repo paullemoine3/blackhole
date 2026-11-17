@@ -110,6 +110,30 @@
   #menu button .mi.sw svg { --bh-icon-stroke: 2px; }
   #menu .msep { height: 1px; margin: 4px 6px; background: rgba(255,255,255,.1); }
   #menu .mhead { padding: 5px 10px 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
+  /* Colour picker of a menu (`picker` item, a space's colour): preset dots, a hue × saturation
+     pad, a lightness track and the hex value. The space takes the colour while it is chosen. */
+  #menu .cpick { width: 236px; padding: 4px 6px 6px; display: grid; gap: 10px; }
+  #menu .cpresets { display: flex; justify-content: space-between; }
+  #menu .cpresets button { width: 22px; height: 22px; padding: 0; border-radius: 50%; display: grid; place-items: center; background: var(--c); color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); transition: transform .15s var(--bh-ease-glide, ease); }
+  #menu .cpresets button:hover { background: var(--c); transform: scale(1.12); }
+  #menu .cpresets button:focus-visible, #menu .cpad:focus-visible, #menu .chex input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  #menu .cpresets svg { --bh-icon-stroke: 2px; }
+  #menu .cpad { position: relative; height: 118px; border-radius: 10px; cursor: crosshair; touch-action: none;
+    background: linear-gradient(to bottom, transparent, hsl(0 0% var(--l, 50%))), linear-gradient(to right, hsl(0 100% var(--l, 50%)), hsl(60 100% var(--l, 50%)), hsl(120 100% var(--l, 50%)), hsl(180 100% var(--l, 50%)), hsl(240 100% var(--l, 50%)), hsl(300 100% var(--l, 50%)), hsl(360 100% var(--l, 50%)));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  body:not(.flat) #menu .cpad { box-shadow: var(--bh-relief-sunk), inset 0 0 0 1px rgba(255,255,255,.1); }
+  #menu .cknob { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--c); pointer-events: none;
+    box-shadow: 0 0 0 3px #fff, 0 2px 8px rgba(0,0,0,.5); }
+  #menu .clight { -webkit-appearance: none; appearance: none; width: 100%; height: 14px; margin: 0; border-radius: 7px; cursor: pointer;
+    background: linear-gradient(to right, hsl(var(--h) var(--s) 15%), hsl(var(--h) var(--s) 50%), hsl(var(--h) var(--s) 85%)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  #menu .clight::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px #fff, 0 2px 6px rgba(0,0,0,.5); }
+  #menu .chex { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  #menu .chex .cnow { width: 18px; height: 18px; border-radius: 6px; background: var(--c); flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.25); }
+  #menu .chex input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; background: rgba(0,0,0,.25); color: inherit;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: lowercase; }
+  #menu .chex input.bad { border-color: #ff8a8a; }
+  body:not(.flat) #menu .chex input { box-shadow: var(--bh-relief-sunk); }
 
   /* Boost editor */
   #boost { display: none; padding: 18px 20px 14px; }
@@ -500,12 +524,114 @@ function copyText(text) {
   return ok;
 }
 
+// Colour picker (`picker: { color, presets: [[name, hex]…], run }`): `run` gets `color`.
+// The colour is sent while it is chosen (at most every 60 ms, and once more when it rests): the
+// space shows it at once. A preset applies and closes, like the list it replaces.
+const hexRe = /^#[0-9a-f]{6}$/i;
+function hexToHsl(hex) {
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (!d) return [0, 0, l * 100];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100];
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+function colorPicker(p) {
+  const start = hexRe.test(p.color || '') ? p.color.toLowerCase() : '#7c5cff';
+  let [h, s, l] = hexToHsl(start), cur = start, last = 0, timer = 0;
+  const box = Object.assign(document.createElement('div'), { className: 'cpick' });
+  const apply = (hex) => send(Object.assign({}, p.run, { color: hex }));
+  const push = () => {
+    clearTimeout(timer);
+    const wait = 60 - (performance.now() - last);
+    const go = () => { last = performance.now(); apply(cur); };
+    if (wait <= 0) go(); else timer = setTimeout(go, wait);
+  };
+  const presets = Object.assign(document.createElement('div'), { className: 'cpresets' });
+  const dots = (p.presets || []).map(([name, hex]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.setProperty('--c', hex);
+    b.title = name;
+    b.setAttribute('aria-label', name);
+    b.dataset.hex = hex.toLowerCase();
+    b.onclick = () => { clearTimeout(timer); close(() => apply(hex)); };
+    return b;
+  });
+  presets.append(...dots);
+  const pad = Object.assign(document.createElement('div'), { className: 'cpad', tabIndex: 0 });
+  pad.setAttribute('role', 'slider');
+  pad.setAttribute('aria-label', bhT('color.hue_saturation'));
+  const knob = Object.assign(document.createElement('span'), { className: 'cknob' });
+  pad.append(knob);
+  const light = Object.assign(document.createElement('input'), { className: 'clight', type: 'range', min: 15, max: 85, step: 1 });
+  light.setAttribute('aria-label', bhT('color.lightness'));
+  const row = Object.assign(document.createElement('div'), { className: 'chex' });
+  const now = Object.assign(document.createElement('span'), { className: 'cnow' });
+  const hex = Object.assign(document.createElement('input'), { type: 'text', maxLength: 7, spellcheck: false });
+  hex.setAttribute('aria-label', bhT('color.hex'));
+  row.append(now, hex);
+  const paint = (fromHex) => {
+    box.style.setProperty('--c', cur);
+    box.style.setProperty('--h', h.toFixed(1));
+    box.style.setProperty('--s', s.toFixed(1) + '%');
+    pad.style.setProperty('--l', '50%');
+    knob.style.left = (h / 360 * 100) + '%';
+    knob.style.top = (100 - s) + '%';
+    pad.setAttribute('aria-valuetext', cur);
+    light.value = Math.round(Math.min(85, Math.max(15, l)));
+    if (!fromHex) { hex.value = cur; hex.classList.remove('bad'); }
+    for (const d of dots) {
+      const on = d.dataset.hex === cur;
+      if (on !== !!d.firstChild) d.replaceChildren(...(on ? [bhIcon('check', 'xs')] : []));
+    }
+  };
+  const set = (hh, ss, ll) => { h = hh; s = ss; l = ll; cur = hslToHex(h, s, l); paint(); push(); };
+  const at = (e) => {
+    const r = pad.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    set(x * 360, (1 - y) * 100, l);
+  };
+  pad.addEventListener('pointerdown', (e) => { pad.setPointerCapture(e.pointerId); at(e); });
+  pad.addEventListener('pointermove', (e) => { if (pad.hasPointerCapture(e.pointerId)) at(e); });
+  pad.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 10 : 2;
+    const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    const m = moves[e.key];
+    if (!m) return;
+    e.preventDefault();
+    set((h + m[0] * 1.8 + 360) % 360, Math.min(100, Math.max(0, s + m[1])), l);
+  });
+  light.addEventListener('input', () => set(h, s, +light.value));
+  hex.addEventListener('input', () => {
+    const v = hex.value.trim().replace(/^([0-9a-f]{6})$/i, '#$1');
+    const ok = hexRe.test(v);
+    hex.classList.toggle('bad', !ok && v.length >= 7);
+    if (!ok) return;
+    [h, s, l] = hexToHsl(v);
+    cur = v.toLowerCase();
+    paint(true);
+    push();
+  });
+  hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); close(); } });
+  box.append(presets, pad, light, row);
+  paint();
+  return box;
+}
+
 function showMenu(m) {
   const box = $('menu');
   document.body.classList.remove('leaving');
   box.replaceChildren(...m.items.map(it => {
     if (it.sep) return Object.assign(document.createElement('div'), { className: 'msep' });
     if (it.head) return Object.assign(document.createElement('div'), { className: 'mhead', textContent: it.head });
+    if (it.picker) return colorPicker(it.picker);
     const b = document.createElement('button');
     if (it.danger) b.className = 'danger';
     const label = document.createElement('span');

@@ -254,6 +254,19 @@ impl ExtensionHost {
         }
     }
 
+    /// Pages extensions asked to open since the last call, oldest first. The popover that asked
+    /// is closed: the page opens in front of it.
+    pub fn take_opened(&self) -> Vec<String> {
+        let opened = std::mem::take(&mut self.bridge.state.borrow_mut().opened);
+        if !opened.is_empty() {
+            if let Some(popover) = self.popover.borrow_mut().take() {
+                // Safety: closing a retained popover on the main thread.
+                unsafe { popover.performClose(None) };
+            }
+        }
+        opened
+    }
+
     /// Temporary: prints popup clicks/errors/network calls (never field values) to stderr.
     pub fn state(&self, id: &str) -> Option<LoadState> {
         self.states.borrow().get(id).cloned()

@@ -153,9 +153,10 @@ Les versions sont publiées dans les [**releases GitHub**](../../releases).
 |---|---|
 | 🪟 **Windows** | `BlackHole-Setup-X.Y.Z-x64.exe` ou zip portable |
 | 🍎 **macOS** | `.dmg` : glisser `BlackHole.app` dans `/Applications` |
+| 🐧 **Linux** (aperçu, x86_64) | `BlackHole-linux-amd64.deb` ou archive `BlackHole-linux-x86_64.tar.gz` (WebKitGTK 4.1, X11 ou XWayland) |
 | 🤖 **Android** | `BlackHole-android.apk` |
 
-BlackHole se met à jour lui-même : un bouton apparaît dans la barre latérale quand une nouvelle version existe, et chaque téléchargement est vérifié par SHA-256.
+BlackHole se met à jour lui-même (sauf sous Linux, où le paquet est remplacé à la main) : un bouton apparaît dans la barre latérale quand une nouvelle version existe, et chaque téléchargement est vérifié par SHA-256.
 
 ---
 
@@ -169,6 +170,8 @@ cargo run --release -p blackhole   # performances maximales
 cargo clippy --workspace --all-targets
 cargo test --workspace
 ```
+
+Sous Linux, installer d'abord `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libdbus-1-dev` ; `scripts/package-linux.sh VERSION` produit le `.deb` et l'archive.
 
 <details>
 <summary>🧪 <b>Tests d'interface</b> (feature <code>devtools</code>)</summary>

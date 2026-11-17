@@ -412,7 +412,6 @@ function withIcon(node, url, favicons) {
   const letter = node.textContent, bg = node.style.background;
   const img = document.createElement('img');
   img.referrerPolicy = 'no-referrer';
-  img.decoding = 'async';
   img.draggable = false;
   img.onerror = () => { img.remove(); node.textContent = letter; node.style.background = bg; node.classList.remove('ico'); };
   img.src = src;
@@ -424,7 +423,23 @@ function withIcon(node, url, favicons) {
 }
 function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
 
+// Rows are kept from one render to the next (0.8.16): a tab whose row shows the same thing
+// keeps its node, and a row that changed keeps its icon. Rebuilding every row on each change
+// (a title while a page loads, a new tab) reloaded every icon and the sidebar flickered.
+const rowCache = new Map();
 function tabNode(t) {
+  const md = (state.media || []).find(m => m.id === t.id);
+  const src = (state.favicons || {})[host(t.url)] || '';
+  const sig = JSON.stringify([t, t.id === state.activeTab, src, md ? [!!md.playing, !!md.muted] : 0]);
+  const old = rowCache.get(t.id);
+  if (old && old.sig === sig) return old.node;
+  const n = buildTabNode(t);
+  const dot = n.querySelector('.dot');
+  if (old && old.dot === host(t.url) + ' ' + src && old.node.querySelector('.dot')) dot.replaceWith(old.node.querySelector('.dot'));
+  rowCache.set(t.id, { sig, node: n, dot: host(t.url) + ' ' + src });
+  return n;
+}
+function buildTabNode(t) {
   const n = el('div', 'tab' + (t.id === state.activeTab ? ' active' : '') + (t.asleep ? ' asleep' : ''));
   n.title = t.asleep ? bhT('sidebar.asleep', { title: t.title }) : t.title;
   n.dataset.tab = t.id;
@@ -579,7 +594,8 @@ function spaceMenu(sp, x, y) {
     { icon: 'emoji', label: bhT('menu.change_emoji'), run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
     { icon: 'edit', label: bhT('menu.rename_space'), run: { cmd: 'edit_space', id: sp.id } },
     { sep: true }, { head: bhT('easel.color') },
-    ...COLORS.map(([name, hex]) => ({ icon: hex.toLowerCase() === (sp.color || '').toLowerCase() ? 'check' : '', color: hex, label: bhT(name), run: { cmd: 'set_space_color', id: sp.id, color: hex } })),
+    // Presets and a free colour (palette.html `colorPicker`): the space takes it while it is chosen.
+    { picker: { color: sp.color, presets: COLORS.map(([name, hex]) => [bhT(name), hex]), run: { cmd: 'set_space_color', id: sp.id } } },
   );
   if (state.spaces.length > 1) {
     // Only the active space's tabs are known here; the others say nothing about their count.
@@ -754,7 +770,7 @@ let down = null, drag = null, justDragged = false, editing = false, deferred = n
 
 function flush() { if (deferred && !drag && !sdrag && !editing) { const s = deferred; deferred = null; listsStale = true; window.bh.render(s); } }
 // What the lists of the sidebar are drawn from (see `render`).
-let listSig = '', listIcons = null, listsStale = false;
+let listSig = '', listIcons = null, listsStale = false, spacesSig = '';
 function listSignature(s) {
   return JSON.stringify([s.tabs, s.folders, s.easels, s.spaces, s.activeTab, s.activeSpace, s.collapsed,
     (s.media || []).map(m => [m.id, !!m.playing, !!m.muted]), s.color, s.sidebarWidth, s.os]);
@@ -1049,7 +1065,7 @@ const motion = {
         a.classList.add('gliding');
         g.animate([{ transform: `translate(${from.r.left - r.left}px, ${from.r.top - r.top}px)` }, { transform: 'none' }], { duration: 320, easing: GLIDE })
           .onfinish = () => { g.remove(); a.classList.remove('gliding'); };
-      } else if (a) a.classList.add('lit');
+      } else if (a) { a.classList.remove('lit'); void a.offsetWidth; a.classList.add('lit'); }
     }
   },
   // The active space card widens while the previous one shrinks back.
@@ -1085,6 +1101,7 @@ window.bh = {
     // an edit, a drag, a language change) pass the state it already has: always rebuilt.
     const sig = listSignature(s);
     const dirty = s === prev || listsStale || sig !== listSig || s.favicons !== listIcons;
+    const forced = s === prev || listsStale;
     listSig = sig; listIcons = s.favicons; listsStale = false;
     // The rows as they are on screen now, to animate them to their new places.
     const before = dirty && !switched && prev && prev.tabs && prev.tabs.length && s.animations !== false ? motion.snapshot() : null;
@@ -1105,7 +1122,11 @@ window.bh = {
     root.setProperty('--tint2', mix(s.color, .24));
     root.setProperty('--sw', s.sidebarWidth + 'px');
     document.body.classList.toggle('macos', s.os === 'macos');
+    if (forced) rowCache.clear();
     if (dirty) {
+    // Rows of tabs that are gone are forgotten.
+    const ids = new Set(s.tabs.map(t => t.id));
+    for (const id of rowCache.keys()) if (!ids.has(id)) rowCache.delete(id);
     const pins = s.tabs.filter(t => t.pinned).map(tabNode);
     $('pinned').replaceChildren(...pins);
     applyFolds(s.collapsed || []);
@@ -1134,6 +1155,9 @@ window.bh = {
       newFolderPending = false;
       editFolderId(s.folders[s.folders.length - 1].id);
     }
+    // The space cards only when they changed: a new card restarted its width transition.
+    const spSig = JSON.stringify([s.spaces, s.activeSpace]);
+    if (forced || spSig !== spacesSig) { spacesSig = spSig;
     $('spaces').replaceChildren(...s.spaces.map(sp => {
       const b = el('button', 'space' + (sp.id === s.activeSpace ? ' active' : ''));
       b.title = bhT('sidebar.space_hint', { name: sp.name });
@@ -1146,6 +1170,7 @@ window.bh = {
       b.oncontextmenu = (e) => { e.preventDefault(); spaceMenu(sp, e.clientX, e.clientY); };
       return b;
     }));
+    }
     }
     const bn = $('blockedn'), blocked = ' ' + s.blocked;
     if (bn.textContent !== blocked) {

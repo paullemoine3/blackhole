@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.16",
+        &[
+            "Linux (preview, x86_64): a .deb package and a portable archive, on the system's WebKitGTK. Logins and passwords are kept in the desktop's keyring (GNOME Keyring, KWallet)",
+            "Pick any colour for a space: its menu has the presets, a hue and saturation pad, a lightness track and the hex value, and the space takes the colour while you choose it",
+            "Fixed (macOS): Web Inspector docked to the right or the bottom took over the window, hiding the top bar and the sidebar, and left it black once closed. It now stays inside the page",
+            "Fixed (macOS): an extension that opens a page in a new tab (Bitwarden's sign-in with a security key) did nothing; the page opens as a tab",
+            "In the 3D style, cards and tiles no longer turn to follow the pointer: they only rise under it",
+            "The sidebar no longer flickers when a tab opens or a page loads: the quick access icons and the rows that did not change stay as they are",
+            "Fixed (macOS): find in page left old matches highlighted, the \"nu\" of \"minutes\" while \"nullable\" was typed, and every match once the field was emptied",
+        ],
+    ),
+    (
         "0.8.15",
         &[
             "Windows: the buttons of uBlock Origin Lite, Ghostery and the other extensions see the page in front again; they said they were not on a web page",

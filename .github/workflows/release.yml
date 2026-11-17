@@ -1,10 +1,12 @@
 name: Release
 
 # Push on main with a Cargo.toml version that has no release yet, or a tag vX.Y.Z (must equal the
-# Cargo.toml version) -> build macOS + Windows + Android, publish a GitHub release (tag vX.Y.Z).
+# Cargo.toml version) -> build macOS + Windows + Linux + Android, publish a GitHub release (tag vX.Y.Z).
 # Other pushes and pull requests only build and test.
 # The in-app updater reads that release: it installs BlackHole-Setup-*-x64.exe (Windows) or
 # BlackHole-macos-universal.zip (macOS) after checking them against SHA256SUMS.txt.
+# Linux (x86_64, WebKitGTK 4.1, built on Ubuntu 22.04 for an older glibc): BlackHole-linux-amd64.deb
+# and BlackHole-linux-x86_64.tar.gz (scripts/package-linux.sh); never installed by the app itself.
 # Android: BlackHole-android.apk, signed with the release key from the secrets
 # ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD;
 # without them, BlackHole-android-debug.apk (Gradle's debug key) with a warning.
@@ -29,12 +31,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: WebKitGTK and GTK (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libdbus-1-dev
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Clippy (Linux)
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
   version:
@@ -134,6 +144,30 @@ jobs:
             dist/BlackHole-macos-universal.zip
             dist/BlackHole-macos-universal.dmg
 
+  linux:
+    needs: [test, version]
+    # 22.04: the oldest Ubuntu with WebKitGTK 4.1, so the binary runs on older glibc too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebKitGTK and GTK
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libdbus-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --locked -p blackhole
+
+      - name: Package (.deb and .tar.gz)
+        run: scripts/package-linux.sh "${{ needs.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlackHole-linux
+          path: |
+            dist/BlackHole-linux-amd64.deb
+            dist/BlackHole-linux-x86_64.tar.gz
+
   android:
     needs: [test, version]
     runs-on: ubuntu-latest
@@ -210,7 +244,7 @@ jobs:
 
   publish:
     if: needs.version.outputs.release == 'true'
-    needs: [version, windows, macos, android]
+    needs: [version, windows, macos, linux, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -239,5 +273,7 @@ jobs:
             dist/BlackHole-windows-x64.zip
             dist/BlackHole-macos-universal.zip
             dist/BlackHole-macos-universal.dmg
+            dist/BlackHole-linux-amd64.deb
+            dist/BlackHole-linux-x86_64.tar.gz
             dist/BlackHole-android*.apk
             dist/SHA256SUMS.txt

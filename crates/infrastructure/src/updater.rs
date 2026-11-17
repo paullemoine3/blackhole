@@ -56,6 +56,8 @@ pub fn wants_asset(os: &str, name: &str) -> bool {
     match os {
         "windows" => name.starts_with("BlackHole-Setup-") && name.ends_with("-x64.exe"),
         "macos" => name == "BlackHole-macos-universal.zip",
+        // Never installed by the app (the package manager owns it): Settings only links to it.
+        "linux" => name == "BlackHole-linux-x86_64.tar.gz",
         // An APK only replaces one signed with the same key: release key or Gradle's debug key.
         "android" => name == ANDROID_APK,
         "android-debug" => name == ANDROID_DEBUG_APK,
@@ -431,6 +433,9 @@ mod tests {
         assert_eq!(mac.asset, "BlackHole-macos-universal.zip");
         assert_eq!(mac.sha256, "4".repeat(64));
         assert!(release_from_sums("v0.2.0", SUMS_0_2_0, "linux").is_none());
+        let sums = format!("{}  BlackHole-linux-x86_64.tar.gz\n{}  BlackHole-linux-amd64.deb\n", "5".repeat(64), "6".repeat(64));
+        let linux = release_from_sums("v0.8.16", &sums, "linux").unwrap();
+        assert_eq!((linux.asset.as_str(), linux.sha256.as_str()), ("BlackHole-linux-x86_64.tar.gz", &*"5".repeat(64)));
         assert!(
             release_from_sums("v0.2.0", "not a checksum file", "macos").is_none(),
             "no checksum, no update"

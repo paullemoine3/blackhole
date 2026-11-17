@@ -2,6 +2,7 @@
 # The 0.8.14 changes on macOS, driven by the devtools harness (captures /tmp/bh_shots/v0814-*):
 # anchored tab (mark, kept awake when the cap would put it to sleep), password manager switch,
 # learned trackers card (allow / block again), starry start page, quick access without lean,
+# start page tiles that rise without turning (0.8.16),
 # address kept clear of the zoom badge, find in a long page (time and match), leaning cards calm
 # at their edges and keeping the pointer, page card elevation.
 # Local server on 127.0.0.1:47981 (a 30 000-line log). Scratch profile /tmp/bh_data (wiped first).
@@ -42,7 +43,7 @@ wait 2500
 cmd {"cmd":"set_language","language":"en"}
 wait 400
 eval home 'sky:' + (() => { const c = document.getElementById('sky'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return (c.width > 0) + '|' + (n > 500); })()
-eval home 'calm:' + (() => { const f = document.querySelector('.fav'); const r = f.getBoundingClientRect(); const at = (x, y, t) => (t || f).dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x, clientY: y, pointerType: 'mouse' })); at(r.left + r.width * .3, r.top + r.height * .3); const mid = Math.abs(parseFloat(f.style.getPropertyValue('--ry'))); at(r.left + 1, r.top + r.height / 2); const edge = Math.abs(parseFloat(f.style.getPropertyValue('--ry'))); at(r.left + 2, r.top + r.height / 2, document.querySelector('main')); const kept = f.classList.contains('bh-lean'); at(5, 5, document.body); return (mid > 1) + '|' + (edge < .5) + '|' + kept + '|' + !f.classList.contains('bh-lean'); })()
+eval home 'calm:' + (() => { const f = document.querySelector('.fav'); const r = f.getBoundingClientRect(); const at = (x, y, t) => (t || f).dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x, clientY: y, pointerType: 'mouse' })); at(r.left + r.width * .2, r.top + r.height * .2); const up = f.classList.contains('bh-lean'); const flat = f.style.getPropertyValue('--ry') === '0' && f.style.getPropertyValue('--rx') === '0'; const m = new DOMMatrix(getComputedStyle(f).transform); const noTurn = Math.abs(m.m13) < 1e-6 && Math.abs(m.m23) < 1e-6; at(5, 5, document.body); return up + '|' + flat + '|' + noTurn + '|' + !f.classList.contains('bh-lean'); })()
 shot v0814-home
 cmd {"cmd":"open","input":"http://127.0.0.1:47981/small"}
 wait 2500
@@ -105,7 +106,7 @@ mapfile -t L <<<"$out"
 fail=0
 check() { if [[ "${L[$1]:-}" == *"$2"* ]]; then echo "ok   $3"; else echo "FAIL $3 (got: ${L[$1]:-none})"; fail=1; fi; }
 check 0 'sky:true|true' "start page: a sky of stars is drawn"
-check 1 'calm:true|true|true|true' "a leaning tile is flat at its edge, keeps the pointer, rests when left"
+check 1 'calm:true|true|true|true' "a tile rises under the pointer without turning (0.8.16), rests when left"
 check 3 'anch:true|true|Anchor' "anchored tab: state, anchor mark, menu entry"
 check 5 'pin:true|true|true' "quick access tile does not lean, stays anchored"
 check 6 '"anchoredAlive":1' "the anchored tab stays awake past the cap on live tabs"
