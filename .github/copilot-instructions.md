@@ -492,7 +492,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   après le début du document) ; un refus rapide envoie `PageEvent::PasskeyRefused`, notice une fois par
   site (`domain::passkeys::Refusals`, 10 min). Les extensions (Bitwarden : son script de page attend cette
   réponse pour se substituer) passent avant et se replient sur ces fonctions. 1Password et Dashlane : leurs
-  extensions Safari fournies par leurs apps (Réglages > Extensions). Windows : WebView2 a WebAuthn, non touché.
+  extensions Safari fournies par leurs apps (Réglages > Extensions). Windows : rien d'injecté, WebAuthn de WebView2 non vérifié.
 - Test macOS : `bash scripts/test-0817.sh` (serveur local 47983 : tuiles, sections de l'accueil, flyout
   gardé derrière le sélecteur, passkeys et notice ; pointeur hors de la fenêtre). Windows : code commun
   (tuiles, accueil, import) non testé.
