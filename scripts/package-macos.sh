@@ -4,6 +4,8 @@
 #
 #   scripts/package-macos.sh            build + bundle
 #   scripts/package-macos.sh --install  also copy to /Applications
+#   scripts/package-macos.sh --dmg      also build dist/BlackHole-macos-universal.dmg
+#                                       (drag-and-drop installer, scripts/make-dmg.sh)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -70,6 +72,10 @@ PLIST
 codesign --force --deep --sign - "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 echo "Built $APP"
+
+if [[ "${1:-}" == "--dmg" ]]; then
+  scripts/make-dmg.sh "$APP"
+fi
 
 if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/BlackHole.app

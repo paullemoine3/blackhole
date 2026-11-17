@@ -15,6 +15,8 @@ use wry::{
 const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
 const TRACKER_WATCH_JS: &str = include_str!("../ui/tracker_watch.js");
+/// macOS: honest WebAuthn answers and refused passkey requests (`domain::passkeys`).
+const PASSKEYS_JS: &str = include_str!("../ui/passkeys.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
@@ -610,6 +612,11 @@ fn build_tab(
         )
         .with_initialization_script_for_main_only(HIGHLIGHTS_JS, true)
         .with_initialization_script_for_main_only(TRACKER_WATCH_JS, true)
+        // Every frame: the extensions that serve passkeys run in frames too.
+        .with_initialization_script_for_main_only(
+            if cfg!(target_os = "macos") { PASSKEYS_JS } else { "" },
+            false,
+        )
         .with_initialization_script_for_main_only(
             if cfg!(debug_assertions) { DEBUG_LOG_JS } else { "" },
             false,

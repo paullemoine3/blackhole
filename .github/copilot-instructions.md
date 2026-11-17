@@ -463,6 +463,40 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   Windows : code commun (sélecteur, 3D) non testé ; `test-features.ps1` `dp1` attend une tuile montée
   sans rotation (`--ry` = 0, capture `f13a-home-tile-raised`).
 
+## 0.8.17 : flyout et menus, DMG glisser-déposer, tuiles, accueil, profils d'import, passkeys
+
+- Barre latérale masquée : un menu ouvert depuis le flyout (`UiCommand::Menu`, `origin` « sidebar »,
+  surtout le sélecteur de couleur d'un espace) garde le flyout (`Sidebar::hold_for_menu`) : la palette le
+  couvre, donc son `mouseleave` (`peek false`) est ignoré jusqu'à `close_palette`. Ensuite, le prochain
+  mouvement sur la page le replie (la bande `hotzone` reste large, contrairement à `reveal`).
+- DMG macOS : `scripts/make-dmg.sh [APP] [SORTIE]` (appelé par `release.yml` et `package-macos.sh --dmg`) :
+  l'app à côté d'un lien `/Applications`, fond fléché clair (`scripts/make_dmg_background.py`, stdlib, 1x +
+  Retina via `tiffutil`), mise en page Finder par AppleScript (une minute au plus ; sinon avertissement,
+  image construite quand même avec le lien). Icône du volume si `SetFile` est là.
+- Tuiles d'accès rapide : `Settings::quick_access_size` (`QUICK_ACCESS_SIZES` : small 5 par ligne, medium 4
+  et 48 px, large 3), commande `set_quick_access_size`, classes `qa-small` / `qa-large` de `index.html`,
+  menu d'une tuile et de la zone, Réglages > General.
+- Accueil : sections `HOME_SECTIONS` (`now`, `favorites`, `watches`, `downloads`, `recent`) masquables
+  (`Settings::hidden_home_sections`, `set_home_section`, bouton « Customize the start page », Réglages >
+  General). Zones surveillées (`home_watches_json`, dernière valeur, les plus récemment changées) et
+  téléchargements présents sur le disque (`home_downloads_json`), `HOME_LIST` au plus ; une section vide
+  reste cachée.
+- Import : noms de profils donnés par l'utilisateur, `Local State` (`profile.info_cache.<dossier>.name`)
+  pour Chromium, `profiles.ini` (`Name=`/`Path=`) pour Firefox ; repli sur le nom du dossier.
+- Passkeys (macOS) : sans l'entitlement `com.apple.developer.web-browser.public-key-credential` (signature
+  Developer ID et accord d'Apple), WebKit refuse WebAuthn d'emblée (`NotAllowedError` en ~10 ms, rien à
+  l'écran), répond `false` à `isUserVerifyingPlatformAuthenticatorAvailable` après plusieurs secondes et
+  annonce à tort un authentificateur dans `getClientCapabilities`. `ui/passkeys.js` (toutes les frames,
+  macOS seulement) répond tout de suite « pas d'authentificateur de plateforme » et enveloppe
+  `CredentialsContainer.prototype.get/create` (pas l'instance : WebKit remplace `navigator.credentials`
+  après le début du document) ; un refus rapide envoie `PageEvent::PasskeyRefused`, notice une fois par
+  site (`domain::passkeys::Refusals`, 10 min). Les extensions (Bitwarden : son script de page attend cette
+  réponse pour se substituer) passent avant et se replient sur ces fonctions. 1Password et Dashlane : leurs
+  extensions Safari fournies par leurs apps (Réglages > Extensions). Windows : WebView2 a WebAuthn, non touché.
+- Test macOS : `bash scripts/test-0817.sh` (serveur local 47983 : tuiles, sections de l'accueil, flyout
+  gardé derrière le sélecteur, passkeys et notice ; pointeur hors de la fenêtre). Windows : code commun
+  (tuiles, accueil, import) non testé.
+
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.

@@ -131,11 +131,12 @@ jobs:
       - name: Bundle BlackHole.app
         run: BLACKHOLE_BIN=target/universal/blackhole scripts/package-macos.sh
 
-      - name: Zip (used by the updater) and DMG
-        run: |
-          cd dist
-          ditto -c -k --keepParent BlackHole.app BlackHole-macos-universal.zip
-          hdiutil create -volname BlackHole -srcfolder BlackHole.app -ov -format UDZO BlackHole-macos-universal.dmg
+      - name: Zip (used by the updater)
+        run: cd dist && ditto -c -k --keepParent BlackHole.app BlackHole-macos-universal.zip
+
+      # Opening the image shows the app beside an Applications link: install by drag and drop.
+      - name: DMG
+        run: scripts/make-dmg.sh dist/BlackHole.app dist/BlackHole-macos-universal.dmg
 
       - uses: actions/upload-artifact@v4
         with:

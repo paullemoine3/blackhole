@@ -17,6 +17,8 @@ const FOUND_MAX: usize = 300;
 /// The start page lists this many changed areas, and the tab received from another device
 /// for this long (seconds).
 const HOME_AREAS: usize = 4;
+/// Watched areas and downloads listed on the start page, at most.
+const HOME_LIST: usize = 6;
 const HOME_RECEIVED_FOR: i64 = 12 * 3600;
 
 fn now() -> i64 {
@@ -240,6 +242,23 @@ impl Running {
                 .map(|e| json!({"id": e.id, "name": e.name})).collect::<Vec<_>>(),
             "easel": self.easel_current,
         })
+    }
+
+    /// The start page's watched areas: the last read of each, most recently changed first.
+    pub(crate) fn home_watches_json(&self) -> Value {
+        let mut all: Vec<Value> = self.watches_json().as_array().cloned().unwrap_or_default();
+        all.sort_by_key(|w| std::cmp::Reverse(w["changed"].as_i64().unwrap_or(0)));
+        all.truncate(HOME_LIST);
+        json!(all)
+    }
+
+    /// The start page's downloads: the last files that arrived and are still on disk.
+    pub(crate) fn home_downloads_json(&self) -> Value {
+        json!(self.downloads.iter().rev()
+            .filter(|d| d.done && d.ok && std::path::Path::new(&d.path).exists())
+            .take(HOME_LIST)
+            .map(|d| json!({"id": d.id, "name": d.name, "url": d.url, "at": d.at}))
+            .collect::<Vec<_>>())
     }
 
     // ---- the command bar's grouped results -------------------------------------------------

@@ -187,6 +187,9 @@ impl Running {
                     "liveTabs": self.tabs.len(),
                     "learned": self.trackers.data.learned().len(),
                     "allowed": self.trackers.data.allowed().len(),
+                    // Visible width of the floating sidebar (0: hidden), and whether it is pinned open.
+                    "flyout": self.sidebar.flyout_width().round(),
+                    "sidebarOpen": self.sidebar.is_open(),
                 });
                 eprintln!("[dev] state -> {state}");
             }

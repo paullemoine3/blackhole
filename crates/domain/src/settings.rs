@@ -68,6 +68,25 @@ pub struct Settings {
     /// Third-party hosts that track the user across sites are learned while browsing and
     /// blocked like the listed trackers (see `trackers`). On by default.
     pub tracker_learning: bool,
+    /// Size of the quick access tiles of the sidebar: one of `QUICK_ACCESS_SIZES`.
+    pub quick_access_size: String,
+    /// Sections of the start page the user hid (names of `HOME_SECTIONS`).
+    pub hidden_home_sections: BTreeSet<String>,
+}
+
+/// Quick access tile sizes, smallest first (`medium` is the default: four tiles a row).
+pub const QUICK_ACCESS_SIZES: [&str; 3] = ["small", "medium", "large"];
+/// Sections of the start page that can be hidden, in the page's order.
+pub const HOME_SECTIONS: [&str; 5] = ["now", "favorites", "watches", "downloads", "recent"];
+
+/// A known quick access tile size.
+pub fn is_quick_access_size(size: &str) -> bool {
+    QUICK_ACCESS_SIZES.contains(&size)
+}
+
+/// A start page section that can be hidden.
+pub fn is_home_section(name: &str) -> bool {
+    HOME_SECTIONS.contains(&name)
 }
 
 /// Page zoom steps in percent, like the other browsers (100% is the fifth).
@@ -172,6 +191,8 @@ impl Default for Settings {
             site_zoom: BTreeMap::new(),
             password_manager: true,
             tracker_learning: true,
+            quick_access_size: "medium".to_owned(),
+            hidden_home_sections: BTreeSet::new(),
         }
     }
 }

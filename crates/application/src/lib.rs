@@ -214,6 +214,30 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    /// Size of the quick access tiles (`small`, `medium`, `large`); false for another value.
+    pub fn set_quick_access_size(&mut self, size: &str) -> bool {
+        if !blackhole_domain::is_quick_access_size(size) {
+            return false;
+        }
+        self.settings.quick_access_size = size.to_owned();
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
+    /// Shows or hides a section of the start page; false for an unknown section.
+    pub fn set_home_section(&mut self, name: &str, shown: bool) -> bool {
+        if !blackhole_domain::is_home_section(name) {
+            return false;
+        }
+        if shown {
+            self.settings.hidden_home_sections.remove(name);
+        } else {
+            self.settings.hidden_home_sections.insert(name.to_owned());
+        }
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
     /// Calendar options by name: `reminders` (a toast when a meeting starts) or `card` (the next
     /// meeting in the sidebar). False for an unknown name.
     pub fn set_meeting_option(&mut self, name: &str, on: bool) -> bool {

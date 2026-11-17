@@ -1,6 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.17",
+        &[
+            "With the sidebar hidden, the colour picker of a space no longer loses its sidebar: the floating sidebar stays while the menu is open",
+            "macOS: the disk image shows BlackHole beside the Applications folder, with an arrow: drag it there to install",
+            "Quick access tiles come in three sizes (Settings > General, or the menu of a tile): small fits five a row, large three",
+            "The start page can show your watched areas and your last downloads, and each section can be hidden (Customize the start page, or Settings > General)",
+            "Import from another browser lists its profiles by the names you gave them (Work, Personal) instead of Default or Profile 1",
+            "macOS: a site that asks for a passkey is told at once that there is none on this Mac, so it offers another way to sign in, and the extensions that hold passkeys (Bitwarden, 1Password, Dashlane) take over sooner. When the system refuses a passkey request, a notice says why",
+        ],
+    ),
+    (
         "0.8.16",
         &[
             "Linux (preview, x86_64): a .deb package and a portable archive, on the system's WebKitGTK. Logins and passwords are kept in the desktop's keyring (GNOME Keyring, KWallet)",

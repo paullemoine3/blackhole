@@ -47,6 +47,9 @@
   .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
   .card h2 button { font: inherit; text-transform: none; letter-spacing: 0; color: inherit; opacity: .8; background: transparent; border: 0; cursor: pointer; border-radius: 6px; padding: 2px 6px; }
   .card h2 button:hover { background: rgba(255,255,255,.1); }
+  .customize { display: flex; justify-content: center; }
+  #customize { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: inherit; opacity: .55; background: transparent; border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  #customize:hover, #customize:focus-visible { opacity: .9; background: rgba(255,255,255,.08); }
   .card h2 button.armed, .card h2 button.armed:hover { background: rgba(255,90,90,.9); color: #fff; opacity: 1; }
   #favs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
   .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
@@ -167,8 +170,11 @@
   <div class="brand"><div class="logo"><i class="glow"></i><i class="disc"></i><i class="ring"></i><i class="ring fast"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
   <section class="card now" id="now" hidden><h2 data-i18n="home.now">Now</h2><div id="nowlist"></div></section>
-  <section class="card"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
-  <section class="card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
+  <section class="card" id="favorites"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
+  <section class="card" id="watches" hidden><h2><span data-i18n="home.watches">Watched areas</span> <button class="lib" data-section="watches" data-i18n="home.see_all">See all</button></h2><div id="watchlist"></div></section>
+  <section class="card" id="downloads" hidden><h2><span data-i18n="home.downloads">Downloads</span> <button class="lib" data-section="downloads" data-i18n="home.see_all">See all</button></h2><div id="dllist"></div></section>
+  <section class="card" id="recent-card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
+  <div class="customize"><button id="customize"><span data-i18n="home.customize">Customize the start page</span></button></div>
 </main>
 <script>
 const send = (m) => window.ipc.postMessage(JSON.stringify(m));
@@ -265,6 +271,48 @@ function renderNow(now) {
   $('now').hidden = !rows.length;
   $('nowlist').replaceChildren(...rows);
 }
+// Watched areas: the last value read of each (text from pages: textContent only).
+function renderWatches(list) {
+  $('watches').hidden = !list.length;
+  $('watchlist').replaceChildren(...list.map(w => {
+    const value = (w.value || '').replace(/\s+/g, ' ').trim();
+    const sub = [value.length > 80 ? value.slice(0, 79) + '…' : value, w.changed ? ago(w.changed) : null].filter(Boolean).join(' · ');
+    const open = () => send({ cmd: 'open', input: w.url });
+    return nowRow(tile(w.url), w.title || host(w.url), sub || host(w.url), open, [
+      { icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: w.url } },
+      { icon: 'reload', label: bhT('home.check_now'), run: { cmd: 'watch_check', id: w.id } },
+      { icon: 'library', label: bhT('home.show_library'), run: { cmd: 'open_library', section: 'watches' } },
+    ], !!w.unread);
+  }));
+}
+// The last files downloaded that are still there: a click opens the file.
+function renderDownloads(list) {
+  $('downloads').hidden = !list.length;
+  $('dllist').replaceChildren(...list.map(d => {
+    const open = () => send({ cmd: 'library_open_file', id: d.id });
+    return nowRow(glyphTile('download'), d.name, [host(d.url), d.at ? ago(d.at) : null].filter(Boolean).join(' · '), open, [
+      { icon: 'open', label: bhT('home.open_file'), run: { cmd: 'library_open_file', id: d.id } },
+      { icon: 'library', label: bhT('home.show_library'), run: { cmd: 'open_library', section: 'downloads' } },
+    ]);
+  }));
+}
+// Sections the user hid stay hidden whatever they hold. Ids are the section names of the
+// settings, except the recent pages' card.
+const CARD = { now: 'now', favorites: 'favorites', watches: 'watches', downloads: 'downloads', recent: 'recent-card' };
+const SECTION_KEY = { now: 'home.now', favorites: 'home.favorites', watches: 'home.watches', downloads: 'home.downloads', recent: 'home.recent' };
+function applyHidden(s) {
+  for (const name of s.sections || []) if ((s.hidden || []).includes(name)) $(CARD[name]).hidden = true;
+}
+function customizeMenu(x, y) {
+  const s = last || {};
+  menu(x, y, [{ head: bhT('home.sections') }, ...(s.sections || []).map(name => {
+    const shown = !(s.hidden || []).includes(name);
+    return { icon: shown ? 'check' : 'minus', label: bhT(SECTION_KEY[name]), run: { cmd: 'set_home_section', section: name, shown: !shown } };
+  })]);
+}
+$('customize').prepend(bhIcon('gear', 'xs'));
+$('customize').onclick = () => { const r = $('customize').getBoundingClientRect(); customizeMenu(r.left, r.bottom + 4); };
+for (const b of document.querySelectorAll('.card h2 .lib')) b.onclick = () => send({ cmd: 'open_library', section: b.dataset.section });
 let focused = false;
 let riseAt = 0;
 function splash() {
@@ -316,6 +364,8 @@ window.bh = {
       return box;
     }), ...(notes.length ? [Object.assign(el('button', null, bhT('home.got_it')), { onclick: () => send({ cmd: 'dismiss_release_notes' }) })] : []));
     renderNow(s.now);
+    renderWatches(s.watches || []);
+    renderDownloads(s.downloads || []);
     $('favs').replaceChildren(...s.favorites.map(f => {
       const n = el('div', 'fav'); n.title = f.url;
       n.append(tile(f.url), el('div', 'name', f.name));
@@ -335,6 +385,8 @@ window.bh = {
       return activable(n, n.onclick, (x, y) => recentMenu(r, x, y));
     });
     $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', bhT('home.empty'))]));
+    for (const name of ['favorites', 'recent']) $(CARD[name]).hidden = false;
+    applyHidden(s);
     // Tiles rise one after another as the start page emerges from the launch splash. A render
     // that comes in meanwhile (icons arriving) keeps the same schedule.
     if (!focused && s.animations) riseAt = performance.now() + 1750;
