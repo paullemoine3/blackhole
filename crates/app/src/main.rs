@@ -579,6 +579,8 @@ struct Running {
     /// Space or folder whose emoji the picker is editing.
     icon_target: Option<(String, u64)>,
     peek: Option<Peek>,
+    /// Sites already told that their passkey request was refused (macOS, `domain::passkeys`).
+    passkey_refusals: blackhole_domain::passkeys::Refusals,
     #[cfg(windows)]
     ext_popup: Option<ExtPopup>,
     /// Left edge and width of each extension's button in the command bar (`ExtAnchors`).
@@ -1041,6 +1043,7 @@ impl Running {
             palette_mode: String::new(),
             icon_target: None,
             peek: None,
+            passkey_refusals: Default::default(),
             #[cfg(windows)]
             ext_popup: None,
             #[cfg(windows)]
@@ -1474,6 +1477,7 @@ impl Running {
             "os": std::env::consts::OS,
             "sidebarWidth": self.sidebar.full(),
             "sidebarOpen": self.sidebar.is_open(),
+            "tileSize": self.svc.settings().quick_access_size,
             "engine": self.svc.settings().search_engine.id(),
             "animations": self.svc.settings().animations,
             "depth": self.svc.settings().depth,
@@ -1626,6 +1630,13 @@ impl Running {
                 "sites": e.scripts.iter().flat_map(|s| s.matches.iter().cloned()).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
         });
+        // Apart: the macro above is at serde_json's recursion limit.
+        state["tileSize"] = json!(settings.quick_access_size);
+        state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
+        state["homeSections"] = blackhole_domain::HOME_SECTIONS
+            .iter()
+            .map(|s| json!({"id": s, "shown": !settings.hidden_home_sections.contains(*s)}))
+            .collect();
         // General > Language: the setting, the languages in their own words, and what "System"
         // gives on this computer.
         state["recall"] = self.recall_state();
@@ -3328,6 +3339,10 @@ impl Running {
                 .collect::<Vec<_>>(),
             "releaseNotes": self.release_notes,
             "now": self.home_now_json(),
+            "hidden": self.svc.settings().hidden_home_sections,
+            "sections": blackhole_domain::HOME_SECTIONS,
+            "watches": self.home_watches_json(),
+            "downloads": self.home_downloads_json(),
         });
         if self.icons_for_home.replace(false) {
             state["favicons"] = json!(self.favicons.all());
@@ -4588,6 +4603,7 @@ impl Running {
             return;
         }
         self.palette_open = false;
+        self.sidebar.hold_for_menu(false);
         self.apply_slots();
         let _ = self.palette.evaluate_script("window.bh&&bh.hide()");
         let _ = self.palette.set_visible(false);
@@ -5455,6 +5471,9 @@ impl Running {
                 };
                 self.menu = Some(json!({"x": x + dx, "y": y + BAR_HEIGHT, "items": items}));
                 self.open_palette("menu");
+                // A menu of the floating sidebar (the space colour picker above all): the
+                // overlay covers the flyout, which must not slide away behind the menu.
+                self.sidebar.hold_for_menu(origin == "sidebar");
             }
             UiCommand::DeleteSpace { id } => {
                 // Its tabs go to the archive, like those of a deleted folder: nothing is lost.
@@ -5907,6 +5926,18 @@ impl Running {
                 self.layout(false);
             }
             UiCommand::SetSidebarWidth { width } => self.set_sidebar_width(width),
+            UiCommand::SetQuickAccessSize { size } => {
+                if self.svc.set_quick_access_size(&size) {
+                    self.ui_state();
+                    self.ui_settings();
+                }
+            }
+            UiCommand::SetHomeSection { section, shown } => {
+                if self.svc.set_home_section(&section, shown) {
+                    self.ui_home();
+                    self.ui_settings();
+                }
+            }
             UiCommand::FocusContent => self.focus_content(),
             UiCommand::DragWindow => {
                 let _ = self.window.drag_window();
@@ -6360,6 +6391,20 @@ impl Running {
                 self.on_blocked("", &host, &site, space);
             }
             Msg::Page(tab, PageEvent::Requests { list }) => self.tracker_requests(tab, list),
+            Msg::Page(tab, PageEvent::PasskeyRefused { .. }) => {
+                let site = self.site_of(tab);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as u64);
+                if self.passkey_refusals.should_tell(&site, now) {
+                    self.notify_action(
+                        notices::Notice::Problem,
+                        &tf("toast.passkey_refused", &[("host", &site)]),
+                        &t("toast.passkey_extensions"),
+                        json!({"cmd": "open_settings", "tab": "extensions"}),
+                    );
+                }
+            }
             Msg::Url(tab, url) => {
                 self.pilot_mark(tab);
                 self.page_url(tab, url);

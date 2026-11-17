@@ -458,6 +458,16 @@ pub enum UiCommand {
     SetSidebarWidth {
         width: u32,
     },
+    /// Size of the quick access tiles: `small`, `medium` or `large`.
+    SetQuickAccessSize {
+        size: String,
+    },
+    /// Shows or hides a section of the start page (`now`, `favorites`, `watches`, `downloads`,
+    /// `recent`).
+    SetHomeSection {
+        section: String,
+        shown: bool,
+    },
     Palette {
         mode: String,
     },
@@ -776,6 +786,9 @@ pub enum PageEvent {
         #[serde(default)]
         host: String,
     },
+    /// macOS: the system refused a passkey request of the page (`ui/passkeys.js`, untrusted:
+    /// the shell reads the site on its side and says it once per site, `domain::passkeys`).
+    PasskeyRefused {},
     /// Shift+click on a link: preview it in a floating window.
     Peek {
         url: String,
@@ -1203,6 +1216,8 @@ mod tests {
             r#"{"cmd":"tracker_block","host":"spy.example"}"#,
             r#"{"cmd":"trackers_forget"}"#,
             r#"{"cmd":"tab_anchor","id":3}"#,
+            r#"{"cmd":"set_quick_access_size","size":"large"}"#,
+            r#"{"cmd":"set_home_section","section":"downloads","shown":false}"#,
             r#"{"cmd":"passwords","action":{"op":"enabled","on":false}}"#,
         ] {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
@@ -1215,6 +1230,9 @@ mod tests {
         .unwrap();
         assert!(matches!(event, PageEvent::Requests { list } if list.len() == 2 && list[1].kind.is_empty()));
         assert!(serde_json::from_str::<UiCommand>(r#"{"cmd":"requests","list":[]}"#).is_err());
+        let refused: PageEvent = serde_json::from_str(r#"{"cmd":"passkey_refused","kind":"get"}"#).unwrap();
+        assert!(matches!(refused, PageEvent::PasskeyRefused {}));
+        assert!(serde_json::from_str::<UiCommand>(r#"{"cmd":"passkey_refused"}"#).is_err());
     }
 
     #[test]

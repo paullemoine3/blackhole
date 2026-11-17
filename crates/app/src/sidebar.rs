@@ -69,6 +69,9 @@ pub struct Sidebar {
     held: Option<Instant>,
     /// The cursor is on the flyout, as far as the pages said.
     hovered: bool,
+    /// A menu opened from the flyout is on screen (the space colour picker): the menu overlay
+    /// covers the flyout, so the cursor "leaves" it, but the flyout stays until the menu closes.
+    menu: bool,
 }
 
 impl Sidebar {
@@ -87,6 +90,7 @@ impl Sidebar {
             flyout: Anim::new(0.0),
             held: None,
             hovered: false,
+            menu: false,
         }
     }
 
@@ -129,6 +133,7 @@ impl Sidebar {
     pub fn toggle(&mut self) {
         self.open = !self.open;
         self.held = None;
+        self.menu = false;
         if self.open {
             // Pinning a flyout continues from its current width, so the sidebar doesn't blink.
             if self.flyout.value > 0.0 {
@@ -145,7 +150,7 @@ impl Sidebar {
     pub fn peek(&mut self, on: bool) {
         self.hovered = on;
         // Shown by the shell: the cursor leaving does not hide it before its time.
-        if self.open || (self.held.is_some() && !on) {
+        if self.open || ((self.held.is_some() || self.menu) && !on) {
             return;
         }
         let target = if on { self.full } else { 0.0 };
@@ -168,6 +173,13 @@ impl Sidebar {
         true
     }
 
+    /// A menu opened from the flyout shows (`true`) or closes (`false`). While it is open, the
+    /// cursor leaving the flyout does not hide it; once it closes, the next move over the page
+    /// does. Nothing to hold when the sidebar is open or the flyout is not out.
+    pub fn hold_for_menu(&mut self, on: bool) {
+        self.menu = on && !self.open && self.flyout.target > 0.0;
+    }
+
     /// True while the flyout is out on the shell's own initiative.
     pub fn held(&self) -> bool {
         self.held.is_some()
@@ -180,7 +192,7 @@ impl Sidebar {
             return false;
         }
         self.held = None;
-        if !self.hovered && !self.open {
+        if !self.hovered && !self.menu && !self.open {
             self.flyout.go(0.0);
         }
         true
@@ -326,6 +338,47 @@ mod tests {
         s.peek(false);
         settle(&mut s);
         assert_eq!(s.flyout_width(), 0.0);
+    }
+
+    #[test]
+    fn a_menu_opened_from_the_flyout_keeps_it_until_the_menu_closes() {
+        let mut s = Sidebar::new(FULL);
+        s.toggle();
+        settle(&mut s);
+        s.peek(true);
+        settle(&mut s);
+        s.hold_for_menu(true);
+        // The menu overlay covers the flyout: the cursor "leaves" it.
+        s.peek(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), FULL, "the colour picker keeps its sidebar");
+        assert!(!s.held(), "the strip over the page stays wide: the next move there hides it");
+        s.hold_for_menu(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), FULL, "closing the menu alone does not hide it");
+        s.peek(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), 0.0);
+    }
+
+    #[test]
+    fn a_menu_holds_nothing_on_an_open_sidebar_or_a_flyout_not_out() {
+        let mut s = Sidebar::new(FULL);
+        s.hold_for_menu(true);
+        s.toggle();
+        settle(&mut s);
+        s.peek(true);
+        s.peek(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), 0.0);
+        s.hold_for_menu(true);
+        s.peek(true);
+        s.toggle();
+        s.toggle();
+        s.peek(true);
+        s.peek(false);
+        settle(&mut s);
+        assert_eq!(s.flyout_width(), 0.0, "pinning and hiding again drops the hold");
     }
 
     #[test]

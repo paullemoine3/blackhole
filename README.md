@@ -5,16 +5,17 @@
 ### Un navigateur rapide, élégant et respectueux de votre vie privée.
 
 Écrit en Rust, BlackHole s'appuie sur le moteur web natif de votre système :<br>
-WebKit sur macOS, WebView2 sur Windows, WebView sur Android.
+WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
 ![macOS](https://img.shields.io/badge/macOS-WKWebView-black?logo=apple)
 ![Windows](https://img.shields.io/badge/Windows-WebView2-0078D6?logo=windows)
+![Linux](https://img.shields.io/badge/Linux-WebKitGTK_(aperçu)-FCC624?logo=linux&logoColor=black)
 ![Android](https://img.shields.io/badge/Android-WebView-3DDC84?logo=android)
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-088) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0817) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -32,23 +33,31 @@ WebKit sur macOS, WebView2 sur Windows, WebView sur Android.
 | ⚡ **Rapide et léger** | Moteur natif, quatre onglets vivants par défaut, voisins préchargés, anciens libérés. |
 | 🛡️ **Privé par défaut** | Shields intégrés, HTTPS automatique, liens nettoyés, aucune télémétrie, aucun compte. |
 | ⌨️ **Au clavier** | Une seule barre de commandes pour les onglets, l'historique, l'Easel, les téléchargements et plus. |
-| 📲 **Multi-appareils** | macOS, Windows et Android, synchronisés sur le réseau local, sans serveur. |
+| 📲 **Multi-appareils** | macOS, Windows et Android (Linux en aperçu), synchronisés sur le réseau local, sans serveur. |
 
 ---
 
-## 🆕 Nouveautés 0.8.8
+## 🆕 Nouveautés 0.8.17
 
-- 🔎 **Une seule recherche** — la barre de commandes trouve aussi les surlignages, zones surveillées, onglets fermés, téléchargements et, avec Recall, les pages lues.
-- 🖼️ **L'Easel rassemble tout** — tableau du comparateur, avant/après d'une zone surveillée, texte reçu d'un autre appareil ; une carte en direct peut prévenir quand sa zone change.
-- 📤 **Envoyer partout** — un lien, une page, un surlignage ou un fichier part vers votre autre appareil depuis n'importe quel menu.
-- 🗒️ **Cartes qui durent** — ce qui s'est passé en votre absence reste dans la barre latérale jusqu'à ce que vous y répondiez.
-- 🔍 **Zoom mémorisé** par site, et la carte d'un appel quitte vraiment l'appel quand on la ferme.
+- 🧱 **Tuiles d'accès rapide à votre taille** — petites (cinq par ligne), moyennes ou grandes (trois), depuis les Réglages ou le menu d'une tuile.
+- 🏠 **Accueil à la carte** — vos zones surveillées et vos derniers téléchargements y trouvent leur place, et chaque section se masque d'un clic.
+- 🎨 **Sélecteur de couleur tranquille** — avec la barre latérale masquée, elle reste ouverte tant que vous choisissez la couleur d'un espace.
+- 🔑 **Clés d'accès (macOS)** — un site qui en demande une sait tout de suite qu'aucune n'est disponible sur le Mac : il propose une autre connexion, et l'extension de votre gestionnaire (Bitwarden, 1Password, Dashlane) prend le relais plus vite.
+- 📥 **Import plus clair** — les profils des autres navigateurs portent leur vrai nom (« Travail », « Perso ») plutôt que *Default* ou *Profile 1*.
+- 💿 **Installation macOS** — l'image disque montre BlackHole à côté du dossier Applications : il suffit de le glisser.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
 
+- 🐧 **0.8.16** — Linux en aperçu (`.deb` et archive), couleur libre pour chaque espace, inspecteur web ancré dans la page, style 3D sans inclinaison.
+- 🧩 **0.8.15** — extensions Windows qui voient de nouveau la bonne page, fin des pages blanches de l'extension anti-bannières.
+- ⚓ **0.8.14** — onglets ancrés jamais mis en veille, traqueurs appris en naviguant, gestionnaire de mots de passe désactivable.
+- ↩️ **0.8.13** — Annuler après une suppression, navigation entre onglets au clavier, recherche dans la page à travers les liens.
+- 🧊 **0.8.11 – 0.8.12** — styles 3D et plat, nouvelles cartes de l'Easel, vue scindée animée, site de présentation.
+- 🔔 **0.8.9 – 0.8.10** — notices visibles même barre latérale masquée, téléchargements lancés depuis une page, zones surveillées vers l'Easel de votre choix.
+- 🔎 **0.8.8** — une seule recherche pour tout, l'Easel qui rassemble tout, envoi vers un autre appareil depuis n'importe quel menu.
 - 📌 **0.8.7** — onglets épinglés avec leur propre adresse, dossiers à la Arc, menu contextuel BlackHole sur toutes les pages, nouvelle animation de lancement.
 - 🧠 **0.8.6** — Recall (retrouver une page lue à partir de quelques mots), onglets trou noir, vue scindée pilote, liens nettoyés, surlignages, Wormhole.
 - 🚀 **0.8.5** — blocage des traqueurs par le moteur lui-même, plus léger sur YouTube, Google Docs et Meet.
@@ -64,10 +73,10 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 | Page d'accueil | Nouveautés après mise à jour |
 |:---:|:---:|
 | ![Accueil](docs/screenshots/home.png) | ![Nouveautés](docs/screenshots/whatsnew.png) |
-| **Easel avec une zone en direct** | **Page d'erreur** |
-| ![Easel](docs/screenshots/easel.png) | ![Site injoignable](docs/screenshots/errors.png) |
-
-<p align="center"><img src="docs/screenshots/settings.png" alt="Réglages, Shields" width="100%"></p>
+| **Couleur d'un espace** | **Page d'erreur** |
+| ![Sélecteur de couleur](docs/screenshots/picker.png) | ![Site injoignable](docs/screenshots/errors.png) |
+| **Easel avec une zone en direct** | **Réglages, Shields** |
+| ![Easel](docs/screenshots/easel.png) | ![Réglages](docs/screenshots/settings.png) |
 
 ---
 
@@ -75,8 +84,10 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 
 ### 🧭 Navigation
 
-- 🗂️ **Barre latérale à la Arc** avec des **espaces** colorés pour cloisonner vos contextes, chacun avec ses propres cookies (perso et pro côte à côte).
-- 📌 **Onglets épinglés et dossiers** qui gardent leur adresse d'origine et y reviennent au réveil.
+- 🗂️ **Barre latérale à la Arc** avec des **espaces** colorés (n'importe quelle couleur) pour cloisonner vos contextes, chacun avec ses propres cookies (perso et pro côte à côte).
+- 📌 **Accès rapide et dossiers** : des tuiles en trois tailles et des onglets qui gardent leur adresse d'origine et y reviennent au réveil.
+- ⚓ **Onglets ancrés** : une messagerie ou une musique jamais mise en veille.
+- 🏠 **Page d'accueil à la carte** : réunion en cours, favoris, zones surveillées, téléchargements et activité récente, chaque section masquable.
 - ◧ **Vue scindée**, avec un mode pilote où les liens d'un panneau s'ouvrent dans l'autre, et **aperçu flottant** d'un lien (`Maj + clic`).
 - 🕳️ **Onglets trou noir** : session isolée, rien dans l'historique, détruite à la fermeture.
 - 🪟 **Glisser un onglet** vers une autre fenêtre, ou l'**envoyer** sur un autre appareil.
@@ -100,7 +111,7 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 
 - 🧠 **Léger en mémoire** : quatre onglets vivants par défaut (réglable), voisins préchargés, anciens mis en veille.
 - 🚀 **Démarrage rapide** : chargement parallèle, écritures disque en arrière-plan.
-- ✨ **Animations soignées**, désactivables, et respect de `prefers-reduced-motion`.
+- ✨ **Style 3D ou plat** : les cartes se soulèvent sous le pointeur, sans pencher ; animations désactivables et respect de `prefers-reduced-motion`.
 - 🌍 **Interface en français et en anglais**, changement de langue instantané.
 
 <details>
@@ -110,6 +121,7 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 |---|---|
 | Barre de commandes | `Ctrl/Cmd + L` |
 | Onglet précédent | `Ctrl + Tab` |
+| Aller à l'onglet 1 à 8 (9 = dernier) | `Ctrl/Cmd + 1 … 9` |
 | Parcourir la barre latérale | `Ctrl/Cmd + Alt + ↑ / ↓` |
 | Rouvrir le dernier onglet fermé | `Ctrl/Cmd + Maj + T` |
 | Fermer (ou mettre en veille un onglet épinglé) | `Ctrl/Cmd + W` |
@@ -126,8 +138,10 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 - 🚫 **Aucune télémétrie.** Moteur de recherche **DuckDuckGo** par défaut ; Brave Search, Startpage, Qwant, Mojeek ou Google au choix.
 - 🛡️ **Shields** : traqueurs, publicités, emplacements pub, pubs YouTube et bannières cookies bloqués par le moteur lui-même, avec un rapport de confidentialité par site.
 - 🔗 **HTTPS automatique** et **liens nettoyés** : paramètres de suivi supprimés, redirections des moteurs et réseaux sociaux contournées.
-- 🔑 **Mots de passe** dans un coffre chiffré (ChaCha20-Poly1305), clé dans le trousseau système, proposés uniquement sur le bon site.
-- 📥 **Import** depuis Chrome, Edge, Brave, Vivaldi, Opera, Firefox et dérivés (favoris, mots de passe via export CSV).
+- 🧠 **Traqueurs appris** : un site tiers qui vous suit sur plusieurs sites est bloqué comme les autres.
+- 🔑 **Mots de passe** dans un coffre chiffré (XChaCha20-Poly1305), clé dans le trousseau système, proposés uniquement sur le bon site ; gestionnaire intégré désactivable si vous en utilisez un autre.
+- 🗝️ **Clés d'accès** : sous macOS, Apple réserve celles du trousseau aux navigateurs dotés d'une autorisation spéciale ; passez par l'extension de votre gestionnaire (Bitwarden, ou les extensions Safari de 1Password et Dashlane).
+- 📥 **Import** depuis Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox et dérivés, profils listés sous leur vrai nom (favoris, mots de passe via export CSV).
 
 ---
 
@@ -152,7 +166,7 @@ Les versions sont publiées dans les [**releases GitHub**](../../releases).
 | Plateforme | Paquet |
 |---|---|
 | 🪟 **Windows** | `BlackHole-Setup-X.Y.Z-x64.exe` ou zip portable |
-| 🍎 **macOS** | `.dmg` : glisser `BlackHole.app` dans `/Applications` |
+| 🍎 **macOS** | `BlackHole-macos-universal.dmg` : glisser BlackHole sur le dossier Applications de la fenêtre |
 | 🐧 **Linux** (aperçu, x86_64) | `BlackHole-linux-amd64.deb` ou archive `BlackHole-linux-x86_64.tar.gz` (WebKitGTK 4.1, X11 ou XWayland) |
 | 🤖 **Android** | `BlackHole-android.apk` |
 
@@ -177,8 +191,8 @@ Sous Linux, installer d'abord `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-de
 <summary>🧪 <b>Tests d'interface</b> (feature <code>devtools</code>)</summary>
 
 - **Windows** : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`, `scripts\test-easel.ps1`
-- **macOS** : `scripts/test-webext.sh`, `scripts/test-easel.sh`, `scripts/test-errors.sh`, `scripts/test-popup.sh`, `scripts/test-settings.sh`, `scripts/test-i18n.sh`
-- Les captures de ce README se régénèrent avec `scripts/readme-shots.sh`.
+- **macOS** : `scripts/test-webext.sh`, `scripts/test-easel.sh`, `scripts/test-errors.sh`, `scripts/test-popup.sh`, `scripts/test-settings.sh`, `scripts/test-i18n.sh`, et un script par version (`scripts/test-0814.sh` … `scripts/test-0817.sh`)
+- Les captures de ce README et du site se régénèrent avec `scripts/readme-shots.sh` ; l'image disque macOS avec `scripts/package-macos.sh --dmg`.
 
 </details>
 

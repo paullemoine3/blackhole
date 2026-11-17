@@ -7,6 +7,7 @@
 use blackhole_domain::i18n::message;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -132,8 +133,9 @@ pub fn detect_in(base: &Path, windows: bool) -> Vec<Source> {
                     subs.sort();
                     dirs.extend(subs);
                 }
+                let names = chromium_profile_names(&root);
                 for d in dirs.into_iter().filter(|d| d.join("Bookmarks").is_file()) {
-                    out.push(source(k, &d));
+                    out.push(source(k, &d, &names));
                 }
             }
             Family::Firefox => {
@@ -142,11 +144,15 @@ pub fn detect_in(base: &Path, windows: bool) -> Vec<Source> {
                 };
                 let mut subs: Vec<_> = rd.flatten().map(|e| e.path()).collect();
                 subs.sort();
+                let names = root
+                    .parent()
+                    .map(firefox_profile_names)
+                    .unwrap_or_default();
                 for d in subs
                     .into_iter()
                     .filter(|d| d.join("places.sqlite").is_file())
                 {
-                    out.push(source(k, &d));
+                    out.push(source(k, &d, &names));
                 }
             }
         }
@@ -154,15 +160,69 @@ pub fn detect_in(base: &Path, windows: bool) -> Vec<Source> {
     out
 }
 
-fn source(k: &Known, dir: &Path) -> Source {
-    let profile = dir
+/// Profile folder name → the name the user gave it, as the browser shows it ("Work", not
+/// "Profile 1"). Chromium keeps them in `Local State` (`profile.info_cache.<folder>.name`).
+fn chromium_profile_names(root: &Path) -> HashMap<String, String> {
+    let Ok(text) = fs::read_to_string(root.join("Local State")) else {
+        return HashMap::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return HashMap::new();
+    };
+    json.pointer("/profile/info_cache")
+        .and_then(|c| c.as_object())
+        .map(|cache| {
+            cache
+                .iter()
+                .filter_map(|(dir, info)| {
+                    let name = info.get("name")?.as_str()?.trim();
+                    (!name.is_empty()).then(|| (dir.clone(), name.to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Firefox family: `profiles.ini` beside the `Profiles` folder, `[ProfileN]` sections with
+/// `Name=` and `Path=` (relative `Profiles/abc.default` or absolute). Keyed by folder name.
+fn firefox_profile_names(app: &Path) -> HashMap<String, String> {
+    let Ok(text) = fs::read_to_string(app.join("profiles.ini")) else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    let (mut name, mut path) = (None::<String>, None::<String>);
+    let mut flush = |name: &mut Option<String>, path: &mut Option<String>| {
+        if let (Some(n), Some(p)) = (name.take(), path.take()) {
+            let dir = p.rsplit(['/', '\\']).next().unwrap_or(&p).to_owned();
+            if !n.trim().is_empty() && !dir.is_empty() {
+                out.insert(dir, n.trim().to_owned());
+            }
+        }
+    };
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            flush(&mut name, &mut path);
+        } else if let Some(v) = line.strip_prefix("Name=") {
+            name = Some(v.to_owned());
+        } else if let Some(v) = line.strip_prefix("Path=") {
+            path = Some(v.to_owned());
+        }
+    }
+    flush(&mut name, &mut path);
+    out
+}
+
+fn source(k: &Known, dir: &Path, names: &HashMap<String, String>) -> Source {
+    let folder = dir
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let profile = profile
-        .split_once('.')
-        .filter(|_| k.family == Family::Firefox)
-        .map_or(profile.clone(), |(_, n)| n.to_owned());
+    let profile = names.get(&folder).cloned().unwrap_or_else(|| {
+        folder
+            .split_once('.')
+            .filter(|_| k.family == Family::Firefox)
+            .map_or(folder.clone(), |(_, n)| n.to_owned())
+    });
     Source {
         id: format!("{}:{}", k.name.to_lowercase(), dir.display()),
         browser: k.name.to_owned(),
@@ -458,6 +518,47 @@ mod tests {
         assert_eq!(
             names,
             vec![("Chrome", "Profile 1"), ("Waterfox", "default")]
+        );
+    }
+
+    #[test]
+    fn profiles_are_listed_by_the_names_the_user_gave_them() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().join("BraveSoftware/Brave-Browser");
+        for dir in ["Default", "Profile 1", "Profile 2"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+            fs::write(root.join(dir).join("Bookmarks"), "{}").unwrap();
+        }
+        fs::write(
+            root.join("Local State"),
+            r#"{"profile":{"info_cache":{"Default":{"name":"Personal"},"Profile 1":{"name":"Work"},"Profile 2":{"name":" "}}}}"#,
+        )
+        .unwrap();
+        let ff = t.path().join("Firefox");
+        fs::create_dir_all(ff.join("Profiles/k3x.default-release")).unwrap();
+        fs::create_dir_all(ff.join("Profiles/q9z.dev")).unwrap();
+        fs::write(ff.join("Profiles/k3x.default-release/places.sqlite"), "").unwrap();
+        fs::write(ff.join("Profiles/q9z.dev/places.sqlite"), "").unwrap();
+        fs::write(
+            ff.join("profiles.ini"),
+            "[General]\nStartWithLastProfile=1\n\n[Profile0]\nName=Home\nIsRelative=1\nPath=Profiles/k3x.default-release\n",
+        )
+        .unwrap();
+        let found = detect_in(t.path(), false);
+        let names: Vec<_> = found
+            .iter()
+            .map(|s| (s.browser.as_str(), s.profile.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                ("Brave", "Personal"),
+                ("Brave", "Work"),
+                // A blank name or none at all: the folder, as before.
+                ("Brave", "Profile 2"),
+                ("Firefox", "Home"),
+                ("Firefox", "dev"),
+            ]
         );
     }
 

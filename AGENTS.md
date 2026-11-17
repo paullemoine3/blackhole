@@ -138,7 +138,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-i18n.sh` (langue anglais ↔ français en direct, captures `i18n-*`),
   `bash scripts/test-blocking.sh` (blocage natif et sonde média, serveur local, étape `state`),
   `bash scripts/test-0814.sh` (onglet ancré, traqueurs appris, mots de passe, Ctrl+F sur 30 000 lignes, zoom, accueil),
-  `bash scripts/test-0816.sh` (inspecteur ancré dans la carte, sélecteur de couleur d'espace).
+  `bash scripts/test-0816.sh` (inspecteur ancré dans la carte, sélecteur de couleur d'espace),
+  `bash scripts/test-0817.sh` (tuiles d'accès rapide, sections de l'accueil, flyout gardé derrière un menu, passkeys).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`, `scripts\test-features.ps1` (liens propres, trou noir, split pilote,
   surlignages, Recall).
@@ -766,6 +767,40 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   Windows : code commun (sélecteur, 3D) non testé ; `test-features.ps1` `dp1` attend une tuile montée
   sans rotation (`--ry` = 0, capture `f13a-home-tile-raised`).
 
+## 0.8.17 : flyout et menus, DMG glisser-déposer, tuiles, accueil, profils d'import, passkeys
+
+- Barre latérale masquée : un menu ouvert depuis le flyout (`UiCommand::Menu`, `origin` « sidebar »,
+  surtout le sélecteur de couleur d'un espace) garde le flyout (`Sidebar::hold_for_menu`) : la palette le
+  couvre, donc son `mouseleave` (`peek false`) est ignoré jusqu'à `close_palette`. Ensuite, le prochain
+  mouvement sur la page le replie (la bande `hotzone` reste large, contrairement à `reveal`).
+- DMG macOS : `scripts/make-dmg.sh [APP] [SORTIE]` (appelé par `release.yml` et `package-macos.sh --dmg`) :
+  l'app à côté d'un lien `/Applications`, fond fléché clair (`scripts/make_dmg_background.py`, stdlib, 1x +
+  Retina via `tiffutil`), mise en page Finder par AppleScript (une minute au plus ; sinon avertissement,
+  image construite quand même avec le lien). Icône du volume si `SetFile` est là.
+- Tuiles d'accès rapide : `Settings::quick_access_size` (`QUICK_ACCESS_SIZES` : small 5 par ligne, medium 4
+  et 48 px, large 3), commande `set_quick_access_size`, classes `qa-small` / `qa-large` de `index.html`,
+  menu d'une tuile et de la zone, Réglages > General.
+- Accueil : sections `HOME_SECTIONS` (`now`, `favorites`, `watches`, `downloads`, `recent`) masquables
+  (`Settings::hidden_home_sections`, `set_home_section`, bouton « Customize the start page », Réglages >
+  General). Zones surveillées (`home_watches_json`, dernière valeur, les plus récemment changées) et
+  téléchargements présents sur le disque (`home_downloads_json`), `HOME_LIST` au plus ; une section vide
+  reste cachée.
+- Import : noms de profils donnés par l'utilisateur, `Local State` (`profile.info_cache.<dossier>.name`)
+  pour Chromium, `profiles.ini` (`Name=`/`Path=`) pour Firefox ; repli sur le nom du dossier.
+- Passkeys (macOS) : sans l'entitlement `com.apple.developer.web-browser.public-key-credential` (signature
+  Developer ID et accord d'Apple), WebKit refuse WebAuthn d'emblée (`NotAllowedError` en ~10 ms, rien à
+  l'écran), répond `false` à `isUserVerifyingPlatformAuthenticatorAvailable` après plusieurs secondes et
+  annonce à tort un authentificateur dans `getClientCapabilities`. `ui/passkeys.js` (toutes les frames,
+  macOS seulement) répond tout de suite « pas d'authentificateur de plateforme » et enveloppe
+  `CredentialsContainer.prototype.get/create` (pas l'instance : WebKit remplace `navigator.credentials`
+  après le début du document) ; un refus rapide envoie `PageEvent::PasskeyRefused`, notice une fois par
+  site (`domain::passkeys::Refusals`, 10 min). Les extensions (Bitwarden : son script de page attend cette
+  réponse pour se substituer) passent avant et se replient sur ces fonctions. 1Password et Dashlane : leurs
+  extensions Safari fournies par leurs apps (Réglages > Extensions). Windows : rien d'injecté, WebAuthn de WebView2 non vérifié.
+- Test macOS : `bash scripts/test-0817.sh` (serveur local 47983 : tuiles, sections de l'accueil, flyout
+  gardé derrière le sélecteur, passkeys et notice ; pointeur hors de la fenêtre). Windows : code commun
+  (tuiles, accueil, import) non testé.
+
 ## Livraison et entretien
 
 - Préserver les changements utilisateur déjà présents ; limiter les modifications
@@ -778,7 +813,8 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Pour une livraison demandée, synchroniser la version workspace de `Cargo.toml`
   et `Cargo.lock`. Le workflow `.github/workflows/release.yml` peut publier sur
   push de `main` si la version n'a pas encore de tag, ou sur tag `vX.Y.Z`.
-- `scripts/package-macos.sh` produit le bundle macOS ; `--install` l'installe. `scripts/package-linux.sh`
+- `scripts/package-macos.sh` produit le bundle macOS ; `--install` l'installe, `--dmg` construit l'image disque
+  (`scripts/make-dmg.sh` : glisser-déposer vers Applications). `scripts/package-linux.sh`
   produit le `.deb` et l'archive Linux.
 - Mise à jour dans l'app (`infrastructure/updater.rs`) : dernière version lue par la redirection
   `github.com/<repo>/releases/latest` + `SHA256SUMS.txt` du tag, jamais l'API REST (quota anonyme

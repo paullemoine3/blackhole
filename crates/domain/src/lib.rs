@@ -14,6 +14,7 @@ pub mod i18n;
 pub mod meetings;
 pub mod notice;
 pub mod omnibox;
+pub mod passkeys;
 pub mod passwords;
 pub mod pilot;
 pub mod pip;
@@ -36,7 +37,10 @@ pub use history::{History, HistoryEntry};
 pub use meetings::Meeting;
 pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchEngine};
 pub use privacy::{is_third_party, privacy_grade, BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy, Shields};
-pub use settings::{next_zoom, overflow_to_release, site_key, Settings, ZOOM_STEPS};
+pub use settings::{
+    is_home_section, is_quick_access_size, next_zoom, overflow_to_release, site_key, Settings,
+    HOME_SECTIONS, QUICK_ACCESS_SIZES, ZOOM_STEPS,
+};
 pub use workspace::{
     Home,
     sanitize_icon, site_of_host, Folder, FolderId, Removed, Space, SpaceId, Tab, TabId, Tidied,

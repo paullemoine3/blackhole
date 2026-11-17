@@ -11,6 +11,7 @@ macOS reste une plateforme de premier rang, en parallèle de Windows.
   - Cadres d'extension (menu d'autofill, barre de notification) autorisés dans les pages.
   - Extensions à page d'arrière-plan persistante (Bitwarden) servies sous `safari-web-extension://<id>` ; les extensions à service worker ne reçoivent pas ce schéma (sinon Dark Reader reste sur son style de secours).
 - **Navigateur par défaut** : `scripts/package-macos.sh [--install]` produit `dist/BlackHole.app` (http/https) et l'installe dans `/Applications` ; ensuite, action « Make BlackHole the default browser ».
+- **Image disque** : `scripts/package-macos.sh --dmg` (ou `scripts/make-dmg.sh [APP] [SORTIE]`) produit `dist/BlackHole-macos-universal.dmg` : à l’ouverture, l’app à côté d’un lien vers `/Applications` sur un fond fléché (`scripts/make_dmg_background.py`), à glisser-déposer. La mise en page passe par Finder (AppleScript) ; sans lui, image construite quand même avec le lien, et un avertissement.
 - **Gestes trackpad** : deux doigts pour page précédente/suivante et changement d'espace sur la barre latérale.
 - **Rail de 84 px** : couvre les boutons système fermer/réduire/agrandir.
 - **Vidéo** : WKWebView décode déjà sur GPU. Annoncer `Safari/605.1.15` dans le user-agent rendait YouTube très lent : écarté.

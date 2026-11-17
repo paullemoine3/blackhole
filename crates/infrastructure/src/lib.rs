@@ -476,6 +476,16 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .collect(),
             password_manager: dto.password_manager,
             tracker_learning: dto.tracker_learning,
+            quick_access_size: if blackhole_domain::is_quick_access_size(&dto.quick_access_size) {
+                dto.quick_access_size
+            } else {
+                Settings::default().quick_access_size
+            },
+            hidden_home_sections: dto
+                .hidden_home_sections
+                .into_iter()
+                .filter(|s| blackhole_domain::is_home_section(s))
+                .collect(),
         }))
     }
 
@@ -517,6 +527,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             site_zoom: settings.site_zoom.clone(),
             password_manager: settings.password_manager,
             tracker_learning: settings.tracker_learning,
+            quick_access_size: settings.quick_access_size.clone(),
+            hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -638,6 +650,10 @@ struct SettingsDto {
     password_manager: bool,
     #[serde(default = "default_true")]
     tracker_learning: bool,
+    #[serde(default)]
+    quick_access_size: String,
+    #[serde(default)]
+    hidden_home_sections: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -862,6 +878,8 @@ mod tests {
             site_zoom: [("example.com".to_owned(), 125)].into(),
             password_manager: false,
             tracker_learning: false,
+            quick_access_size: "large".to_owned(),
+            hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -875,6 +893,16 @@ mod tests {
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration && old.depth);
         assert!(old.password_manager && old.tracker_learning, "on in older files");
+        assert_eq!(old.quick_access_size, "medium");
+        assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
+        fs::write(
+            dir.path().join("settings.json"),
+            r#"{"search_engine":"qwant","quick_access_size":"huge","hidden_home_sections":["now","nope"]}"#,
+        )
+        .unwrap();
+        let odd = repo.load_settings().unwrap().unwrap();
+        assert_eq!(odd.quick_access_size, "medium", "an unknown size falls back");
+        assert_eq!(odd.hidden_home_sections, ["now".to_owned()].into(), "unknown sections dropped");
         assert_eq!(old.tab_sleep_minutes, 10);
         assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
         assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);

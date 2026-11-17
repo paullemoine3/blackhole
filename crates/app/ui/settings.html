@@ -225,7 +225,8 @@
     <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1 data-i18n="settings.general">General</h1><p class="lead"><span data-i18n="settings.general_lead">How BlackHole looks, searches and saves memory.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.language">Language</h2><div class="rows" id="langs" role="radiogroup" data-i18n-aria="settings.language"></div></div>
     <div class="card"><h2 data-i18n="settings.search_engine">Default search engine</h2><div class="rows" id="engines" role="radiogroup" data-i18n-aria="settings.search_engine"></div></div>
-    <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="style"></div><div class="rows" id="anim"></div><div class="rows" id="sbw"></div></div>
+    <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="style"></div><div class="rows" id="anim"></div><div class="rows" id="sbw"></div><div class="rows" id="tiles"></div></div>
+    <div class="card"><h2 data-i18n="settings.home_sections">Start page</h2><div class="rows" id="homesections"></div></div>
     <div class="card"><h2 data-i18n="settings.tabs_memory">Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
     <div class="card" id="hwcard" hidden><h2 data-i18n="settings.performance">Performance</h2><div class="rows" id="hw"></div></div>
     <div class="card"><h2 data-i18n="settings.system">System</h2>
@@ -630,6 +631,11 @@ window.bh = {
       v => bhT(v ? 'settings.style_3d' : 'settings.style_flat'), v => send({ cmd: 'set_depth', on: v })));
     put($('anim'), option(bhT('settings.animations'), s.animations, () => send({ cmd: 'set_animations', on: !s.animations }), true, bhT('settings.animations_sub')));
     put($('sbw'), choice(bhT('settings.sidebar_width'), null, s.sidebarWidths, s.sidebarWidth, w => bhT('unit.px', { n: w }), w => send({ cmd: 'set_sidebar_width', width: w })));
+    const TILE_KEY = { small: 'settings.tile_small', medium: 'settings.tile_medium', large: 'settings.tile_large' };
+    put($('tiles'), choice(bhT('settings.tile_size'), null, s.tileSizes || [], s.tileSize, v => bhT(TILE_KEY[v]), v => send({ cmd: 'set_quick_access_size', size: v })));
+    const SECTION_KEY = { now: 'home.now', favorites: 'home.favorites', watches: 'home.watches', downloads: 'home.downloads', recent: 'home.recent' };
+    put($('homesections'), ...(s.homeSections || []).map((h, i) => option(bhT(SECTION_KEY[h.id]), h.shown,
+      () => send({ cmd: 'set_home_section', section: h.id, shown: !h.shown }), true, i === 0 ? bhT('settings.home_sections_sub') : null)));
     put($('sleep'), choice(bhT('settings.sleep_after'), null, s.tabSleepChoices, s.tabSleep, m => bhT('unit.min', { n: m }), m => send({ cmd: 'set_tab_sleep', minutes: m })));
     put($('live'), choice(bhT('settings.live_tabs'), bhT('settings.live_tabs_sub'),
       s.maxLiveTabsChoices, s.maxLiveTabs, String, n => send({ cmd: 'set_max_live_tabs', tabs: n })));

@@ -181,6 +181,25 @@
   .prow.sel { background: var(--accent-selection); } .prow .g { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-glow-soft); display: grid; place-items: center; flex: none; } .prow.sel .g { background: #ffffff2e; }
   .prow small { margin-left: auto; opacity: .55; font-size: 12px; }
   @keyframes rowin { from { opacity: 0; transform: translateY(6px); } }
+  /* Quick access tile sizes, as in the app: small 5 a row, medium 4, large 3. */
+  .qsize { display: inline-flex; gap: 2px; text-transform: none; letter-spacing: 0; }
+  .qsize button { font: inherit; font-size: 10px; font-weight: 700; color: inherit; background: transparent; border: 0; border-radius: 5px; padding: 1px 5px; cursor: pointer; opacity: .7; }
+  .qsize button.on { background: var(--fill-selected); opacity: 1; }
+  .quick.sm { grid-template-columns: repeat(5, 1fr); gap: 5px; } .quick.sm b { height: 32px; }
+  .quick.lg { grid-template-columns: repeat(3, 1fr); gap: 8px; } .quick.lg b { height: 50px; } .quick.lg .fav { width: 26px; height: 26px; font-size: 13px; }
+  .recents.two { grid-template-columns: repeat(2, 1fr); } .recents b { color: var(--success-text); font-weight: 600; }
+  /* The colour picker of a space (its menu): presets, hue x saturation pad, hex value. */
+  .cpk { left: 150px; bottom: 74px; width: 196px; padding: 10px; border-radius: var(--radius-card); background: var(--ink-700); box-shadow: var(--shadow-menu), 0 0 0 1px var(--border-default);
+    transform: translateZ(130px) scale(.92); transform-origin: 0 100%; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .3s var(--ease-pop); }
+  .cpk.open { opacity: 1; transform: translateZ(130px); pointer-events: auto; }
+  .cpk h6 { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; margin-bottom: 8px; }
+  .cpk .presets { display: flex; justify-content: space-between; margin-bottom: 9px; }
+  .cpk .presets button { width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--c); cursor: pointer; transition: transform .2s var(--ease-press); } .cpk .presets button:hover { transform: scale(1.15); }
+  .cpk .presets button.on { box-shadow: 0 0 0 2px var(--ink-700), 0 0 0 3.5px #fff; }
+  .cpk .pad { position: relative; height: 70px; border-radius: 8px; background: linear-gradient(transparent, #808080), linear-gradient(90deg, #f33, #ff3, #3f3, #3ff, #33f, #f3f, #f33); cursor: crosshair; margin-bottom: 9px; }
+  .cpk .pad i { position: absolute; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px #0009; transform: translate(-50%, -50%); left: var(--px, 70%); top: var(--py, 20%); }
+  .cpk .hex { display: flex; align-items: center; gap: 7px; font: 12px var(--font-mono); padding: 5px 7px; border-radius: 6px; background: var(--fill-control); }
+  .cpk .hex i { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
   .toast { right: 30px; bottom: 34px; transform: translateZ(140px); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-card-sm); background: var(--ink-700); box-shadow: var(--shadow-menu), 0 0 0 1px var(--border-default); font-size: 13px; animation: bob 6s ease-in-out infinite; }
   .toast .bh-i { color: var(--success-text); }
   .pipw { right: 34px; top: 66px; width: 190px; height: 112px; transform: translateZ(120px); border-radius: var(--radius-card); background: linear-gradient(135deg, #2a1846, #0f1c3a 60%, #3a1420); box-shadow: var(--shadow-menu), 0 0 0 1px var(--border-strong); display: grid; place-items: center; animation: bob 7s ease-in-out -2s infinite; }
@@ -192,9 +211,11 @@
   /* In short */
   .pillars { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 50px; }
   .card { position: relative; border-radius: var(--radius-panel); background: var(--fill-card); border: 1px solid var(--border-card); padding: 22px; overflow: hidden;
-    transform: perspective(900px) rotateX(calc(var(--rx, 0) * 1deg)) rotateY(calc(var(--ry, 0) * 1deg)); transition: transform .35s var(--ease-glide), border-color .25s ease, background-color .25s ease, box-shadow .3s ease; }
-  .card::after { content: ""; position: absolute; inset: 0; background: radial-gradient(260px circle at var(--mx, 50%) var(--my, -40%), var(--accent-glow-soft), transparent 70%); opacity: 0; transition: opacity .3s ease; pointer-events: none; }
-  .card:hover { border-color: var(--accent-border); box-shadow: 0 18px 40px -22px var(--accent); } .card:hover::after { opacity: 1; }
+    transition: transform .35s var(--ease-glide), border-color .25s ease, background-color .25s ease, box-shadow .3s ease; }
+  /* As in the app's 3D style: a card rises under the pointer, its shadow grows; it never leans. */
+  .card::after { content: ""; position: absolute; inset: 0; background: radial-gradient(260px circle at 50% -40%, var(--accent-glow-soft), transparent 70%); opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+  .card:hover { transform: translateY(-4px); border-color: var(--accent-border); box-shadow: 0 30px 50px -26px var(--accent), 0 10px 20px -14px #000000b3; } .card:hover::after { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .card:hover { transform: none; } }
   .card .ico { width: 38px; height: 38px; border-radius: var(--radius-card-sm); display: grid; place-items: center; background: var(--accent-wash); margin-bottom: 14px; color: #fff; }
   .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; letter-spacing: -.01em; }
   .card p { font-size: 14px; opacity: .68; line-height: 1.5; }
@@ -312,7 +333,7 @@
   .get { position: relative; text-align: center; overflow: hidden; }
   .get::before { content: ""; position: absolute; left: 50%; bottom: -420px; width: 1100px; height: 700px; margin-left: -550px; border-radius: 50%; background: radial-gradient(closest-side, var(--accent-glow), transparent); opacity: .7; }
   .get .logo { font-size: 92px; margin: 0 auto 36px; }
-  .dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; text-align: left; }
+  .dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 44px; text-align: left; }
   .dl a.card { display: block; } .dl small { display: block; font: 12px var(--font-mono); opacity: .55; margin-top: 10px; overflow-wrap: anywhere; }
   .dl .go { position: absolute; right: 18px; top: 18px; opacity: .4; transition: transform .25s var(--ease-press), opacity .2s ease; } .dl a:hover .go { opacity: 1; transform: translate(2px, -2px); }
   footer { border-top: 1px solid var(--border-hairline); padding: 32px 0 40px; font-size: 13.5px; }
@@ -381,10 +402,11 @@
       <div class="shell">
         <aside class="sb">
           <div class="lights"><i></i><i></i><i></i><i data-icon="sidebar"></i><i data-icon="back"></i><i data-icon="forward"></i><i data-icon="reload"></i></div>
-          <div class="quick">
-            <b><span class="fav" style="background:#d9463b">M</span></b><b><span class="fav" style="background:#3b82d9">C</span></b><b><span class="fav" style="background:#2fa36b">S</span></b><b><span class="fav" style="background:#c9822b">N</span></b>
+          <div class="label"><span data-en="Quick access">Accès rapide</span><span class="qsize" id="qsize" role="radiogroup" aria-label="Taille des tuiles"></span></div>
+          <div class="quick" id="quick">
+            <b><span class="fav" style="background:#d9463b">M</span></b><b><span class="fav" style="background:#3b82d9">C</span></b><b><span class="fav" style="background:#2fa36b">S</span></b><b><span class="fav" style="background:#c9822b">N</span></b><b><span class="fav" style="background:#7a5cc9">F</span></b><b><span class="fav" style="background:#1c1b22">G</span></b>
           </div>
-          <div class="label"><span data-en="Pinned">Épinglés</span><span>+</span></div>
+          <div class="label"><span data-en="Folders">Dossiers</span><span>+</span></div>
           <div class="row"><i data-icon="folder"></i><span data-en="Research">Recherche</span></div>
           <div class="row dim" style="padding-left:28px"><span class="fav" style="background:#7a5cc9">A</span><span>arXiv</span></div>
           <div class="sep"></div>
@@ -409,14 +431,18 @@
             <div class="pcard"><h6 data-en="Recent activity">Activité récente</h6><div class="recents">
               <div><span class="fav" style="background:#b7410e">R</span><p>Rust Programming Language<small>rust-lang.org</small></p></div><div><span class="fav" style="background:#1c1b22">M</span><p>MDN Web Docs<small>developer.mozilla.org</small></p></div><div><span class="fav" style="background:#ff6600">Y</span><p>Hacker News<small>news.ycombinator.com</small></p></div>
             </div></div>
+            <div class="pcard"><h6 data-en="Watched areas">Zones surveillées</h6><div class="recents two">
+              <div><span class="fav" style="background:#2fa36b">S</span><p><span data-en="Headphones · price">Casque · prix</span><small>1 249 € → <b id="pricew">1 219 €</b></small></p></div><div><span class="fav" style="background:#3b82d9">C</span><p><span data-en="Parcel · status">Colis · statut</span><small data-en="Out for delivery">En cours de livraison</small></p></div>
+            </div></div>
           </div>
         </div>
       </div>
       <div class="float pal" aria-hidden="true"><div class="q"><i data-icon="search" data-size="md"></i><span><span id="palq"></span><i class="caret"></i></span></div><div class="res" id="palr"></div></div>
       <div class="float pipw" aria-hidden="true"><b><i data-icon="pause"></i></b><small>Picture in Picture</small><u></u></div>
+      <div class="float cpk" id="cpk" aria-label="Couleur de l’espace"><h6 data-en="Colour">Couleur</h6><div class="presets" id="presets"></div><div class="pad"><i id="padk"></i></div><div class="hex"><i id="hexc"></i><span id="hexv">#7c5cff</span></div></div>
       <div class="float toast" aria-hidden="true"><i data-icon="shield"></i><span data-en="3 trackers blocked on this page">3 traqueurs bloqués sur cette page</span></div>
     </div></div></div>
-    <p class="hint rv"><i data-icon="space"></i><span data-en="Pick a space in the sidebar: the whole page takes its colour.">Choisissez un espace dans la barre latérale : toute la page prend sa couleur.</span></p>
+    <p class="hint rv"><i data-icon="space"></i><span data-en="Pick a space in the sidebar: the whole page takes its colour. Click it again for a colour of your own.">Choisissez un espace dans la barre latérale : toute la page prend sa couleur. Recliquez-le pour une couleur sur mesure.</span></p>
   </section>
 
   <section id="brief">
@@ -425,11 +451,11 @@
       <h2 class="rv" data-en="A browser that gets out of the way.">Un navigateur qui se fait oublier.</h2>
       <p class="lead rv" data-en="The native engine of your system, a calm interface around it, and tools that are usually spread over five apps.">Le moteur natif de votre système, une interface calme autour, et des outils d’habitude éparpillés dans cinq applications.</p>
       <div class="pillars" style="text-align:left">
-        <div class="card tilt rv"><div class="ico"><i data-icon="sidebar" data-size="md"></i></div><h3 data-en="Organised">Organisé</h3><p data-en="A sidebar, coloured spaces, folders and pinned tabs that keep their address.">Barre latérale, espaces colorés, dossiers et onglets épinglés qui gardent leur adresse.</p></div>
-        <div class="card tilt rv" style="--d:.06s"><div class="ico"><i data-icon="bolt" data-size="md"></i></div><h3 data-en="Fast and light">Rapide et léger</h3><p data-en="Native engine, four live tabs by default, neighbours preloaded, old ones put to sleep.">Moteur natif, quatre onglets vivants par défaut, voisins préchargés, anciens mis en veille.</p></div>
-        <div class="card tilt rv" style="--d:.12s"><div class="ico"><i data-icon="shield" data-size="md"></i></div><h3 data-en="Private by default">Privé par défaut</h3><p data-en="Built-in Shields, automatic HTTPS, clean links. No telemetry, no account.">Shields intégrés, HTTPS automatique, liens nettoyés. Aucune télémétrie, aucun compte.</p></div>
-        <div class="card tilt rv" style="--d:.18s"><div class="ico"><i data-icon="keyboard" data-size="md"></i></div><h3 data-en="Keyboard first">Au clavier</h3><p data-en="One command bar for tabs, history, the Easel, downloads and every action.">Une seule barre de commandes pour les onglets, l’historique, l’Easel, les téléchargements et chaque action.</p></div>
-        <div class="card tilt rv" style="--d:.24s"><div class="ico"><i data-icon="devices" data-size="md"></i></div><h3 data-en="Across devices">Multi-appareils</h3><p data-en="macOS, Windows and Android, synced over the local network, without a server.">macOS, Windows et Android, synchronisés sur le réseau local, sans serveur.</p></div>
+        <div class="card rv"><div class="ico"><i data-icon="sidebar" data-size="md"></i></div><h3 data-en="Organised">Organisé</h3><p data-en="A sidebar, coloured spaces, folders and pinned tabs that keep their address.">Barre latérale, espaces colorés, dossiers et onglets épinglés qui gardent leur adresse.</p></div>
+        <div class="card rv" style="--d:.06s"><div class="ico"><i data-icon="bolt" data-size="md"></i></div><h3 data-en="Fast and light">Rapide et léger</h3><p data-en="Native engine, four live tabs by default, neighbours preloaded, old ones put to sleep.">Moteur natif, quatre onglets vivants par défaut, voisins préchargés, anciens mis en veille.</p></div>
+        <div class="card rv" style="--d:.12s"><div class="ico"><i data-icon="shield" data-size="md"></i></div><h3 data-en="Private by default">Privé par défaut</h3><p data-en="Built-in Shields, automatic HTTPS, clean links. No telemetry, no account.">Shields intégrés, HTTPS automatique, liens nettoyés. Aucune télémétrie, aucun compte.</p></div>
+        <div class="card rv" style="--d:.18s"><div class="ico"><i data-icon="keyboard" data-size="md"></i></div><h3 data-en="Keyboard first">Au clavier</h3><p data-en="One command bar for tabs, history, the Easel, downloads and every action.">Une seule barre de commandes pour les onglets, l’historique, l’Easel, les téléchargements et chaque action.</p></div>
+        <div class="card rv" style="--d:.24s"><div class="ico"><i data-icon="devices" data-size="md"></i></div><h3 data-en="Across devices">Multi-appareils</h3><p data-en="macOS, Windows and Android, synced over the local network, without a server.">macOS, Windows et Android, synchronisés sur le réseau local, sans serveur.</p></div>
       </div>
     </div>
   </section>
@@ -581,6 +607,7 @@
     </div>
     <div class="flow" id="flow">
       <figure><img src="screenshots/sidebar.png" alt="Barre latérale, dossiers, réunion en cours et page web" loading="lazy"><figcaption data-en="Sidebar, folders and the meeting in progress">Barre latérale, dossiers et réunion en cours</figcaption></figure>
+      <figure><img src="screenshots/picker.png" alt="Sélecteur de couleur d’un espace" loading="lazy"><figcaption data-en="The colour of a space">La couleur d’un espace</figcaption></figure>
       <figure><img src="screenshots/home.png" alt="Page d’accueil" loading="lazy"><figcaption data-en="Start page">Page d’accueil</figcaption></figure>
       <figure><img src="screenshots/easel.png" alt="Easel avec une zone en direct" loading="lazy"><figcaption data-en="Easel with a live area">Easel avec une zone en direct</figcaption></figure>
       <figure><img src="screenshots/settings.png" alt="Réglages, Shields" loading="lazy"><figcaption data-en="Settings, Shields">Réglages, Shields</figcaption></figure>
@@ -635,9 +662,10 @@
       <h2 class="rv" data-en="Cross the horizon.">Passez l’horizon.</h2>
       <p class="lead rv" style="margin-inline:auto" data-en="Free, MIT licence. BlackHole then updates itself, and each download is verified by SHA-256.">Gratuit, licence MIT. BlackHole se met ensuite à jour tout seul, et chaque téléchargement est vérifié par SHA-256.</p>
       <div class="dl">
-        <a class="card tilt rv" href="https://github.com/paullemoine3/blackhole/releases/latest" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="window" data-size="md"></i></div><h3>Windows</h3><p data-en="Installer or portable zip, x64.">Installeur ou zip portable, x64.</p><small>BlackHole-Setup-X.Y.Z-x64.exe</small></a>
-        <a class="card tilt rv" style="--d:.06s" href="https://github.com/paullemoine3/blackhole/releases/latest/download/BlackHole-macos-universal.dmg" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="window" data-size="md"></i></div><h3>macOS</h3><p data-en="Universal app: drag it to Applications.">App universelle : glissez-la dans Applications.</p><small>BlackHole-macos-universal.dmg</small></a>
-        <a class="card tilt rv" style="--d:.12s" href="https://github.com/paullemoine3/blackhole/releases/latest/download/BlackHole-android.apk" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="devices" data-size="md"></i></div><h3>Android</h3><p data-en="Lighter version, synced with the desktop.">Version allégée, synchronisée avec le bureau.</p><small>BlackHole-android.apk</small></a>
+        <a class="card rv" href="https://github.com/paullemoine3/blackhole/releases/latest" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="window" data-size="md"></i></div><h3>Windows</h3><p data-en="Installer or portable zip, x64.">Installeur ou zip portable, x64.</p><small>BlackHole-Setup-X.Y.Z-x64.exe</small></a>
+        <a class="card rv" style="--d:.06s" href="https://github.com/paullemoine3/blackhole/releases/latest/download/BlackHole-macos-universal.dmg" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="window" data-size="md"></i></div><h3>macOS</h3><p data-en="Universal app: drag it to Applications.">App universelle : glissez-la dans Applications.</p><small>BlackHole-macos-universal.dmg</small></a>
+        <a class="card rv" style="--d:.12s" href="https://github.com/paullemoine3/blackhole/releases/latest" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="window" data-size="md"></i></div><h3>Linux</h3><p data-en="Preview, x86_64: .deb or archive.">Aperçu, x86_64 : .deb ou archive.</p><small>BlackHole-linux-amd64.deb</small></a>
+        <a class="card rv" style="--d:.18s" href="https://github.com/paullemoine3/blackhole/releases/latest/download/BlackHole-android.apk" rel="noopener"><i data-icon="go" class="go"></i><div class="ico"><i data-icon="devices" data-size="md"></i></div><h3>Android</h3><p data-en="Lighter version, synced with the desktop.">Version allégée, synchronisée avec le bureau.</p><small>BlackHole-android.apk</small></a>
       </div>
     </div>
   </section>
@@ -662,6 +690,9 @@
   // Icons: a subset of crates/app/ui/icons.js, same drawing rules (16-unit grid, 1.5 px stroke).
   const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="1.15" fill="currentColor" stroke="none"/>`;
   const ICONS = {
+    anchor: '<circle cx="8" cy="3.5" r="1.5"/><path d="M8 5v8.5M5.5 7.5h5M3 9.5c0 2.3 2.2 4 5 4s5-1.7 5-4"/>',
+    grid: '<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.1"/>',
+    home: '<path d="M2.5 7.3L8 2.8l5.5 4.5M4 6.2v6.3c0 .6.4 1 1 1h2v-3.5h2v3.5h2c.6 0 1-.4 1-1V6.2"/>',
     back: '<path d="M13 8H3.5M7.5 4L3.5 8l4 4"/>', forward: '<path d="M3 8h9.5M8.5 4l4 4-4 4"/>', reload: '<path d="M12.5 8A4.5 4.5 0 1 1 11.1 4.7M12.5 2.5v2.8H9.7"/>',
     sidebar: '<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10"/>', window: '<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M2 6h12"/>',
     split: '<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M8 3v10"/>', pip: '<rect x="1.5" y="3" width="13" height="10" rx="1.8"/><rect x="8" y="7.8" width="4.5" height="3.2" rx=".7"/>',
@@ -721,7 +752,7 @@
     $('#lang').textContent = l === 'fr' ? 'EN' : 'FR';
     $('#lang').setAttribute('aria-label', l === 'fr' ? 'Switch to English' : 'Passer en français');
     document.title = l === 'fr' ? 'BlackHole · navigateur rapide, élégant et privé' : 'BlackHole · a fast, elegant, private browser';
-    keys(); drawBento(); drawFan(); drawSpaces(); scene = -1;
+    keys(); drawBento(); drawFan(); drawSpaces(); drawSizes(); scene = -1;
     try { localStorage.setItem('bh-lang', l); } catch (e) { /* private window */ }
   }
   $('#lang').onclick = () => setLang(lang === 'fr' ? 'en' : 'fr');
@@ -745,12 +776,57 @@
     $$('#fan .slab').forEach((b, n) => b.classList.toggle('pick', n === i));
     hole.tint(rgb(c));
   }
+  // A colour of your own: the picker of the space shown (its presets, or a point of the pad).
+  const PRESETS = ['#7c5cff', '#ff5c8a', '#2fd4a0', '#ffb020', '#3aa0ff', '#ff5a28', '#14b8c4', '#8e8a9b'];
+  const hex = (h, s, l) => {
+    const a = s * Math.min(l, 1 - l), f = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); };
+    return '#' + f(0) + f(8) + f(4);
+  };
+  function tint(c) {
+    SPACES[space].c = c;
+    pick(space);
+    drawSpaces();
+    $('#hexv').textContent = c;
+    $$('#presets button').forEach((b) => b.classList.toggle('on', b.dataset.c === c));
+  }
+  function drawPicker() {
+    $('#presets').replaceChildren(...PRESETS.map((c) => {
+      const b = el('button'); b.dataset.c = c; b.style.setProperty('--c', c); b.setAttribute('aria-label', c);
+      b.onclick = (e) => { e.stopPropagation(); tint(c); $('#cpk').classList.remove('open'); };
+      return b;
+    }));
+    const pad = $('.cpk .pad');
+    pad.onpointerdown = pad.onpointermove = (e) => {
+      if (e.type === 'pointermove' && !e.buttons) return;
+      const r = pad.getBoundingClientRect(), x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+      pad.style.setProperty('--px', (x * 100).toFixed(1) + '%'); pad.style.setProperty('--py', (y * 100).toFixed(1) + '%');
+      tint(hex(x * 360, 1 - y * .7, .6));
+    };
+    $('#cpk').onclick = (e) => e.stopPropagation();
+    document.addEventListener('click', () => $('#cpk').classList.remove('open'));
+  }
+  // Tile sizes of the quick access, as the setting of the app.
+  const TILE_SIZES = [['sm', 'S'], ['', 'M'], ['lg', 'L']];
+  let size = 1;
+  function drawSizes() {
+    $('#qsize').replaceChildren(...TILE_SIZES.map(([cls, label], i) => {
+      const b = el('button', i === size ? 'on' : '', label);
+      b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(i === size));
+      b.onclick = () => { size = i; $('#quick').className = 'quick ' + cls; drawSizes(); };
+      return b;
+    }));
+  }
   function drawSpaces() {
     const box = $('#spaces');
     box.replaceChildren(...SPACES.map((s, i) => {
       const b = el('button', 'chip' + (i === space ? ' on' : ''), s[lang][0]);
       b.style.setProperty('--c', s.c); b.title = s[lang]; b.setAttribute('aria-label', s[lang]);
-      b.onclick = () => pick(i);
+      // Clicking the space already shown opens its colour picker.
+      b.onclick = (e) => {
+        e.stopPropagation();
+        if (i === space) { $('#cpk').classList.toggle('open'); $('#hexv').textContent = SPACES[i].c; return; }
+        $('#cpk').classList.remove('open'); pick(i);
+      };
       return b;
     }));
     const st = el('span', 'stat'); st.append(icon('shield', 'xs'), '22');
@@ -784,17 +860,24 @@
     ['nav', 'archive', 'Archive et Annuler', 'Archive and Undo', 'Un onglet fermé va à l’archive ; un dossier ou un espace supprimé se rétablit en un clic.', 'A closed tab goes to the archive; a deleted folder or space comes back in one click.'],
     ['nav', 'link', 'Menu de page', 'Page menu', 'Clic droit partout : ouvrir en arrière-plan, Peek, copier le lien propre, envoyer, garder dans l’Easel.', 'Right click anywhere: open in background, Peek, copy the clean link, send, keep in the Easel.'],
     ['nav', 'out', 'Zoom par site', 'Zoom per site', 'Chaque site garde son zoom d’un lancement à l’autre.', 'Each site keeps its zoom from one launch to the next.'],
-    ['nav', 'download', 'Import', 'Import', 'Favoris et mots de passe depuis Chrome, Edge, Brave, Vivaldi, Opera, Firefox et dérivés.', 'Bookmarks and passwords from Chrome, Edge, Brave, Vivaldi, Opera, Firefox and relatives.'],
+    ['nav', 'download', 'Import', 'Import', 'Favoris et mots de passe depuis Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox et dérivés, profils sous leur vrai nom.', 'Bookmarks and passwords from Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox and relatives, profiles under their own names.'],
+    ['nav', 'anchor', 'Onglets ancrés', 'Anchored tabs', 'Une messagerie ou une musique jamais mise en veille, réveillée avec BlackHole.', 'A mail or a music tab never put to sleep, woken with BlackHole.'],
+    ['nav', 'grid', 'Tuiles à votre taille', 'Tiles your size', 'L’accès rapide en petites, moyennes ou grandes tuiles : cinq, quatre ou trois par ligne.', 'Quick access in small, medium or large tiles: five, four or three a row.'],
+    ['nav', 'home', 'Accueil à la carte', 'Start page your way', 'Réunion, favoris, zones surveillées, téléchargements, activité : chaque section se masque.', 'Meeting, favorites, watched areas, downloads, activity: each section can be hidden.'],
+    ['nav', 'space', 'Couleur sur mesure', 'Any colour', 'Huit teintes ou n’importe quelle couleur pour un espace, appliquée pendant que vous choisissez.', 'Eight presets or any colour for a space, applied while you choose.'],
     ['media', 'sound', 'Mini-lecteur', 'Mini player', 'Lecture, son, micro et caméra d’un appel, pilotés depuis la barre latérale.', 'Playback, sound, microphone and camera of a call, driven from the sidebar.'],
     ['media', 'pip', 'Picture in Picture', 'Picture in Picture', 'La vidéo vous suit quand vous changez d’onglet, et vous y ramène d’un clic.', 'The video follows you when you switch tabs, and brings you back in one click.'],
     ['media', 'video', 'Appels', 'Calls', 'Fermer la carte d’un appel quitte vraiment l’appel. Pas de PiP forcé en réunion.', 'Closing the card of a call really leaves the call. No forced PiP in a meeting.'],
     ['safe', 'shield', 'Rapport de confidentialité', 'Privacy report', 'Par site : traqueurs et publicités bloqués, liens nettoyés, note de A à E.', 'Per site: trackers and ads blocked, links cleaned, a grade from A to E.'],
     ['safe', 'key', 'Remplissage sûr', 'Safe autofill', 'Identifiants proposés sur l’origine exacte, générateur, mot de passe maître Argon2id.', 'Logins offered on the exact origin, a generator, an Argon2id master password.'],
     ['safe', 'alert', 'Pages d’erreur', 'Error pages', 'Onze cas expliqués clairement, chacun avec sa scène animée, et un contournement qui passe par vous.', 'Eleven cases explained clearly, each with its animated scene, and a bypass that goes through you.'],
+    ['safe', 'eye', 'Traqueurs appris', 'Learned trackers', 'Un tiers qui vous suit de site en site est repéré et bloqué, même absent des listes.', 'A third party that follows you from site to site is spotted and blocked, even when no list has it.'],
+    ['safe', 'key', 'Clés d’accès', 'Passkeys', 'Sur macOS, les sites savent tout de suite où en sont les clés d’accès ; l’extension de votre gestionnaire prend le relais.', 'On macOS, sites know at once where passkeys stand; your password manager’s extension takes over.'],
     ['safe', 'lock', 'Sites à identifiants', 'HTTP sign-in', 'Authentification Basic et Digest dans la barre de commandes, jamais journalisée.', 'Basic and Digest authentication in the command bar, never logged.'],
     ['sys', 'rocket', 'Mises à jour', 'Updates', 'Un bouton dans la barre latérale, un vaisseau qui décolle, un SHA-256 vérifié.', 'A button in the sidebar, a ship taking off, a verified SHA-256.'],
     ['sys', 'globe', 'Français et anglais', 'French and English', 'La langue change en direct, sans redémarrer.', 'The language changes live, without a restart.'],
-    ['sys', 'sparkle', 'Animations soignées', 'Careful motion', 'Des ressorts légers partout, coupés d’un réglage ou par votre système.', 'Light springs everywhere, switched off by a setting or by your system.'],
+    ['sys', 'sparkle', 'Style 3D ou plat', '3D or flat', 'En 3D, les cartes se soulèvent sous le pointeur, sans pencher. Animations coupées d’un réglage ou par votre système.', 'In 3D, cards rise under the pointer without leaning. Motion switched off by a setting or by your system.'],
+    ['sys', 'window', 'Linux en aperçu', 'Linux preview', 'Un paquet .deb et une archive, sur le WebKitGTK du système.', 'A .deb package and an archive, on the system’s WebKitGTK.'],
     ['sys', 'code', 'Outils de développement', 'Developer tools', 'L’inspecteur du moteur sur chaque page.', 'The inspector of the engine on every page.'],
     ['sys', 'print', 'Impression', 'Printing', 'Depuis le menu de page ou le raccourci habituel.', 'From the page menu or the usual shortcut.'],
   ];
@@ -806,38 +889,23 @@
       return b;
     }));
     $('#bento').replaceChildren(...FEATS.filter((f) => group === 'all' || f[0] === group).map((f, i) => {
-      const c = el('div', 'card tilt'); c.style.setProperty('--i', i);
+      const c = el('div', 'card'); c.style.setProperty('--i', i);
       const ico = el('div', 'ico'); ico.append(icon(f[1], 'md'));
       c.append(ico, el('h3', '', T(f[2], f[3])), el('p', '', T(f[4], f[5])));
       return c;
     }));
   }
 
-  // Cards lean towards the pointer.
-  if (!calm && matchMedia('(hover: hover)').matches) {
-    document.addEventListener('pointermove', (e) => {
-      const c = e.target.closest && e.target.closest('.tilt');
-      $$('.tilt.lean').forEach((o) => { if (o !== c) { o.classList.remove('lean'); o.style.removeProperty('--rx'); o.style.removeProperty('--ry'); } });
-      if (!c) return;
-      const r = c.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
-      c.classList.add('lean');
-      c.style.setProperty('--ry', ((x - .5) * 9).toFixed(2)); c.style.setProperty('--rx', ((.5 - y) * 9).toFixed(2));
-      c.style.setProperty('--mx', (x * 100).toFixed(1) + '%'); c.style.setProperty('--my', (y * 100).toFixed(1) + '%');
-    }, { passive: true });
-  }
-
-  // The window: fits its column, straightens while it scrolls in, follows the pointer.
+  // The window: fits its column and straightens while it scrolls in (it no longer follows the
+  // pointer, like the app's 3D style).
   const win = $('#win'), stage = $('#stage');
-  let px = 0, py = 0;
   function fit() { stage.style.setProperty('--s', Math.min(1, (innerWidth - 32) / 1040).toFixed(4)); }
   function pose() {
     const r = stage.getBoundingClientRect();
     const t = calm ? 1 : Math.max(0, Math.min(1, (innerHeight - r.top) / (innerHeight * .75)));
-    win.style.setProperty('--tx', ((1 - t) * 34 + 5 - py * 5).toFixed(2));
-    win.style.setProperty('--ty', (px * 7 - 3).toFixed(2));
+    win.style.setProperty('--tx', ((1 - t) * 34 + 5).toFixed(2));
+    win.style.setProperty('--ty', '-3');
   }
-  stage.addEventListener('pointermove', (e) => { px = e.clientX / innerWidth - .5; py = e.clientY / innerHeight - .5; pose(); }, { passive: true });
-  stage.addEventListener('pointerleave', () => { px = py = 0; pose(); });
 
   // The command bar types by itself.
   const SCENES = () => [
@@ -1032,11 +1100,12 @@
   let saved = null;
   try { saved = localStorage.getItem('bh-lang'); } catch (e) { /* private window */ }
   setLang(saved === 'en' || saved === 'fr' ? saved : /^fr/i.test(navigator.language || '') ? 'fr' : 'en');
+  drawPicker();
   fit(); sky(); hole.size(); scrolled(); turn(); play();
   $$('.rv').forEach((n) => seen.observe(n));
   if (!calm) {
     setInterval(pilot, 2600);
-    setInterval(() => { price = (price + 1) % PRICES.length; $('#price').textContent = PRICES[price]; }, 3200);
+    setInterval(() => { price = (price + 1) % PRICES.length; $('#price').textContent = PRICES[price]; $('#pricew').textContent = PRICES[price]; }, 3200);
   }
 })();
 </script>

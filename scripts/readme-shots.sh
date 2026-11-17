@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Screenshots of the README (macOS), driven by the devtools harness on a scratch profile
-# (/tmp/bh_data, wiped first): sidebar, start page, what's new, Settings, an error page and an
-# Easel with a live area. Written to docs/screenshots/ at 1600 px wide. Needs network access;
+# (/tmp/bh_data, wiped first): sidebar with quick access, the colour picker of a space, start
+# page, what's new, Settings, an error page and an Easel with a live area. Written to docs/screenshots/ at 1600 px wide. Needs network access;
 # keep the BlackHole window visible and in front while it runs (captures are taken on screen).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,6 +11,12 @@ run() { timeout 240 cargo run -q -p blackhole --features devtools >/dev/null 2>&
 # 1. A lived-in profile: tabs, a folder, a meeting going on, an error page, Settings, an Easel.
 cat > /tmp/bh_script.txt <<'S'
 wait 2500
+cmd {"cmd":"set_language","language":"en"}
+cmd {"cmd":"pin_site","url":"https://github.com"}
+cmd {"cmd":"pin_site","url":"https://www.youtube.com"}
+cmd {"cmd":"pin_site","url":"https://mail.proton.me"}
+cmd {"cmd":"pin_site","url":"https://www.notion.so"}
+wait 4000
 cmd {"cmd":"open","input":"https://www.wikipedia.org"}
 wait 3000
 cmd {"cmd":"open","input":"https://news.ycombinator.com"}
@@ -26,6 +32,11 @@ wait 600
 meeting https://meet.google.com/abc-defg-hij Weekly sync
 wait 2000
 shot sidebar
+eval chrome (spaceMenu(state.spaces[0], 120, 560), 'picker')
+wait 1200
+shot picker
+cmd {"cmd":"palette_close"}
+wait 600
 cmd {"cmd":"home"}
 wait 2000
 shot home
@@ -62,12 +73,12 @@ quit
 S
 run
 
-# 2. Same profile, as if just updated from 0.8.0: the start page shows what's new.
+# 2. Same profile, as if just updated from the previous version: the start page shows what's new.
 python3 -I - <<'P'
 import json, pathlib
 p = next(pathlib.Path("/tmp/bh_data").rglob("settings.json"))
 s = json.loads(p.read_text())
-s["last_seen_version"] = "0.8.0"
+s["last_seen_version"] = "0.8.16"
 p.write_text(json.dumps(s))
 P
 cat > /tmp/bh_script.txt <<'S'
@@ -80,7 +91,7 @@ S
 run
 
 mkdir -p docs/screenshots
-for s in sidebar home whatsnew settings errors easel; do
+for s in sidebar picker home whatsnew settings errors easel; do
   if [[ -f /tmp/bh_shots/$s.png ]]; then
     sips -Z 1600 "/tmp/bh_shots/$s.png" --out "docs/screenshots/$s.png" >/dev/null
     echo "ok   docs/screenshots/$s.png"

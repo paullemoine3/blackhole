@@ -47,6 +47,13 @@
   #pinned:empty + #pinsep { display: none; }
   #pinned .tab.active { background: rgba(255,255,255,.2); }
   #pinned .dot { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+  /* Tile size (Settings > General, or the menu of a tile): small = 5 a row, large = 3. */
+  body.qa-small #pinned { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  body.qa-small #pinned .tab { height: 38px; }
+  body.qa-small #pinned .dot { width: 22px; height: 22px; border-radius: 7px; font-size: 11px; }
+  body.qa-large #pinned { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  body.qa-large #pinned .tab { height: 62px; }
+  body.qa-large #pinned .dot { width: 36px; height: 36px; border-radius: 11px; font-size: 16px; }
   .secrow[hidden] { display: none; }
   .fold { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
   .fold:hover { opacity: 1; }
@@ -540,6 +547,13 @@ function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, it
 // Menus share one vocabulary: "quick access" (pinned tiles), "put to sleep" (the tab keeps its
 // place), "close" (it goes to the archive), "delete" (a container and what is inside). Icons are
 // names drawn by the command bar (palette.html); `confirm` asks for a second click.
+// Size of the quick access tiles, in the menu of a tile and of the quick access area.
+const TILE_KEY = { small: 'settings.tile_small', medium: 'settings.tile_medium', large: 'settings.tile_large' };
+function tileSizeItems() {
+  const size = state.tileSize || 'medium';
+  return [{ head: bhT('sidebar.tile_size') }, ...['small', 'medium', 'large'].map(v => (
+    { icon: v === size ? 'check' : 'grid', label: bhT(TILE_KEY[v]), run: { cmd: 'set_quick_access_size', size: v } }))];
+}
 function tabMenu(t, x, y) {
   const keep = t.pinned || t.folder != null;
   // A black hole tab cannot join quick access: its session does not outlive its page.
@@ -575,6 +589,7 @@ function tabMenu(t, x, y) {
     // Closing a quick access tab never takes it off the list (like Cmd/Ctrl+W): it only stops
     // its page. "Remove from quick access" above is the way to take it off.
     if (!t.asleep) items.push({ icon: 'sleep', label: bhT('menu.sleep'), run: { cmd: 'close_instance', id: t.id } });
+    items.push({ sep: true }, ...tileSizeItems());
   } else {
     // A folder tab: Cmd/Ctrl+W puts it to sleep; closing it for good also takes it out of the
     // folder, and the label says so.
@@ -626,9 +641,10 @@ function folderMenu(f, x, y) {
 }
 
 // Right-click on empty sidebar space: create things, then the Easels to open.
-function createMenu(x, y) {
+function createMenu(x, y, onPins) {
   const easels = state.easels || [];
   openMenu(x, y, [
+    ...(onPins ? [...tileSizeItems(), { sep: true }] : []),
     { icon: 'plus', label: bhT('sidebar.new_tab'), run: { cmd: 'new_tab' } },
     { icon: 'hole', label: bhT('palette.new_burner_tab'), run: { cmd: 'action', id: 'burner_tab' } },
     { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
@@ -639,7 +655,7 @@ function createMenu(x, y) {
     ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
 }
-document.querySelector('aside').oncontextmenu = (e) => { if (!e.defaultPrevented) { e.preventDefault(); createMenu(e.clientX, e.clientY); } };
+document.querySelector('aside').oncontextmenu = (e) => { if (!e.defaultPrevented) { e.preventDefault(); createMenu(e.clientX, e.clientY, !!e.target.closest('#pinned, #pinhead')); } };
 
 // An easel is a tab of its own: click to open it, right-click for options.
 function easelNode(e) {
@@ -1181,6 +1197,8 @@ window.bh = {
     }
     document.body.classList.toggle('noanim', s.animations === false);
     document.body.classList.toggle('flat', s.depth === false);
+    document.body.classList.toggle('qa-small', s.tileSize === 'small');
+    document.body.classList.toggle('qa-large', s.tileSize === 'large');
     if (before) motion.play(before, prev, s);
     if (switched) motion.spaces(prev.activeSpace, s.activeSpace);
     renderUpdate(s.update, s.version);
