@@ -8,6 +8,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Fixed (macOS): Web Inspector docked to the right or the bottom took over the window, hiding the top bar and the sidebar, and left it black once closed. It now stays inside the page",
             "Fixed (macOS): an extension that opens a page in a new tab (Bitwarden's sign-in with a security key) did nothing; the page opens as a tab",
             "In the 3D style, cards and tiles no longer turn to follow the pointer: they only rise under it",
+            "The sidebar no longer flickers when a tab opens or a page loads: the quick access icons and the rows that did not change stay as they are",
         ],
     ),
     (

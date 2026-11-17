@@ -2,7 +2,8 @@
 # The 0.8.16 changes on macOS, driven by the devtools harness (captures /tmp/bh_shots/v0816-*):
 # Web Inspector docked in a page stays inside the page card (top bar and sidebar kept), the page
 # comes back to its card when it is detached or closed; the colour picker of a space (presets,
-# hex value, pad by keyboard) colours the space while the menu stays open.
+# hex value, pad by keyboard) colours the space while the menu stays open; a new tab keeps the
+# sidebar rows and their icons (no flicker).
 # Local server on 127.0.0.1:47982. Scratch profile /tmp/bh_data (wiped first). Keep the window
 # visible.
 set -euo pipefail
@@ -71,6 +72,12 @@ eval palette 'pick6:' + (document.querySelectorAll('#menu .cpresets button')[1].
 wait 900
 eval chrome 'pick7:' + state.spaces[0].color
 eval palette 'pick8:' + document.body.classList.contains('menuing')
+cmd {"cmd":"open","input":"http://127.0.0.1:47982/b"}
+wait 2000
+eval chrome 'rows0:' + (window.__rows = [...document.querySelectorAll('#scroll .tab[data-tab]')], window.__dots = [...document.querySelectorAll('#scroll .tab[data-tab] .dot')], window.__rows.length)
+cmd {"cmd":"open","input":"http://127.0.0.1:47982/c"}
+wait 2500
+eval chrome 'rows1:' + window.__rows.filter(n => n.isConnected).length + '|' + window.__dots.filter(n => n.isConnected).length + '/' + window.__dots.length
 quit
 S
 
@@ -97,6 +104,10 @@ check 9 'pick4:true|#' "the menu stays open while the colour is chosen"
 if [[ "${L[9]:-}" != *'#12a4b6'* && "${L[10]:-}" == *"${L[9]##*|}"* ]]; then echo "ok   the pad moves the hue by keyboard, the space follows"; else echo "FAIL pad by keyboard (${L[9]:-none} / ${L[10]:-none})"; fail=1; fi
 check 12 'pick7:#ff5c8a' "a preset applies"
 check 13 'pick8:false' "a preset closes the menu"
+# A new tab keeps the other rows (only the one that stops being active is redrawn) and every icon.
+if [[ "${L[14]:-}" =~ rows0:([0-9]+) ]] && n=${BASH_REMATCH[1]} && [[ "${L[15]:-}" == *"rows1:$((n - 1))|$n"*"/$n"* ]]; then
+  echo "ok   a new tab keeps the sidebar rows and their icons ($n rows)"
+else echo "FAIL sidebar rows rebuilt on a new tab (${L[14]:-none} / ${L[15]:-none})"; fail=1; fi
 for s in page docked closed detached picker; do
   [[ -f /tmp/bh_shots/v0816-$s.png ]] || { echo "FAIL screenshot v0816-$s missing"; fail=1; }
 done
