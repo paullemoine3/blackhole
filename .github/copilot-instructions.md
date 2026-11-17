@@ -1,6 +1,6 @@
 # Instructions Copilot — BlackHole
 
-Navigateur Rust (winit + wry) : WKWebView sur macOS, WebView2 sur Windows. **Les deux plateformes doivent toujours cohabiter : ne jamais dégrader l'une en travaillant sur l'autre.** Répondre en français, de façon concise.
+Navigateur Rust (winit + wry) : WKWebView sur macOS, WebView2 sur Windows, WebKitGTK sur Linux (aperçu depuis 0.8.16). **Les deux plateformes doivent toujours cohabiter : ne jamais dégrader l'une en travaillant sur l'autre.** Répondre en français, de façon concise.
 
 ## Architecture (clean architecture)
 `domain` → `application` → `infrastructure` → `app` (composition root : winit + wry). Les dépendances vont uniquement vers la gauche.
@@ -182,7 +182,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 ## Liens propres, split pilote, trou noir, surlignages, Recall, Wormhole
 
 Spécifications : `docs/specs/0.8.6-features.md`. Scénarios Windows : `scripts\test-features.ps1`
-(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 17 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir, `f13a` une tuile penchée, `f13b` le réglage Flat / 3D, `f13c` l'accueil en Flat ; réseau requis ;
+(contrôles nommés `cl1:`, `bh2:`… lus par leur nom, 17 captures `f01`–`f13`, dont `f04a` le split en train de s’ouvrir, `f13a` une tuile montée sans rotation (0.8.16), `f13b` le réglage Flat / 3D, `f13c` l'accueil en Flat ; réseau requis ;
 le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). macOS : à écrire.
 
 - Liens propres : `domain/clean_link.rs`, bouclier `clean_links` (`Shields`, bit 8), appliqué par
@@ -194,7 +194,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Style de l'interface, Flat ou 3D (0.8.11) : `Settings::depth` (vrai par défaut), commande
   `set_depth`, Réglages > Appearance (`#style`), champ `depth` de l'état des pages, qui posent
   `body.flat`. `ui/depth.js` (injecté avec `theme.js` par `ui_view` et `panel_view`) : une page
-  déclare ce qui penche vers le pointeur (`bhDepth('.fav', 13)`), le script pose la classe
+  déclare ce qui réagit au pointeur (`bhDepth('.fav', 13)` ; depuis 0.8.16 rien ne tourne, la carte monte seulement, voir 0.8.16), le script pose la classe
   `bh-lean` et `--rx` / `--ry` / `--mx` / `--my`, la page écrit la transformation. Penchent :
   tuiles et lignes de l'accueil, tuiles d'accès rapide, tuiles et cartes de la Bibliothèque,
   notes et clips de l'Easel (jamais une carte en direct : sa vue native ne tourne pas, ni une
@@ -416,8 +416,47 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   d'adresse (la pastille en coin était coupée par `#omni`, `overflow: hidden`) ; jeton `--on-ok` pour
   son texte en thème clair. Contrôle `shieldfit` de `test-android.ps1`.
 
+## 0.8.16 : Linux (aperçu), sélecteur de couleur, inspecteur ancré, onglets d'extension
+
+- Linux (aperçu, x86_64, X11 ou XWayland) : wry sur WebKitGTK 4.1. `main` force `GDK_BACKEND=x11`, appelle
+  `gtk::init()` et crée la boucle winit en X11 (`with_x11`) ; `about_to_wait` vide la file GTK à chaque tour
+  (`gtk::main_iteration_do`) et revient au plus tard après `GTK_PUMP` (8 ms). Trousseau : keyring
+  `sync-secret-service` (sans lui, magasin en mémoire et nouvelle clé du coffre à chaque lancement).
+  Pas d'extensions (stub `ExtensionHost`), pas de capture dans le harnais, pas de mise à jour par l'app
+  (`updater::supported` faux ; `wants_asset("linux")` = `BlackHole-linux-x86_64.tar.gz` pour le lien).
+  Paquets : `scripts/package-linux.sh VERSION [BINAIRE]` → `dist/BlackHole-linux-amd64.deb` (dépend de
+  `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libxkbcommon-x11-0`, `libdbus-1-3`) et `BlackHole-linux-x86_64.tar.gz`.
+  CI : test + Clippy `-D warnings` sur `ubuntu-22.04`, job `linux` (paquets joints à la release).
+  Vérification locale depuis macOS : conteneur Docker (Debian, `libwebkit2gtk-4.1-dev`…), Xvfb.
+  **Limite connue (vue sous Xvfb) :** les vues créées à leur taille finale (barre du haut) se peignent,
+  mais une vue déplacée ou redimensionnée après sa création (accueil, onglets, barre latérale qui glisse)
+  reste noire, avec des `Gdk-CRITICAL _gdk_frame_clock_freeze` (fenêtres X étrangères de wry). À vérifier
+  sur un vrai bureau Linux avant de présenter l'aperçu comme utilisable.
+- Inspecteur web ancré (macOS) : WebKit range l'inspecteur dans la vue parente de la page en supposant
+  qu'elle la remplit ; avec la vue de contenu de la fenêtre comme parent, la page couvrait toute la
+  fenêtre (barre du haut et barre latérale perdues, fenêtre noire à la fermeture). vendor/wry place
+  chaque vue enfant dans un `WryWebViewHost` de sa taille (`host`, déplacé, masqué et retiré à sa place,
+  `outer()`) ; `round_view` / `raise_view` de `macos-webext` agissent sur cet hôte (`placed_view`).
+  Harnais : étape `inspect show|attach|detach|close` (`macos_webext::inspector`).
+- Onglets demandés par une extension (macOS) : le délégué du contrôleur implémente
+  `openNewTabUsingConfiguration` / `openNewWindowUsingConfiguration` (sans eux WebKit refusait :
+  « Ouvrir dans un nouvel onglet » de Bitwarden, clé de sécurité) ; adresses relevées par
+  `ExtensionHost::take_opened` dans `poll_webext`, ouvertes en onglets (jamais en popup), popover fermé.
+  Windows : `take_opened` vide (WebView2 passe par le gestionnaire de nouvelle fenêtre des vues).
+- Couleur d'un espace : élément de menu `picker` (`palette.html`, `colorPicker`) : 8 pastilles
+  (appliquent et ferment), pavé teinte × saturation (flèches au clavier, Maj = grand pas), piste de
+  luminosité (15–85 %), valeur hexadécimale. La couleur part pendant le choix (60 ms au plus,
+  `set_space_color`), le menu reste ouvert. Textes `color.hex`, `color.hue_saturation`, `color.lightness`.
+- Style 3D : plus aucune inclinaison vers le pointeur ; `depth.js` garde son API (`bhDepth`, `bh-lean`)
+  mais pose `--rx`/`--ry` à 0 et `--mx`/`--my` à 50 % : la carte survolée ne fait que monter
+  (`translateZ`, ombre plus longue). Reflets radiaux qui suivaient le pointeur retirés.
+- Test macOS : `bash scripts/test-0816.sh` (serveur local 47982 : inspecteur ancré dans la carte, fermé,
+  détaché ; sélecteur de couleur : pastilles, hex, pavé au clavier, menu ouvert, pastille qui ferme).
+  Windows : code commun (sélecteur, 3D) non testé ; `test-features.ps1` `dp1` attend une tuile montée
+  sans rotation (`--ry` = 0, capture `f13a-home-tile-raised`).
+
 ## Release, installeur et mise à jour
-- Workflow `.github/workflows/release.yml` : tests (Windows + macOS), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
+- Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.
 - Installeur Windows local :
   ```

@@ -13,7 +13,7 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "std", "block2",
     "WKWebViewConfiguration", "WKWebsiteDataStore", "WKContentRuleList", "WKContentRuleListStore", "WKUserScript", "WKUserContentController", "WKWebExtension", "WKWebExtensionContext", "WKWebExtensionController",
     "WKWebExtensionControllerConfiguration", "WKWebExtensionPermission", "WKWebExtensionMatchPattern",
-    "WKWebExtensionAction", "WKWebExtensionTab", "WKWebExtensionWindow", "WKWebExtensionControllerDelegate", "WKWebView", "objc2-app-kit", "objc2-core-foundation",
+    "WKWebExtensionAction", "WKWebExtensionTab", "WKWebExtensionTabConfiguration", "WKWebExtensionWindow", "WKWebExtensionWindowConfiguration", "WKWebExtensionControllerDelegate", "WKWebView", "objc2-app-kit", "objc2-core-foundation",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -24,9 +24,11 @@ windows-core = "0.62"
 serde_json.workspace = true
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
-# Objective-C bindings need `unsafe`; like `macos-url`, it is confined to this crate.
-[dependencies]
+# Toolbar icons as data URLs (macOS and Windows hosts; the stub has none).
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
 base64 = "0.22"
+
+# Objective-C bindings need `unsafe`; like `macos-url`, it is confined to this crate.
 
 [lints.rust]
 unsafe_code = "allow"

@@ -22,6 +22,9 @@ unsupported_scheme = "This kind of address cannot be opened"
 
 [color]
 amber = "Amber"
+hex = "Hexadecimal colour"
+hue_saturation = "Hue and saturation"
+lightness = "Lightness"
 blue = "Blue"
 green = "Green"
 grey = "Grey"

@@ -138,14 +138,39 @@ pub fn rules_json(hosts: &[&str]) -> Option<String> {
     Some(format!("[{}]", rules.join(",")))
 }
 
-/// Rounds the corners of a page view (a live `WKWebView`) with its Core Animation layer.
+/// The view placed in the window for a page view: vendor/wry puts each child `WKWebView` in a
+/// `WryWebViewHost` of the same size (so a docked Web Inspector stays inside the page's frame).
+#[cfg(target_os = "macos")]
+fn placed_view(view: &objc2_app_kit::NSView) -> objc2::rc::Retained<objc2_app_kit::NSView> {
+    // Safety: plain accessors on a live view, main thread.
+    unsafe {
+        match view.superview() {
+            Some(parent) if parent.class().name() == c"WryWebViewHost" => parent,
+            _ => objc2::rc::Retained::retain(std::ptr::from_ref(view).cast_mut())
+                .expect("live view"),
+        }
+    }
+}
+
+/// Rounds the corners of a page view (a live `WKWebView`) with its Core Animation layer. Its
+/// host is rounded with it, so a docked Web Inspector is clipped the same way.
 #[cfg(target_os = "macos")]
 pub fn round_view(view: std::ptr::NonNull<std::ffi::c_void>, radius: f64) {
-    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
     use objc2_app_kit::NSView;
+    // Safety: `view` is a live NSView used on the main thread.
+    let view: &NSView = unsafe { view.cast::<NSView>().as_ref() };
+    let host = placed_view(view);
+    round_layer(view, radius);
+    if !std::ptr::eq(&*host, view) {
+        round_layer(&host, radius);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn round_layer(view: &objc2_app_kit::NSView, radius: f64) {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
     // Safety: `view` is a live NSView used on the main thread; the layer is only configured.
     unsafe {
-        let view: &NSView = view.cast::<NSView>().as_ref();
         if !view.wantsLayer() {
             view.setWantsLayer(true);
         }
@@ -165,6 +190,36 @@ pub fn round_view(view: std::ptr::NonNull<std::ffi::c_void>, radius: f64) {
     }
 }
 
+/// Drives a page's Web Inspector (devtools harness): `"show"` opens it (where it was last),
+/// `"attach"` docks the open inspector in the page (WebKit's default side, the bottom),
+/// `"detach"` moves it to its own window, `"close"` closes it.
+#[cfg(target_os = "macos")]
+pub fn inspector(view: std::ptr::NonNull<std::ffi::c_void>, action: &str) {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject};
+    // Safety: `view` is a live WKWebView on the main thread; `_inspector` is WebKit's private
+    // accessor (also used by wry's `open_devtools`) and the calls take no argument.
+    unsafe {
+        let view: &AnyObject = view.cast::<AnyObject>().as_ref();
+        let Some(tool): Option<Retained<AnyObject>> = msg_send![view, _inspector] else {
+            return;
+        };
+        match action {
+            "show" => {
+                let _: () = msg_send![&*tool, show];
+            }
+            "attach" => {
+                let _: () = msg_send![&*tool, attach];
+            }
+            "detach" => {
+                let _: () = msg_send![&*tool, detach];
+            }
+            _ => {
+                let _: () = msg_send![&*tool, close];
+            }
+        }
+    }
+}
+
 /// Moves a view above its siblings without recreating it (native stacking order).
 #[cfg(target_os = "macos")]
 pub fn raise_view(view: std::ptr::NonNull<std::ffi::c_void>) {
@@ -173,7 +228,8 @@ pub fn raise_view(view: std::ptr::NonNull<std::ffi::c_void>) {
     // Safety: `view` is a live NSView used on the main thread; `NSWindowAbove` is 1 and a nil
     // sibling places the view in front of all the others.
     unsafe {
-        let view: &NSView = view.cast::<NSView>().as_ref();
+        let view = placed_view(view.cast::<NSView>().as_ref());
+        let view: &NSView = &view;
         let parent: Option<Retained<AnyObject>> = msg_send![view, superview];
         if let Some(parent) = parent {
             let nothing: *const AnyObject = std::ptr::null();
@@ -282,6 +338,9 @@ mod stub {
             None
         }
         pub fn actions(&self) -> Vec<super::ActionInfo> {
+            Vec::new()
+        }
+        pub fn take_opened(&self) -> Vec<String> {
             Vec::new()
         }
         pub fn set_active_tab(

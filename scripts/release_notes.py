@@ -43,6 +43,7 @@ def main() -> int:
         "",
         f"- Windows: `BlackHole-Setup-{version}-x64.exe` (installer) or `BlackHole-windows-x64.zip` (portable)",
         "- macOS (Apple silicon and Intel): `BlackHole-macos-universal.dmg`",
+        "- Linux x86_64 (WebKitGTK 4.1, X11 or XWayland): `BlackHole-linux-amd64.deb` (Debian, Ubuntu 22.04+) or `BlackHole-linux-x86_64.tar.gz`",
         "- Android 10+: `BlackHole-android.apk` (or `BlackHole-android-debug.apk` when the release key is not configured)",
         "",
         "Check the files against `SHA256SUMS.txt`. The apps already installed on Windows and macOS update themselves.",

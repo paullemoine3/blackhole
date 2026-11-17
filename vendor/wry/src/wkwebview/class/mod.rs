@@ -8,5 +8,7 @@ pub mod wry_download_delegate;
 pub mod wry_navigation_delegate;
 pub mod wry_web_view;
 pub mod wry_web_view_delegate;
+#[cfg(target_os = "macos")]
+pub mod wry_web_view_host;
 pub mod wry_web_view_parent;
 pub mod wry_web_view_ui_delegate;

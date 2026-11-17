@@ -8,7 +8,8 @@ use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOn
 use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol, NSString, NSURL};
 use objc2_web_kit::{
     WKWebExtensionContext, WKWebExtensionController, WKWebExtensionControllerDelegate,
-    WKWebExtensionTab, WKWebExtensionWindow, WKWebView,
+    WKWebExtensionTab, WKWebExtensionTabConfiguration, WKWebExtensionWindow,
+    WKWebExtensionWindowConfiguration, WKWebView,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -22,6 +23,8 @@ pub struct Shared {
     pub web_view: Option<Retained<WKWebView>>,
     pub tab: Option<Retained<TabObject>>,
     pub window: Option<Retained<WindowObject>>,
+    /// Pages extensions asked to open (`tabs.create`, `windows.create`), taken by the shell.
+    pub opened: Vec<String>,
 }
 
 /// Hands an object back to Objective-C (autoreleased); `None` becomes nil.
@@ -128,6 +131,47 @@ define_class!(
             _ctx: &WKWebExtensionContext,
         ) -> *mut WindowObject {
             out(self.ivars().borrow().window.clone())
+        }
+
+        // Bitwarden's "Open in a new tab" (security key sign-in) and other `tabs.create` calls:
+        // without these two methods WebKit refuses the request and the button does nothing. The
+        // shell opens the page as a BlackHole tab; the extension gets the proxy tab or window.
+        #[unsafe(method(webExtensionController:openNewTabUsingConfiguration:forExtensionContext:completionHandler:))]
+        fn open_new_tab(
+            &self,
+            _controller: &WKWebExtensionController,
+            configuration: &WKWebExtensionTabConfiguration,
+            _ctx: &WKWebExtensionContext,
+            completion: &block2::DynBlock<dyn Fn(*mut TabObject, *mut NSError)>,
+        ) {
+            // Safety: property read on a live configuration object, main thread.
+            let url = unsafe { configuration.url() };
+            let tab = {
+                let mut s = self.ivars().borrow_mut();
+                if let Some(url) = url.and_then(|u| u.absoluteString()) {
+                    s.opened.push(url.to_string());
+                }
+                s.tab.clone()
+            };
+            completion.call((tab.map_or(std::ptr::null_mut(), Retained::autorelease_ptr), std::ptr::null_mut()));
+        }
+
+        #[unsafe(method(webExtensionController:openNewWindowUsingConfiguration:forExtensionContext:completionHandler:))]
+        fn open_new_window(
+            &self,
+            _controller: &WKWebExtensionController,
+            configuration: &WKWebExtensionWindowConfiguration,
+            _ctx: &WKWebExtensionContext,
+            completion: &block2::DynBlock<dyn Fn(*mut WindowObject, *mut NSError)>,
+        ) {
+            // Safety: property read on a live configuration object, main thread.
+            let urls = unsafe { configuration.tabURLs() };
+            let window = {
+                let mut s = self.ivars().borrow_mut();
+                s.opened.extend(urls.iter().filter_map(|u| u.absoluteString()).map(|u| u.to_string()));
+                s.window.clone()
+            };
+            completion.call((window.map_or(std::ptr::null_mut(), Retained::autorelease_ptr), std::ptr::null_mut()));
         }
 
         #[unsafe(method(webExtensionController:openOptionsPageForExtensionContext:completionHandler:))]

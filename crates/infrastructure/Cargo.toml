@@ -27,3 +27,8 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+# Linux: the Secret Service (GNOME Keyring, KWallet). Without a backend keyring falls back to an
+# in-memory store and a new vault key would be made at every launch.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

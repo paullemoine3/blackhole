@@ -850,6 +850,7 @@ pub fn raise_views(views: &[&WebView]) -> bool {
 }
 
 /// Corner radius of the page card, in logical pixels.
+#[cfg(any(target_os = "macos", windows))]
 pub const CARD_RADIUS: f64 = 14.0;
 
 /// Rounds the corners of a view that fills the card. macOS keeps it for the life of the view;

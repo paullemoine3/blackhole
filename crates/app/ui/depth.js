@@ -1,12 +1,14 @@
 // The third dimension of BlackHole's own pages, injected in each of them with theme.js: a card
-// leans towards the pointer, as on the project's web page. A page names what leans:
-//   bhDepth('.fav', 12)   → the element under the pointer that matches gets the class `bh-lean`
-//                            and four variables, and loses them when the pointer leaves it:
-//                            --rx, --ry  degrees to turn around the x and y axes (at most 12 here, 24 allowed)
-//                            --mx, --my  where the pointer is on it, in percent (for a glint)
+// rises under the pointer. It no longer turns to follow the pointer (0.8.16: it did not look
+// elegant); only its elevation is left. A page names what rises:
+//   bhDepth('.fav', 12)   → the element under the pointer that matches gets the class `bh-lean`,
+//                            and loses it when the pointer leaves it. The degrees are kept for
+//                            the API but unused. The four variables the pages read stay neutral:
+//                            --rx, --ry  0 (no turn)
+//                            --mx, --my  50% (a glint stays in the middle of the card)
 // The page writes the transform itself (it owns the hover and press states of its cards):
-//   .fav.bh-lean { transform: perspective(600px) rotateX(calc(var(--rx) * 1deg)) rotateY(calc(var(--ry) * 1deg)); }
-// Nothing leans in the flat style of the interface (`body.flat`, Settings > Appearance), while
+//   .fav.bh-lean { transform: perspective(600px) … translateZ(3px); }   → the card comes closer
+// Nothing rises in the flat style of the interface (`body.flat`, Settings > Appearance), while
 // animations are off (`body.noanim`, `body.still`, the system's reduced motion), during a drag
 // (`body.dragging`), or under a finger.
 //
@@ -43,8 +45,8 @@
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   } catch (e) {}
   const rules = [];
-  const VARS = ['--rx', '--ry', '--mx', '--my'];
-  let on = null, onMax = 0, base = null;
+  const VARS = { '--rx': '0', '--ry': '0', '--mx': '50%', '--my': '50%' };
+  let on = null;
   const still = () => {
     const b = document.body;
     return !b || b.classList.contains('flat') || b.classList.contains('noanim') || b.classList.contains('still') || b.classList.contains('dragging')
@@ -53,44 +55,24 @@
   const rest = () => {
     if (!on) return;
     on.classList.remove('bh-lean');
-    for (const v of VARS) on.style.removeProperty(v);
+    for (const v in VARS) on.style.removeProperty(v);
     on = null;
-    base = null;
   };
-  // Where the card was before it leaned: a turned card moves its own edges, and judging by
-  // them made a card at the pointer's edge lean, lose the pointer, fall flat, find it again…
-  // forever. The card keeps the pointer while it is inside this rectangle.
-  const inside = (r, e) => r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   const move = (e) => {
-    let hit = null, max = 0;
+    let hit = null;
     if (e.pointerType !== 'touch' && e.target && e.target.closest && !still()) {
-      for (const [selector, degrees] of rules) {
+      for (const [selector] of rules) {
         const n = e.target.closest(selector);
-        // The innermost match wins: a tile inside a card that leans too.
-        if (n && (!hit || hit.contains(n))) { hit = n; max = degrees; }
+        // The innermost match wins: a tile inside a card that rises too.
+        if (n && (!hit || hit.contains(n))) hit = n;
       }
     }
-    if (on && hit !== on && (!hit || hit.contains(on)) && inside(base, e) && !still() && e.pointerType !== 'touch') {
-      hit = on; max = onMax;
-    }
-    if (on !== hit) rest();
+    if (on === hit) return;
+    rest();
     if (!hit) return;
-    if (!base) {
-      const r0 = hit.getBoundingClientRect();
-      if (!r0.width || !r0.height) return;
-      base = { left: r0.left, top: r0.top, right: r0.right, bottom: r0.bottom, width: r0.width, height: r0.height };
-    }
-    const r = base;
-    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-    // Calm near the edges, where the buttons are (close, menu): the card is flat under them.
-    const edge = Math.min(x, 1 - x, y, 1 - y), calm = Math.max(0, Math.min(1, (edge - .04) / .14));
     on = hit;
-    onMax = max;
+    for (const v in VARS) hit.style.setProperty(v, VARS[v]);
     hit.classList.add('bh-lean');
-    hit.style.setProperty('--ry', ((x - .5) * 2 * max * calm).toFixed(2));
-    hit.style.setProperty('--rx', ((.5 - y) * 2 * max * calm).toFixed(2));
-    hit.style.setProperty('--mx', (x * 100).toFixed(1) + '%');
-    hit.style.setProperty('--my', (y * 100).toFixed(1) + '%');
   };
   document.addEventListener('pointermove', move, { passive: true });
   document.addEventListener('pointerdown', rest, { passive: true });

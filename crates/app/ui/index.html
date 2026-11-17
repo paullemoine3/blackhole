@@ -579,7 +579,8 @@ function spaceMenu(sp, x, y) {
     { icon: 'emoji', label: bhT('menu.change_emoji'), run: { cmd: 'pick_icon', kind: 'space', id: sp.id } },
     { icon: 'edit', label: bhT('menu.rename_space'), run: { cmd: 'edit_space', id: sp.id } },
     { sep: true }, { head: bhT('easel.color') },
-    ...COLORS.map(([name, hex]) => ({ icon: hex.toLowerCase() === (sp.color || '').toLowerCase() ? 'check' : '', color: hex, label: bhT(name), run: { cmd: 'set_space_color', id: sp.id, color: hex } })),
+    // Presets and a free colour (palette.html `colorPicker`): the space takes it while it is chosen.
+    { picker: { color: sp.color, presets: COLORS.map(([name, hex]) => [bhT(name), hex]), run: { cmd: 'set_space_color', id: sp.id } } },
   );
   if (state.spaces.length > 1) {
     // Only the active space's tabs are known here; the others say nothing about their count.

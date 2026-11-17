@@ -258,9 +258,11 @@ const DISMISS_GRACE: Duration = Duration::from_millis(2000);
 /// How long after the shell brings a floating video back its "left PiP" is taken as an echo.
 const PIP_SHELL_EXIT: Duration = Duration::from_millis(1500);
 /// Share of the browser window another window must hide before a video floats.
+#[cfg(any(target_os = "macos", windows))]
 const COVERED_SHARE: f64 = 0.5;
 
 /// Share of the rectangle `own` (`x, y, w, h`) that `other` covers.
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
 fn overlap_share(own: (f64, f64, f64, f64), other: (f64, f64, f64, f64)) -> f64 {
     let w = (own.0 + own.2).min(other.0 + other.2) - own.0.max(other.0);
     let h = (own.1 + own.3).min(other.1 + other.3) - own.1.max(other.1);
@@ -1743,6 +1745,13 @@ impl Running {
             }
         }
         self.sync_extension_tab();
+        // Pages an extension asked for itself (`tabs.create`, `windows.create`: Bitwarden's
+        // security key sign-in) open as tabs, never as its popup again.
+        let opened = self.webext.as_ref().map(|h| h.take_opened()).unwrap_or_default();
+        for url in opened {
+            trace(|| format!("extension opens {url}"));
+            self.open(&url);
+        }
         if let Some(host) = &self.webext {
             if self.bar_exts_at.elapsed() > Duration::from_millis(800) {
                 self.bar_exts_at = Instant::now();
@@ -5987,6 +5996,8 @@ impl Running {
                         self.open_ext_popup(&url, (x, y, w, hh));
                     }
                 }
+                #[cfg(not(any(target_os = "macos", windows)))]
+                let _ = (id, x, y, w, hh);
             }
             UiCommand::CloseExtPopup => {
                 #[cfg(windows)]
@@ -6696,6 +6707,15 @@ impl ApplicationHandler<Wake> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut wake = PEERS_EVERY;
+        // WebKitGTK only paints, loads and answers IPC while GTK's main context runs: give it
+        // its events every turn, and come back often enough for pages to stay live.
+        #[cfg(target_os = "linux")]
+        {
+            while gtk::events_pending() {
+                gtk::main_iteration_do(false);
+            }
+            wake = wake.min(GTK_PUMP);
+        }
         let mut animating = false;
         if let Self::Running(app) = self {
             // Closed last pass: no longer the key window, safe to destroy.
@@ -7087,7 +7107,21 @@ fn launch_url() -> Option<String> {
         .filter(|u| matches!(Url::parse(u), Ok(u) if matches!(u.scheme(), "http" | "https")))
 }
 
+/// How often the loop hands GTK its events on Linux when nothing else wakes it.
+#[cfg(target_os = "linux")]
+const GTK_PUMP: Duration = Duration::from_millis(8);
+
 fn main() {
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        // wry embeds WebKitGTK in an X11 window only (XWayland on a Wayland desktop): winit and
+        // GDK must both talk to the X server.
+        std::env::set_var("GDK_BACKEND", "x11");
+        gtk::init().expect("GTK");
+        EventLoop::with_user_event().with_x11().build().expect("event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
     let event_loop = EventLoop::with_user_event().build().expect("event loop");
     let mailbox = Mailbox::new(event_loop.create_proxy());
     // Registered before the loop starts so a link that launches the app is not lost.

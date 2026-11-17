@@ -21,6 +21,9 @@ unsupported_scheme = "Ce type d’adresse ne peut pas être ouvert"
 
 [color]
 amber = "Ambre"
+hex = "Couleur hexadécimale"
+hue_saturation = "Teinte et saturation"
+lightness = "Luminosité"
 blue = "Bleu"
 green = "Vert"
 grey = "Gris"

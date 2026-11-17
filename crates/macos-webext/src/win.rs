@@ -475,6 +475,12 @@ impl ExtensionHost {
         self.0.borrow().exts.get(id).map(|e| e.state.clone())
     }
 
+    /// Same API as macOS: WebView2 opens the tabs extensions ask for through the views' own
+    /// new-window handler, so nothing waits here.
+    pub fn take_opened(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Toolbar buttons of the loaded extensions that have a popup.
     pub fn actions(&self) -> Vec<ActionInfo> {
         let inner = self.0.borrow();

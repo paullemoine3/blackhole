@@ -29,6 +29,10 @@ sys-locale = "0.3"
 muda = "0.21"
 core-graphics = { version = "0.23", optional = true }
 
+# Linux: wry draws with WebKitGTK, which needs GTK started and its events pumped by our loop.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
