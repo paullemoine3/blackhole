@@ -37,20 +37,21 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.17
+## 🆕 Nouveautés 0.8.18
 
-- 🧱 **Tuiles d'accès rapide à votre taille** — petites (cinq par ligne), moyennes ou grandes (trois), depuis les Réglages ou le menu d'une tuile.
-- 🏠 **Accueil à la carte** — vos zones surveillées et vos derniers téléchargements y trouvent leur place, et chaque section se masque d'un clic.
-- 🎨 **Sélecteur de couleur tranquille** — avec la barre latérale masquée, elle reste ouverte tant que vous choisissez la couleur d'un espace.
-- 🔑 **Clés d'accès (macOS)** — un site qui en demande une sait tout de suite qu'aucune n'est disponible sur le Mac : il propose une autre connexion, et l'extension de votre gestionnaire (Bitwarden, 1Password, Dashlane) prend le relais plus vite.
-- 📥 **Import plus clair** — les profils des autres navigateurs portent leur vrai nom (« Travail », « Perso ») plutôt que *Default* ou *Profile 1*.
-- 💿 **Installation macOS** — l'image disque montre BlackHole à côté du dossier Applications : il suffit de le glisser.
+- 🔎 **Recherche plus juste** — dans la barre de commandes (Ctrl/⌘+L), chaque page n'apparaît qu'une fois, les pages de connexion et de redirection disparaissent, tous les mots tapés doivent correspondre et vos sites habituels passent devant.
+- 🔄 **Rechargement forcé** — Ctrl+Maj+R (⌘⇧R), Ctrl+F5 ou Maj+clic sur le bouton ; à chaque rechargement, la flèche tourne jusqu'à la fin du chargement.
+- 👻 **Moins de « Site injoignable » fantômes** — un échec au milieu d'une redirection n'est plus affiché, et une connexion coupée est retentée une fois en silence.
+- 🧲 **Accueil réorganisable** — glissez une section par son titre (ou Alt+↑/↓) : l'ordre est gardé.
+- 🪟 **Barre des tâches Windows** — clic droit sur BlackHole : nouvelle fenêtre ou nouvelle fenêtre privée.
+- ⚙️ **Réglages dans la page** — ils s'ouvrent comme un onglet, sur le ciel de l'accueil, et une pastille « Modification appliquée » confirme chaque changement.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
 
+- 🏠 **0.8.17** — tuiles d'accès rapide en trois tailles, accueil à la carte (zones surveillées, téléchargements), clés d'accès macOS, profils d'import nommés, image disque macOS à glisser.
 - 🐧 **0.8.16** — Linux en aperçu (`.deb` et archive), couleur libre pour chaque espace, inspecteur web ancré dans la page, style 3D sans inclinaison.
 - 🧩 **0.8.15** — extensions Windows qui voient de nouveau la bonne page, fin des pages blanches de l'extension anti-bannières.
 - ⚓ **0.8.14** — onglets ancrés jamais mis en veille, traqueurs appris en naviguant, gestionnaire de mots de passe désactivable.

@@ -751,7 +751,6 @@ impl Core {
 
     fn suggestions(&self, text: &str) -> Effect {
         let text = text.trim();
-        let needle = text.to_lowercase();
         let mut items = Vec::new();
         if !text.is_empty() {
             let engine = self.svc.settings().search_engine;
@@ -765,23 +764,29 @@ impl Core {
                 None => items.push(json!({"kind": "search", "title": text, "engine": engine.label()})),
             }
         }
-        let matches = |title: &str, url: &Url| {
-            needle.is_empty() || title.to_lowercase().contains(&needle) || url.as_str().to_lowercase().contains(&needle)
-        };
+        // Same rules as the desktop palette (domain::suggest): every word must match, one row
+        // per page (`key`), no sign-in steps, history ranked by match then habit.
+        use blackhole_domain::suggest;
+        let matches = |title: &str, url: &Url| suggest::match_quality(text, title, url).is_some();
         let mut seen: Vec<String> = Vec::new();
         for t in self.svc.workspace().active_space().tabs.iter().filter(|t| matches(&t.title, &t.url)) {
-            seen.push(t.url.to_string());
+            seen.push(suggest::key(&t.url));
             items.push(json!({"kind": "tab", "title": t.title, "url": t.url.as_str(), "tab": t.id.0}));
         }
         for f in self.svc.favorites().iter().filter(|f| matches(&f.name, &f.url)) {
-            if !seen.contains(&f.url.to_string()) {
-                seen.push(f.url.to_string());
+            let key = suggest::key(&f.url);
+            if !seen.contains(&key) {
+                seen.push(key);
                 items.push(json!({"kind": "favorite", "title": f.name, "url": f.url.as_str()}));
             }
         }
-        for h in self.svc.recent_activity(400).iter().filter(|h| matches(&h.title, &h.url)) {
-            if !seen.contains(&h.url.to_string()) {
-                seen.push(h.url.to_string());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let pool = suggest::pool(self.svc.recent_activity(usize::MAX), now);
+        for h in suggest::rank(&pool, text, 16) {
+            if !seen.contains(&h.key) {
+                seen.push(h.key.clone());
                 items.push(json!({"kind": "history", "title": h.title, "url": h.url.as_str()}));
             }
         }

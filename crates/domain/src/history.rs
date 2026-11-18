@@ -1,6 +1,9 @@
 use url::Url;
 
-const MAX_ENTRIES: usize = 500;
+const MAX_ENTRIES: usize = 1000;
+/// Two loads of the same page this close together (a reload, a redirect that comes back, the
+/// title arriving after the address) are one visit.
+const SAME_VISIT_SECS: u64 = 30;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryEntry {
@@ -8,6 +11,8 @@ pub struct HistoryEntry {
     pub title: String,
     /// Seconds since the Unix epoch.
     pub visited_at: u64,
+    /// How many times the page was visited (at least 1); ranks the command bar's suggestions.
+    pub visits: u32,
 }
 
 /// Browsing history, most recent first, one entry per URL.
@@ -36,9 +41,13 @@ impl History {
         let mut url = url.clone();
         url.set_fragment(None);
         let url = &url;
-        let title = match self.entries.iter().position(|e| &e.url == url) {
-            Some(i) => self.entries.remove(i).title,
-            None => url.host_str().unwrap_or_default().to_owned(),
+        let (title, visits) = match self.entries.iter().position(|e| &e.url == url) {
+            Some(i) => {
+                let old = self.entries.remove(i);
+                let again = now.saturating_sub(old.visited_at) >= SAME_VISIT_SECS;
+                (old.title, old.visits.max(1).saturating_add(u32::from(again)))
+            }
+            None => (url.host_str().unwrap_or_default().to_owned(), 1),
         };
         self.entries.insert(
             0,
@@ -46,6 +55,7 @@ impl History {
                 url: url.clone(),
                 title,
                 visited_at: now,
+                visits,
             },
         );
         self.entries.truncate(MAX_ENTRIES);
@@ -109,6 +119,17 @@ mod tests {
         assert!(h.remove(&u("https://a.test/doc")));
         assert!(!h.remove(&u("https://a.test/doc")));
         assert!(h.entries().is_empty());
+    }
+
+    #[test]
+    fn revisits_are_counted_but_a_reload_is_the_same_visit() {
+        let mut h = History::default();
+        h.visit(&u("https://a.test/"), 100);
+        h.visit(&u("https://a.test/"), 110);
+        assert_eq!(h.entries()[0].visits, 1);
+        h.visit(&u("https://a.test/"), 200);
+        h.visit(&u("https://a.test/"), 1000);
+        assert_eq!(h.entries()[0].visits, 3);
     }
 
     #[test]

@@ -201,7 +201,7 @@ wait 900
 eval chrome state.tabs.filter(t => t.pinned).map(t => t.id).includes(window.__pin) + '|' + document.querySelectorAll('#pinned .snd').length
 cmd {"cmd":"open_settings","tab":"general"}
 wait 2000
-eval settings document.body.classList.contains('windows') + '|' + getComputedStyle(document.getElementById('top')).height + '|' + !!document.querySelector('nav button svg')
+eval settings document.body.classList.contains('windows') + '|' + document.body.classList.contains('embedded') + '|' + getComputedStyle(document.getElementById('top')).display + '|' + !!document.querySelector('nav button svg')
 cmd {"cmd":"panel_window","window":"settings","action":"close"}
 wait 500
 cmd {"cmd":"open","input":"https://example.com/?bh=links"}
@@ -797,9 +797,9 @@ Check ($evals[49] -match '"1\|0\|Folder .*deleted.*Undo"') 'delete folder: its t
 Check ($evals[51] -match '"2\|1\|1"') 'undo: the folder comes back with its tab inside'
 Check ($evals[53] -match '"false"') 'middle click: closes an ordinary tab'
 Check ($evals[56] -match '"true\|0"') 'quick access: closing (middle click, close) keeps the tile, no speaker on tiles'
-Check ($evals[57] -match '"true\|38px\|true"') 'settings window: own top bar like the main window, drawn icons'
+Check ($evals[57] -match '"true\|true\|none\|true"') 'settings: in the page card (0.8.18), no top bar of their own, drawn icons'
 Check ($evals[60] -match '"1\|true"') 'middle click on a link: a new tab in the background'
-Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window' -and $evals[62] -match 'Copy link,Add this page to the Easel,Capture a live area') 'right click on a link: the link menu, then the Easel and live area entries'
+Check ($evals[62] -match 'true\|Open link in new tab,Open link in new window,Open link in private window' -and $evals[62] -match 'Copy link,Add link to the Easel,Add this page to the Easel,Capture a live area') 'right click on a link: the link menu, then the Easel and live area entries'
 Check ($evals[63] -match '"true\|[1-9]') 'shields: the clean-up script and its sheet are in the page'
 Check ($evals[64] -match '"11111"' -and $evals[65] -match '"11011"') 'privacy: shields listed and switched one by one'
 Check ($evals[66] -match 'Add the live area to,.*New Easel,Watch this area for changes') 'live capture: asks which Easel, or to watch the area'
@@ -891,7 +891,7 @@ Check ((Named hm2) -match 'hm2:splashing\|24\|9' -and (Named hm3) -match 'hm3:\|
 Check ((Named hm4) -match 'hm4:false\|\|visible') 'launch splash: it lands and the logo of the page takes over'
 Check ((Named hm5) -match 'hm5:noanim\|none\|none') 'start page: no logo animation when animations are off'
 Check ((Named dl3) -match 'dl3:bh-dl-page\|/dlpage') 'download: the page is still there once the hidden sidebar has slid back'
-Check ((Named cm2) -match 'cm2:.*Reload/Add this page to the Easel/Capture a live area to an Easel[^/]*/Watch an area for changes[^/]*/Copy page link/Find in page/Print[^/]*/Inspect page') 'page menu: a right click on the page shows BlackHole''s menu (Easel, live area, watched area)'
+Check ((Named cm2) -match 'cm2:.*Reload/Hard refresh/Add this page to the Easel/Capture a live area to an Easel[^/]*/Watch an area for changes[^/]*/Copy page link/Find in page/Print[^/]*/Inspect page') 'page menu: a right click on the page shows BlackHole''s menu (Easel, live area, watched area)'
 Check ((Named cm4) -match 'cm4:Open image in new tab/Copy image address') 'page menu: an image adds its own entries'
 Check ((Named cm6) -notmatch 'menuing') 'page menu: a page with a menu of its own keeps it'
 Check ((Named cm8) -match 'menuing.*\|true') 'page menu: a video the page plays by itself (a preview) gets it too'

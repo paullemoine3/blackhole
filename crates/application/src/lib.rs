@@ -238,6 +238,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         true
     }
 
+    /// Order of the start page sections (dragged on the page); unknown names are dropped and a
+    /// missing section keeps its default place (`domain::home_order`).
+    pub fn set_home_order(&mut self, order: &[String]) {
+        let order: Vec<String> = blackhole_domain::home_order(order).into_iter().map(str::to_owned).collect();
+        let default = order.iter().map(String::as_str).eq(blackhole_domain::HOME_SECTIONS);
+        self.settings.home_order = if default { Vec::new() } else { order };
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     /// Calendar options by name: `reminders` (a toast when a meeting starts) or `card` (the next
     /// meeting in the sidebar). False for an unknown name.
     pub fn set_meeting_option(&mut self, name: &str, on: bool) -> bool {

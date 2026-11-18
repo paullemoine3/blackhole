@@ -361,7 +361,7 @@ impl Running {
                     self.notify(crate::notices::Notice::Device, &message, serde_json::Value::Null);
                 }
                 Event::Status(status) => {
-                    if self.settings.is_none() {
+                    if !self.settings_shown {
                         self.toast(&status);
                     }
                     self.nearby.status = status;

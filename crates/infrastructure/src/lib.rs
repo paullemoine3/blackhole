@@ -486,6 +486,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .into_iter()
                 .filter(|s| blackhole_domain::is_home_section(s))
                 .collect(),
+            home_order: dto.home_order.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
         }))
     }
 
@@ -529,6 +530,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             tracker_learning: settings.tracker_learning,
             quick_access_size: settings.quick_access_size.clone(),
             hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
+            home_order: settings.home_order.clone(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -550,6 +552,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                     url: Url::parse(&d.url).ok()?,
                     title: d.title,
                     visited_at: d.visited_at,
+                    visits: d.visits.max(1),
                 })
             })
             .collect();
@@ -564,6 +567,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 url: e.url.to_string(),
                 title: e.title.clone(),
                 visited_at: e.visited_at,
+                visits: e.visits,
             })
             .collect();
         let json = serde_json::to_string(&dtos).map_err(|e| StorageError(e.to_string()))?;
@@ -582,6 +586,9 @@ struct HistoryDto {
     url: String,
     title: String,
     visited_at: u64,
+    /// Absent in files written before 0.8.18: one visit.
+    #[serde(default)]
+    visits: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -654,6 +661,9 @@ struct SettingsDto {
     quick_access_size: String,
     #[serde(default)]
     hidden_home_sections: Vec<String>,
+    /// Absent before 0.8.18: the default order.
+    #[serde(default)]
+    home_order: Vec<String>,
 }
 
 fn default_language() -> String {
@@ -880,6 +890,7 @@ mod tests {
             tracker_learning: false,
             quick_access_size: "large".to_owned(),
             hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
+            home_order: vec!["recent".to_owned(), "now".to_owned()],
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -895,6 +906,7 @@ mod tests {
         assert!(old.password_manager && old.tracker_learning, "on in older files");
         assert_eq!(old.quick_access_size, "medium");
         assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
+        assert!(old.home_order.is_empty(), "default order in older files");
         fs::write(
             dir.path().join("settings.json"),
             r#"{"search_engine":"qwant","quick_access_size":"huge","hidden_home_sections":["now","nope"]}"#,

@@ -148,7 +148,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Accès rapide : « Close tab » et la commande `close` (gardée côté Rust) ne retirent jamais une tuile, ils la mettent en veille ; seul « Remove from quick access » la retire. Clic molette (`auxclick`) : veille pour un onglet d'accès rapide ou de dossier, `close` sinon. Pas de bouton son sur les tuiles (il masquait l'icône).
 - « Lock URL » a été retiré (domaine, IPC, interface) ; un ancien champ `locked` de `workspace.json` est ignoré au chargement (test dans `infrastructure`).
 - PiP : la page envoie `pip_left { paused }`. Sur macOS (WebKit), fermer la fenêtre flottante met la vidéo en pause (rien ne change) et « retour à l'onglet » la laisse jouer : `pip_left` affiche alors son onglet (`domain::pip::back_to_tab`), seulement pour une vidéo que le shell a mise en PiP (`pip_tab`, `pip_on_blur`, bouton PiP de la carte/palette via `pip_toggled`) et pas pour une sortie que le shell vient de provoquer (`pip_shell_exits`, 1,5 s). WebKit repasse la vidéo en `inline` dès le clic mais n'envoie `webkitpresentationmodechanged` qu'après l'animation de la fenêtre : la sonde (500 ms) le voit d'abord et oublie `pip_tab` ; `pip_faded` garde l'onglet `pip::LEFT_EVENT_GRACE` (3 s) pour que ce `pip_left` tardif compte encore (cas « late » de `test-pip.sh`). Sous WebView2 c'est pareil pour une vidéo fichier ou réseau (vérifié avec de vrais clics : la pause arrive avant `leavepictureinpicture`) ; seul un flux en direct (`srcObject`, champ `stream` de `pip_left`) n'est pas mis en pause à la fermeture, et rien ne change alors d'onglet. Barre latérale masquée : un clic molette (`open_in_background`) la fait sortir `LINK_REVEAL`. Adresse saisie dans un onglet (`navigate`) : `Running::pending` la montre aussitôt dans la barre avec la ligne de progression, jusqu'au début de la page, à l'échec, à l'invite d'authentification ou au téléchargement (`LOADING_MAX` au plus). Menu du clic droit de la barre latérale (`createMenu`) : « New black hole tab » (action `burner_tab`). Test : fin de `test-ui.ps1` (`ad1`, `ad2`, `bm1`, `bm2`). Le ✕ de la carte ferme aussi la fenêtre (`MEDIA_CLOSE_JS`) et la carte reste fermée au moins 2 s (`DISMISS_GRACE`). `paused` est une pause vue pendant le PiP (`__bhPaused` dans `media_devices.js`), pas `video.paused` à la sortie : WebKit met en pause une vidéo muette (tuiles d'un appel Meet) qui revient dans un onglet masqué, et cet événement `pause` n'arrive qu'après `webkitpresentationmodechanged`. Test : `scripts/test-pip.sh` (cible devtools `eval tabN`, page `call.html` = flux muet en direct).
-- Fenêtres Réglages et Easel : `panel_window_attributes` (Windows : sans bordure + ombre + icône ; macOS : barre de titre transparente, 84 px réservés aux boutons système). La page dessine la barre du haut (38 px, `--tint`/`--glow` de la couleur de l'espace, boutons réduire/agrandir/fermer, glisser = déplacer, double-clic = agrandir) via `UiCommand::PanelWindow { window, action }` ; l'état « agrandi » suit `WindowEvent::Resized`. Dans l'Easel embarqué en onglet, cette barre est masquée.
+- Fenêtre Easel (Réglages dans la carte de page depuis 0.8.18, `body.embedded` sans barre) : `panel_window_attributes` (Windows : sans bordure + ombre + icône ; macOS : barre de titre transparente, 84 px réservés aux boutons système). La page dessine la barre du haut (38 px, `--tint`/`--glow` de la couleur de l'espace, boutons réduire/agrandir/fermer, glisser = déplacer, double-clic = agrandir) via `UiCommand::PanelWindow { window, action }` ; l'état « agrandi » suit `WindowEvent::Resized`. Dans l'Easel embarqué en onglet, cette barre est masquée.
 - Suppression d'un espace ou d'un dossier : onglets archivés (`archive_tab` cherche dans tous les espaces) puis `drop_view`. Renommer un dossier : `UiCommand::EditFolder` → `bh.editFolderId`.
 - Annuler une suppression : instantané domaine (`snapshot_space` / `snapshot_folder` → `Removed`) gardé 15 s dans `Running::undo`, notice `Undo` avec bouton (`notify`, voir « Notices »), `UiCommand::UndoRemoval` → `undo_removal` (retire aussi les entrées d'archive). Les routes « Air Traffic » d'un espace supprimé ne reviennent pas. « Close other tabs » : `snapshot_tabs` → `Removed::Tabs`, même Annuler (bureau et Android), sans confirmation. Bibliothèque et Easel : `app/trash.rs` (`Trashed` : surlignage `Highlights::take`, veille `Watches::take`, onglet archivé, carte `Easels::take_item`, Easel `Easels::take`), `UiCommand::UndoTrash`, un seul élément gardé `UNDO_FOR`. Éditeur de mot de passe des Réglages : ouvert jusqu'à `bh.passwordSaved` (`null` = enregistré, sinon `{field, text}` affiché sous le champ) ; l'Annuler d'une suppression est aussi dans `#pwstatus` (champ `undo` de l'état).
 - Menu d'onglet : `reload_tab`, `duplicate_tab` (`Workspace::duplicate_tab` : nouvel onglet libre sous l'original, en tête des onglets libres pour une tuile ou un onglet de dossier, trou noir si l'original l'est ; jamais `open`, qui réutilise l'onglet de même adresse), `copy` (copie via la palette), `move_tab_to_space` (la vue est libérée : nouveau profil de cookies), `close_other_tabs` (onglets libres seulement, archivés). Menu d'espace : `set_space_color` (`#rrggbb`, pastilles `color` dans les menus).
@@ -496,6 +496,50 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Test macOS : `bash scripts/test-0817.sh` (serveur local 47983 : tuiles, sections de l'accueil, flyout
   gardé derrière le sélecteur, passkeys et notice ; pointeur hors de la fenêtre). Windows : code commun
   (tuiles, accueil, import) non testé.
+
+## 0.8.18 : recherche, rechargement forcé, échecs fantômes, accueil réorganisable, jump list, Réglages en onglet
+
+- Recherche de la barre de commandes : règles pures `domain/suggest.rs`. `key` (même page quelle que soit
+  l'écriture : schéma, `www.`, `/` final, `/index.html`, fragment, paramètres de pistage, ordre des
+  paramètres), `is_noise` (connexion, OAuth/SSO, `callback`, `logout`, redirections, `?code=&state=` :
+  jamais proposés), `frecency` (visites × récence, paliers façon Firefox), `pool` (une ligne par page,
+  `POOL_MAX`, page d'accueil d'un site vu par `ROOT_FROM_PAGES` pages), `match_quality` (chaque mot
+  doit correspondre ; début d'hôte/titre > début de mot > milieu ; une lettre ne vaut qu'un début),
+  `rank`. `HistoryEntry::visits` (`history.json` : `visits`, absent = 1 ; une visite dans
+  `SAME_VISIT_SECS` n'en est qu'une ; 1 000 entrées). La palette reçoit `recent` préparé (`key`, `h` =
+  `habit`) et `key` pour onglets, accès rapide, favoris ; `quality()` de `palette.html` recopie
+  `match_quality` (à garder en phase, testé côté Rust). Android : `suggestions` passe par `rank`.
+  « Recent activity » de l'accueil : sans bruit ni doublon (`home_recent_json`).
+- Rechargement : Mod+R et F5 = `reload`, Mod+Maj+R / Ctrl+F5 / Maj+F5 / Maj+clic = `UiCommand::HardReload`
+  (`views::hard_reload`), aussi dans le menu de page et la palette (`key:shift+r`). Tout rechargement de la
+  page affichée appelle `spin_reload` → `bh.reloading()` de `bar.html` : seule l'icône (`#reload svg`)
+  tourne, tour après tour tant que la page charge, arrêt sur une fin de tour (`animationiteration`).
+- Échecs fantômes (« Site injoignable ») : tout `Msg::Failed` attend `ABORT_GRACE` (`aborted`, avec
+  l'adresse du moteur au moment de l'échec) ; un `LoadStart`, un `Loaded` ou un téléchargement l'annule.
+  `errors::settle_failure` : ignoré si l'adresse du moteur a changé entre-temps (redirection par script,
+  nouvelle adresse) ; échec passager (`error_page::is_transient` : WebView2 0, 6–10, 12, 16 ; NSURL -1001,
+  -1004, -1005, -1011, -1017) ou sans raison → `retry_quietly` (une fois par adresse et
+  `RETRY_WINDOW_SECS`, `Retries` ; `reload` si le moteur est sur l'entrée en échec, sinon `load_url`) avant
+  la page d'erreur. Boucle de redirection : `Msg::Hop` (chaque navigation du cadre principal, sauts
+  compris) compte les sauts depuis la dernière page ; à `LOOP_HOPS` (6) ou plus, jamais de second essai
+  et « Too many redirects » (WebView2 ne signale qu'un « connection aborted », souvent sans 3xx).
+  `CONNECT_MAX` sans réponse : un second essai aussi. macOS : non testé.
+- Accueil : `Settings::home_order` (`home_order()` garde chaque section une fois, une section absente
+  reprend sa place par défaut ; ordre par défaut = vide), `UiCommand::SetHomeOrder`. `home.html` :
+  sections dans `#sections`, déplacées par leur titre (pointeur, FLIP en `transform`, `body.dragging`)
+  ou Alt+↑/↓ au clavier ; nœuds déplacés, jamais recréés (`placeSections`). Icône `grip`.
+- Jump list Windows : `macos-webext/src/jumplist.rs` (`ICustomDestinationList`, tâches `IShellLinkW` vers
+  l'exécutable, `--private` pour la fenêtre privée), fil `bh-jumplist` ; `window_tasks()` au lancement et
+  au changement de langue. Rien sur les autres systèmes (menu du Dock macOS non fait).
+- Réglages dans la carte de page (plus de fenêtre) : `settings_panel` (`LazyView`, `SETTINGS_HTML`,
+  `views::ui_view`), `settings_shown` (dans `home_shown`, `active_view`, `ensure_panels`, `place_panels`,
+  `sync`) ; tout `self.library = false` remet aussi `settings_shown = false`. Ouverture : `open_settings`
+  (`settings_wanted`), fermeture : `close_settings` (Échap, `close_settings`, `panel_window` close, Mod+W).
+  État `embedded` : `body.embedded` masque `#top`, fond et ciel de l'accueil. Barre du haut : `place`
+  « settings ». Pastille `#applied` (« Changes applied ») 450 ms après la dernière commande qui change un
+  réglage, 2 s à l'écran. Devtools : `shots` capture la fenêtre principale, `eval settings` le panneau.
+- Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*`, `rl*`, `se*`, `ho*`,
+  `rt*`, jump list lue dans `CustomDestinations`). macOS : compilation croisée seulement.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).

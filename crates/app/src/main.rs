@@ -34,6 +34,7 @@ mod views;
 use i18n::{message, t, tf, tn};
 use blackhole_application::{BrowserService, NavigationOutcome, WorkspaceRepository};
 use blackhole_domain::http_auth;
+use blackhole_domain::suggest;
 use blackhole_domain::verbs::{self, Target, Verb};
 use blackhole_domain::{
     BlockLog, Easels, FolderId, Removed, SearchEngine, Settings, SpaceId, TabId,
@@ -347,12 +348,6 @@ const POPUP_RADIUS: f64 = 10.0;
 #[cfg(windows)]
 const POPUP_MAX: (f64, f64) = (800.0, 600.0);
 
-/// The settings window. The view is declared first so it is dropped before its window.
-struct SettingsWindow {
-    view: WebView,
-    window: Window,
-}
-
 /// The Easel window, laid out like the settings window.
 struct EaselWindow {
     view: WebView,
@@ -397,7 +392,8 @@ const DOWNLOAD_REVEAL: Duration = Duration::from_secs(4);
 /// How long a hidden sidebar shows itself when a link opens a tab in the background (middle
 /// click): without it nothing on screen says the tab is there.
 const LINK_REVEAL: Duration = Duration::from_millis(2500);
-/// How long an aborted navigation waits for the download that would explain it.
+/// How long a failed navigation waits before its error page: for the download that would
+/// explain a "connection aborted", or the next page a redirect is already loading.
 const ABORT_GRACE: Duration = Duration::from_millis(600);
 
 /// Size of the file a download is writing: browsers use a temporary name until it completes.
@@ -618,7 +614,10 @@ struct Running {
     import_tx: std::sync::mpsc::Sender<ImportDone>,
     import_rx: std::sync::mpsc::Receiver<ImportDone>,
     webext_sig: String,
-    settings: Option<SettingsWindow>,
+    /// The Settings, shown in the page card like a tab (`settings_shown`), with the start
+    /// page's background; a shell page created when needed and released after `PANEL_KEEP`.
+    settings_panel: LazyView,
+    settings_shown: bool,
     settings_wanted: bool,
     easels: Easels,
     easel_store: EaselStore,
@@ -649,8 +648,9 @@ struct Running {
     /// Tabs whose navigation just became a download: the engine ends that navigation as a
     /// failure, which is no error to show.
     dl_navs: HashMap<TabId, Instant>,
-    /// Navigations ended as "connection aborted": an error page unless a download follows.
-    aborted: HashMap<TabId, (Instant, Url)>,
+    /// Failed navigations waiting `ABORT_GRACE` (an error page unless a download, a new load
+    /// or a page follows), with the engine's address when they failed (`errors::settle_failure`).
+    aborted: HashMap<TabId, (Instant, Url, Option<String>)>,
     dl_polled: Instant,
     dl_size_tx: std::sync::mpsc::Sender<(u64, u64)>,
     dl_size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
@@ -830,6 +830,7 @@ impl Running {
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
         // Before any page is created: each one receives the catalog of this language.
         i18n::apply(&svc.settings().language);
+        window_tasks();
         window.set_title(&main_title());
         let sidebar = Sidebar::starting(
             f64::from(svc.settings().sidebar_width),
@@ -1076,7 +1077,8 @@ impl Running {
             archive: blackhole_infrastructure::store::ArchiveStore::new(&data).load(),
             data,
             ext_src: ext_src_dir,
-            settings: None,
+            settings_panel: LazyView::new(),
+            settings_shown: false,
             settings_wanted: false,
             easel_current: easels.all().first().map(|e| e.id),
             easels,
@@ -1113,12 +1115,16 @@ impl Running {
     /// The start page is shown at launch, via the Home button, and whenever no tab is active.
     fn home_shown(&self) -> bool {
         self.library
+            || self.settings_shown
             || self.easel_tab
             || self.home_visible
             || self.svc.workspace().active_tab().is_none()
     }
 
     fn active_view(&self) -> &WebView {
+        if self.settings_shown {
+            return self.settings_panel.view.as_ref().unwrap_or(&self.home);
+        }
         if self.library {
             return self.library_panel.view.as_ref().unwrap_or(&self.home);
         }
@@ -1281,6 +1287,10 @@ impl Running {
             let rect = if self.library { library_rect(&self.window_size()) } else { parked() };
             let _ = panel.set_bounds(rect);
         }
+        if let Some(panel) = &self.settings_panel.view {
+            let rect = if self.settings_shown { self.content_rects().0 } else { parked() };
+            let _ = panel.set_bounds(rect);
+        }
     }
 
     /// Rounds the page views that fill the card (the others are rounded when they are shown).
@@ -1288,6 +1298,7 @@ impl Running {
         let scale = self.scale();
         let mut cards = vec![&self.home, self.active_view()];
         cards.extend(self.easel_panel.view.as_ref());
+        cards.extend(self.settings_panel.view.as_ref());
         if let Some(side) = self.split_tab().and_then(|id| self.tabs.get(&id)) {
             cards.push(side);
         }
@@ -1564,13 +1575,14 @@ impl Running {
     }
 
     fn ui_settings(&self) {
-        let Some(win) = &self.settings else { return };
+        let Some(view) = self.settings_panel.view.as_ref() else { return };
         let settings = self.svc.settings();
         let mut state = json!({
             "os": std::env::consts::OS,
-            // The window's own top bar: the space's color and the maximize button's state.
+            // Shown in the page card of the main window (no top bar of its own), tinted by the
+            // space's color.
+            "embedded": true,
             "color": self.svc.workspace().active_space().color,
-            "maximized": win.window.is_maximized(),
             "version": env!("CARGO_PKG_VERSION"),
             "engine": settings.search_engine.id(),
             "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
@@ -1633,7 +1645,7 @@ impl Running {
         // Apart: the macro above is at serde_json's recursion limit.
         state["tileSize"] = json!(settings.quick_access_size);
         state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
-        state["homeSections"] = blackhole_domain::HOME_SECTIONS
+        state["homeSections"] = blackhole_domain::home_order(&settings.home_order)
             .iter()
             .map(|s| json!({"id": s, "shown": !settings.hidden_home_sections.contains(*s)}))
             .collect();
@@ -1651,9 +1663,12 @@ impl Running {
             blackhole_domain::i18n::SYSTEM,
             &i18n::system_languages()
         ));
-        let _ = win
-            .view
-            .evaluate_script(&format!("window.bh&&bh.render({state})"));
+        let _ = view.evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    /// The Settings page, when it exists (shown or kept hidden for a while).
+    pub(crate) fn settings_view(&self) -> Option<&WebView> {
+        self.settings_panel.view.as_ref()
     }
 
     /// Imported bookmarks are ordinary tabs (drag & drop, close, folders) filed in folders.
@@ -1964,28 +1979,25 @@ impl Running {
         });
     }
 
-    /// Opens (or focuses) the settings window; called from the event loop, which creates windows.
-    fn open_settings(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(win) = &self.settings {
-            win.window.set_minimized(false);
-            win.window.focus_window();
-            return;
+    /// Shows the Settings in the page card, like a tab (no window of their own any more): the
+    /// tab, the Library or the Easel shown before goes back when they close.
+    fn open_settings(&mut self) {
+        self.close_palette();
+        self.close_peek();
+        if self.easel_tab {
+            self.live.clear();
+            self.live_slots.clear();
+            self.easel_tab = false;
         }
-        let attrs = self.panel_window_attributes(&i18n::t("window.settings"), (820.0, 600.0));
-        let Ok(window) = event_loop.create_window(attrs) else {
-            return;
-        };
-        window.focus_window();
-        match views::panel_view(&window, &mut self.web_context, SETTINGS_HTML, &self.mailbox) {
-            Ok(view) => self.settings = Some(SettingsWindow { view, window }),
-            Err(err) => tracing::error!("cannot create settings window: {err}"),
-        }
+        self.library = false;
+        self.settings_shown = true;
+        self.sync();
+        self.ui_settings();
     }
 
     fn close_settings(&mut self) {
-        if let Some(SettingsWindow { view, window }) = self.settings.take() {
-            drop(view);
-            self.retire_window(window);
+        if std::mem::take(&mut self.settings_shown) {
+            self.sync();
         }
     }
 
@@ -2037,10 +2049,16 @@ impl Running {
         attrs
     }
 
-    /// The buttons and drag area of a secondary window's top bar.
+    /// The buttons and drag area of a secondary window's top bar. The Settings have no window
+    /// any more: only their close (Escape) is left.
     fn panel_window_action(&mut self, which: &str, action: &str) {
+        if which == "settings" {
+            if action == "close" {
+                self.close_settings();
+            }
+            return;
+        }
         let window = match which {
-            "settings" => self.settings.as_ref().map(|w| &w.window),
             "easel" => self.easel.as_ref().map(|w| &w.window),
             _ => None,
         };
@@ -2053,16 +2071,9 @@ impl Running {
             "maximize" => {
                 window.set_maximized(!window.is_maximized());
             }
-            "close" => match which {
-                "settings" => self.close_settings(),
-                _ => self.close_easel(),
-            },
+            "close" => self.close_easel(),
             _ => {}
         }
-    }
-
-    fn settings_window_id(&self) -> Option<WindowId> {
-        self.settings.as_ref().map(|w| w.window.id())
     }
 
     // ---- easels ---------------------------------------------------------------------------
@@ -2111,6 +2122,7 @@ impl Running {
         self.easel_current = Some(id);
         self.easel_tab = true;
         self.library = false;
+        self.settings_shown = false;
         self.sync();
     }
 
@@ -2122,6 +2134,7 @@ impl Running {
         self.live_slots.clear();
         self.easel_tab = false;
         self.library = false;
+        self.settings_shown = false;
         self.sync();
     }
 
@@ -2141,6 +2154,7 @@ impl Running {
         self.easel_current = Some(id);
         self.easel_tab = false;
         self.library = false;
+        self.settings_shown = false;
         self.home_visible = false;
         self.svc.activate_tab(tab);
         self.svc.clear_split();
@@ -2157,19 +2171,6 @@ impl Running {
             self.live_slots.clear();
         }
         self.sync();
-    }
-
-    /// Keeps the easel page filling its window; live views follow `EaselLayout`.
-    fn settings_resized(&self) {
-        if let Some(win) = &self.settings {
-            let size = win
-                .window
-                .inner_size()
-                .to_logical::<f64>(win.window.scale_factor());
-            let _ = win
-                .view
-                .set_bounds(views::rect(0.0, 0.0, size.width, size.height));
-        }
     }
 
     fn easel_resized(&self) {
@@ -2523,6 +2524,7 @@ impl Running {
                 items.push(json!({"icon": "forward", "label": t("menu.page_forward"), "run": {"cmd": "forward"}}));
             }
             items.push(json!({"icon": "reload", "label": t("menu.page_reload"), "run": {"cmd": "reload"}}));
+            items.push(json!({"icon": "reload", "label": t("menu.page_hard_reload"), "run": {"cmd": "hard_reload"}}));
             let tools = self.page_tool_items(tab);
             if !tools.is_empty() {
                 items.push(json!({"sep": true}));
@@ -2758,6 +2760,7 @@ impl Running {
         self.close_palette();
         self.close_peek();
         self.close_easel_tab();
+        self.settings_shown = false;
         self.library = true;
         let fresh = self.library_panel.view.is_none();
         self.sync();
@@ -2778,6 +2781,7 @@ impl Running {
         if self.library {
             self.marks_edit_done();
             self.library = false;
+            self.settings_shown = false;
             self.sync();
         }
     }
@@ -3033,6 +3037,7 @@ impl Running {
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
             UiCommand::ClearTabs => {
@@ -3245,6 +3250,7 @@ impl Running {
             "private": private_mode(),
             "insecure": Url::parse(&url).is_ok_and(|u| errors::insecure(&u)),
             "url": url,
+            "place": if self.settings_shown { "settings" } else { "" },
             "color": ws.active_space().color,
             "engine": self.svc.settings().search_engine.label(),
             "extensions": self.bar_exts,
@@ -3293,12 +3299,12 @@ impl Running {
         let late: Vec<_> = self
             .aborted
             .iter()
-            .filter(|(_, (since, _))| now.duration_since(*since) >= ABORT_GRACE)
+            .filter(|(_, (since, _, _))| now.duration_since(*since) >= ABORT_GRACE)
             .map(|(id, _)| *id)
             .collect();
         for id in late {
-            if let Some((_, url)) = self.aborted.remove(&id) {
-                self.on_failed(id, url);
+            if let Some((_, url, engine_at)) = self.aborted.remove(&id) {
+                self.settle_failure(id, url, engine_at);
             }
         }
         let stalled: Vec<_> = self
@@ -3309,7 +3315,13 @@ impl Running {
             .collect();
         for id in stalled {
             if let Some((_, url)) = self.awaiting.remove(&id) {
-                self.show_unreachable(id, url);
+                // No answer at all yet: asked once more (a connection that died silently)
+                // before the page says the site cannot be reached.
+                if self.retry_quietly(id, &url) {
+                    self.awaiting.insert(id, (Instant::now(), url));
+                } else {
+                    self.show_unreachable(id, url);
+                }
             }
         }
         if before != (self.splash.len(), self.loading.len() + self.pending.len()) {
@@ -3334,13 +3346,12 @@ impl Running {
                     "tab": f.tab.filter(|id| self.svc.workspace().active_space().tabs.iter().any(|t| t.id == *id)).map(|id| id.0),
                 }))
                 .collect::<Vec<_>>(),
-            "recent": self.svc.recent_activity(12).iter()
-                .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
-                .collect::<Vec<_>>(),
+            "recent": self.home_recent_json(),
             "releaseNotes": self.release_notes,
             "now": self.home_now_json(),
             "hidden": self.svc.settings().hidden_home_sections,
-            "sections": blackhole_domain::HOME_SECTIONS,
+            // In the user's order (dragged on the page).
+            "sections": blackhole_domain::home_order(&self.svc.settings().home_order),
             "watches": self.home_watches_json(),
             "downloads": self.home_downloads_json(),
         });
@@ -3355,8 +3366,21 @@ impl Running {
     /// The interface language changed: every open page of BlackHole gets the new catalog and
     /// re-renders, the shell's own texts (menus, titles, state) follow. Error pages already
     /// shown keep their language until the next error.
+    /// The last pages of the start page, each once (domain::suggest::key), without sign-in steps.
+    fn home_recent_json(&self) -> Vec<serde_json::Value> {
+        let mut seen = std::collections::HashSet::new();
+        self.svc
+            .recent_activity(200)
+            .iter()
+            .filter(|e| !suggest::is_noise(&e.url) && seen.insert(suggest::key(&e.url)))
+            .take(12)
+            .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
+            .collect()
+    }
+
     fn language_changed(&mut self) {
         i18n::apply(&self.svc.settings().language);
+        window_tasks();
         self.close_palette();
         let mut views: Vec<&WebView> = vec![
             &self.chrome,
@@ -3370,15 +3394,12 @@ impl Running {
         views.extend(self.splitbar.view.as_ref());
         views.extend(self.library_panel.view.as_ref());
         views.extend(self.easel_panel.view.as_ref());
-        views.extend(self.settings.as_ref().map(|w| &w.view));
+        views.extend(self.settings_panel.view.as_ref());
         views.extend(self.easel.as_ref().map(|w| &w.view));
         for view in views {
             views::send_language(view);
         }
         self.window.set_title(&main_title());
-        if let Some(w) = &self.settings {
-            w.window.set_title(&i18n::t("window.settings"));
-        }
         if let Some(w) = &self.easel {
             w.window.set_title(&i18n::t("window.easel"));
         }
@@ -4046,7 +4067,7 @@ impl Running {
         let size = self.window_size();
         let (cx, cy, cw, ch) = card_rect(&self.sidebar, &size);
         let mut created = false;
-        for (needed, which) in [(self.library, 0), (self.easel_tab || side, 1), (split, 2)] {
+        for (needed, which) in [(self.library, 0), (self.easel_tab || side, 1), (split, 2), (self.settings_shown, 3)] {
             let (panel, html, bounds) = match which {
                 0 => (
                     &mut self.library_panel,
@@ -4061,6 +4082,11 @@ impl Running {
                 1 => (
                     &mut self.easel_panel,
                     EASEL_HTML,
+                    views::rect(cx, cy, cw, ch),
+                ),
+                3 => (
+                    &mut self.settings_panel,
+                    SETTINGS_HTML,
                     views::rect(cx, cy, cw, ch),
                 ),
                 _ => (
@@ -4171,6 +4197,9 @@ impl Running {
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.set_visible(self.library);
         }
+        if let Some(panel) = &self.settings_panel.view {
+            let _ = panel.set_visible(self.settings_shown);
+        }
         self.place_panels();
         let split = self.split_tab();
         let waiting = active.filter(|id| self.splash.contains_key(id));
@@ -4181,7 +4210,7 @@ impl Running {
         }
         let _ = self
             .home
-            .set_visible((active.is_none() || waiting.is_some()) && !self.easel_tab && !self.library);
+            .set_visible((active.is_none() || waiting.is_some()) && !self.easel_tab && !self.library && !self.settings_shown);
         self.ui_wait();
         self.split_shown(active, split);
         self.layout(true);
@@ -4366,6 +4395,7 @@ impl Running {
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
             None => self.toast(&t("blocked.unsupported_scheme")),
@@ -4389,6 +4419,7 @@ impl Running {
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
         }
@@ -4562,6 +4593,7 @@ impl Running {
         self.home_visible = true;
         self.easel_tab = false;
         self.library = false;
+        self.settings_shown = false;
         self.sync();
         self.open_palette("new");
     }
@@ -4807,7 +4839,7 @@ impl Running {
                 json!({"id": "key:zoom_in", "label": t("palette.zoom_in"), "keys": "mod+plus"}),
                 json!({"id": "key:zoom_out", "label": t("palette.zoom_out"), "keys": "mod+minus"}),
                 json!({"id": "key:zoom_reset", "label": t("palette.zoom_reset"), "keys": "mod+0"}),
-                json!({"id": "key:r", "label": t("palette.hard_reload"), "keys": "mod+r"}),
+                json!({"id": "key:shift+r", "label": t("palette.hard_reload"), "keys": "mod+shift+r"}),
                 json!({
                     "id": "key:devtools", "label": t("palette.devtools"),
                     "keys": if cfg!(target_os = "macos") { "mod+alt+i" } else { "F12" },
@@ -4886,10 +4918,15 @@ impl Running {
             "found": if matches!(self.palette_mode.as_str(), "new" | "url") { self.found_json() } else { json!(null) },
             "boostHost": site,
             "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
-            "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str()})).collect::<Vec<_>>(),
-            "favorites": self.svc.favorites().iter().map(|f| json!({"name": f.name, "url": f.url.as_str()})).collect::<Vec<_>>(),
-            "bookmarks": self.bookmarks.load().iter().map(|b| json!({"title": b.title, "url": b.url})).collect::<Vec<_>>(),
-            "recent": self.svc.recent_activity(usize::MAX).iter().map(|e| json!({"title": e.title, "url": e.url.as_str()})).collect::<Vec<_>>(),
+            // Every row carries its `key` (domain::suggest): the same page met twice is offered once.
+            "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str(), "key": suggest::key(&t.url)})).collect::<Vec<_>>(),
+            "favorites": self.svc.favorites().iter().map(|f| json!({"name": f.name, "url": f.url.as_str(), "key": suggest::key(&f.url)})).collect::<Vec<_>>(),
+            "bookmarks": self.bookmarks.load().iter().map(|b| json!({"title": b.title, "url": b.url, "key": suggest::key_of_str(&b.url)})).collect::<Vec<_>>(),
+            // History prepared for the search: one row per page, no sign-in steps, best habits
+            // first; `h` is the habit (0–1) the palette adds to the quality of a match.
+            "recent": suggest::pool(self.svc.recent_activity(usize::MAX), now_secs()).iter().map(|e| json!({
+                "title": e.title, "url": e.url.as_str(), "key": e.key, "h": suggest::habit(e.frecency),
+            })).collect::<Vec<_>>(),
             "actions": actions,
         })
     }
@@ -5293,6 +5330,14 @@ impl Running {
         }
     }
 
+    /// Every reload of the page shown (button, keys, menus, palette) turns the reload arrow of the
+    /// top bar, not the button: it keeps turning while the page loads (`bh.reloading`).
+    fn spin_reload(&self) {
+        if !self.home_shown() {
+            let _ = self.bar.evaluate_script("window.bh&&bh.reloading&&bh.reloading()");
+        }
+    }
+
     fn with_active_tab(&self, f: impl FnOnce(&WebView)) {
         if self.home_shown() {
             return;
@@ -5323,6 +5368,7 @@ impl Running {
                 self.home_visible = true;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
             UiCommand::NewTab => self.new_tab(),
@@ -5414,6 +5460,7 @@ impl Running {
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
             // A quick access tab is never taken off the list by closing it: it only stops.
@@ -5447,6 +5494,7 @@ impl Running {
                     self.home_visible = true;
                     self.easel_tab = false;
                     self.library = false;
+                    self.settings_shown = false;
                 }
                 self.sync();
             }
@@ -5455,6 +5503,7 @@ impl Running {
                     self.home_visible = false;
                     self.easel_tab = false;
                     self.library = false;
+                    self.settings_shown = false;
                 }
                 self.sync();
             }
@@ -5498,6 +5547,7 @@ impl Running {
                     self.home_visible = false;
                     self.easel_tab = false;
                     self.library = false;
+                    self.settings_shown = false;
                     self.sync();
                     if let Some(snapshot @ Removed::Space { .. }) = snapshot {
                         let name = match &snapshot {
@@ -5669,6 +5719,9 @@ impl Running {
                 if let Some(view) = self.tabs.get(&TabId(id)) {
                     views::reload(view);
                 }
+                if self.svc.workspace().active_tab().is_some_and(|t| t.id == TabId(id)) {
+                    self.spin_reload();
+                }
             }
             // Not `open`: opening an address shows the tab already on it instead of a copy.
             UiCommand::DuplicateTab { id } => {
@@ -5683,6 +5736,7 @@ impl Running {
                     self.home_visible = false;
                     self.easel_tab = false;
                     self.library = false;
+                    self.settings_shown = false;
                     self.sync();
                 }
             }
@@ -5899,6 +5953,7 @@ impl Running {
                 self.home_visible = false;
                 self.easel_tab = false;
                 self.library = false;
+                self.settings_shown = false;
                 self.sync();
             }
             UiCommand::MoveSpace { id, before } => {
@@ -5938,6 +5993,11 @@ impl Running {
                     self.ui_settings();
                 }
             }
+            UiCommand::SetHomeOrder { order } => {
+                self.svc.set_home_order(&order);
+                self.ui_home();
+                self.ui_settings();
+            }
             UiCommand::FocusContent => self.focus_content(),
             UiCommand::DragWindow => {
                 let _ = self.window.drag_window();
@@ -5956,7 +6016,14 @@ impl Running {
                 self.with_active_tab(if on_error { views::error_back } else { views::go_back });
             }
             UiCommand::Forward => self.with_active_tab(views::go_forward),
-            UiCommand::Reload => self.with_active_tab(views::reload),
+            UiCommand::Reload => {
+                self.spin_reload();
+                self.with_active_tab(views::reload);
+            }
+            UiCommand::HardReload => {
+                self.spin_reload();
+                self.with_active_tab(views::hard_reload);
+            }
             UiCommand::Passwords { action } => self.password_action(action),
             UiCommand::OpenSettings { tab } => {
                 self.settings_tab = tab;
@@ -6191,6 +6258,8 @@ impl Running {
             "shift+n" => {
                 open_window(true, None);
             }
+            // The Settings are shown like a tab: Mod+W closes them.
+            "w" if self.settings_shown => self.close_settings(),
             "w" => self.close_active_tab(),
             "shift+t" => self.reopen_closed(),
             "recent_tab" | "next_tab" | "prev_tab" => self.switch_tab(key),
@@ -6200,8 +6269,8 @@ impl Running {
                     self.handle_ui(UiCommand::Activate { id: id.0 });
                 }
             }
-            "r" => self.with_active_tab(views::hard_reload),
-            "reload" => self.handle_ui(UiCommand::Reload),
+            "r" | "reload" => self.handle_ui(UiCommand::Reload),
+            "shift+r" => self.handle_ui(UiCommand::HardReload),
             "b" => self.handle_ui(UiCommand::Lock),
             "[" => self.handle_ui(UiCommand::Back),
             "]" => self.handle_ui(UiCommand::Forward),
@@ -6419,6 +6488,11 @@ impl Running {
                 self.ui_bar();
             }
             Msg::Loaded(tab, url) => {
+                // A page loaded after a failure: that failure was a hop nobody waits for.
+                if self.aborted.remove(&tab).is_some() {
+                    self.forget_failure(tab);
+                }
+                self.loaded_again(&url);
                 self.recall_seen(tab);
                 self.marks_push(tab, true);
                 self.pilot_mark(tab);
@@ -6443,12 +6517,13 @@ impl Running {
                 trace(|| format!("failed tab={} {url}", tab.0));
                 if self.download_took(tab) {
                     self.ui_bar();
-                } else if self.failure_is_abort(tab) {
-                    // WebView2 ends a navigation that becomes a download as "connection
-                    // aborted", just before it says a download starts: wait for that word.
-                    self.aborted.insert(tab, (Instant::now(), url));
                 } else {
-                    self.on_failed(tab, url);
+                    // Never at once: WebView2 ends a navigation that becomes a download as
+                    // "connection aborted" just before it says a download starts, and a
+                    // redirect made by a script ends the page it leaves as failed while the
+                    // next one loads. Both settle within `ABORT_GRACE`.
+                    let engine_at = self.tabs.get(&tab).and_then(|v| v.url().ok());
+                    self.aborted.insert(tab, (Instant::now(), url, engine_at));
                 }
             }
             Msg::Crashed(tab) => self.on_crashed(tab),
@@ -6461,6 +6536,7 @@ impl Running {
             }
             Msg::ServerTrust(tab, challenge) => self.on_server_trust(tab, challenge),
             Msg::Upgraded(tab, plain) => self.on_upgraded(tab, plain),
+            Msg::Hop(tab) => self.errors_hop(tab),
             Msg::BlockedPage(tab, url, why) => self.on_blocked_page(tab, url, why),
             Msg::LinkCleaned => self.links_cleaned = self.links_cleaned.saturating_add(1),
             Msg::Page(tab, PageEvent::ErrorMenu { x, y }) => self.error_menu(tab, x, y),
@@ -6716,7 +6792,7 @@ impl Running {
 
     fn service_windows(&mut self, event_loop: &ActiveEventLoop) {
         if std::mem::take(&mut self.settings_wanted) {
-            self.open_settings(event_loop);
+            self.open_settings();
             self.ui_state();
         }
         if std::mem::take(&mut self.easel_wanted) {
@@ -6863,23 +6939,6 @@ impl ApplicationHandler<Wake> for App {
         let Self::Running(app) = self else { return };
         app.pump();
         app.service_windows(event_loop);
-        if app.settings_window_id() == Some(id) {
-            match event {
-                WindowEvent::CloseRequested => app.close_settings(),
-                // The page is a child view: it follows the window's size by hand. The top bar's
-                // maximize button follows the window too.
-                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                    app.settings_resized();
-                    let maxed = app.settings.as_ref().is_some_and(|w| w.window.is_maximized());
-                    if maxed != app.panels_maxed.0 {
-                        app.panels_maxed.0 = maxed;
-                        app.ui_settings();
-                    }
-                }
-                _ => {}
-            }
-            return;
-        }
         if app.easel_window_id() == Some(id) {
             match event {
                 WindowEvent::CloseRequested => app.close_easel(),
@@ -7142,6 +7201,15 @@ fn open_window(private: bool, url: Option<&str>) -> bool {
         cmd.args(["--open", url]);
     }
     cmd.spawn().is_ok()
+}
+
+/// Windows taskbar: the tasks of the app's jump list, in the language of the interface (set at
+/// launch and when the language changes). Nothing on the other systems.
+fn window_tasks() {
+    blackhole_macos_webext::set_window_tasks(&[
+        (t("palette.new_window"), String::new()),
+        (t("palette.new_private_window"), "--private".to_owned()),
+    ]);
 }
 
 /// The page this window was asked to open at launch.

@@ -1,6 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.18",
+        &[
+            "A smarter search in the command bar (Ctrl/Cmd+L): each page is offered once, however its address was written; sign-in, logout and redirect steps are left out; every word you type must match, and the pages you open often come first",
+            "Hard refresh with Ctrl+Shift+R (Cmd+Shift+R on macOS), Ctrl+F5, Shift+F5 or a Shift+click on the reload button. Every reload turns the arrow of the button, until the page has loaded",
+            "Fewer ghost \"Site unreachable\" pages: a failure is now judged a moment later (a redirect has often already moved on), and a connection that was cut or reset is asked again once, without a word, before the error page",
+            "Rearrange the start page: drag a section by its title (or Alt+Up / Alt+Down on it), the order is kept",
+            "Windows: right-click BlackHole in the taskbar to open a new window or a new private window",
+            "Settings open in the page area, like a tab, over the start page's sky, instead of a floating window; Ctrl/Cmd+W or Escape closes them. \"Changes applied\" shows for a moment after a change",
+        ],
+    ),
+    (
         "0.8.17",
         &[
             "With the sidebar hidden, the colour picker of a space no longer loses its sidebar: the floating sidebar stays while the menu is open",

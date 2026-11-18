@@ -301,6 +301,48 @@ function askRecall() {
   }, 160);
 }
 
+// How well a row answers what was typed, 0–1, null when a word is missing: the same rules as
+// domain::suggest::match_quality (tested there). Every word must be found; the start of the
+// host or of the title wins, then the start of a word, the middle of a word last; one letter
+// only matches a start. An empty query matches everything (0).
+const BOUND = /[\s\-_./·:()|,–—\[\]'"]/;
+function place(text, w) {
+  let best = -1, from = 0, i;
+  while ((i = text.indexOf(w, from)) >= 0) {
+    const p = i === 0 ? 0 : BOUND.test(text[i - 1]) ? 1 : 2;
+    if (best < 0 || p < best) best = p;
+    if (p === 0) break;
+    from = i + Math.max(1, w.length);
+  }
+  return best;
+}
+function quality(query, title, url) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return 0;
+  let h = '', rest = (url || '').toLowerCase();
+  try { const u = new URL(url); h = u.hostname.toLowerCase().replace(/^www\./, ''); rest = rest.slice(rest.indexOf(h) + h.length); } catch (e) {}
+  const t = (title || '').toLowerCase();
+  const one = words.length === 1 && [...words[0]].length === 1;
+  let total = 0;
+  for (const w of words) {
+    let best = 0;
+    if (h && (h.startsWith(w) || (h + rest).startsWith(w))) best = 1;
+    const pt = place(t, w);
+    if (pt === 0) best = Math.max(best, 0.9);
+    else if (pt === 1) best = Math.max(best, 0.75);
+    else if (pt === 2 && !one) best = Math.max(best, 0.35);
+    const ph = h ? place(h, w) : -1;
+    if (ph === 0 || ph === 1) best = Math.max(best, 0.7);
+    else if (ph === 2 && !one) best = Math.max(best, 0.3);
+    const pr = h ? place(rest, w) : -1;
+    if ((pr === 0 || pr === 1) && !one) best = Math.max(best, 0.45);
+    else if (pr === 2 && !one && [...w].length >= 3) best = Math.max(best, 0.2);
+    if (!best) return null;
+    total += best;
+  }
+  return total / words.length;
+}
+
 function build() {
   if (S.mode === 'recall') return buildRecall();
   const raw = $('q').value.trim();
@@ -314,49 +356,43 @@ function build() {
       : { glyph: 'search', title: q, sub: bhT('palette.search_with', { engine: S.engine }), hint: bhT('palette.search'), run: () => enter(q) });
   }
   const match = (...f) => !q || f.some(v => (v || '').toLowerCase().includes(ql));
-  // How well a row answers the query, lower is better: a name that starts with it, then a word
-  // of the name, then anywhere in the name, then only in the address. -1 for no match.
-  const rank = (names, url) => {
-    let best = -1;
-    for (const n of names) {
-      const v = (n || '').toLowerCase();
-      const i = v.indexOf(ql);
-      if (i < 0) continue;
-      const r = i === 0 ? 0 : /[\s\-_./·:(]/.test(v[i - 1]) ? 1 : 2;
-      if (best < 0 || r < best) best = r;
-    }
-    if (best < 0 && url && url.toLowerCase().includes(ql)) best = 3;
-    return best;
-  };
+  // Rows are scored, higher is better: how well the row answers what was typed (quality, the
+  // rules of domain::suggest::match_quality, 0–1 × 100), plus a bonus for what it is (an open
+  // tab, quick access, a bookmark) and for the habit of visiting it (h, 0–1, from the shell).
   const rows = [];
-  const add = (r, row) => { if (!q || r >= 0) rows.push({ r, n: rows.length, row }); };
+  const add = (score, row) => rows.push({ r: score, n: rows.length, row });
+  // The same page reached by several ways (tab, quick access, bookmark, history) is offered once,
+  // under the best of them; `key` comes from the shell (http/https, www, slash, tracking folded).
   const seen = new Set();
+  const keyOf = (e) => e.key || e.url;
   for (const t of S.tabs) {
-    const r = q ? rank([t.title], t.url) : 0;
-    if (q && r < 0) continue;
-    seen.add(t.url);
-    add(r, site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
+    const k = quality(q, t.title, t.url);
+    if (k === null) continue;
+    seen.add(keyOf(t));
+    add(k * 100 + 30, site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
   }
-  const pool = q ? [...S.favorites, ...(S.bookmarks || []), ...S.recent] : S.favorites;
+  const pool = q
+    ? [...S.favorites.map(e => ({ ...e, bonus: 25 })), ...(S.bookmarks || []).map(e => ({ ...e, bonus: 15 })), ...S.recent]
+    : S.favorites;
   for (const e of pool) {
-    if (seen.has(e.url)) continue;
-    const r = q ? rank([e.title, e.name], e.url) : 0;
-    if (q && r < 0) continue;
-    seen.add(e.url);
-    add(r, site(e.url, e.title || e.name || host(e.url), host(e.url), () => enter(e.url)));
+    if (seen.has(keyOf(e))) continue;
+    const k = quality(q, e.title || e.name, e.url);
+    if (k === null) continue;
+    seen.add(keyOf(e));
+    add(k * 100 + (e.bonus || 0) + (e.h || 0) * 45, site(e.url, e.title || e.name || host(e.url), host(e.url), () => enter(e.url)));
   }
   for (const a of S.actions) {
-    const r = q ? rank([a.label]) : 0;
-    if (q && r < 0) continue;
+    const k = q ? quality(q, a.label, '') : 0;
+    if (k === null) continue;
     // An action named by what was typed comes first: "zoom" finds "Zoom in" before zoom.us.
     const row = {
       glyph: 'bolt', title: a.label, sub: '', hint: a.keys ? bhKeys(a.keys) : a.hint || bhT('palette.action'),
       confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }), action: true,
     };
-    rows.push({ r: r === 0 ? -1 : r, n: rows.length, row });
+    rows.push({ r: k >= 0.9 ? 1000 : k * 100, n: rows.length, row });
   }
   if (!q) return [...out, ...rows.map(x => x.row)].slice(0, 10);
-  rows.sort((a, b) => a.r - b.r || a.n - b.n);
+  rows.sort((a, b) => b.r - a.r || a.n - b.n);
   // Nine rows at most, the search row included; however much history matches, the best few
   // actions keep a place (up to ACTION_ROWS) so a command is never hidden behind sites.
   const room = 9 - out.length;
@@ -367,7 +403,7 @@ function build() {
   if (have < want) {
     const extra = actions.filter(x => !picked.includes(x)).slice(0, want - have);
     const sites = picked.filter(x => !x.row.action).slice(0, room - have - extra.length);
-    picked = [...picked.filter(x => x.row.action), ...extra, ...sites].sort((a, b) => a.r - b.r || a.n - b.n);
+    picked = [...picked.filter(x => x.row.action), ...extra, ...sites].sort((a, b) => b.r - a.r || a.n - b.n);
   }
   return [...out, ...picked.map(x => x.row), ...groups(q, match)];
 }

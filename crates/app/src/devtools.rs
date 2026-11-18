@@ -71,11 +71,8 @@ impl Running {
         match op {
             "wait" => delay = Duration::from_millis(rest.trim().parse().unwrap_or(100)),
             "shot" => self.dev_capture(&self.window, rest.trim()),
-            "shots" => {
-                if let Some(win) = &self.settings {
-                    self.dev_capture(&win.window, rest.trim());
-                }
-            }
+            // The Settings are in the main window since 0.8.18.
+            "shots" => self.dev_capture(&self.window, rest.trim()),
             "shote" => {
                 if let Some(win) = &self.easel {
                     self.dev_capture(&win.window, rest.trim());
@@ -88,8 +85,8 @@ impl Running {
             "eval" => {
                 let (target, js) = rest.split_once(' ').unwrap_or(("chrome", rest));
                 let view = match target {
-                    "settings" => match &self.settings {
-                        Some(win) => &win.view,
+                    "settings" => match self.settings_view() {
+                        Some(view) => view,
                         None => return delay,
                     },
                     "easel" => match &self.easel {

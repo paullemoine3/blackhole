@@ -5,10 +5,10 @@
 use crate::i18n::{t, tf};
 use crate::{views, Running, PEEK_TAB};
 use blackhole_domain::error_page::{
-    self, classify, classify_status, is_bare_error_body, is_engine_error_page, Back, Bypasses, ErrorPage, Failure,
-    Retry, Trail,
+    self, classify, classify_status, is_bare_error_body, is_engine_error_page, is_redirect_loop, is_transient, Back, Bypasses, ErrorPage,
+    Failure, Retries, Retry, Trail,
 };
-use blackhole_domain::{PrivacyDecision, TabId};
+use blackhole_domain::{suggest, PrivacyDecision, TabId};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -115,6 +115,13 @@ pub struct Errors {
     escaping: HashMap<TabId, (Url, std::time::Instant)>,
     /// "Try again" asked the address in place of the error page that had this trail.
     retried: HashMap<TabId, (Url, Trail)>,
+    /// The silent second try of a load that failed for a passing reason (`is_transient`).
+    retries: Retries,
+    /// Navigations of the main frame since the tab's last page (`Msg::Hop`): a redirect loop
+    /// is never tried again, and its failure says "Too many redirects".
+    hops: HashMap<TabId, u32>,
+    /// Failures found to end a redirect loop, for `on_failed`.
+    looped: HashSet<TabId>,
     tx: Sender<(TabId, u16, String, String)>,
     rx: Receiver<(TabId, u16, String, String)>,
 }
@@ -134,6 +141,9 @@ impl Default for Errors {
             reloading: HashMap::new(),
             escaping: HashMap::new(),
             retried: HashMap::new(),
+            retries: Retries::default(),
+            hops: HashMap::new(),
+            looped: HashSet::new(),
             tx,
             rx,
         }
@@ -207,15 +217,6 @@ impl Running {
         self.errors.failures.insert(tab, failure);
     }
 
-    /// The failure just reported for `tab` is WebView2's "connection aborted" (9): also how
-    /// it ends a navigation that turns into a download.
-    pub(crate) fn failure_is_abort(&self, tab: TabId) -> bool {
-        self.errors
-            .failures
-            .get(&tab)
-            .is_some_and(|f| f.domain == "webview2" && f.code == 9)
-    }
-
     pub(crate) fn forget_failure(&mut self, tab: TabId) {
         self.errors.failures.remove(&tab);
     }
@@ -230,6 +231,72 @@ impl Running {
 
     pub(crate) fn on_upgraded(&mut self, tab: TabId, plain: Url) {
         self.errors.upgraded.insert(tab, plain);
+    }
+
+    /// A failure that waited `ABORT_GRACE` (no download, no new load, no page came after it).
+    /// `engine_at`: the engine's address when it failed. Ghost "Site unreachable" pages came
+    /// from two cases handled here: the tab already went on (a script redirect, a new address:
+    /// the engine's address changed meanwhile), and a passing failure (a reset or lost
+    /// connection in the middle of redirects), asked once more in silence before any page.
+    pub(crate) fn settle_failure(&mut self, tab: TabId, url: Url, engine_at: Option<String>) {
+        let engine_now = self.tabs.get(&tab).and_then(|v| v.url().ok());
+        let moved_on = match (&engine_at, &engine_now) {
+            (Some(then), Some(now)) => {
+                !now.is_empty() && now != "about:blank" && !same_page(then, now) && !same_page(now, url.as_str())
+            }
+            _ => false,
+        };
+        if moved_on && !self.error_shown(tab) {
+            crate::trace(|| format!("failure dropped tab={} {url}: the tab went on", tab.0));
+            self.errors.failures.remove(&tab);
+            self.errors.http.remove(&tab);
+            return;
+        }
+        // A redirect loop (many 3xx in a row) would only start over: never asked again. One
+        // broken hop of a redirect (a sign-in round trip) is the ghost this try is for.
+        let looping = is_redirect_loop(self.errors.hops.remove(&tab).unwrap_or(0));
+        if looping {
+            self.errors.looped.insert(tab);
+        }
+        let transient = !looping
+            && !self.errors.settled.contains(&tab)
+            // No reason given at all counts as passing too (MSRV 1.80: no `is_none_or`).
+            && !matches!(self.errors.failures.get(&tab), Some(f) if f.http_status > 0 || !is_transient(failure_of(f)));
+        if transient && self.retry_quietly(tab, &url) {
+            self.errors.failures.remove(&tab);
+            self.errors.http.remove(&tab);
+            return;
+        }
+        self.on_failed(tab, url);
+    }
+
+    /// Asks `url` once more without a word, if it was not already asked again within
+    /// `RETRY_WINDOW_SECS`: the progress line goes on. The entry of the failed address is
+    /// reloaded when the engine is on it (no new history entry), otherwise loaded.
+    pub(crate) fn retry_quietly(&mut self, tab: TabId, url: &Url) -> bool {
+        if tab == PEEK_TAB || !matches!(url.scheme(), "http" | "https") {
+            return false;
+        }
+        let Some(view) = self.tabs.get(&tab) else { return false };
+        if !self.errors.retries.allow(&suggest::key(url), now_unix().max(0) as u64) {
+            return false;
+        }
+        crate::trace(|| format!("failure retried tab={} {url}", tab.0));
+        let on_it = view.url().is_ok_and(|now| same_page(&now, url.as_str()));
+        let _ = if on_it { view.reload() } else { view.load_url(url.as_str()) };
+        self.loading.insert(tab, std::time::Instant::now());
+        true
+    }
+
+    /// The main frame of `tab` starts a navigation (a hop of a redirect, or a new address).
+    pub(crate) fn errors_hop(&mut self, tab: TabId) {
+        let n = self.errors.hops.entry(tab).or_default();
+        *n = n.saturating_add(1);
+    }
+
+    /// A page of `url` loaded: a later failure of it gets its silent try again.
+    pub(crate) fn loaded_again(&mut self, url: &Url) {
+        self.errors.retries.forget(&suggest::key(url));
     }
 
     /// The load failed (`PageLoadEvent::Failed`): the page for the reason given just before.
@@ -247,6 +314,8 @@ impl Running {
             None => ErrorPage::Unreachable,
         };
         let last = self.errors.http.remove(&tab).map_or(0, |(status, _)| status);
+        // A loop counted by its hops: WebView2 often reports no 3xx before giving up.
+        let last = if self.errors.looped.remove(&tab) && !(300..400).contains(&last) { 302 } else { last };
         self.show_error(tab, url, page.after_redirect(last));
     }
 
@@ -290,6 +359,7 @@ impl Running {
 
     /// `tab` shows a page of the web (the server's own error page included).
     fn loaded_fine(&mut self, tab: TabId, url: &Url) {
+        self.errors.hops.remove(&tab);
         self.errors.escaping.remove(&tab);
         self.errors.retried.remove(&tab);
         if tab != PEEK_TAB && matches!(url.scheme(), "http" | "https") {
@@ -338,6 +408,8 @@ impl Running {
             self.errors.reloading.retain(|t, _| live.contains(t));
             self.errors.escaping.retain(|t, _| live.contains(t));
             self.errors.retried.retain(|t, _| live.contains(t));
+            self.errors.hops.retain(|t, _| live.contains(t));
+            self.errors.looped.retain(|t| live.contains(t));
         }
     }
 

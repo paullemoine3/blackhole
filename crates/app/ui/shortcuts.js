@@ -21,8 +21,8 @@
       return e.key === 'ArrowDown' ? 'next_tab' : 'prev_tab';
     }
     // Windows: the engine's own browser keys are off in tabs (see views::build_tab), so
-    // F5 / Ctrl+F5 and Alt+←/→ are handled here like any shortcut.
-    if (!mac && e.key === 'F5' && !e.altKey && !e.shiftKey) return e.ctrlKey ? 'r' : 'reload';
+    // F5 and Alt+←/→ are handled here like any shortcut. Ctrl+F5 or Shift+F5: hard refresh.
+    if (!mac && e.key === 'F5' && !e.altKey) return e.ctrlKey || e.shiftKey ? 'shift+r' : 'reload';
     // Developer tools of the page: F12 or Ctrl+Shift+I (Cmd+Option+I on macOS).
     if (e.key === 'F12' && !e.ctrlKey && !e.metaKey && !e.altKey) return 'devtools';
     if (e.code === 'KeyI' && (mac ? e.metaKey && e.altKey && !e.ctrlKey : e.ctrlKey && e.shiftKey && !e.altKey)) return 'devtools';
@@ -44,7 +44,8 @@
     // Shift: Mod+Shift+N is a private window, Mod+Shift+E opens Easel, Mod+Shift+S clips the page,
     // Mod+Shift+L picks an area to capture live, Mod+Shift+G finds the previous match,
     // Mod+Shift+T reopens the tab closed last, Mod+Shift+F searches the pages read (Recall).
-    if (e.shiftKey) return ['n', 'e', 's', 'l', 'g', 't', 'f'].includes(key) ? 'shift+' + key : null;
+    // Mod+Shift+R reloads past the cache (hard refresh).
+    if (e.shiftKey) return ['n', 'e', 's', 'l', 'g', 't', 'f', 'r'].includes(key) ? 'shift+' + key : null;
     // A page may keep Mod+N or Mod+Enter for itself (the command bar: list navigation, keep in
     // the Easel).
     if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN) || (key === 'enter' && window.keepModEnter)) return null;

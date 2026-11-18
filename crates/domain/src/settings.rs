@@ -72,6 +72,9 @@ pub struct Settings {
     pub quick_access_size: String,
     /// Sections of the start page the user hid (names of `HOME_SECTIONS`).
     pub hidden_home_sections: BTreeSet<String>,
+    /// Order of the start page sections chosen by dragging them (names of `HOME_SECTIONS`);
+    /// empty: the default order. Read through `home_order`.
+    pub home_order: Vec<String>,
 }
 
 /// Quick access tile sizes, smallest first (`medium` is the default: four tiles a row).
@@ -87,6 +90,28 @@ pub fn is_quick_access_size(size: &str) -> bool {
 /// A start page section that can be hidden.
 pub fn is_home_section(name: &str) -> bool {
     HOME_SECTIONS.contains(&name)
+}
+
+/// Every start page section once, in the order the user chose: unknown names and repeats are
+/// dropped, a section missing from `stored` (added by a later version) takes its default place
+/// after the section it follows by default.
+pub fn home_order(stored: &[String]) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::with_capacity(HOME_SECTIONS.len());
+    for name in stored {
+        if let Some(known) = HOME_SECTIONS.iter().find(|s| **s == name.as_str()) {
+            if !out.contains(known) {
+                out.push(known);
+            }
+        }
+    }
+    for (i, name) in HOME_SECTIONS.iter().enumerate() {
+        if out.contains(name) {
+            continue;
+        }
+        let after = HOME_SECTIONS[..i].iter().rev().find_map(|p| out.iter().position(|o| o == p));
+        out.insert(after.map_or(0, |at| at + 1), name);
+    }
+    out
 }
 
 /// Page zoom steps in percent, like the other browsers (100% is the fifth).
@@ -193,12 +218,30 @@ impl Default for Settings {
             tracker_learning: true,
             quick_access_size: "medium".to_owned(),
             hidden_home_sections: BTreeSet::new(),
+            home_order: Vec::new(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn home_order_keeps_every_section_once() {
+        let own = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(home_order(&[]), HOME_SECTIONS.to_vec());
+        assert_eq!(
+            home_order(&own(&["recent", "favorites", "recent", "nope"])),
+            ["now", "recent", "favorites", "watches", "downloads"].to_vec(),
+            "now follows nothing: first; watches and downloads follow favorites"
+        );
+        assert_eq!(
+            home_order(&own(&["downloads", "watches", "recent", "favorites", "now"])),
+            ["downloads", "watches", "recent", "favorites", "now"].to_vec()
+        );
+    }
+
     #[test]
     fn zoom_is_kept_per_site_and_100_forgets_it() {
         let mut s = super::Settings::default();

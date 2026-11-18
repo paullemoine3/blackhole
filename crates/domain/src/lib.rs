@@ -24,6 +24,7 @@ pub mod recall;
 pub mod selection;
 pub mod settings;
 pub mod signals;
+pub mod suggest;
 pub mod sync;
 pub mod trackers;
 pub mod verbs;
@@ -39,7 +40,7 @@ pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchE
 pub use privacy::{is_third_party, privacy_grade, BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy, Shields};
 pub use settings::{
     is_home_section, is_quick_access_size, next_zoom, overflow_to_release, site_key, Settings,
-    HOME_SECTIONS, QUICK_ACCESS_SIZES, ZOOM_STEPS,
+    home_order, HOME_SECTIONS, QUICK_ACCESS_SIZES, ZOOM_STEPS,
 };
 pub use workspace::{
     Home,

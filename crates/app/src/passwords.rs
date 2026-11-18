@@ -483,8 +483,8 @@ impl Running {
     }
 
     fn settings_js(&self, js: &str) {
-        if let Some(win) = &self.settings {
-            let _ = win.view.evaluate_script(js);
+        if let Some(view) = self.settings_view() {
+            let _ = view.evaluate_script(js);
         }
     }
 

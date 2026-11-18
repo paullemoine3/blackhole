@@ -82,8 +82,11 @@
   #progress i { position: relative; overflow: hidden; }
   #progress.on i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); transform: translateX(-100%); animation: shimmer 1.2s ease-in-out infinite; }
   @keyframes shimmer { to { transform: translateX(100%); } }
-  #reload.spin { animation: spin .5s cubic-bezier(.3,.9,.4,1); }
-  @keyframes spin { from { transform: rotate(-200deg); } }
+  /* Only the arrow turns, never the button: one eased turn after another while the page
+     reloads, stopping on a turn's end (the arrow at rest) once it has loaded. */
+  #reload svg { transform-origin: 50% 50%; }
+  #reload.spin svg { animation: spin .7s cubic-bezier(.45,.05,.4,1) infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   #zoom:not([hidden]) { animation: pop .25s cubic-bezier(.2,1.4,.4,1); }
   @keyframes pop { from { transform: scale(.7); opacity: 0; } }
   .ext { animation: pop .25s cubic-bezier(.2,1.4,.4,1) backwards; }
@@ -140,7 +143,7 @@ function tooltips() {
   $('sidebar').title = bhT('bar.toggle_sidebar', { keys: bhKeys('mod+b') });
   $('back').title = bhT('bar.back', { keys: either('mod+[', 'alt+left') });
   $('forward').title = bhT('bar.forward', { keys: either('mod+]', 'alt+right') });
-  $('reload').title = bhMac ? bhT('bar.reload') : bhT('bar.reload_keys', { keys: 'F5' });
+  $('reload').title = bhT('bar.reload_hard', { keys: bhMac ? bhKeys('mod+r') : 'F5', hard: bhKeys('mod+shift+r') });
   $('zoom').title = bhT('bar.reset_zoom', { keys: bhKeys('mod+0') });
 }
 tooltips();
@@ -179,7 +182,22 @@ function side(shown, count) {
   waiting = n;
 }
 
+// The reload arrow turns while the page reloads: at least one turn, then until the load ends
+// (ended on a turn's end, `animationiteration`). A reload the engine answers from its cache may
+// never report loading: the arrow stops after its first turn.
+let spinFrom = 0;
+function reloading() {
+  const r = $('reload');
+  spinFrom = Date.now();
+  if (!r.classList.contains('spin')) r.classList.add('spin');
+}
+$('reload').addEventListener('animationiteration', () => {
+  if (!loadingNow && Date.now() - spinFrom > 600) $('reload').classList.remove('spin');
+});
+$('reload').addEventListener('animationcancel', () => $('reload').classList.remove('spin'));
+
 window.bh = {
+  reloading,
   notice(n) { notice.show(n); },
   noticeDone() { notice.done(); },
   side,
@@ -208,7 +226,9 @@ window.bh = {
     document.body.classList.toggle('insecure', !!s.insecure);
     $('insecure').hidden = !s.insecure;
     document.body.classList.toggle('noanim', s.animations === false);
-    const text = s.url ? pretty(s.url) : bhT('bar.search_with', { engine: s.engine });
+    // The Settings shown in the page card say so in the address field (a click still opens
+    // the command bar).
+    const text = s.url ? pretty(s.url) : s.place === 'settings' ? bhT('settings.title') : bhT('bar.search_with', { engine: s.engine });
     if ($('url').textContent !== text) {
       $('url').textContent = text;
       if (s.animations !== false && $('url').animate) {
@@ -252,10 +272,11 @@ $('zoom').onclick = () => send({ cmd: 'shortcut', key: 'zoom_reset' });
 $('sidebar').onclick = () => send({ cmd: 'lock' });
 $('back').onclick = () => send({ cmd: 'back' });
 $('forward').onclick = () => send({ cmd: 'forward' });
-$('reload').onclick = () => {
-  const r = $('reload');
-  r.classList.remove('spin'); void r.offsetWidth; r.classList.add('spin');
-  send({ cmd: 'reload' });
+// Shift+click: hard refresh. The shell answers with bh.reloading() (as for every reload); the
+// arrow starts at once all the same.
+$('reload').onclick = (e) => {
+  reloading();
+  send({ cmd: e.shiftKey ? 'hard_reload' : 'reload' });
 };
 $('home').onclick = () => send({ cmd: 'home' });
 $('wmin').onclick = () => send({ cmd: 'window_minimize' });
