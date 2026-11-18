@@ -44,12 +44,46 @@ pub fn needs_update(data: &Path, entry: &Entry) -> bool {
         && rules::is_upgrade(&entry.version, installed_version(data, &entry.id).as_deref())
 }
 
+fn permissions_path(data: &Path, id: &str) -> PathBuf {
+    webext_dir(data).join(format!("{id}.permissions.json"))
+}
+
+/// Permissions of the installed package (its manifest), recorded at install; read from the
+/// package once (then recorded) for installs that predate the record. `None`: not installed or
+/// no readable manifest.
+pub fn installed_permissions(data: &Path, id: &str) -> Option<Vec<String>> {
+    if !rules::valid_id(id) || !is_installed(data, id) {
+        return None;
+    }
+    let record = permissions_path(data, id);
+    if let Some(perms) = fs::read(&record)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
+    {
+        return Some(perms);
+    }
+    let (_, perms) = crate::market::manifest_info(&fs::read(package_path(data, id)).ok()?).ok()?;
+    write_permissions(data, id, &perms);
+    Some(perms)
+}
+
+fn write_permissions(data: &Path, id: &str, perms: &[String]) {
+    let record = permissions_path(data, id);
+    let tmp = record.with_extension("part");
+    if let Ok(json) = serde_json::to_vec(perms) {
+        if fs::write(&tmp, json).is_ok() {
+            let _ = fs::rename(&tmp, &record);
+        }
+    }
+}
+
 pub fn remove(data: &Path, id: &str) {
     if !rules::valid_id(id) {
         return;
     }
     let _ = fs::remove_file(package_path(data, id));
     let _ = fs::remove_file(version_path(data, id));
+    let _ = fs::remove_file(permissions_path(data, id));
     let _ = fs::remove_dir_all(webext_dir(data).join("unpacked").join(id));
 }
 
@@ -87,6 +121,13 @@ pub fn store(
     let tmp = record.with_extension("part");
     fs::write(&tmp, version).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &record).map_err(|e| e.to_string())?;
+    // What this version may do: the next update shows what it would add.
+    match crate::market::manifest_info(bytes) {
+        Ok((_, perms)) => write_permissions(data, id, &perms),
+        Err(_) => {
+            let _ = fs::remove_file(permissions_path(data, id));
+        }
+    }
     Ok(dest)
 }
 
@@ -148,6 +189,35 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(store(dir.path(), "t", "1", ABC, b"abd").is_err());
         assert!(!is_installed(dir.path(), "t"));
+    }
+
+    fn package(manifest: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut out = std::io::Cursor::new(Vec::new());
+        let mut w = zip::ZipWriter::new(&mut out);
+        w.start_file("manifest.json", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(manifest.as_bytes()).unwrap();
+        w.finish().unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn remembers_the_permissions_of_the_installed_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = package(r#"{"version":"1","permissions":["tabs","storage"],"host_permissions":["<all_urls>"]}"#);
+        let sha = crate::market::hex(&Sha256::digest(&zip));
+        assert_eq!(installed_permissions(dir.path(), "t"), None);
+        store(dir.path(), "t", "1", &sha, &zip).unwrap();
+        assert_eq!(installed_permissions(dir.path(), "t").unwrap(), ["<all_urls>", "storage", "tabs"]);
+        // An install from before the record: read from the package, then recorded.
+        fs::remove_file(permissions_path(dir.path(), "t")).unwrap();
+        assert_eq!(installed_permissions(dir.path(), "t").unwrap().len(), 3);
+        assert!(permissions_path(dir.path(), "t").is_file());
+        remove(dir.path(), "t");
+        assert!(!permissions_path(dir.path(), "t").exists());
+        // A package without a manifest: nothing known.
+        store(dir.path(), "t", "1", ABC, b"abc").unwrap();
+        assert_eq!(installed_permissions(dir.path(), "t"), None);
     }
 
     #[test]

@@ -283,6 +283,42 @@ pub fn fetch(data: &Path, now: u64) -> Result<Index, String> {
     accept_download(data, &json, &String::from_utf8_lossy(&sig), now, PUBLIC_KEYS)
 }
 
+/// Version and permissions (`permissions` + `host_permissions`, sorted) of a WebExtension
+/// package (zip): its root manifest, or the shallowest one when it has a top folder.
+pub fn manifest_info(zip: &[u8]) -> Result<(String, Vec<String>), String> {
+    use std::io::Read;
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(zip)).map_err(|e| e.to_string())?;
+    let name = archive
+        .file_names()
+        .filter(|n| *n == "manifest.json" || n.ends_with("/manifest.json"))
+        .min_by_key(|n| n.matches('/').count())
+        .map(str::to_owned)
+        .ok_or("no manifest.json in the package")?;
+    let mut text = String::new();
+    archive
+        .by_name(&name)
+        .map_err(|e| e.to_string())?
+        .take(4 * 1024 * 1024)
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
+    let version = manifest["version"]
+        .as_str()
+        .ok_or("manifest without version")?
+        .to_owned();
+    let mut permissions = std::collections::BTreeSet::new();
+    for key in ["permissions", "host_permissions"] {
+        for p in manifest[key].as_array().into_iter().flatten() {
+            if let Some(p) = p.as_str() {
+                permissions.insert(p.to_owned());
+            }
+        }
+    }
+    Ok((version, permissions.into_iter().collect()))
+}
+
 pub fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

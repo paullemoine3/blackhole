@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.20",
+        &[
+            "An extension market in Settings > Extensions: search, categories, tabs for what is installed and what has an update, and a sheet for each extension with the file this system gets, its size, its SHA-256 and what it may do, the sensitive permissions first",
+            "An extension update that asks for more than the installed version had (another site, cookies…) waits for you: its sheet lists what it adds, and Update all leaves it out until you accept it",
+            "Settings use the width of the page area instead of a narrow column",
+        ],
+    ),
+    (
         "0.8.19",
         &[
             "The extension catalog now comes from a signed list that BlackHole fetches once a day: new versions of uBlock Origin Lite, Dark Reader, Bitwarden and the others reach you without waiting for a BlackHole update. Each package is still checked against its pinned SHA-256 before it is installed, and Settings > Extensions shows when the list was signed",

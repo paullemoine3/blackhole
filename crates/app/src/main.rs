@@ -1746,11 +1746,32 @@ impl Running {
             "signedAt": self.market.is_signed().then_some(self.market.seq),
             "checking": self.market_fetching == Some(true),
             "error": self.market_error.as_deref().map(i18n::render),
+            // The system the packages are chosen for (`None`: no extension host here).
+            "platform": blackhole_domain::market::platform_key(std::env::consts::OS),
         })
+    }
+
+    /// What updating `e` would let it do that the installed version could not (the update then
+    /// waits for a click that accepts it). Unknown installed permissions: everything it asks.
+    fn update_adds(&self, e: &market::Entry) -> Vec<blackhole_domain::market::PermissionLine> {
+        use blackhole_domain::market::{added_permission_lines, permission_lines};
+        if !catalog::needs_update(&self.data, e) {
+            return Vec::new();
+        }
+        match catalog::installed_permissions(&self.data, &e.id) {
+            Some(old) => added_permission_lines(&old, &e.permissions),
+            None => permission_lines(&e.permissions),
+        }
     }
 
     /// The market's entries that have a package for this system.
     fn catalog_state(&self) -> Vec<serde_json::Value> {
+        let lines = |lines: Vec<blackhole_domain::market::PermissionLine>| {
+            lines
+                .into_iter()
+                .map(|l| json!({"key": l.key, "sensitive": l.sensitive, "items": l.items}))
+                .collect::<Vec<_>>()
+        };
         self.market
             .for_this_system()
             .map(|e| {
@@ -1771,8 +1792,11 @@ impl Running {
                     Some(blackhole_macos_webext::LoadState::Failed(why)) => Some(why),
                     _ => self.install_errors.get(&e.id).cloned(),
                 };
+                // The package this system gets (`for_this_system` keeps only entries that have one).
+                let package = e.package();
+                let file = package.and_then(|p| p.url.rsplit('/').next()).unwrap_or_default();
                 // The market carries its own translations (English when the language is missing).
-                json!({
+                let mut item = json!({
                     "id": e.id, "name": e.name, "description": e.description_in(i18n::lang()),
                     "version": e.version, "homepage": e.homepage, "category": e.category,
                     "installed": installed, "status": status, "error": error,
@@ -1780,7 +1804,14 @@ impl Running {
                     "outdated": catalog::needs_update(&self.data, e),
                     "enabled": self.svc.extension_enabled(&e.id),
                     "supported": self.webext.is_some(),
-                })
+                });
+                item["repo"] = json!(e.source.as_ref().map(|s| s.repo.as_str()));
+                item["file"] = json!(file);
+                item["size"] = json!(package.map_or(0, |p| p.size));
+                item["sha256"] = json!(package.map(|p| p.sha256.as_str()));
+                item["permissions"] = json!(lines(blackhole_domain::market::permission_lines(&e.permissions)));
+                item["updateAdds"] = json!(lines(self.update_adds(e)));
+                item
             })
             .collect()
     }
@@ -6195,10 +6226,18 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::UpdateAllCatalog => {
+                // An update that asks for more than the installed version had waits for its own
+                // click (the market shows what it adds): "Update all" leaves it out.
+                let mut waiting = 0;
                 for id in self.outdated_extensions() {
-                    self.install_catalog(&id);
+                    let quiet = self.market.find(&id).is_some_and(|e| self.update_adds(e).is_empty());
+                    if quiet {
+                        self.install_catalog(&id);
+                    } else {
+                        waiting += 1;
+                    }
                 }
-                self.catalog_checked = Some(0);
+                self.catalog_checked = Some(waiting);
                 self.ui_state();
             }
             UiCommand::ApplyUpdate => self.start_update(),
