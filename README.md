@@ -41,6 +41,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 - 🧩 **Market d'extensions** — dans Réglages › Extensions : recherche, catégories, onglets « Installées » et « Mises à jour », et une fiche par extension avec le fichier choisi pour votre système, sa taille, son SHA-256 et ce qu'elle peut faire, les permissions sensibles en premier.
 - 🛡️ **Pas de nouvelle permission dans votre dos** — une mise à jour qui demande davantage que la version installée (un autre site, les cookies…) attend votre accord : sa fiche liste ce qu'elle ajoute, et « Tout mettre à jour » la laisse de côté.
+- 🐙 **Ajouter depuis GitHub** — collez l'adresse d'un dépôt : BlackHole trouve sa dernière version, choisit le paquet de votre système, le vérifie contre l'empreinte publiée par GitHub et vous montre ses permissions avant l'installation. L'extension reste marquée « Non vérifiée », et chaque mise à jour vous est montrée avant de remplacer quoi que ce soit.
 - ↔️ **Réglages plus larges** — ils profitent de toute la largeur de la page au lieu d'une colonne étroite.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.

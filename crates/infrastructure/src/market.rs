@@ -286,6 +286,29 @@ pub fn fetch(data: &Path, now: u64) -> Result<Index, String> {
 /// Version and permissions (`permissions` + `host_permissions`, sorted) of a WebExtension
 /// package (zip): its root manifest, or the shallowest one when it has a top folder.
 pub fn manifest_info(zip: &[u8]) -> Result<(String, Vec<String>), String> {
+    let manifest = manifest(zip)?;
+    let version = manifest["version"]
+        .as_str()
+        .ok_or("manifest without version")?
+        .to_owned();
+    let mut permissions = std::collections::BTreeSet::new();
+    for key in ["permissions", "host_permissions"] {
+        for p in manifest[key].as_array().into_iter().flatten() {
+            if let Some(p) = p.as_str() {
+                permissions.insert(p.to_owned());
+            }
+        }
+    }
+    Ok((version, permissions.into_iter().collect()))
+}
+
+/// The `name` of a package's manifest (possibly a `__MSG_…__` locale placeholder).
+pub fn manifest_name(zip: &[u8]) -> Option<String> {
+    manifest(zip).ok()?["name"].as_str().map(str::to_owned)
+}
+
+/// The manifest of a WebExtension package, parsed.
+fn manifest(zip: &[u8]) -> Result<serde_json::Value, String> {
     use std::io::Read;
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(zip)).map_err(|e| e.to_string())?;
@@ -302,21 +325,7 @@ pub fn manifest_info(zip: &[u8]) -> Result<(String, Vec<String>), String> {
         .take(4 * 1024 * 1024)
         .read_to_string(&mut text)
         .map_err(|e| e.to_string())?;
-    let manifest: serde_json::Value =
-        serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
-    let version = manifest["version"]
-        .as_str()
-        .ok_or("manifest without version")?
-        .to_owned();
-    let mut permissions = std::collections::BTreeSet::new();
-    for key in ["permissions", "host_permissions"] {
-        for p in manifest[key].as_array().into_iter().flatten() {
-            if let Some(p) = p.as_str() {
-                permissions.insert(p.to_owned());
-            }
-        }
-    }
-    Ok((version, permissions.into_iter().collect()))
+    serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())
 }
 
 pub fn now() -> u64 {

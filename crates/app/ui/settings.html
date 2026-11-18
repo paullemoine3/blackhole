@@ -390,11 +390,13 @@
         <div class="actions mktools">
           <label class="search"><i data-icon="search"></i><input class="field" id="mksearch" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.market_search_ph" data-i18n-aria="settings.market_search_ph"></label>
           <span class="oschip" id="mkos"></span>
+          <button class="btn" id="mkgh" type="button"><i data-icon="plus"></i><span data-i18n="settings.gh_add">Add from GitHub</span></button>
         </div>
         <div class="mkcats" id="mkcats" role="group" data-i18n-aria="settings.market_categories"></div>
         <div class="mkgrid" id="catalog"></div>
       </div>
       <div class="mkdetail" id="mkdetail" hidden></div>
+      <div class="mkdetail" id="mkgithub" hidden aria-live="polite"></div>
       <div class="actions">
         <button class="btn" id="chk-ext"><i data-icon="reload"></i><span data-i18n="settings.check_updates">Check for updates</span></button>
         <button class="btn primary" id="upd-all" hidden data-i18n="settings.update_all">Update all</button>
@@ -892,6 +894,14 @@ const mkStatus = (c) => {
 // sheet), or its switch.
 function mkAction(c, inSheet) {
   if (!c.supported) return null;
+  // Added from GitHub: a newer release is downloaded and shown (hash, permissions) before anything.
+  if (c.unverified && c.outdated) {
+    const b = el('button', inSheet ? 'btn primary small' : 'btn small',
+      inSheet ? bhT('settings.gh_prepare_update', { version: c.offered || '' }) : bhT('settings.market_review_update'));
+    b.onclick = (e) => { e.stopPropagation(); if (inSheet) send({ cmd: 'github_prepare', update: c.id }); else mkOpen(c.id); };
+    return b;
+  }
+  if (c.unverified && !c.installed) return null;
   if (!c.installed) {
     const b = iconBtn('btn primary small', 'download', bhT(c.status === 'installing' ? 'settings.installing' : 'settings.install'));
     b.disabled = c.status === 'installing';
@@ -916,10 +926,11 @@ function mkAction(c, inSheet) {
 }
 function mkTags(c) {
   const t = el('div', 'tags');
-  const ok = tag('ok', 'check', bhT('settings.market_verified'));
-  ok.title = bhT('settings.market_verified_hint');
-  t.append(ok);
-  if (c.installed && c.outdated) t.append(tag('up', null, (c.installedVersion || '?') + ' → ' + c.version));
+  const trust = c.unverified ? tag('warn', 'alert', bhT('settings.gh_unverified')) : tag('ok', 'check', bhT('settings.market_verified'));
+  trust.title = bhT(c.unverified ? 'settings.gh_unverified_hint' : 'settings.market_verified_hint');
+  t.append(trust);
+  if (c.unverified && c.outdated) t.append(tag('up', null, (c.installedVersion || '?') + ' → ' + (c.offered || '?')));
+  else if (c.installed && c.outdated) t.append(tag('up', null, (c.installedVersion || '?') + ' → ' + c.version));
   else t.append(tag(null, null, c.installed && c.installedVersion ? c.installedVersion : c.version));
   if (c.installed && c.outdated && c.updateAdds.length) t.append(tag('warn', 'alert', bhT('settings.market_new_permissions')));
   return t;
@@ -941,9 +952,10 @@ function mkCard(c) {
   foot.append(el('span', 'sub', mkStatus(c)));
   const act = mkAction(c, false);
   if (act) foot.append(act);
-  card.append(top, el('div', 'desc', c.description), mkTags(c), foot);
+  card.append(top, el('div', 'desc', mkDesc(c)), mkTags(c), foot);
   return card;
 }
+const mkDesc = (c) => c.description || (c.unverified ? bhT('settings.gh_from_github') : '');
 function mkSheet(c, s) {
   const box = [];
   const back = iconBtn('btn small back', 'back', bhT('settings.market_back'));
@@ -953,7 +965,12 @@ function mkSheet(c, s) {
   const who = el('div');
   who.append(el('div', 'title', c.name), el('div', 'by', [c.repo, c.category && catLabel(c.category)].filter(Boolean).join(' · ')));
   head.append(tile(c.name), who);
-  box.push(head, mkTags(c), el('p', 'desc', c.description));
+  box.push(head, mkTags(c), el('p', 'desc', mkDesc(c)));
+  if (c.unverified) {
+    const note = el('div', 'panel warn');
+    note.append(el('h3', null, bhT('settings.gh_unverified_title')), el('p', 'sub', bhT('settings.gh_sheet_note')));
+    box.push(note);
+  }
   if (c.error) box.push(el('p', 'fielderr', c.error));
   if (c.installed && c.outdated && c.updateAdds.length) {
     const warn = el('div', 'panel warn');
@@ -1010,11 +1027,126 @@ function mkOpen(id) {
   if (id) $('market').scrollIntoView({ block: 'start' });
 }
 let mkLastOpen = null;
+
+// Add from GitHub (`s.github.flow`, steps run by the shell): type a repository, pick the file for
+// this system, see its hash and permissions, then install it anyway, or not. `mk.gh`: the first
+// step is open (nothing asked of the shell yet).
+function ghClose() { mk.gh = false; mk.ghAsset = null; send({ cmd: 'github_cancel' }); }
+function ghLookup() {
+  const v = $('ghrepo') ? $('ghrepo').value.trim() : '';
+  if (!v) return;
+  mk.ghInput = v;
+  mk.ghAsset = null;
+  send({ cmd: 'github_lookup', input: v });
+}
+function ghPanel(f) {
+  const box = [];
+  const btn = (cls, label, run, icon) => { const b = icon ? iconBtn(cls, icon, label) : el('button', cls, label); b.type = 'button'; b.onclick = run; return b; };
+  const acts = (...b) => { const a = el('div', 'rowactions'); a.style.justifyContent = 'flex-start'; a.append(...b); return a; };
+  const head = el('div', 'head');
+  const who = el('div');
+  who.append(el('div', 'title', bhT('settings.gh_title')),
+    el('div', 'by', f && f.repo ? f.repo + (f.tag ? ' · ' + f.tag : '') : bhT('settings.gh_lead')));
+  const ico = el('div', 'ico neutral');
+  ico.append(bhIcon('code'));
+  head.append(ico, who);
+  box.push(head);
+  const stage = f ? f.stage : 'input';
+  const busy = (text) => { const p = el('p', 'sub'); p.append(text); box.push(p, acts(btn('btn small', bhT('common.cancel'), ghClose))); };
+  if (stage === 'input') {
+    box.push(el('p', 'desc', bhT('settings.gh_warning')));
+    const row = el('div', 'actions');
+    row.style.padding = '0';
+    const inp = el('input', 'field');
+    inp.id = 'ghrepo';
+    inp.type = 'text';
+    inp.autocomplete = 'off';
+    inp.spellcheck = false;
+    inp.placeholder = bhT('settings.gh_repo_ph');
+    inp.setAttribute('aria-label', bhT('settings.gh_repo_ph'));
+    inp.value = mk.ghInput || '';
+    inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ghLookup(); } };
+    row.append(inp, btn('btn primary', bhT('settings.gh_lookup'), ghLookup, 'search'), btn('btn', bhT('common.cancel'), ghClose));
+    box.push(row);
+  } else if (stage === 'looking') {
+    busy(bhT('settings.gh_looking', { repo: f.repo }));
+  } else if (stage === 'choose') {
+    if (f.inMarket) {
+      const p = el('div', 'panel');
+      p.append(el('p', 'sub', bhT('settings.gh_in_market')),
+        acts(btn('btn primary small', bhT('settings.gh_open_in_market'), () => { const id = f.inMarket; ghClose(); mkOpen(id); })));
+      box.push(p);
+    }
+    if (f.assets.length) {
+      if (!f.assets.some(a => a.name === mk.ghAsset)) mk.ghAsset = (f.assets.find(a => a.recommended) || f.assets[0]).name;
+      const list = el('div', 'panel');
+      list.append(el('h3', null, bhT('settings.gh_choose')));
+      const rows = el('div', 'rows');
+      for (const a of f.assets) {
+        const sub = [mkSize(a.size), a.recommended ? bhT('settings.gh_recommended') : '', a.digest ? bhT('settings.gh_digest_published') : ''].filter(Boolean).join(' · ');
+        rows.append(option(a.name, a.name === mk.ghAsset, () => { mk.ghAsset = a.name; renderMarket(lastState); }, false, sub));
+      }
+      list.append(rows);
+      box.push(list, acts(btn('btn primary', bhT('settings.gh_download'), () => send({ cmd: 'github_prepare', asset: mk.ghAsset }), 'download'),
+        btn('btn', bhT('common.cancel'), ghClose)));
+    } else {
+      box.push(acts(btn('btn', bhT('settings.gh_close'), ghClose)));
+    }
+  } else if (stage === 'preparing') {
+    busy(bhT('settings.gh_preparing', { file: f.asset }));
+  } else if (stage === 'ready') {
+    const warn = el('div', 'panel warn');
+    warn.append(el('h3', null, bhT('settings.gh_unverified_title')),
+      el('p', 'sub', bhT(f.update ? 'settings.gh_update_note' : 'settings.gh_unverified_note', { repo: f.repo })));
+    box.push(warn);
+    if (f.update && f.added.length) {
+      const more = el('div', 'panel warn');
+      more.append(el('h3', null, bhT('settings.market_update_asks')), permList(f.added));
+      box.push(more);
+    }
+    const kv = el('dl', 'kv');
+    const row = (k, v) => { const dd = el('dd'); dd.append(v); kv.append(el('dt', null, bhT(k)), dd); return dd; };
+    row('settings.gh_extension', f.name);
+    row('settings.gh_version', f.update ? bhT('settings.gh_version_update', { version: f.version, installed: f.update.version }) : f.version);
+    row('settings.market_file', f.file);
+    row('settings.market_size', mkSize(f.size));
+    const hash = row('settings.market_sha', el('span', 'hash', f.sha256));
+    hash.append(f.digest ? tag('ok', 'check', bhT('settings.gh_digest_ok')) : tag(null, null, bhT('settings.gh_digest_none')));
+    const dev = el('div', 'panel');
+    dev.append(el('h3', null, bhT('settings.market_for_device')), kv);
+    const perms = el('div', 'panel');
+    perms.append(el('h3', null, bhT('settings.market_permissions')),
+      f.permissions.length ? permList(f.permissions) : el('p', 'sub', bhT('settings.market_no_permissions')));
+    box.push(dev, perms, acts(
+      btn('btn primary', f.update ? bhT('settings.gh_update_anyway', { version: f.version }) : bhT('settings.gh_install_anyway'), () => send({ cmd: 'github_install' })),
+      btn('btn', bhT('common.cancel'), ghClose)));
+  } else if (stage === 'installing') {
+    const p = el('p', 'sub', bhT('settings.gh_installing', { name: f.name }));
+    box.push(p);
+  } else if (stage === 'done') {
+    box.push(el('p', 'desc', bhT('settings.gh_done', { name: f.name })),
+      acts(btn('btn primary small', bhT('settings.gh_show_sheet'), () => { const id = f.id; ghClose(); mkOpen(id); }),
+        btn('btn small', bhT('settings.gh_close'), ghClose)));
+  } else if (stage === 'error') {
+    box.push(el('p', 'fielderr', f.error),
+      acts(btn('btn primary small', bhT('settings.gh_retry'), () => { mk.gh = true; send({ cmd: 'github_cancel' }); }),
+        btn('btn small', bhT('settings.gh_close'), ghClose)));
+  }
+  return box;
+}
+$('mkgh').onclick = () => {
+  mk.gh = true;
+  mk.open = null;
+  if (lastState) renderMarket(lastState);
+  if ($('ghrepo')) $('ghrepo').focus();
+};
+
 function renderMarket(s) {
   const list = s.catalog || [];
   const m = s.market || {};
   const outdated = list.filter(c => c.outdated && c.supported);
-  const quiet = outdated.filter(c => !c.updateAdds.length);
+  // "Update all" takes only reviewed updates that ask for nothing new.
+  const quiet = outdated.filter(c => !c.updateAdds.length && !c.unverified);
   const installed = list.filter(c => c.installed);
   $('upd-all').hidden = !quiet.length || m.checking;
   $('chk-ext').disabled = !!m.checking;
@@ -1036,6 +1168,17 @@ function renderMarket(s) {
     const on = b.dataset.mk === mk.tab;
     b.setAttribute('aria-selected', String(on));
     b.tabIndex = on ? 0 : -1;
+  }
+  // Adding from GitHub takes the place of the grid and of any sheet while it lasts.
+  const g = s.github || {};
+  const ghOn = !!g.flow || !!mk.gh;
+  $('mkgh').hidden = !m.platform || ghOn;
+  $('mkgithub').hidden = !ghOn;
+  put($('mkgithub'), ...(ghOn ? ghPanel(g.flow) : []));
+  if (ghOn) {
+    $('mkbrowse').hidden = true;
+    $('mkdetail').hidden = true;
+    return;
   }
   // The sheet of one extension, in place of the grid.
   const open = mk.open && list.find(c => c.id === mk.open);
@@ -1424,6 +1567,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (!$('pwedit').hidden) { pwCloseEditor(); return; }
+  if (!$('mkgithub').hidden) { ghClose(); return; }
   if (mk.open) { mkOpen(null); return; }
   send({ cmd: 'close_settings' });
 });

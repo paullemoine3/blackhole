@@ -565,6 +565,22 @@ pub enum UiCommand {
     InstallCatalog {
         id: String,
     },
+    /// Add from GitHub: the latest release of the repository typed (`owner/name` or its address).
+    GithubLookup {
+        input: String,
+    },
+    /// Downloads and checks a file of the release found (`asset`), or the newer release found
+    /// for an extension already added (`update`, its id). Nothing is installed yet.
+    GithubPrepare {
+        #[serde(default)]
+        asset: Option<String>,
+        #[serde(default)]
+        update: Option<String>,
+    },
+    /// The person accepted the package shown (hash, permissions): install and pin it.
+    GithubInstall,
+    /// Leaves the add-from-GitHub steps.
+    GithubCancel,
     /// Compares installed catalog extensions with the versions pinned by this build.
     CheckCatalogUpdates,
     /// Updates every outdated catalog extension.
@@ -1390,6 +1406,23 @@ mod tests {
         assert!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"install_catalog","id":"x"}"#).is_err()
         );
+        for cmd in [
+            r#"{"cmd":"github_lookup","input":"a/b"}"#,
+            r#"{"cmd":"github_prepare","asset":"x.zip"}"#,
+            r#"{"cmd":"github_install"}"#,
+        ] {
+            assert!(serde_json::from_str::<PageEvent>(cmd).is_err(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn github_commands_parse() {
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"github_lookup","input":"a/b"}"#).unwrap();
+        assert!(matches!(c, UiCommand::GithubLookup { input } if input == "a/b"));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"github_prepare","update":"gh-a-b"}"#).unwrap();
+        assert!(matches!(c, UiCommand::GithubPrepare { asset: None, update: Some(_) }));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"github_install"}"#).unwrap();
+        assert!(matches!(c, UiCommand::GithubInstall));
     }
 
     #[test]
