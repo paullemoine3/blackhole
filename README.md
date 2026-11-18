@@ -15,7 +15,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0820) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0821) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -37,17 +37,16 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.20
+## 🆕 Nouveautés 0.8.21
 
-- 🧩 **Market d'extensions** — dans Réglages › Extensions : recherche, catégories, onglets « Installées » et « Mises à jour », et une fiche par extension avec le fichier choisi pour votre système, sa taille, son SHA-256 et ce qu'elle peut faire, les permissions sensibles en premier.
-- 🛡️ **Pas de nouvelle permission dans votre dos** — une mise à jour qui demande davantage que la version installée (un autre site, les cookies…) attend votre accord : sa fiche liste ce qu'elle ajoute, et « Tout mettre à jour » la laisse de côté.
-- 🐙 **Ajouter depuis GitHub** — collez l'adresse d'un dépôt : BlackHole trouve sa dernière version, choisit le paquet de votre système, le vérifie contre l'empreinte publiée par GitHub et vous montre ses permissions avant l'installation. L'extension reste marquée « Non vérifiée », et chaque mise à jour vous est montrée avant de remplacer quoi que ce soit.
-- ↔️ **Réglages plus larges** — ils profitent de toute la largeur de la page au lieu d'une colonne étroite.
+- 🐙 **Ajouter depuis GitHub** — dans Réglages › Extensions, bouton « Ajouter depuis GitHub » : collez l'adresse d'un dépôt, BlackHole trouve sa dernière version, choisit le paquet de votre système, le vérifie contre l'empreinte publiée par GitHub et vous montre ses permissions avant l'installation. L'extension reste marquée « Non vérifiée », et chaque mise à jour vous est montrée avant de remplacer quoi que ce soit.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
+
+- 🧩 **0.8.20** — market d'extensions (recherche, catégories, fiche détaillée avec empreinte et permissions), accord demandé quand une mise à jour ajoute des permissions, Réglages plus larges.
 
 - 🧩 **0.8.19** — catalogue d'extensions signé, rafraîchi chaque jour depuis GitHub sans attendre une version de BlackHole, jamais de retour à une version plus ancienne.
 

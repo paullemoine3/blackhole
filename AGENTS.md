@@ -933,7 +933,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   dangereuses, liste embarquée valide pour macOS et Windows), `catalog::tests`, `bh-market` (manifest,
   choix de release et d'asset, signature d'une liste tamponnée). Réseau : `bh-market audit`.
 
-## 0.8.20 : écran Market, accord aux nouvelles permissions, ajout depuis GitHub, Réglages plus larges
+## 0.8.20 : écran Market, accord aux nouvelles permissions, Réglages plus larges (ajout depuis GitHub : 0.8.21)
 
 - Permissions lisibles, `domain/market.rs` : `permission_lines` (une ligne par sorte, `PermissionLine { key,
   sensitive, items }`, sensibles d'abord ; `<all_urls>` et tout motif d'hôte `*` → `all_sites`, qui couvre
@@ -956,7 +956,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   GitHub), « Pour cet appareil » (système, fichier, taille, SHA-256 copiable), permissions. Échap ferme la fiche
   avant les Réglages. État dans `mk` (non persisté) ; rendu `put`/`morph` comme le reste de la page.
 - Réglages : `section` jusqu'à 1100 px (680 avant), `.note` limitée à 110 caractères.
-- Ajouter depuis GitHub (étape 3 du market, confiance au premier usage) : règles `domain::market` `github_repo`
+- Ajouter depuis GitHub (0.8.21, étape 3 du market, confiance au premier usage) : règles `domain::market` `github_repo`
   (`owner/repo` ou adresse ; propriétaire = lettres, chiffres, tirets), `sideload_id` (`gh-<owner>-<repo>`,
   jamais un id du market), `asset_rank` (Windows : Chromium puis générique, jamais Firefox ni Safari ; macOS :
   Chromium, générique, puis Firefox), `asset_pattern` (version du nom → `*`), `display_name`.
