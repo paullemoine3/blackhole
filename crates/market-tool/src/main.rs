@@ -7,6 +7,8 @@
 //!                                         reads its manifest (size, permissions)
 //! bh-market update [file] [--summary md]  follows the upstream releases (`source` of each entry):
 //!                                         new version → new URLs, hashes, sizes, permissions
+//! bh-market review <base> <head>          exit 0 when `head` only brings newer versions asking
+//!                                         for no new permission (merged by the workflow after 48 h)
 //! bh-market sign   [file] <out-dir> [--days N]
 //!                                         stamps `seq` (now) and `expires`, writes market.json
 //!                                         and market.json.sig (key: MARKET_SIGNING_KEY, hex)
@@ -42,7 +44,8 @@ fn main() -> ExitCode {
         Some("update") => update(&args[1..]),
         Some("sign") => sign(&args[1..]),
         Some("verify") => verify(&args[1..]),
-        _ => Err("usage: bh-market keygen|check|audit|update|sign|verify (see the source)".into()),
+        Some("review") => review(&args[1..]),
+        _ => Err("usage: bh-market keygen|check|audit|update|review|sign|verify (see the source)".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -310,9 +313,73 @@ fn describe(old: &Entry, new: &Entry) -> String {
     line
 }
 
+/// Why a proposed list (`head`) needs a human before it reaches users, compared with the list
+/// in use (`base`). Empty: only new upstream versions of the same extensions, from the same
+/// sources, asking for no permission they did not have; the workflow may merge it by itself.
+fn review_reasons(base: &Index, head: &Index) -> Vec<String> {
+    let mut reasons = Vec::new();
+    for old in &base.extensions {
+        if head.find(&old.id).is_none() {
+            reasons.push(format!("{}: removed from the list", old.id));
+        }
+    }
+    for new in &head.extensions {
+        let Some(old) = base.find(&new.id) else {
+            reasons.push(format!("{}: new extension", new.id));
+            continue;
+        };
+        let added = rules::added_permissions(&old.permissions, &new.permissions);
+        if !added.is_empty() {
+            reasons.push(format!("{}: new permissions `{}`", new.id, added.join("`, `")));
+        }
+        if new.name != old.name
+            || new.description != old.description
+            || new.homepage != old.homepage
+            || new.category != old.category
+            || new.source != old.source
+        {
+            reasons.push(format!("{}: name, description, homepage, category or source changed", new.id));
+        }
+        if new.platforms.keys().ne(old.platforms.keys()) {
+            reasons.push(format!("{}: platforms changed", new.id));
+        }
+        if new.platforms != old.platforms && !rules::is_upgrade(&new.version, Some(&old.version)) {
+            reasons.push(format!("{}: new packages without a newer version", new.id));
+        }
+        // A package from another repository than the one the entry follows.
+        if let Some(source) = &new.source {
+            let prefix = format!("https://github.com/{}/releases/download/", source.repo);
+            if new.platforms.values().any(|p| !p.url.starts_with(&prefix)) {
+                reasons.push(format!("{}: package outside {}", new.id, source.repo));
+            }
+        }
+    }
+    if head.schema != base.schema {
+        reasons.push("schema changed".into());
+    }
+    reasons
+}
+
+/// `review <base.json> <head.json>`: exit 0 when the proposed list may be merged without a
+/// review, 1 (with the reasons) otherwise.
+fn review(args: &[String]) -> Result<(), String> {
+    let pos = positional(args);
+    let [base, head] = pos.as_slice() else {
+        return Err("review <base.json> <head.json>".into());
+    };
+    let reasons = review_reasons(&load(Path::new(base))?, &load(Path::new(head))?);
+    if reasons.is_empty() {
+        println!("no review needed: newer versions only, no new permission");
+        Ok(())
+    } else {
+        Err(format!("review needed:\n- {}", reasons.join("\n- ")))
+    }
+}
+
 fn update(args: &[String]) -> Result<(), String> {
     let path = file_arg(args);
     let mut index = load(&path)?;
+    let base = index.clone();
     let agent = agent();
     let mut changes = Vec::new();
     let mut failures = Vec::new();
@@ -372,7 +439,17 @@ fn update(args: &[String]) -> Result<(), String> {
     if let Some(summary) = flag_value(args, "--summary") {
         let mut text = String::new();
         if !changes.is_empty() {
-            text.push_str("New upstream releases, downloaded and hashed by the market workflow. Check the new permissions before merging: once merged, the list is signed and every BlackHole offers these versions.\n\n");
+            text.push_str("New upstream releases, downloaded and hashed by the market workflow. Once merged, the list is signed and every BlackHole offers these versions.\n\n");
+            let reasons = review_reasons(&base, &index);
+            if reasons.is_empty() {
+                text.push_str("✅ No new permission: the workflow merges this pull request by itself 48 hours after its last change. Close it to stop that.\n\n");
+            } else {
+                text.push_str("⚠️ **Needs a review** (never merged automatically):\n\n");
+                for r in &reasons {
+                    text.push_str(&format!("- {r}\n"));
+                }
+                text.push('\n');
+            }
             text.push_str(&changes.join("\n"));
             text.push('\n');
         }
@@ -525,6 +602,56 @@ mod tests {
         let text = describe(&old, &new);
         assert!(text.contains("4.9.134 → 4.9.135"));
         assert!(text.contains("new permissions: `debugger`"));
+    }
+
+    /// Dark Reader 4.9.134 → 4.9.135 from its own repository, same permissions.
+    fn bumped() -> Index {
+        let mut head = market::builtin().clone();
+        let e = head.extensions.iter_mut().find(|e| e.id == "dark-reader").unwrap();
+        e.version = "4.9.135".into();
+        for p in e.platforms.values_mut() {
+            p.url = p.url.replace("v4.9.134", "v4.9.135");
+            p.sha256 = "1".repeat(64);
+        }
+        head
+    }
+
+    fn reasons_for(edit: impl FnOnce(&mut Entry)) -> Vec<String> {
+        let mut head = bumped();
+        edit(head.extensions.iter_mut().find(|e| e.id == "dark-reader").unwrap());
+        review_reasons(market::builtin(), &head)
+    }
+
+    #[test]
+    fn quiet_version_bumps_need_no_review() {
+        let base = market::builtin();
+        assert!(review_reasons(base, base).is_empty());
+        assert!(review_reasons(base, &bumped()).is_empty());
+        // Fewer permissions is fine too.
+        assert!(reasons_for(|e| { e.permissions.pop(); }).is_empty());
+    }
+
+    #[test]
+    fn anything_else_needs_a_review() {
+        assert!(reasons_for(|e| e.permissions.push("debugger".into()))[0].contains("debugger"));
+        assert!(!reasons_for(|e| e.version = "4.9.134".into()).is_empty());
+        assert!(!reasons_for(|e| e.version = "4.9.0".into()).is_empty());
+        assert!(!reasons_for(|e| e.source.as_mut().unwrap().repo = "evil/darkreader".into()).is_empty());
+        assert!(!reasons_for(|e| e.name = "Dark Reader Pro".into()).is_empty());
+        assert!(!reasons_for(|e| {
+            e.platforms.get_mut("windows").unwrap().url =
+                "https://github.com/evil/darkreader/releases/download/v4.9.135/x.zip".into();
+        })
+        .is_empty());
+        assert!(!reasons_for(|e| { e.platforms.remove("macos"); }).is_empty());
+        let mut added = bumped();
+        let mut extra = added.extensions[0].clone();
+        extra.id = "new-one".into();
+        added.extensions.push(extra);
+        assert!(review_reasons(market::builtin(), &added)[0].contains("new extension"));
+        let mut removed = bumped();
+        removed.extensions.pop();
+        assert!(review_reasons(market::builtin(), &removed)[0].contains("removed"));
     }
 
     #[test]
