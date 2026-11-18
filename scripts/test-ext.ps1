@@ -38,8 +38,10 @@ cmd {"cmd":"open_settings","tab":"extensions"}
 wait 1500
 cmd {"cmd":"check_catalog_updates"}
 wait 8000
-eval settings document.querySelectorAll('#catalog .row').length + '|' + document.getElementById('catsrc').textContent + '|' + document.getElementById('chk-msg').textContent
+eval settings document.querySelectorAll('#catalog .xc').length + '|' + document.getElementById('catsrc').textContent + '|' + document.getElementById('chk-msg').textContent
 shot ext-market
+eval settings (document.querySelector('#catalog .xc[data-id="dark-reader"]').click(), document.getElementById('mkbrowse').hidden + '|' + document.querySelectorAll('#mkdetail .perms li').length + '|' + document.querySelector('#mkdetail .hash').textContent.length + '|' + document.getElementById('mkn-installed').textContent)
+shot ext-market-sheet
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -61,5 +63,7 @@ Check ($evals[3] -match '\d' -and ($evals[3] -replace '.*-> ', '') -eq ($evals[5
 Check ($evals[7] -match 'https://example\.com/#' -and $evals[7] -notmatch 'pas un site|not a web') 'popup: the active tab of an extension popup is the page in front'
 # Market: six entries for this system; before the first signed list is published, the build's own
 # list stays and the note says so (with the failed download), the check still answers.
-Check ($evals[8] -match '-> "?6\|' -and $evals[8] -match 'included in this version|incluse dans cette version' -and $evals[8] -match 'up to date|update|à jour|mise')'settings: the market lists the extensions of this system and says where the list comes from'
+Check ($evals[8] -match '-> "?6\|' -and $evals[8] -match 'included in this version|incluse dans cette version|signed on|sign.{1,2}e le' -and $evals[8] -match 'up to date|update|jour|mise') 'settings: the market lists the extensions of this system and says where the list comes from'
+# The sheet of an installed extension: its permissions and the full SHA-256 of its package.
+Check ($evals[9] -match '-> "true\|[1-9]\d*\|64\|[1-9]') 'settings: an extension sheet lists its permissions and its hash'
 if ($fail) { exit 1 }

@@ -65,7 +65,9 @@
   nav .foot { margin-top: auto; padding: var(--bh-space-12) var(--bh-space-10) var(--bh-space-2); font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); user-select: text; -webkit-user-select: text; }
 
   main { overflow-y: auto; padding: var(--bh-space-28) var(--bh-space-36) var(--bh-space-56); scroll-padding: var(--bh-space-24); }
-  section { display: none; max-width: 680px; margin: 0 auto; }
+  /* Wide enough to use the page area (0.8.20: 680 px left most of it empty); running text keeps
+     its own measure (.lead, .note). */
+  section { display: none; max-width: 1100px; margin: 0 auto; }
   section.on { display: block; animation: rise var(--bh-duration-quick) var(--bh-ease-settle) both; }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
   .sh { display: flex; align-items: flex-start; gap: var(--bh-space-14); margin-bottom: var(--bh-space-22); }
@@ -142,7 +144,7 @@
   .search .bh-i { position: absolute; left: 10px; top: 8px; opacity: var(--bh-opacity-muted); }
   .search .field { padding-left: 32px; }
 
-  .note { font: var(--bh-text-body-small); opacity: var(--bh-opacity-tertiary); padding: var(--bh-space-10) var(--bh-space-16) var(--bh-space-14); }
+  .note { font: var(--bh-text-body-small); opacity: var(--bh-opacity-tertiary); padding: var(--bh-space-10) var(--bh-space-16) var(--bh-space-14); max-width: 110ch; }
   .card > .note + .note { padding-top: 0; }
   .status:empty, .fielderr:empty { display: none; }
   .fielderr { font: var(--bh-text-body-small); color: var(--bh-danger-text); padding: 0 var(--bh-space-16) var(--bh-space-6); margin: 0; }
@@ -207,6 +209,68 @@
   @keyframes launch-shake { 25% { transform: translateX(-.6px); } 75% { transform: translateX(.6px); } }
   @keyframes launch-flame { 0%, 25% { height: 4px; opacity: 1; } 100% { height: 160px; opacity: 0; } }
   @keyframes launch-spark { 0% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+
+  /* Extension market (Settings > Extensions): tabs, search, categories, a grid of cards, and the
+     sheet of one extension in place of the grid. */
+  .mktabs { display: flex; gap: var(--bh-space-4); padding: 0 var(--bh-space-16); border-bottom: 1px solid var(--bh-border-hairline); }
+  .mktabs button { position: relative; height: 36px; padding: 0 var(--bh-space-10); border: 0; background: transparent; opacity: var(--bh-opacity-secondary);
+    display: inline-flex; align-items: center; gap: var(--bh-space-6); transition: opacity var(--bh-duration-hover); }
+  .mktabs button:hover { opacity: 1; }
+  .mktabs button[aria-selected="true"] { opacity: 1; }
+  .mktabs button[aria-selected="true"]::after { content: ""; position: absolute; left: var(--bh-space-8); right: var(--bh-space-8); bottom: -1px; height: 2px; border-radius: 2px; background: var(--bh-accent); }
+  .mktabs .n { font: var(--bh-text-caption); font-variant-numeric: tabular-nums; opacity: var(--bh-opacity-muted); }
+  .mktabs .n:empty { display: none; }
+  .mktabs .n.hot { opacity: 1; min-width: 18px; padding: 0 var(--bh-space-6); border-radius: var(--bh-radius-pill); background: var(--bh-accent); color: var(--bh-text-on-accent); font-weight: 600; text-align: center; }
+  .mktools { padding-bottom: var(--bh-space-4); }
+  .oschip { flex: none; font: var(--bh-text-caption); padding: var(--bh-space-4) var(--bh-space-10); border-radius: var(--bh-radius-pill); background: var(--bh-fill-faint);
+    box-shadow: inset 0 0 0 1px var(--bh-border-default); opacity: var(--bh-opacity-secondary); white-space: nowrap; }
+  .oschip:empty { display: none; }
+  .mkcats { display: flex; flex-wrap: wrap; gap: var(--bh-space-6); padding: var(--bh-space-4) var(--bh-space-16) var(--bh-space-10); }
+  .mkcats:empty { display: none; }
+  .mkcats button { height: 26px; padding: 0 var(--bh-space-10); border: 0; border-radius: var(--bh-radius-pill); background: var(--bh-fill-control); font: var(--bh-text-caption);
+    opacity: var(--bh-opacity-secondary); transition: background-color var(--bh-duration-hover), opacity var(--bh-duration-hover); }
+  .mkcats button:hover { opacity: 1; }
+  .mkcats button[aria-pressed="true"] { background: var(--bh-accent-wash); box-shadow: inset 0 0 0 1px var(--bh-accent-border); opacity: 1; }
+  .mkgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--bh-space-10); padding: 0 var(--bh-space-16) var(--bh-space-14); }
+  .mkgrid > .empty { grid-column: 1 / -1; }
+  .xc { display: flex; flex-direction: column; gap: var(--bh-space-8); padding: var(--bh-space-12); border-radius: var(--bh-radius-card-sm); background: var(--bh-fill-faint);
+    box-shadow: inset 0 0 0 1px var(--bh-border-hairline); cursor: pointer; text-align: left; transition: background-color var(--bh-duration-hover), box-shadow var(--bh-duration-hover); }
+  .xc:hover { background: var(--bh-fill-hover); box-shadow: inset 0 0 0 1px var(--bh-border-default); }
+  .xc:focus-visible { outline-offset: 0; }
+  .xc .top { display: flex; align-items: center; gap: var(--bh-space-10); min-width: 0; }
+  .xc .top > div { min-width: 0; }
+  .xc .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .by { font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xc .desc { font: var(--bh-text-body-small); opacity: var(--bh-opacity-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .xc .foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--bh-space-8); min-height: 28px; }
+  .xc .foot .sub { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .xc .foot .opt { width: auto; min-height: 0; padding: var(--bh-space-4); }
+  .tags { display: flex; flex-wrap: wrap; gap: var(--bh-space-4); }
+  .tag { display: inline-flex; align-items: center; gap: var(--bh-space-4); padding: 1px var(--bh-space-6); border-radius: var(--bh-radius-pill); font: var(--bh-text-caption);
+    background: var(--bh-fill-control); opacity: .92; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag .bh-i { width: 12px; height: 12px; }
+  .tag.ok { background: color-mix(in srgb, var(--bh-success) 16%, transparent); color: color-mix(in srgb, var(--bh-success) 80%, white); }
+  .tag.up { background: var(--bh-accent-wash); }
+  .tag.warn { background: color-mix(in srgb, var(--bh-warning-text) 16%, transparent); color: color-mix(in srgb, var(--bh-warning-text) 75%, white); }
+  .mkdetail[hidden] { display: none; }
+  .mkdetail { padding: var(--bh-space-6) var(--bh-space-16) var(--bh-space-16); display: flex; flex-direction: column; gap: var(--bh-space-14); }
+  .mkdetail .back { align-self: flex-start; }
+  .mkdetail .head { display: flex; align-items: center; gap: var(--bh-space-12); }
+  .mkdetail .head .ico { width: 44px; height: 44px; font-size: 20px; border-radius: var(--bh-radius-card-sm); }
+  .mkdetail .title { font: var(--bh-text-title-settings); }
+  .mkdetail .desc { font: var(--bh-text-body-small); opacity: var(--bh-opacity-secondary); max-width: 60ch; }
+  .panel { border-radius: var(--bh-radius-card-sm); background: var(--bh-fill-faint); box-shadow: inset 0 0 0 1px var(--bh-border-hairline); padding: var(--bh-space-12) var(--bh-space-14);
+    display: flex; flex-direction: column; gap: var(--bh-space-10); }
+  .panel > h3 { font: var(--bh-text-section-label); letter-spacing: .09em; text-transform: uppercase; opacity: var(--bh-opacity-section); }
+  .panel.warn { background: color-mix(in srgb, var(--bh-warning-text) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-warning-text) 35%, transparent); }
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--bh-space-6) var(--bh-space-14); font: var(--bh-text-body-small); }
+  .kv dt { opacity: var(--bh-opacity-muted); }
+  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: var(--bh-space-8); flex-wrap: wrap; }
+  .hash { font: var(--bh-text-kbd); overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .perms { display: flex; flex-direction: column; gap: var(--bh-space-6); list-style: none; padding: 0; font: var(--bh-text-body-small); }
+  .perms li { display: flex; align-items: flex-start; gap: var(--bh-space-8); }
+  .perms .pip { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--bh-fill-glint); }
+  .perms .sensitive .pip { background: var(--bh-warning-text); }
 
   /* Animations off (setting) or reduced by the system: nothing moves. */
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
@@ -316,13 +380,26 @@
 
   <section id="extensions" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="puzzle" data-size="md"></i></span><div><h1 data-i18n="settings.extensions">Extensions</h1><p class="lead"><span data-i18n="settings.extensions_lead">Real WebExtensions run on the system’s native extension host, plus simple content-script extensions.</span></p></div></header>
-    <div class="card"><h2 data-i18n="settings.catalog">Catalog</h2>
+    <div class="card" id="market"><h2 data-i18n="settings.market">Market</h2>
+      <div class="mktabs" role="tablist" data-i18n-aria="settings.market">
+        <button type="button" role="tab" data-mk="all"><span data-i18n="settings.market_tab_all">All</span></button>
+        <button type="button" role="tab" data-mk="installed"><span data-i18n="settings.market_tab_installed">Installed</span> <span class="n" id="mkn-installed"></span></button>
+        <button type="button" role="tab" data-mk="updates"><span data-i18n="settings.market_tab_updates">Updates</span> <span class="n hot" id="mkn-updates"></span></button>
+      </div>
+      <div id="mkbrowse">
+        <div class="actions mktools">
+          <label class="search"><i data-icon="search"></i><input class="field" id="mksearch" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.market_search_ph" data-i18n-aria="settings.market_search_ph"></label>
+          <span class="oschip" id="mkos"></span>
+        </div>
+        <div class="mkcats" id="mkcats" role="group" data-i18n-aria="settings.market_categories"></div>
+        <div class="mkgrid" id="catalog"></div>
+      </div>
+      <div class="mkdetail" id="mkdetail" hidden></div>
       <div class="actions">
         <button class="btn" id="chk-ext"><i data-icon="reload"></i><span data-i18n="settings.check_updates">Check for updates</span></button>
         <button class="btn primary" id="upd-all" hidden data-i18n="settings.update_all">Update all</button>
         <span class="sub" id="chk-msg" aria-live="polite"></span>
       </div>
-      <div class="list rows" id="catalog"></div>
       <p class="note" id="catnote"><span data-i18n="settings.catalog_note">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</span> <span id="catsrc"></span></p>
     </div>
     <div class="card" id="appcard"><h2 data-i18n="settings.found_in_apps">Found in your apps</h2><div class="list rows" id="appexts"></div>
@@ -711,49 +788,7 @@ window.bh = {
     if (s.tabSeq !== seenSeq) { seenSeq = s.tabSeq; if (s.tab) show(s.tab); }
     $('version').textContent = s.version;
     renderAppUpdate(s.appUpdate, s.version);
-    const outdated = s.catalog.filter(c => c.outdated && c.supported);
-    const mk = s.market || {};
-    $('upd-all').hidden = !outdated.length || mk.checking;
-    $('chk-ext').disabled = !!mk.checking;
-    $('chk-ext').classList.toggle('spin', !!mk.checking);
-    $('chk-msg').textContent = mk.checking ? bhT('settings.market_checking')
-      : s.catalogChecked == null ? '' : outdated.length
-      ? bhTn('settings.updates_available', outdated.length) : bhT('settings.up_to_date');
-    // Where the list comes from: signed by the market workflow, or carried by this build.
-    $('catsrc').textContent = [
-      mk.signed ? bhT('settings.market_signed', { date: new Date(mk.signedAt * 1000).toLocaleDateString(bhI18n.lang, { day: 'numeric', month: 'long', year: 'numeric' }) })
-        : bhT('settings.market_builtin'),
-      mk.error ? bhT('settings.market_failed', { why: mk.error }) : '',
-    ].filter(Boolean).join(' ');
-    put($('catalog'), ...(s.catalog.length ? [] : [empty('puzzle', bhT('settings.market_none'))]), ...s.catalog.map(c => {
-      const row = el('div', 'row');
-      const text = el('div', 'grow');
-      const labels = { installing: 'library.downloading', loading: 'settings.starting', active: 'settings.active', disabled: 'settings.turned_off', failed: 'settings.error' };
-      const sub = !c.supported ? bhT('settings.unsupported')
-        : c.error ? c.error : [labels[c.status] && bhT(labels[c.status]), c.description].filter(Boolean).join(' · ');
-      text.append(nameLine(c.name, c.installed && c.installedVersion ? c.installedVersion : c.version), el('div', 'sub', sub));
-      row.append(tile(c.name), text);
-      const acts = el('div', 'rowactions');
-      if (c.supported && !c.installed) {
-        const b = iconBtn('btn primary small', 'download', bhT(c.status === 'installing' ? 'settings.installing' : 'settings.install'));
-        b.disabled = c.status === 'installing';
-        b.onclick = () => send({ cmd: 'install_catalog', id: c.id });
-        acts.append(b);
-        row.append(acts);
-      } else if (c.supported) {
-        if (c.outdated) {
-          const up = el('button', 'btn primary small', c.status === 'installing' ? bhT('settings.updating') : bhT('settings.update_to', { version: c.version }));
-          up.disabled = c.status === 'installing';
-          up.onclick = () => send({ cmd: 'install_catalog', id: c.id });
-          acts.append(up);
-        }
-        const rm = el('button', 'btn small', bhT('easel.remove'));
-        confirmClick(rm, 'settings.remove_confirm', () => send({ cmd: 'remove_catalog', id: c.id }));
-        acts.append(rm);
-        row.append(acts, toggleOnly(c.name, c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled })));
-      }
-      return row;
-    }));
+    renderMarket(s);
     put($('sources'), ...(s.import.sources.length ? s.import.sources.map(src => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
@@ -811,6 +846,237 @@ function toggleOnly(name, on, run) {
   tog.setAttribute('aria-label', name);
   return tog;
 }
+
+// Extension market: the signed list of the app (`s.catalog`, entries that have a package for
+// this system), browsed by tab, words and category; a card opens the sheet of its extension.
+const mk = { tab: 'all', cat: 'all', query: '', open: null };
+const MK_CATS = ['blocking', 'privacy', 'security', 'appearance', 'video'];
+const fold = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const catLabel = (c) => { const k = 'settings.market_cat_' + c; const t = bhT(k); return t === k ? c : t; };
+function mkSize(bytes) {
+  if (!bytes) return '';
+  const mb = bytes >= 1e6;
+  try {
+    return new Intl.NumberFormat(bhI18n.lang, { style: 'unit', unit: mb ? 'megabyte' : 'kilobyte', maximumFractionDigits: 1 }).format(mb ? bytes / 1e6 : bytes / 1e3);
+  } catch (_) { return Math.round(bytes / 1e3) + ' kB'; }
+}
+function permText(l) {
+  const k = 'settings.perm_' + l.key;
+  if (l.key === 'some_sites') return bhT(k, { sites: l.items.join(', ') });
+  if (l.key === 'other') return bhT(k, { names: l.items.join(', ') });
+  const t = bhT(k);
+  return t === k ? l.key : t;
+}
+function permList(lines) {
+  const ul = el('ul', 'perms');
+  for (const l of lines) {
+    const li = el('li', l.sensitive ? 'sensitive' : null);
+    li.append(el('span', 'pip'), el('span', null, permText(l)));
+    ul.append(li);
+  }
+  return ul;
+}
+function tag(cls, icon, text) {
+  const t = el('span', 'tag' + (cls ? ' ' + cls : ''));
+  if (icon) t.append(bhIcon(icon, 'xs'));
+  t.append(text);
+  return t;
+}
+const mkStatus = (c) => {
+  const labels = { installing: 'library.downloading', loading: 'settings.starting', active: 'settings.active', disabled: 'settings.turned_off', failed: 'settings.error' };
+  if (c.error) return c.error;
+  if (c.installed || c.status === 'installing') return labels[c.status] ? bhT(labels[c.status]) : '';
+  return mkSize(c.size);
+};
+// The main action of an extension: install, update (once its new permissions are accepted in its
+// sheet), or its switch.
+function mkAction(c, inSheet) {
+  if (!c.supported) return null;
+  if (!c.installed) {
+    const b = iconBtn('btn primary small', 'download', bhT(c.status === 'installing' ? 'settings.installing' : 'settings.install'));
+    b.disabled = c.status === 'installing';
+    b.onclick = (e) => { e.stopPropagation(); send({ cmd: 'install_catalog', id: c.id }); };
+    return b;
+  }
+  if (c.outdated && (!c.updateAdds.length || inSheet)) {
+    const label = c.status === 'installing' ? bhT('settings.updating')
+      : c.updateAdds.length ? bhT('settings.market_accept_update', { version: c.version }) : bhT('settings.update_to', { version: c.version });
+    const b = el('button', 'btn primary small', label);
+    b.disabled = c.status === 'installing';
+    b.onclick = (e) => { e.stopPropagation(); send({ cmd: 'install_catalog', id: c.id }); };
+    return b;
+  }
+  if (c.outdated) {
+    const b = el('button', 'btn small', bhT('settings.market_review_update'));
+    b.onclick = (e) => { e.stopPropagation(); mkOpen(c.id); };
+    return b;
+  }
+  const t = toggleOnly(c.name, c.enabled, (e) => { e.stopPropagation(); send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled }); });
+  return t;
+}
+function mkTags(c) {
+  const t = el('div', 'tags');
+  const ok = tag('ok', 'check', bhT('settings.market_verified'));
+  ok.title = bhT('settings.market_verified_hint');
+  t.append(ok);
+  if (c.installed && c.outdated) t.append(tag('up', null, (c.installedVersion || '?') + ' → ' + c.version));
+  else t.append(tag(null, null, c.installed && c.installedVersion ? c.installedVersion : c.version));
+  if (c.installed && c.outdated && c.updateAdds.length) t.append(tag('warn', 'alert', bhT('settings.market_new_permissions')));
+  return t;
+}
+function mkCard(c) {
+  const card = el('div', 'xc');
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  card.dataset.id = c.id;
+  card.setAttribute('aria-label', c.name);
+  card.onclick = () => mkOpen(c.id);
+  // Read from the element: a later render may give this card to another extension.
+  card.onkeydown = (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); mkOpen(e.currentTarget.dataset.id); } };
+  const top = el('div', 'top');
+  const who = el('div');
+  who.append(el('div', 'name', c.name), el('div', 'by', c.repo || ''));
+  top.append(tile(c.name), who);
+  const foot = el('div', 'foot');
+  foot.append(el('span', 'sub', mkStatus(c)));
+  const act = mkAction(c, false);
+  if (act) foot.append(act);
+  card.append(top, el('div', 'desc', c.description), mkTags(c), foot);
+  return card;
+}
+function mkSheet(c, s) {
+  const box = [];
+  const back = iconBtn('btn small back', 'back', bhT('settings.market_back'));
+  back.onclick = () => mkOpen(null);
+  box.push(back);
+  const head = el('div', 'head');
+  const who = el('div');
+  who.append(el('div', 'title', c.name), el('div', 'by', [c.repo, c.category && catLabel(c.category)].filter(Boolean).join(' · ')));
+  head.append(tile(c.name), who);
+  box.push(head, mkTags(c), el('p', 'desc', c.description));
+  if (c.error) box.push(el('p', 'fielderr', c.error));
+  if (c.installed && c.outdated && c.updateAdds.length) {
+    const warn = el('div', 'panel warn');
+    warn.append(el('h3', null, bhT('settings.market_update_asks')), permList(c.updateAdds));
+    box.push(warn);
+  }
+  const acts = el('div', 'rowactions');
+  acts.style.justifyContent = 'flex-start';
+  const act = mkAction(c, true);
+  if (act) acts.append(act);
+  if (c.installed && c.outdated) {
+    acts.append(toggleOnly(c.name, c.enabled, () => send({ cmd: 'set_extension_enabled', id: c.id, enabled: !c.enabled })));
+  }
+  if (c.installed) {
+    const rm = el('button', 'btn small', bhT('easel.remove'));
+    confirmClick(rm, 'settings.remove_confirm', () => send({ cmd: 'remove_catalog', id: c.id }));
+    acts.append(rm);
+  }
+  if (c.homepage) {
+    const src = iconBtn('btn small', 'open', bhT('settings.market_open_source'));
+    src.onclick = () => send({ cmd: 'open_link', url: c.homepage, target: 'front' });
+    acts.append(src);
+  }
+  box.push(acts);
+  const device = el('div', 'panel');
+  const kv = el('dl', 'kv');
+  const row = (k, v) => { const dd = el('dd'); dd.append(v); kv.append(el('dt', null, bhT(k)), dd); return dd; };
+  row('settings.market_system', bhT(s.market && s.market.platform === 'macos' ? 'settings.market_os_macos' : 'settings.market_os_windows'));
+  row('settings.market_file', c.file || '');
+  if (c.size) row('settings.market_size', mkSize(c.size));
+  const hashDd = row('settings.market_sha', el('span', 'hash', c.sha256 || ''));
+  const copy = iconBtn('btn small', 'copy', bhT('settings.market_copy'));
+  copy.onclick = () => {
+    const done = () => { copy.lastChild.textContent = bhT('settings.market_copied'); setTimeout(() => { copy.lastChild.textContent = bhT('settings.market_copy'); }, 1500); };
+    const select = () => { const r = document.createRange(); r.selectNodeContents(hashDd.firstChild); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+    try { navigator.clipboard.writeText(c.sha256).then(done, select); } catch (_) { select(); }
+  };
+  hashDd.append(copy);
+  if (c.installed && c.installedVersion) row('settings.market_installed', c.installedVersion);
+  device.append(el('h3', null, bhT('settings.market_for_device')), kv);
+  box.push(device);
+  const perms = el('div', 'panel');
+  perms.append(el('h3', null, bhT('settings.market_permissions')),
+    c.permissions.length ? permList(c.permissions) : el('p', 'sub', bhT('settings.market_no_permissions')));
+  box.push(perms);
+  return box;
+}
+function mkOpen(id) {
+  mk.open = id;
+  if (lastState) renderMarket(lastState);
+  const target = id ? document.querySelector('#mkdetail .back') : (document.querySelector(`#catalog .xc[data-id="${CSS.escape(String(mkLastOpen || ''))}"]`) || $('mksearch'));
+  mkLastOpen = id || null;
+  if (target) target.focus();
+  if (id) $('market').scrollIntoView({ block: 'start' });
+}
+let mkLastOpen = null;
+function renderMarket(s) {
+  const list = s.catalog || [];
+  const m = s.market || {};
+  const outdated = list.filter(c => c.outdated && c.supported);
+  const quiet = outdated.filter(c => !c.updateAdds.length);
+  const installed = list.filter(c => c.installed);
+  $('upd-all').hidden = !quiet.length || m.checking;
+  $('chk-ext').disabled = !!m.checking;
+  $('chk-ext').classList.toggle('spin', !!m.checking);
+  $('chk-msg').textContent = m.checking ? bhT('settings.market_checking')
+    : s.catalogChecked == null ? '' : outdated.length
+    ? bhTn('settings.updates_available', outdated.length) : bhT('settings.up_to_date');
+  // Where the list comes from: signed by the market workflow, or carried by this build.
+  $('catsrc').textContent = [
+    m.signed ? bhT('settings.market_signed', { date: new Date(m.signedAt * 1000).toLocaleDateString(bhI18n.lang, { day: 'numeric', month: 'long', year: 'numeric' }) })
+      : bhT('settings.market_builtin'),
+    m.error ? bhT('settings.market_failed', { why: m.error }) : '',
+  ].filter(Boolean).join(' ');
+  const osKey = 'settings.market_os_' + m.platform;
+  $('mkos').textContent = m.platform ? bhT(osKey) : '';
+  $('mkn-installed').textContent = installed.length || '';
+  $('mkn-updates').textContent = outdated.length || '';
+  for (const b of document.querySelectorAll('.mktabs [data-mk]')) {
+    const on = b.dataset.mk === mk.tab;
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
+  // The sheet of one extension, in place of the grid.
+  const open = mk.open && list.find(c => c.id === mk.open);
+  if (mk.open && !open) mk.open = null;
+  $('mkbrowse').hidden = !!open;
+  $('mkdetail').hidden = !open;
+  put($('mkdetail'), ...(open ? mkSheet(open, s) : []));
+  if (open) return;
+  const cats = MK_CATS.filter(c => list.some(e => e.category === c))
+    .concat([...new Set(list.map(e => e.category).filter(c => c && !MK_CATS.includes(c)))]);
+  if (mk.cat !== 'all' && !cats.includes(mk.cat)) mk.cat = 'all';
+  put($('mkcats'), ...(cats.length > 1 ? ['all', ...cats].map(c => {
+    const b = el('button', null, c === 'all' ? bhT('settings.market_cat_all') : catLabel(c));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(mk.cat === c));
+    b.onclick = () => { mk.cat = c; renderMarket(lastState); };
+    return b;
+  }) : []));
+  const words = fold(mk.query).split(/\s+/).filter(Boolean);
+  const shown = list.filter(c =>
+    (mk.tab === 'all' || (mk.tab === 'installed' ? c.installed : c.outdated && c.supported))
+    && (mk.cat === 'all' || c.category === mk.cat)
+    && words.every(w => fold([c.name, c.description, c.repo, catLabel(c.category)].join(' ')).includes(w)));
+  const none = !list.length ? 'settings.market_none'
+    : words.length || mk.cat !== 'all' ? 'settings.market_nothing'
+    : mk.tab === 'installed' ? 'settings.market_none_installed'
+    : mk.tab === 'updates' ? 'settings.up_to_date' : 'settings.market_nothing';
+  put($('catalog'), ...(shown.length ? shown.map(mkCard) : [empty('puzzle', bhT(none))]));
+}
+document.querySelectorAll('.mktabs [data-mk]').forEach((b, i, all) => {
+  b.onclick = () => { mk.tab = b.dataset.mk; mk.open = null; if (lastState) renderMarket(lastState); };
+  b.onkeydown = (e) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = all[(i + step + all.length) % all.length];
+    next.click();
+    next.focus();
+  };
+});
+$('mksearch').oninput = () => { mk.query = $('mksearch').value; if (lastState) renderMarket(lastState); };
 
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
@@ -1158,6 +1424,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (!$('pwedit').hidden) { pwCloseEditor(); return; }
+  if (mk.open) { mkOpen(null); return; }
   send({ cmd: 'close_settings' });
 });
 // The start page's sky (home.html): the same stars at every opening, drawn once per size.

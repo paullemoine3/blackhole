@@ -626,6 +626,33 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   dangereuses, liste embarquée valide pour macOS et Windows), `catalog::tests`, `bh-market` (manifest,
   choix de release et d'asset, signature d'une liste tamponnée). Réseau : `bh-market audit`.
 
+## 0.8.20 : écran Market, accord aux nouvelles permissions, Réglages plus larges
+
+- Permissions lisibles, `domain/market.rs` : `permission_lines` (une ligne par sorte, `PermissionLine { key,
+  sensitive, items }`, sensibles d'abord ; `<all_urls>` et tout motif d'hôte `*` → `all_sites`, qui couvre
+  les sites précis `some_sites` (hôtes dans `items`), noms inconnus → `other`), `added_permission_lines(old,
+  new)` (ce qu'une mise à jour ajoute : même sens écrit autrement = rien). Textes `settings.perm_<key>`
+  (test `every_kind_of_permission_has_its_text`).
+- Paquet installé : `market::manifest_info` (zip, manifest à la racine ou le moins profond ; aussi utilisé
+  par `bh-market`), `catalog::installed_permissions` (`webext/<id>.permissions.json` écrit par `store`, lu
+  dans le zip une fois pour une installation plus ancienne, effacé par `remove`).
+- App : chaque entrée de `catalog_state` porte `repo`, `file`, `size`, `sha256`, `permissions` et `updateAdds`
+  (`Running::update_adds` : lignes ajoutées par la mise à jour ; permissions installées inconnues = toutes) ;
+  `market.platform` (`macos` / `windows`). `UpdateAllCatalog` laisse de côté les mises à jour avec
+  `updateAdds` (le nombre laissé va dans `catalogChecked`) : elles passent par « Accepter et mettre à jour »
+  dans leur fiche (même `install_catalog`).
+- `settings.html` : carte `#market` (onglets `.mktabs` Toutes / Installées / Mises à jour avec compteurs,
+  `#mksearch` sans accents ni casse sur nom, description, dépôt et catégorie, puce de l'OS `#mkos`, catégories
+  `#mkcats`, grille `#catalog` de cartes `.xc` cliquables et focusables). Fiche `#mkdetail` à la place de la
+  grille (`mk.open`, `mkOpen`) : retour, tags (Vérifiée, version ou `installée → proposée`, Nouvelles
+  permissions), panneau d'accord, actions (installer, mettre à jour, interrupteur, retirer, `open_link` vers
+  GitHub), « Pour cet appareil » (système, fichier, taille, SHA-256 copiable), permissions. Échap ferme la fiche
+  avant les Réglages. État dans `mk` (non persisté) ; rendu `put`/`morph` comme le reste de la page.
+- Réglages : `section` jusqu'à 1100 px (680 avant), `.note` limitée à 110 caractères.
+- Tests : `domain::market::tests`, `catalog::tests::remembers_the_permissions_of_the_installed_package`,
+  `scripts\test-ext.ps1` (carte du market, fiche d'une extension installée : permissions et hash). macOS :
+  compilation croisée seulement.
+
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.

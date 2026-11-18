@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs,
-    io::{Cursor, Read},
+    io::Read,
     path::{Path, PathBuf},
     process::ExitCode,
     time::Duration,
@@ -149,38 +149,6 @@ fn sha256(bytes: &[u8]) -> String {
     market::hex(&Sha256::digest(bytes))
 }
 
-/// Version and permissions (`permissions` + `host_permissions`) of a WebExtension package.
-fn manifest_info(zip: &[u8]) -> Result<(String, Vec<String>), String> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(zip)).map_err(|e| e.to_string())?;
-    // The manifest at the root, or the shallowest one when the package has a top folder.
-    let name = archive
-        .file_names()
-        .filter(|n| *n == "manifest.json" || n.ends_with("/manifest.json"))
-        .min_by_key(|n| n.matches('/').count())
-        .map(str::to_owned)
-        .ok_or("no manifest.json in the package")?;
-    let mut text = String::new();
-    archive
-        .by_name(&name)
-        .map_err(|e| e.to_string())?
-        .read_to_string(&mut text)
-        .map_err(|e| e.to_string())?;
-    let manifest: Value =
-        serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
-    let version = manifest["version"]
-        .as_str()
-        .ok_or("manifest without version")?
-        .to_owned();
-    let mut permissions = BTreeSet::new();
-    for key in ["permissions", "host_permissions"] {
-        for p in manifest[key].as_array().into_iter().flatten() {
-            if let Some(p) = p.as_str() {
-                permissions.insert(p.to_owned());
-            }
-        }
-    }
-    Ok((version, permissions.into_iter().collect()))
-}
 
 /// What the packages of an entry say, every platform together.
 struct Audited {
@@ -212,7 +180,7 @@ fn audit_entry(
             }
         }
         package.size = bytes.len() as u64;
-        let (v, perms) = manifest_info(&bytes).map_err(|e| format!("{} ({platform}): {e}", entry.id))?;
+        let (v, perms) = market::manifest_info(&bytes).map_err(|e| format!("{} ({platform}): {e}", entry.id))?;
         if let Some(first) = &version {
             if *first != v {
                 eprintln!("warning: {}: {platform} package is version {v}, not {first}", entry.id);
@@ -533,7 +501,7 @@ fn verify(args: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::io::Write;
+    use std::io::{Cursor, Write};
 
     fn zip_with(name: &str, manifest: &str) -> Vec<u8> {
         let mut out = Cursor::new(Vec::new());
@@ -552,11 +520,11 @@ mod tests {
             "manifest.json",
             r#"{"version":"4.9.135","permissions":["storage","tabs"],"host_permissions":["<all_urls>"]}"#,
         );
-        let (v, p) = manifest_info(&zip).unwrap();
+        let (v, p) = market::manifest_info(&zip).unwrap();
         assert_eq!(v, "4.9.135");
         assert_eq!(p, ["<all_urls>", "storage", "tabs"]);
         let nested = zip_with("ext/manifest.json", "\u{feff}{\"version\":\"1\"}");
-        assert_eq!(manifest_info(&nested).unwrap(), ("1".into(), vec![]));
+        assert_eq!(market::manifest_info(&nested).unwrap(), ("1".into(), vec![]));
     }
 
     #[test]
