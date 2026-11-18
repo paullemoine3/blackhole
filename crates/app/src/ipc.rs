@@ -25,6 +25,10 @@ pub enum UiCommand {
     LibraryReady,
     Open {
         input: String,
+        /// How it was asked for: `bookmark` (quick access, a favorite, a bookmark), else typed
+        /// or chosen. Weighs the visit in the command bar's ranking.
+        #[serde(default)]
+        via: Option<String>,
     },
     Home,
     ClearHistory,
@@ -76,6 +80,18 @@ pub enum UiCommand {
     },
     Navigate {
         input: String,
+        #[serde(default)]
+        via: Option<String>,
+    },
+    /// The command bar's query numbered `seq`: the shell ranks and answers `bh.suggested`.
+    Suggest {
+        query: String,
+        seq: u64,
+    },
+    /// The row `key` was taken for what was typed (`input`): learned for next time.
+    SuggestChosen {
+        input: String,
+        key: String,
     },
     Activate {
         id: u64,
@@ -300,6 +316,12 @@ pub enum UiCommand {
     DeviceSyncNow {
         id: String,
     },
+    /// Settings > Devices: paired devices exchange the history in the background, or not.
+    SetHistorySync {
+        on: bool,
+    },
+    /// Settings > Devices: asks every online device for its history changes now.
+    HistorySyncNow,
     /// The proposal to synchronize with a device: `merge` (once), `always` or `later`.
     SyncAnswer {
         id: String,
@@ -468,6 +490,10 @@ pub enum UiCommand {
         section: String,
         shown: bool,
     },
+    /// New order of the start page sections, dragged by their title (names of `SetHomeSection`).
+    SetHomeOrder {
+        order: Vec<String>,
+    },
     Palette {
         mode: String,
     },
@@ -514,6 +540,9 @@ pub enum UiCommand {
     Back,
     Forward,
     Reload,
+    /// Hard refresh (Mod+Shift+R, Ctrl/Shift+F5, Shift+click on the reload button, page menu):
+    /// service workers and Cache Storage dropped, the page refetched past the HTTP cache.
+    HardReload,
     /// Settings › Passwords and the save toast (see `passwords::PasswordAction`).
     Passwords {
         action: crate::passwords::PasswordAction,
@@ -912,6 +941,9 @@ pub enum Msg {
     ServerTrust(TabId, wry::ServerTrustChallenge),
     /// The http address the shell upgraded to https in this tab.
     Upgraded(TabId, Url),
+    /// The main frame of a tab starts a navigation (each hop of a redirect included): counts the
+    /// hops that tell a redirect loop from one broken hop (`errors::settle_failure`).
+    Hop(TabId),
     /// A link was cleaned on the way (tracking parameters dropped, redirect page skipped).
     LinkCleaned,
     /// The tab itself was sent to a blocked tracker or ad server.
@@ -1297,6 +1329,7 @@ mod tests {
     fn tab_menu_commands_parse_and_pages_cannot_send_them() {
         let cases = [
             r#"{"cmd":"reload_tab","id":1}"#,
+            r#"{"cmd":"hard_reload"}"#,
             r#"{"cmd":"duplicate_tab","id":1}"#,
             r#"{"cmd":"move_tab_to_space","id":1,"space":2}"#,
             r#"{"cmd":"close_other_tabs","id":1}"#,

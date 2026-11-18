@@ -165,7 +165,7 @@ impl Running {
             }
         }
         // The Settings window shows how many pages are remembered: asked when it is not known.
-        if self.settings.is_some() && self.recall.count.is_none() && !self.recall.counting && !self.recall.private {
+        if self.settings_shown && self.recall.count.is_none() && !self.recall.counting && !self.recall.private {
             self.recall.counting = true;
             self.recall.store().send(Request::Count);
         }

@@ -209,6 +209,70 @@ pub fn classify(failure: Failure) -> Option<ErrorPage> {
     }
 }
 
+/// A failure that often goes away when the page is simply asked again: the connection was
+/// reset, lost or timed out, the answer was cut, the engine gave no reason. Seen as ghost
+/// "Site unreachable" pages, mostly in the middle of redirects (a hop that reused a dying
+/// connection, a sign-in round trip) or after the computer woke up. Not for an answer that says
+/// something (no such host, a certificate, a redirect loop, offline).
+pub fn is_transient(failure: Failure) -> bool {
+    match failure {
+        // 0 unknown, 6 server unreachable, 7 timeout, 8 invalid server response, 9 connection
+        // aborted, 10 connection reset, 12 cannot connect, 16 unexpected error.
+        Failure::WebView2(status) => matches!(status, 0 | 6..=10 | 12 | 16),
+        // -1001 timed out, -1004 cannot connect, -1005 network connection lost, -1011 bad
+        // server response, -1017 cannot parse response.
+        Failure::NsError("NSURLErrorDomain" | "kCFErrorDomainCFNetwork", code) => {
+            matches!(code, -1001 | -1004 | -1005 | -1011 | -1017)
+        }
+        Failure::NsError(..) => false,
+        // -1 unknown, -6 connect, -7 I/O, -8 timeout.
+        Failure::Android(code) => matches!(code, -1 | -8..=-6),
+        Failure::AndroidSsl(_) => false,
+    }
+}
+
+/// Navigations of the main frame since the tab's last page (the one asked, then each hop of a
+/// redirect) from which a failure ends a redirect loop: engines give up after about twenty, and
+/// WebView2 reports it as a mere "connection aborted". Fewer is one broken hop, worth a second try.
+pub const LOOP_HOPS: u32 = 6;
+
+/// A failure that ends a redirect loop rather than one broken hop: `hops` the navigations of
+/// the main frame since the tab's last page.
+pub fn is_redirect_loop(hops: u32) -> bool {
+    hops >= LOOP_HOPS
+}
+
+/// How long a failed address is not asked again silently: a second failure in this time is a
+/// real one and gets its page.
+pub const RETRY_WINDOW_SECS: u64 = 60;
+const RETRIES_KEPT: usize = 32;
+
+/// The silent second try of a failed load: once per address within `RETRY_WINDOW_SECS`.
+#[derive(Debug, Default, Clone)]
+pub struct Retries {
+    tried: Vec<(String, u64)>,
+}
+
+impl Retries {
+    /// Whether `address` (any stable form of it) may be asked again now; counts the try.
+    pub fn allow(&mut self, address: &str, now: u64) -> bool {
+        self.tried.retain(|(_, at)| now.saturating_sub(*at) < RETRY_WINDOW_SECS);
+        if self.tried.iter().any(|(a, _)| a == address) {
+            return false;
+        }
+        if self.tried.len() >= RETRIES_KEPT {
+            self.tried.remove(0);
+        }
+        self.tried.push((address.to_owned(), now));
+        true
+    }
+
+    /// The address loaded after all: a later failure gets its own silent try.
+    pub fn forget(&mut self, address: &str) {
+        self.tried.retain(|(a, _)| a != address);
+    }
+}
+
 /// The page for an HTTP status, when the server sent no page of its own.
 pub fn classify_status(status: u16) -> Option<ErrorPage> {
     match status {
@@ -377,6 +441,53 @@ impl Bypasses {
     pub fn allows(&self, host: &str) -> bool {
         self.hosts
             .contains(&host.trim_end_matches('.').to_ascii_lowercase())
+    }
+}
+
+#[cfg(test)]
+mod transient_tests {
+    use super::*;
+
+    #[test]
+    fn a_cut_or_reset_connection_is_tried_again_but_not_a_missing_host() {
+        for f in [Failure::WebView2(0), Failure::WebView2(9), Failure::WebView2(10), Failure::WebView2(16)] {
+            assert!(is_transient(f), "{f:?}");
+        }
+        assert!(is_transient(Failure::NsError("NSURLErrorDomain", -1005)));
+        assert!(is_transient(Failure::Android(-6)));
+        for f in [
+            Failure::WebView2(13),
+            Failure::WebView2(11),
+            Failure::WebView2(15),
+            Failure::WebView2(2),
+            Failure::NsError("NSURLErrorDomain", -1003),
+            Failure::NsError("WebKitErrorDomain", 102),
+            Failure::Android(-2),
+            Failure::AndroidSsl(1),
+        ] {
+            assert!(!is_transient(f), "{f:?}");
+        }
+    }
+
+    #[test]
+    fn a_loop_is_told_from_one_broken_hop() {
+        assert!(is_redirect_loop(20));
+        assert!(!is_redirect_loop(3), "a sign-in round trip that broke: tried again");
+    }
+
+    #[test]
+    fn one_silent_try_per_address_and_window() {
+        let mut r = Retries::default();
+        assert!(r.allow("a", 100));
+        assert!(!r.allow("a", 110), "the second failure is a real one");
+        assert!(r.allow("b", 110));
+        assert!(r.allow("a", 100 + RETRY_WINDOW_SECS), "a later outage gets its try again");
+        r.forget("b");
+        assert!(r.allow("b", 120));
+        for i in 0..100 {
+            r.allow(&i.to_string(), 130);
+        }
+        assert!(r.tried.len() <= RETRIES_KEPT);
     }
 }
 

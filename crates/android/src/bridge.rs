@@ -214,6 +214,9 @@ pub enum MobileCommand {
     DeviceSyncNow {
         id: String,
     },
+    /// Asks every online device for its history changes now (the history syncs on its own,
+    /// `history_sync` setting).
+    HistorySyncNow,
     /// The proposal to synchronize: `merge`, `always` or `later`.
     SyncAnswer {
         id: String,

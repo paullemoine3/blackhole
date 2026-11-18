@@ -33,6 +33,8 @@
     close: '<path d="M4 4l8 8M12 4l-8 8"/>',
     check: '<path d="M3.5 8.5l3 3 6-7"/>',
     more: dot(3.5, 8) + dot(8, 8) + dot(12.5, 8),
+    // Handle of what can be dragged (sections of the start page).
+    grip: dot(6, 4) + dot(10, 4) + dot(6, 8) + dot(10, 8) + dot(6, 12) + dot(10, 12),
     edit: '<path d="M10.5 3l2.5 2.5L6 12.5H3.5V10z"/>',
     marker: '<path d="M9.5 2.5l3 3-5 5H4.5v-3z"/><path d="M2.5 13.5h11"/>',
     trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9"/>',

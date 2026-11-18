@@ -479,6 +479,8 @@
   <div class="grp" id="devices"><h3 data-i18n="devices">Devices</h3>
     <div id="devlist"></div>
     <p class="note" id="dev-empty" hidden data-i18n="no_device">No device paired yet.</p>
+    <button class="opt" data-set="history_sync" id="histsw"><div><span data-i18n="history_sync">Share the history</span><small data-i18n="history_sync_hint">In the background with paired devices: pages, visits and erasures</small></div><span class="sw"></span></button>
+    <button class="opt" id="histnow"><div data-i18n="history_sync_now">Sync the history now</div><span class="v">›</span></button>
     <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note" style="text-align:center" data-i18n="pair_code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes.</p>
       <div class="pair" style="justify-content:center"><button class="mini" id="devcancel" data-i18n="cancel">Cancel</button></div></div>
     <button class="opt" id="devshow"><div data-i18n="show_pair_code">Show a pairing code</div><span class="v">›</span></button>
@@ -1223,6 +1225,9 @@ function renderDevices(d) {
   for (const go of document.querySelectorAll('[data-go="devices"]')) go.hidden = !d.available;
   if (!d.available) return;
   $('#dev-empty').hidden = !!d.list.length;
+  // The history syncs on its own (switch), "now" asks the online devices at once.
+  $('#histsw').hidden = $('#histnow').hidden = !d.list.length;
+  $('#histnow').disabled = !(S.settings || {}).history_sync || !d.list.some(dev => dev.online);
   sync($('#devlist'), d.list, (dev) => dev.id, () => {
     const row = el('div', 'dev');
     const dot = el('span', 'dot'); const nm = el('div', 'nm'); const name = document.createTextNode(''); const seen = el('small'); nm.append(name, seen);
@@ -1245,6 +1250,7 @@ function renderDevices(d) {
   $('#devstatus').textContent = d.status || '';
 }
 $('#devshow').onclick = () => send({ cmd: 'device_show_code' });
+$('#histnow').onclick = () => send({ cmd: 'history_sync_now' });
 $('#devcancel').onclick = () => send({ cmd: 'device_cancel_pairing' });
 $('#devjoin').onclick = () => { const code = $('#devinput').value.trim(); if (code) { send({ cmd: 'device_join', code }); $('#devinput').value = ''; $('#devinput').blur(); } };
 $('#devinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#devjoin').click(); });

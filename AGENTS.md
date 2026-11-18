@@ -48,7 +48,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   vues de réserve via le réglage `spare_views` (0–2), overlays recréés par `raise_palette`.
 - Ne pas appeler `focus_window()` sur la fenêtre principale depuis un handler
   (panique winit sur macOS). La vue live de l'Easel doit être déclarée/droppée
-  avant la fenêtre qui l'héberge. Fermer Réglages/Easel passe par `retire_window` : fenêtre
+  avant la fenêtre qui l'héberge. Fermer l'Easel passe par `retire_window` (les Réglages sont dans la
+  fenêtre principale depuis 0.8.18) : fenêtre
   masquée tout de suite, détruite au tour de boucle suivant (détruire la fenêtre clé fait planter
   AppKit au changement de fenêtre clé). Dans vendor/wry (WKWebView), jamais d'`unwrap()` sur
   `webview.URL()` : une vue qui n'a encore rien chargé n'a pas d'URL (`panic = "abort"`).
@@ -84,7 +85,7 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   (`ad1`, `ad2`, `bm1`, `bm2`).
   `paused` = une pause vue pendant le PiP (`media_devices.js`), pas `video.paused` à la sortie :
   WebKit met en pause une vidéo muette (tuiles d'un appel) qui revient dans un onglet masqué.
-- Fenêtres Réglages et Easel : `panel_window_attributes` (sans bordure sous Windows, barre de
+- Fenêtre Easel (les Réglages s'affichent dans la carte de page depuis 0.8.18) : `panel_window_attributes` (sans bordure sous Windows, barre de
   titre transparente sur macOS) ; leur page dessine la barre du haut (38 px, teinte de l'espace,
   boutons) et la pilote par `UiCommand::PanelWindow`.
 - Zoom de page : par site (`site_key`, sans `www.`), en pourcentage (`ZOOM_STEPS`, 100 jamais
@@ -142,7 +143,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `bash scripts/test-0817.sh` (tuiles d'accès rapide, sections de l'accueil, flyout gardé derrière un menu, passkeys).
 - Windows : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`,
   `scripts\test-easel.ps1`, `scripts\test-features.ps1` (liens propres, trou noir, split pilote,
-  surlignages, Recall).
+  surlignages, Recall), `scripts\test-0818.ps1` (recherche, rechargement, Réglages en onglet, accueil
+  réorganisé, réessai silencieux, jump list).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -631,7 +633,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Mode par appareil dans `devices.bin` (`ask` par défaut, `auto`, `off`, `Request::SetSync`) ; `ask`
   propose (toast Merge / Always / Later), une réponse à une fusion acceptée s'applique sans question.
   Desktop : `app/src/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
-  `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, historique, dossiers.
+  `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, dossiers. L'historique a sa propre synchro depuis 0.8.18 (voir la section 0.8.18).
 - Test : `scripts\test-sync.ps1` (Windows devtools ↔ émulateur, ports `BH_HANDOFF_PORT`/`_PEER_PORT`).
 
 ## Langues de l'interface (i18n)
@@ -800,6 +802,87 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Test macOS : `bash scripts/test-0817.sh` (serveur local 47983 : tuiles, sections de l'accueil, flyout
   gardé derrière le sélecteur, passkeys et notice ; pointeur hors de la fenêtre). Windows : code commun
   (tuiles, accueil, import) non testé.
+
+## 0.8.18 : recherche, rechargement forcé, échecs fantômes, accueil réorganisable, jump list, Réglages en onglet
+
+- Recherche de la barre de commandes : règles pures `domain/suggest.rs`, classement fait par le shell à
+  chaque frappe (`UiCommand::Suggest { query, seq }` → `bh.suggested`, `app/src/suggesting.rs`) : la
+  palette ne classe plus rien, elle dessine (avant la première lettre : onglets, accès rapide, commandes).
+  Candidats construits à l'ouverture (`suggest_prepare`) : onglets de tous les espaces (`OtherTab`, nom de
+  l'espace, `Activate` change d'espace), accès rapide, favoris, `pool` de l'historique, commandes.
+  - `key` (même page quelle que soit l'écriture), `is_noise` (connexion, OAuth/SSO, `callback`, `logout`,
+    redirections, `?code=&state=`, segments français `connexion`…), `pool` (une ligne par page, page
+    d'accueil d'un site vu par `ROOT_FROM_PAGES` pages ; page de résultats d'un moteur → recherche
+    précédente, `search_terms`, `RowKind::Search`, deux au plus).
+  - Visites : `HistoryEntry::recent` (10 dernières, date + `VisitKind` : `Typed` pour `open`/`navigate`
+    de l'interface, `Bookmark` si `via: "bookmark"`, `Link` sinon, `Redirect` pour une page quittée en
+    `BOUNCE_SECS` sans demande : elle passe son type à la suivante) et `spaces` ; `history.json` :
+    `visits`, `recent` `[(s, kind)]`, `spaces` (absents = anciens fichiers). `BrowserService::expect_visit`,
+    `Running::next_visit`. `frecency` = moyenne (âge × poids du type) × (1 + 1,5 ln visites).
+  - `match_quality` : `fold` (casse, accents, œ/æ/ß), chaque mot doit correspondre, une faute permise
+    à partir de 4 lettres (`typo_of`, distance OSA ≤ 1 en début de mot, score plus bas).
+  - `Adaptive` (choix appris façon Firefox, `suggest.json`, `ChoiceStore`, 500 au plus, demi-vie 30 j,
+    jamais en fenêtre privée ni en trou noir) : `UiCommand::SuggestChosen { input, key }` à chaque ligne
+    prise ; oublié avec l'historique (`suggest_forget`).
+  - `rank_rows` (score = qualité × 100 + habitude × 45 + choix × 70 + type + 10 pour l'espace affiché ;
+    une commande nommée par la saisie d'abord ; une page trouvée par plusieurs voies est offerte sous sa
+    forme la plus utile, onglet d'abord), `pick` (8 lignes, 3 commandes gardées, 2 recherches),
+    `completion` (un mot de 2 lettres ou plus qui commence l'adresse d'un site habituel : texte gris dans
+    le champ, `#ghost`, Tab ou → le prend, la première ligne l'ouvre ; jamais après un effacement).
+  - Jeu d'évaluation : `domain/src/suggest_eval.rs` (historique réaliste, requête → résultat attendu) ;
+    tout réglage de poids s'y mesure, un cas s'y ajoute quand une requête répond mal.
+  - Titres : une nouvelle page du même site reprend le titre de l'onglet tant qu'elle n'a pas le sien
+    (`History::name_if_bare`), le moteur ne signalant pas un titre inchangé. Android : `suggestions`
+    passe par `rank_rows`/`pick` (sans choix appris). « Recent activity » de l'accueil : sans bruit ni
+    doublon (`home_recent_json`).
+- Synchro de l'historique (0.8.18), à part de celle des onglets : un interrupteur (`Settings::history_sync`,
+  vrai par défaut, `SetHistorySync`, Réglages > Devices carte `#histcard`, Android `data-set="history_sync"`),
+  aucune question, en arrière-plan. `infrastructure/history_sync.rs` : messages `"v": 2` sur le transport des
+  registres (`Request::Snapshot`, ignorés par un appareil plus ancien) : `history_pull { since }` (quelques
+  octets) et `history { until, more, pages, forgotten, cleared_at, choices }`. Incrémental : chaque entrée
+  porte `HistoryEntry::changed` (horloge de l'appareil : visite, fusion qui change quelque chose) ;
+  `History::changes_since` rend ce qui a changé après le repère, plus ancien d'abord, `BATCH` (200) pages
+  (jamais coupé au milieu d'une seconde) ; `Marks` (`history-sync.json`) garde le repère atteint par
+  appareil. Rien de changé : réponse vide. Une page porte ce qui la classe (visites datées et typées,
+  titre, espaces **par nom**), les pages oubliées et l'effacement voyagent (`History::forget` / `clear_at`,
+  `history-erased.json` à part pour qu'une version plus ancienne relise `history.json`, oubli gardé 30 j),
+  et les choix appris de la barre de commandes (`Adaptive::merge`, le plus récent gagne ; Android n'en a
+  pas). `History::merge` idempotente et symétrique (index par adresse) ; écrite au prochain `flush`, pas
+  sur le fil d'interface. Cadence : `HISTORY_FIRST` (20 s) après le lancement, puis `HISTORY_EVERY`
+  (5 min), quelques secondes après qu'un appareil se connecte, et « Sync now » (`HistorySyncNow`). Jamais
+  en fenêtre privée (pas de Nearby) ni pour un onglet trou noir (absent de l'historique). Tests :
+  `history::tests`, `history_sync::tests`, test Android de bout en bout (`devices.rs`, deux cœurs appairés),
+  contrôle `histsw` de `test-android.ps1` (non exécuté).
+- Rechargement : Mod+R et F5 = `reload`, Mod+Maj+R / Ctrl+F5 / Maj+F5 / Maj+clic = `UiCommand::HardReload`
+  (`views::hard_reload`), aussi dans le menu de page et la palette (`key:shift+r`). Tout rechargement de la
+  page affichée appelle `spin_reload` → `bh.reloading()` de `bar.html` : seule l'icône (`#reload svg`)
+  tourne, tour après tour tant que la page charge, arrêt sur une fin de tour (`animationiteration`).
+- Échecs fantômes (« Site injoignable ») : tout `Msg::Failed` attend `ABORT_GRACE` (`aborted`, avec
+  l'adresse du moteur au moment de l'échec) ; un `LoadStart`, un `Loaded` ou un téléchargement l'annule.
+  `errors::settle_failure` : ignoré si l'adresse du moteur a changé entre-temps (redirection par script,
+  nouvelle adresse) ; échec passager (`error_page::is_transient` : WebView2 0, 6–10, 12, 16 ; NSURL -1001,
+  -1004, -1005, -1011, -1017) ou sans raison → `retry_quietly` (une fois par adresse et
+  `RETRY_WINDOW_SECS`, `Retries` ; `reload` si le moteur est sur l'entrée en échec, sinon `load_url`) avant
+  la page d'erreur. Boucle de redirection : `Msg::Hop` (chaque navigation du cadre principal, sauts
+  compris) compte les sauts depuis la dernière page ; à `LOOP_HOPS` (6) ou plus, jamais de second essai
+  et « Too many redirects » (WebView2 ne signale qu'un « connection aborted », souvent sans 3xx).
+  `CONNECT_MAX` sans réponse : un second essai aussi. macOS : non testé.
+- Accueil : `Settings::home_order` (`home_order()` garde chaque section une fois, une section absente
+  reprend sa place par défaut ; ordre par défaut = vide), `UiCommand::SetHomeOrder`. `home.html` :
+  sections dans `#sections`, déplacées par leur titre (pointeur, FLIP en `transform`, `body.dragging`)
+  ou Alt+↑/↓ au clavier ; nœuds déplacés, jamais recréés (`placeSections`). Icône `grip`.
+- Jump list Windows : `macos-webext/src/jumplist.rs` (`ICustomDestinationList`, tâches `IShellLinkW` vers
+  l'exécutable, `--private` pour la fenêtre privée), fil `bh-jumplist` ; `window_tasks()` au lancement et
+  au changement de langue. Rien sur les autres systèmes (menu du Dock macOS non fait).
+- Réglages dans la carte de page (plus de fenêtre) : `settings_panel` (`LazyView`, `SETTINGS_HTML`,
+  `views::ui_view`), `settings_shown` (dans `home_shown`, `active_view`, `ensure_panels`, `place_panels`,
+  `sync`) ; tout `self.library = false` remet aussi `settings_shown = false`. Ouverture : `open_settings`
+  (`settings_wanted`), fermeture : `close_settings` (Échap, `close_settings`, `panel_window` close, Mod+W).
+  État `embedded` : `body.embedded` masque `#top`, fond et ciel de l'accueil. Barre du haut : `place`
+  « settings ». Pastille `#applied` (« Changes applied ») 450 ms après la dernière commande qui change un
+  réglage, 2 s à l'écran. Devtools : `shots` capture la fenêtre principale, `eval settings` le panneau.
+- Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*` dont accents, faute, complétion, choix appris, onglet d'un autre espace, `rl*`, `se*`, `ho*`,
+  `rt*`, jump list lue dans `CustomDestinations`). macOS : compilation croisée seulement.
 
 ## Livraison et entretien
 

@@ -22,7 +22,7 @@ P=${BH_PREFIX:-}
   if [[ -z "${BH_SHOTS_ONLY:-}" ]]; then
     cat <<'S'
 eval settings 'tok:' + getComputedStyle(document.documentElement).getPropertyValue('--bh-radius-card').trim() + '|' + getComputedStyle(document.documentElement).getPropertyValue('--bh-icon-sm').trim()
-eval settings 'nav:' + document.querySelectorAll('nav button svg.bh-i').length + '|' + getComputedStyle(document.querySelector('nav button svg')).width + '|' + getComputedStyle(document.getElementById('top')).height
+eval settings 'nav:' + document.querySelectorAll('nav button svg.bh-i').length + '|' + getComputedStyle(document.querySelector('nav button svg')).width + '|' + getComputedStyle(document.getElementById('top')).display
 eval settings 'sw:' + [...document.querySelectorAll('#shields .opt')].map(o => (o.classList.contains('sel') ? 1 : 0) + (o.getAttribute('aria-checked') === String(o.classList.contains('sel')) ? '' : '!')).join('')
 cmd {"cmd":"set_shield","name":"hide_ads","on":false}
 wait 500
@@ -88,7 +88,7 @@ mapfile -t L <<<"$out"
 fail=0
 check() { if [[ "${L[$1]:-}" == *"$2"* ]]; then echo "ok   $3"; else echo "FAIL $3 (got: ${L[$1]:-none})"; fail=1; fi; }
 check 0 'tok:12px|16px' "design tokens injected (--bh-*)"
-check 1 'nav:8|16px|38px' "section icons at 16 px, top bar 38 px"
+check 1 'nav:8|16px|none' "section icons at 16 px, no top bar of their own (in the page card since 0.8.18)"
 check 2 'sw:1111' "shield switches on, aria-checked in step"
 check 3 'sw2:1011' "a switch follows the setting"
 check 6 'mid2:' "switch knob read mid-way"

@@ -508,6 +508,53 @@ impl TrackerStore {
     }
 }
 
+/// What the user chose in the command bar for what they typed (`suggest.json`, see
+/// `domain::suggest::Adaptive`), written on the background thread.
+pub struct ChoiceStore {
+    path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ChoiceDto {
+    input: String,
+    key: String,
+    uses: f64,
+    at: u64,
+}
+
+impl ChoiceStore {
+    pub fn new(data: &std::path::Path) -> Self {
+        Self {
+            path: data.join("suggest.json"),
+        }
+    }
+
+    pub fn load(&self) -> blackhole_domain::suggest::Adaptive {
+        crate::flush_writes();
+        let dtos: Vec<ChoiceDto> = fs::read_to_string(&self.path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        blackhole_domain::suggest::Adaptive::restore(
+            dtos.into_iter()
+                .map(|d| blackhole_domain::suggest::Learned { input: d.input, key: d.key, uses: d.uses, at: d.at })
+                .collect(),
+        )
+    }
+
+    /// Queues the choices to be written (atomically, off the UI thread).
+    pub fn save(&self, choices: &blackhole_domain::suggest::Adaptive) {
+        let dtos: Vec<ChoiceDto> = choices
+            .entries()
+            .iter()
+            .map(|e| ChoiceDto { input: e.input.clone(), key: e.key.clone(), uses: e.uses, at: e.at })
+            .collect();
+        if let Ok(json) = serde_json::to_string(&dtos) {
+            crate::write_later(self.path.clone(), json);
+        }
+    }
+}
+
 /// Highlights and notes on pages (`highlights.json`), written on the background thread.
 pub struct HighlightStore {
     path: PathBuf,
@@ -642,6 +689,20 @@ impl ArchiveStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_bar_choices_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ChoiceStore::new(dir.path());
+        assert!(store.load().entries().is_empty(), "no file: nothing chosen");
+        let mut a = blackhole_domain::suggest::Adaptive::default();
+        a.record("Ma", "mail.test", 1000);
+        a.record("gi", "github.com", 1000);
+        store.save(&a);
+        assert_eq!(store.load(), a);
+        fs::write(dir.path().join("suggest.json"), "not json").unwrap();
+        assert!(store.load().entries().is_empty(), "a broken file is ignored");
+    }
 
     #[test]
     fn learned_trackers_survive_a_restart() {

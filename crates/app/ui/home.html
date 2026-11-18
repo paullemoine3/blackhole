@@ -158,6 +158,18 @@
   .fav:active, .item:active { transform: scale(.97); }
   .more { transition: opacity .15s ease, background-color .15s ease; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+  /* Sections are moved by their title: a grip shows under the pointer or the focus, the section
+     lifts while it follows the pointer and the others make room (FLIP, transform only). */
+  .card h2.grab { cursor: grab; touch-action: none; user-select: none; border-radius: 8px; margin: -4px -6px 10px; padding: 4px 6px; }
+  .card h2.grab:focus-visible { outline: 2px solid var(--accent, #7c5cff); outline-offset: 1px; }
+  .card h2 .grip { display: inline-grid; place-items: center; width: 16px; margin-left: -4px; margin-right: 2px; opacity: 0; transition: opacity .15s ease; vertical-align: -3px; }
+  .card h2 .ttl { display: inline-flex; align-items: center; }
+  .card:hover h2 .grip, .card h2:focus-visible .grip, .card.lifted h2 .grip { opacity: .7; }
+  .card.lifted { position: relative; z-index: 5; cursor: grabbing; box-shadow: 0 24px 48px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.14); transition: box-shadow .2s ease; }
+  .card.lifted h2 { cursor: grabbing; }
+  .card.settle { transition: transform .26s cubic-bezier(.2,.9,.3,1.05), box-shadow .26s ease; }
+  body.dragging, body.dragging * { cursor: grabbing !important; }
+  body.dragging .card:not(.lifted) { transition: transform .22s cubic-bezier(.2,.8,.3,1); }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -169,11 +181,13 @@
 <main>
   <div class="brand"><div class="logo"><i class="glow"></i><i class="disc"></i><i class="ring"></i><i class="ring fast"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i><i class="mote"></i></div><h1>BlackHole</h1></div>
   <section class="card news" id="news" hidden></section>
-  <section class="card now" id="now" hidden><h2 data-i18n="home.now">Now</h2><div id="nowlist"></div></section>
-  <section class="card" id="favorites"><h2 data-i18n="home.favorites">Favorites</h2><div id="favs"></div></section>
-  <section class="card" id="watches" hidden><h2><span data-i18n="home.watches">Watched areas</span> <button class="lib" data-section="watches" data-i18n="home.see_all">See all</button></h2><div id="watchlist"></div></section>
-  <section class="card" id="downloads" hidden><h2><span data-i18n="home.downloads">Downloads</span> <button class="lib" data-section="downloads" data-i18n="home.see_all">See all</button></h2><div id="dllist"></div></section>
-  <section class="card" id="recent-card"><h2><span data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
+  <div id="sections">
+  <section class="card now" id="now" data-name="now" hidden><h2><span class="ttl" data-i18n="home.now">Now</span></h2><div id="nowlist"></div></section>
+  <section class="card" id="favorites" data-name="favorites"><h2><span class="ttl" data-i18n="home.favorites">Favorites</span></h2><div id="favs"></div></section>
+  <section class="card" id="watches" data-name="watches" hidden><h2><span class="ttl" data-i18n="home.watches">Watched areas</span> <button class="lib" data-section="watches" data-i18n="home.see_all">See all</button></h2><div id="watchlist"></div></section>
+  <section class="card" id="downloads" data-name="downloads" hidden><h2><span class="ttl" data-i18n="home.downloads">Downloads</span> <button class="lib" data-section="downloads" data-i18n="home.see_all">See all</button></h2><div id="dllist"></div></section>
+  <section class="card" id="recent-card" data-name="recent"><h2><span class="ttl" data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
+  </div>
   <div class="customize"><button id="customize"><span data-i18n="home.customize">Customize the start page</span></button></div>
 </main>
 <script>
@@ -310,6 +324,98 @@ function customizeMenu(x, y) {
     return { icon: shown ? 'check' : 'minus', label: bhT(SECTION_KEY[name]), run: { cmd: 'set_home_section', section: name, shown: !shown } };
   })]);
 }
+// Sections in the order the user chose (`sections` of the state). Nodes are moved, never
+// rebuilt: their content and listeners stay.
+function placeSections(order) {
+  const box = $('sections');
+  const now = [...box.children].map(c => c.dataset.name).join();
+  if (!order.length || now === order.join()) return;
+  for (const name of order) if ($(CARD[name])) box.append($(CARD[name]));
+}
+const sectionOrder = () => [...$('sections').children].map(c => c.dataset.name);
+const calm = () => document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+// FLIP: the sections other than `except` slide from where they were to their new place.
+function slide(before, except) {
+  if (calm()) return;
+  for (const [card, top] of before) {
+    if (card === except || card.hidden) continue;
+    const dy = top - card.getBoundingClientRect().top;
+    if (!dy) continue;
+    card.style.transition = 'none';
+    card.style.transform = `translateY(${dy}px)`;
+    void card.offsetWidth;
+    card.style.transition = '';
+    card.style.transform = '';
+  }
+}
+const tops = () => new Map([...$('sections').children].map(c => [c, c.getBoundingClientRect().top]));
+let drag = null;
+for (const card of $('sections').children) {
+  const h = card.querySelector('h2');
+  h.classList.add('grab');
+  h.tabIndex = 0;
+  h.querySelector('.ttl').prepend(Object.assign(el('span', 'grip'), { ariaHidden: 'true' }));
+  h.querySelector('.grip').append(bhIcon('grip', 'xs'));
+  h.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    drag = { card, h, id: e.pointerId, y0: e.clientY, top0: card.offsetTop, on: false };
+  });
+  // Keyboard: Alt+↑/↓ on a title moves its section.
+  h.addEventListener('keydown', (e) => {
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    e.preventDefault();
+    const sibs = [...$('sections').children].filter(c => !c.hidden);
+    const at = sibs.indexOf(card), to = sibs[at + (e.key === 'ArrowUp' ? -1 : 1)];
+    if (!to) return;
+    const before = tops();
+    $('sections').insertBefore(card, e.key === 'ArrowUp' ? to : to.nextSibling);
+    slide(before, null);
+    h.focus();
+    send({ cmd: 'set_home_order', order: sectionOrder() });
+  });
+}
+addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const { card } = drag;
+  if (!drag.on) {
+    if (Math.abs(e.clientY - drag.y0) < 5) return;
+    drag.on = true;
+    try { drag.h.setPointerCapture(e.pointerId); } catch (_) {}
+    card.classList.add('lifted');
+    document.body.classList.add('dragging');
+  }
+  // The section under the pointer's height swaps place with the one lifted.
+  const sibs = [...$('sections').children].filter(c => c !== card && !c.hidden);
+  const y = e.clientY;
+  const r = card.getBoundingClientRect();
+  const below = sibs.find(c => { const b = c.getBoundingClientRect(); return b.top > r.top && y > b.top + b.height / 2; });
+  const above = [...sibs].reverse().find(c => { const b = c.getBoundingClientRect(); return b.top < r.top && y < b.top + b.height / 2; });
+  if (below || above) {
+    const before = tops();
+    if (below) $('sections').insertBefore(card, below.nextSibling);
+    else $('sections').insertBefore(card, above);
+    slide(before, card);
+  }
+  card.style.transform = `translateY(${e.clientY - drag.y0 - (card.offsetTop - drag.top0)}px) scale(1.01)`;
+});
+const drop = (e) => {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  const { card, on } = drag;
+  drag = null;
+  if (!on) return;
+  document.body.classList.remove('dragging');
+  card.classList.remove('lifted');
+  if (calm()) card.style.transform = '';
+  else {
+    card.classList.add('settle');
+    requestAnimationFrame(() => { card.style.transform = ''; });
+    setTimeout(() => card.classList.remove('settle'), 300);
+  }
+  const order = sectionOrder();
+  if (last && order.join() !== (last.sections || []).join()) send({ cmd: 'set_home_order', order });
+};
+addEventListener('pointerup', drop);
+addEventListener('pointercancel', drop);
 $('customize').prepend(bhIcon('gear', 'xs'));
 $('customize').onclick = () => { const r = $('customize').getBoundingClientRect(); customizeMenu(r.left, r.bottom + 4); };
 for (const b of document.querySelectorAll('.card h2 .lib')) b.onclick = () => send({ cmd: 'open_library', section: b.dataset.section });
@@ -341,7 +447,11 @@ function splash() {
   sp.onclick = end;
 }
 let last = null;
-addEventListener('bhlang', () => last && bh.render(last));
+function gripTitles() {
+  for (const h of document.querySelectorAll('#sections h2.grab')) h.title = bhT('home.drag_hint', { keys: bhKeys('alt+up') + ' / ' + bhKeys('alt+down') });
+}
+gripTitles();
+addEventListener('bhlang', () => { gripTitles(); if (last) bh.render(last); });
 window.bh = {
   wait(site) {
     document.body.classList.toggle('waiting', !!site);
@@ -387,6 +497,7 @@ window.bh = {
     $('recent').replaceChildren(...(items.length ? items : [el('div', 'empty', bhT('home.empty'))]));
     for (const name of ['favorites', 'recent']) $(CARD[name]).hidden = false;
     applyHidden(s);
+    if (!drag) placeSections(s.sections || []);
     // Tiles rise one after another as the start page emerges from the launch splash. A render
     // that comes in meanwhile (icons arriving) keeps the same schedule.
     if (!focused && s.animations) riseAt = performance.now() + 1750;

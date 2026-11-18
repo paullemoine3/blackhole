@@ -719,6 +719,7 @@ impl Core {
                 None => return Vec::new(),
             },
             ("animations", Some(on), _) => self.svc.set_animations(on),
+            ("history_sync", Some(on), _) => self.svc.set_history_sync(on),
             ("trackers", Some(on), _) => self.svc.set_tracker_blocking(on),
             ("ads" | "hide_ads" | "video_ads" | "cookie_banners", Some(on), _) => {
                 self.svc.set_shield(name, on);
@@ -751,7 +752,6 @@ impl Core {
 
     fn suggestions(&self, text: &str) -> Effect {
         let text = text.trim();
-        let needle = text.to_lowercase();
         let mut items = Vec::new();
         if !text.is_empty() {
             let engine = self.svc.settings().search_engine;
@@ -765,25 +765,72 @@ impl Core {
                 None => items.push(json!({"kind": "search", "title": text, "engine": engine.label()})),
             }
         }
-        let matches = |title: &str, url: &Url| {
-            needle.is_empty() || title.to_lowercase().contains(&needle) || url.as_str().to_lowercase().contains(&needle)
+        // Same ranking as the desktop command bar (domain::suggest): one row per page, no
+        // sign-in steps, accents and one typo forgiven, habits and the space shown first. Nothing
+        // is learned from choices here (the desktop keeps them).
+        use blackhole_domain::suggest::{self, Adaptive, Context, Row, RowKind};
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let ws = self.svc.workspace();
+        let space = ws.active_space().id.0;
+        let mut rows: Vec<Row> = Vec::new();
+        for t in &ws.active_space().tabs {
+            rows.push(Row {
+                kind: RowKind::Tab,
+                id: t.id.0.to_string(),
+                title: t.title.clone(),
+                key: suggest::key(&t.url),
+                url: Some(t.url.clone()),
+                frecency: 0.0,
+                spaces: vec![space],
+            });
+        }
+        for f in self.svc.favorites() {
+            rows.push(Row {
+                kind: RowKind::Favorite,
+                id: String::new(),
+                title: f.name.clone(),
+                key: suggest::key(&f.url),
+                url: Some(f.url.clone()),
+                frecency: 0.0,
+                spaces: Vec::new(),
+            });
+        }
+        for h in suggest::pool(self.svc.recent_activity(usize::MAX), now) {
+            rows.push(Row {
+                kind: if h.search.is_some() { RowKind::Search } else { RowKind::History },
+                id: String::new(),
+                title: h.title,
+                key: h.key,
+                url: Some(h.url),
+                frecency: h.frecency,
+                spaces: h.spaces,
+            });
+        }
+        let none = Adaptive::default();
+        let ctx = Context { space, adaptive: &none, now };
+        let shown: Vec<usize> = if text.is_empty() {
+            // Before the first letter: the tabs, quick access, then the best habits.
+            (0..rows.len()).filter(|i| rows[*i].kind != RowKind::Search).collect()
+        } else {
+            let ranked = suggest::rank_rows(&rows, text, &ctx);
+            suggest::pick(&rows, &ranked, 8, 0, 2).iter().map(|r| r.index).collect()
         };
-        let mut seen: Vec<String> = Vec::new();
-        for t in self.svc.workspace().active_space().tabs.iter().filter(|t| matches(&t.title, &t.url)) {
-            seen.push(t.url.to_string());
-            items.push(json!({"kind": "tab", "title": t.title, "url": t.url.as_str(), "tab": t.id.0}));
-        }
-        for f in self.svc.favorites().iter().filter(|f| matches(&f.name, &f.url)) {
-            if !seen.contains(&f.url.to_string()) {
-                seen.push(f.url.to_string());
-                items.push(json!({"kind": "favorite", "title": f.name, "url": f.url.as_str()}));
+        let mut seen: Vec<&str> = Vec::new();
+        for i in shown {
+            let row = &rows[i];
+            if seen.contains(&row.key.as_str()) {
+                continue;
             }
-        }
-        for h in self.svc.recent_activity(400).iter().filter(|h| matches(&h.title, &h.url)) {
-            if !seen.contains(&h.url.to_string()) {
-                seen.push(h.url.to_string());
-                items.push(json!({"kind": "history", "title": h.title, "url": h.url.as_str()}));
-            }
+            seen.push(&row.key);
+            let url = row.url.as_ref().map_or("", Url::as_str);
+            items.push(match row.kind {
+                RowKind::Tab => json!({"kind": "tab", "title": row.title, "url": url, "tab": row.id.parse::<u64>().unwrap_or(0)}),
+                RowKind::Favorite => json!({"kind": "favorite", "title": row.title, "url": url}),
+                // A search made before opens its page of results again.
+                _ => json!({"kind": "history", "title": row.title, "url": url}),
+            });
         }
         items.truncate(8);
         Effect::Ui {
@@ -1043,6 +1090,7 @@ impl Core {
             | C::DeviceForget { .. }
             | C::DeviceSync { .. }
             | C::DeviceSyncNow { .. }
+            | C::HistorySyncNow
             | C::SyncAnswer { .. }
             | C::ContinueOn { .. } => self.device_command(command),
         }
@@ -1389,6 +1437,7 @@ impl Core {
                     "engine": settings.search_engine.id(),
                     "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
                     "animations": settings.animations,
+                    "history_sync": settings.history_sync,
                     "language": settings.language,
                     "languages": blackhole_domain::i18n::LANGUAGES.iter().map(|(id, label)| json!({"id": id, "label": label})).collect::<Vec<_>>(),
                     "theme": self.prefs.theme,

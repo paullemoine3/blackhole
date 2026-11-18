@@ -314,6 +314,22 @@ pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]
+mod jumplist;
+
+/// Windows taskbar jump list: "New window", "New private window" (title, arguments of the
+/// executable). Nothing on the other systems.
+#[cfg(windows)]
+pub fn set_window_tasks(tasks: &[(String, String)]) {
+    jumplist::set_tasks(
+        tasks
+            .iter()
+            .map(|(title, args)| jumplist::Task { title: title.clone(), args: args.clone() })
+            .collect(),
+    );
+}
+#[cfg(not(windows))]
+pub fn set_window_tasks(_tasks: &[(String, String)]) {}
+#[cfg(windows)]
 pub use win::{
     app_is_active, block_hosts, delete_profile, frontmost_foreign_window, on_renderer_gone,
     raise_view, referrer_once, round_view,

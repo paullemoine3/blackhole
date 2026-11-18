@@ -2,7 +2,7 @@
 
 use blackhole_application::{StorageError, WorkspaceRepository};
 use blackhole_domain::{
-    ContentScript, Extension, Folder, FolderId, History, HistoryEntry, PrivacyPolicy, SearchEngine,
+    ContentScript, Extension, Folder, FolderId, History, HistoryEntry, Visit, VisitKind, PrivacyPolicy, SearchEngine,
     Settings, Space, SpaceId, Tab, TabId, Workspace,
 };
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use url::Url;
 
 pub mod catalog;
 pub mod handoff;
+pub mod history_sync;
 pub mod import;
 pub mod peers;
 pub mod recall;
@@ -486,6 +487,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .into_iter()
                 .filter(|s| blackhole_domain::is_home_section(s))
                 .collect(),
+            home_order: dto.home_order.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
+            history_sync: dto.history_sync,
         }))
     }
 
@@ -529,6 +532,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             tracker_learning: settings.tracker_learning,
             quick_access_size: settings.quick_access_size.clone(),
             hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
+            home_order: settings.home_order.clone(),
+            history_sync: settings.history_sync,
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -550,10 +555,25 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                     url: Url::parse(&d.url).ok()?,
                     title: d.title,
                     visited_at: d.visited_at,
+                    visits: d.visits.max(1),
+                    recent: d
+                        .recent
+                        .iter()
+                        .take(blackhole_domain::history::RECENT_VISITS)
+                        .map(|&(at, kind)| Visit { at, kind: VisitKind::from_id(kind) })
+                        .collect(),
+                    spaces: d.spaces.into_iter().take(blackhole_domain::history::SPACES_KEPT).collect(),
+                    // Absent before 0.8.18: the last visit.
+                    changed: if d.changed == 0 { d.visited_at } else { d.changed },
                 })
             })
             .collect();
-        Ok(Some(History::restore(entries)))
+        // What was erased, apart so that an older version still reads `history.json`.
+        let erased: ErasedDto = fs::read_to_string(self.path.with_file_name("history-erased.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        Ok(Some(History::restore(entries).with_erased(erased.forgotten, erased.cleared_at)))
     }
 
     fn save_history(&self, history: &History) -> Result<(), StorageError> {
@@ -564,10 +584,17 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 url: e.url.to_string(),
                 title: e.title.clone(),
                 visited_at: e.visited_at,
+                visits: e.visits,
+                recent: e.recent.iter().map(|v| (v.at, v.kind.id())).collect(),
+                spaces: e.spaces.clone(),
+                changed: e.changed,
             })
             .collect();
         let json = serde_json::to_string(&dtos).map_err(|e| StorageError(e.to_string()))?;
-        write_atomic(&self.path.with_file_name("history.json"), &json)
+        write_atomic(&self.path.with_file_name("history.json"), &json)?;
+        let erased = ErasedDto { forgotten: history.forgotten().to_vec(), cleared_at: history.cleared_at() };
+        let json = serde_json::to_string(&erased).map_err(|e| StorageError(e.to_string()))?;
+        write_atomic(&self.path.with_file_name("history-erased.json"), &json)
     }
 
     fn save(&self, workspace: &Workspace) -> Result<(), StorageError> {
@@ -577,11 +604,33 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
     }
 }
 
+/// `history-erased.json`: pages forgotten and when the history was cleared, kept so a paired
+/// device does not bring them back.
+#[derive(Serialize, Deserialize, Default)]
+struct ErasedDto {
+    #[serde(default)]
+    forgotten: Vec<(String, u64)>,
+    #[serde(default)]
+    cleared_at: u64,
+}
+
 #[derive(Serialize, Deserialize)]
 struct HistoryDto {
     url: String,
     title: String,
     visited_at: u64,
+    /// Absent in files written before 0.8.18: one visit.
+    #[serde(default)]
+    visits: u32,
+    /// The last visits: (seconds, `VisitKind::id`), newest first. Absent before 0.8.18.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recent: Vec<(u64, u8)>,
+    /// Spaces the page was seen in. Absent before 0.8.18.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    spaces: Vec<u64>,
+    /// When the entry last changed here (history sync). Absent before 0.8.18.
+    #[serde(default)]
+    changed: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -654,6 +703,12 @@ struct SettingsDto {
     quick_access_size: String,
     #[serde(default)]
     hidden_home_sections: Vec<String>,
+    /// Absent before 0.8.18: the default order.
+    #[serde(default)]
+    home_order: Vec<String>,
+    /// Absent before 0.8.18: on.
+    #[serde(default = "default_true")]
+    history_sync: bool,
 }
 
 fn default_language() -> String {
@@ -880,6 +935,8 @@ mod tests {
             tracker_learning: false,
             quick_access_size: "large".to_owned(),
             hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
+            home_order: vec!["recent".to_owned(), "now".to_owned()],
+            history_sync: false,
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -895,6 +952,8 @@ mod tests {
         assert!(old.password_manager && old.tracker_learning, "on in older files");
         assert_eq!(old.quick_access_size, "medium");
         assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
+        assert!(old.home_order.is_empty(), "default order in older files");
+        assert!(old.history_sync, "history sync on in older files");
         fs::write(
             dir.path().join("settings.json"),
             r#"{"search_engine":"qwant","quick_access_size":"huge","hidden_home_sections":["now","nope"]}"#,

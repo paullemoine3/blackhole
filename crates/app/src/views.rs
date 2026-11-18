@@ -648,7 +648,13 @@ fn build_tab(
             }
             let host = target.host_str().unwrap_or_default().to_owned();
             match crate::errors::with_exceptions(policy.evaluate(&target), &target) {
-                PrivacyDecision::Allow => true,
+                PrivacyDecision::Allow => {
+                    let tab = id(&s_nav);
+                    if tab.0 != 0 && wry::navigating_main_frame() {
+                        nav.push(Msg::Hop(tab));
+                    }
+                    true
+                }
                 PrivacyDecision::Rewrite(url) => {
                     let tab = id(&s_nav);
                     // The automatic https upgrade: if the secure version fails, the error page

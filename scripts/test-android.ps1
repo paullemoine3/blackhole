@@ -209,6 +209,8 @@ Run "document.querySelector('#devices').scrollIntoView()"
 Wait 700
 Shot '16-devices'
 Eval devices "!document.querySelector('#devices').hidden && S.devices.available"
+# History sync (0.8.18): one switch, on by default, shown once a device is paired (hidden before).
+Eval histsw "[S.settings.history_sync, document.querySelector('#histsw').hidden === !S.devices.list.length, !!document.querySelector('#histnow')].join(' ')"
 Cmd '{"cmd":"device_show_code"}'
 Wait 1500
 Shot '17-pairing-code'
@@ -399,6 +401,7 @@ Check ((V update) -match '^"(latest|available)"$') 'manual update check answers 
 Check ((V permission) -eq 'true') 'site permission question'
 Check ((V imagemenu) -eq 'true') 'long press menu of an image'
 Check ((V devices) -eq 'true') 'Settings > Devices available (Keystore key)'
+Check ((V histsw) -eq 'true true true') 'Settings > Devices: the history sync switch (on by default) and its Sync now'
 Check ((V code) -eq 'true') 'a pairing code is shown'
 Check ((V offer) -eq 'true') 'the sync proposal shows Merge / Always / Later'
 Check ((V still) -match '^"true (none|matrix\(1, 0, 0, 1, 0, 0\))"$') 'animations off: drawer opens at once'

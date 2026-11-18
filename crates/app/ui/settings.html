@@ -17,6 +17,22 @@
   :focus { outline: none; }
   :focus-visible { outline: 2px solid var(--bh-accent); outline-offset: 2px; }
 
+  /* In the page card of the main window (0.8.18, `embedded`): no top bar of its own, and the
+     start page's background (home.html): the same glow from the top and the same sky. */
+  body.embedded { grid-template-rows: minmax(0, 1fr); background: radial-gradient(800px 500px at 50% -10%, rgba(124,92,255,.22), transparent 70%), #0c0b12; }
+  body.embedded #top { display: none; }
+  body.embedded nav { background: rgba(0,0,0,.18); position: relative; z-index: 1; }
+  body.embedded main { position: relative; z-index: 1; }
+  #sky { position: fixed; inset: -4vh -2vw; width: 104vw; height: 108vh; z-index: 0; pointer-events: none; opacity: .9; display: none; }
+  body.embedded #sky { display: block; }
+  /* "Changes applied": a pill that rises at the bottom of the page a moment after a change,
+     stays two seconds and fades (aria-live: read once). */
+  #applied { position: fixed; right: var(--bh-space-24); bottom: var(--bh-space-20); z-index: 5; display: inline-flex; align-items: center; gap: var(--bh-space-8);
+    padding: var(--bh-space-6) var(--bh-space-14) var(--bh-space-6) var(--bh-space-10); border-radius: var(--bh-radius-pill); font: var(--bh-text-body-shell);
+    background: var(--bh-surface-toast); box-shadow: 0 10px 28px -12px rgba(0,0,0,.8), inset 0 0 0 1px var(--bh-border-default);
+    opacity: 0; transform: translateY(8px) scale(.96); pointer-events: none; transition: opacity .2s ease, transform .3s cubic-bezier(.2,1.3,.4,1); }
+  #applied.on { opacity: 1; transform: none; }
+  #applied .ok { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--bh-success); color: #0c0b12; }
   /* Top bar: the same height, tint and window buttons as the main window's (bar.html). */
   #top { grid-column: 1 / -1; display: flex; align-items: center; padding-left: var(--bh-space-14);
     background: radial-gradient(700px 500px at 0% 0%, var(--glow, rgba(124,92,255,.35)), transparent 70%), var(--tint, var(--bh-bg-shell)); }
@@ -198,6 +214,8 @@
 </style>
 </head>
 <body>
+<canvas id="sky" aria-hidden="true"></canvas>
+<div id="applied" role="status" aria-live="polite"><span class="ok"></span><span data-i18n="settings.applied">Changes applied</span></div>
 <header id="top">
   <div class="brand"><span class="logo"></span><span data-i18n="settings.title">Settings</span><span class="where" id="where"></span></div>
   <div class="win">
@@ -335,6 +353,7 @@
   <section id="devices" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1 data-i18n="settings.devices">Devices</h1><p class="lead"><span data-i18n="settings.devices_lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.paired_devices">Paired devices</h2><div class="list rows" id="devlist"></div></div>
+    <div class="card" id="histcard"><h2 data-i18n="settings.history_sync">History</h2><div class="rows" id="histsync"></div></div>
     <div class="card" id="devpair"><h2 data-i18n="settings.pair_device">Pair a device</h2>
       <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note"><span data-i18n="settings.code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</span></p><div class="actions"><button class="btn" id="devcancel"><span data-i18n="common.cancel">Cancel</span></button></div></div>
       <div class="actions" id="devask"><button class="btn primary" id="devshow"><span data-i18n="settings.show_code">Show a pairing code</span></button></div>
@@ -370,7 +389,25 @@
   </section>
 </main>
 <script>
-const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+const post = (m) => window.ipc.postMessage(JSON.stringify(m));
+// What changes a setting: every `set_*` command and the few others below. A moment after the
+// last one (the shell has answered with the new state by then), "Changes applied" shows for 2 s.
+const CHANGES = new Set(['recall_exclude', 'tracker_allow', 'trackers_forget', 'device_sync', 'clear_blocked', 'recall_clear',
+  'remove_catalog', 'calendar_remove', 'calendar_add', 'device_forget', 'install_catalog', 'install_sample_extension']);
+let appliedWait = 0, appliedHide = 0;
+function applied() {
+  clearTimeout(appliedWait);
+  appliedWait = setTimeout(() => {
+    const p = document.getElementById('applied');
+    clearTimeout(appliedHide);
+    p.classList.remove('on'); void p.offsetWidth; p.classList.add('on');
+    appliedHide = setTimeout(() => p.classList.remove('on'), 2000);
+  }, 450);
+}
+const send = (m) => {
+  post(m);
+  if (m && (String(m.cmd).startsWith('set_') || CHANGES.has(m.cmd) || (m.cmd === 'passwords' && m.action && ['enabled', 'lock_after', 'save', 'delete', 'set_master', 'remove_master'].includes(m.action.op)))) applied();
+};
 const $ = (id) => document.getElementById(id);
 // Text is always set with textContent: names, hosts and statuses come from outside.
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -573,7 +610,8 @@ function renderShortcuts() {
     [T('keys.tab_above'), 'ctrl+shift+tab'],
     [T('keys.nth_tab'), 'mod+1 mod+8'],
     [T('keys.last_tab'), 'mod+9'],
-    [T('keys.hard_reload'), 'mod+r'],
+    [T('keys.reload'), 'mod+r'],
+    [T('keys.hard_reload'), 'mod+shift+r'],
     [T('keys.back_forward'), 'mod+[ ]'],
     ...(mac ? [] : [[T('keys.reload'), 'F5'], [T('keys.back_forward'), 'alt+left right']]),
     [T('keys.find'), 'mod+f mod+g mod+shift+g'],
@@ -619,6 +657,7 @@ window.bh = {
     document.body.classList.toggle('macos', mac);
     document.body.classList.toggle('windows', s.os === 'windows');
     document.body.classList.toggle('maxed', !!s.maximized);
+    if (s.embedded && !document.body.classList.contains('embedded')) { document.body.classList.add('embedded'); sky(); }
     document.body.classList.toggle('noanim', s.animations === false);
     document.body.classList.toggle('flat', s.depth === false);
     renderShortcuts();
@@ -910,6 +949,17 @@ function renderDevices(d) {
   $('devpair').hidden = !d.available;
   $('devcode').hidden = !d.code;
   $('devask').hidden = !!d.code;
+  // The history: one switch, in the background, and a manual exchange with the online devices.
+  const h = d.history || {};
+  const last = h.last ? bhT('settings.history_last', { name: h.last.name, time: new Date(h.last.at * 1000).toLocaleTimeString(bhI18n.lang, { hour: '2-digit', minute: '2-digit' }) }) : bhT('settings.history_sync_sub');
+  const now = iconBtn('btn small', 'reload', bhT('settings.sync_now'));
+  now.id = 'histnow';
+  now.disabled = !h.on || !d.list.some(dev => dev.online);
+  now.onclick = () => send({ cmd: 'history_sync_now' });
+  const nowRow = el('div', 'opt');
+  nowRow.append(el('span', 'grow sub', last), now);
+  put($('histsync'), option(bhT('settings.history_sync_label'), !!h.on, () => send({ cmd: 'set_history_sync', on: !h.on }), true, bhT('settings.history_sync_note')), nowRow);
+  $('histcard').hidden = !d.available || !d.list.length;
   $('devcodetext').textContent = d.code || '';
   $('devstatus').textContent = d.status || '';
 }
@@ -1100,6 +1150,20 @@ addEventListener('keydown', (e) => {
   if (!$('pwedit').hidden) { pwCloseEditor(); return; }
   send({ cmd: 'close_settings' });
 });
+// The start page's sky (home.html): the same stars at every opening, drawn once per size.
+function sky() {
+  const c = $('sky'), d = Math.min(2, devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight, x = c.getContext('2d');
+  if (!w || !h) return;
+  c.width = w * d; c.height = h * d; x.scale(d, d);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < Math.round(w * h / 5200); i++) {
+    const r = rnd() * 1.1 + .2, a = rnd() * .7 + .1;
+    x.fillStyle = rnd() > .82 ? `rgba(190,170,255,${a})` : rnd() > .9 ? `rgba(255,205,120,${a})` : `rgba(255,255,255,${a * .8})`;
+    x.beginPath(); x.arc(rnd() * w, rnd() * h, r, 0, 7); x.fill();
+  }
+}
+{ let t = 0; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (document.body.classList.contains('embedded')) sky(); }, 120); }); }
+$('applied').querySelector('.ok').append(bhIcon('check', 'xs'));
 renderShortcuts();
 pwShowLabel();
 send({ cmd: 'ready' });
