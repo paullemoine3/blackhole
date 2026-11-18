@@ -593,24 +593,34 @@ mod tests {
         assert_eq!(index.extensions, market::builtin().extensions);
     }
 
+    // The tests below never name a version or a permission of market/market.json: the update
+    // pull requests change that file, and its tests must still pass on them.
+    const FAKE_PERMISSION: &str = "test-only-permission";
+
+    /// The entry's version with one more part (`4.9.134` → `4.9.134.1`): always newer.
+    fn next(version: &str) -> String {
+        format!("{version}.1")
+    }
+
     #[test]
     fn describes_new_permissions() {
         let old = market::builtin().find("dark-reader").unwrap().clone();
         let mut new = old.clone();
-        new.version = "4.9.135".into();
-        new.permissions.push("debugger".into());
+        new.version = next(&old.version);
+        new.permissions.push(FAKE_PERMISSION.into());
         let text = describe(&old, &new);
-        assert!(text.contains("4.9.134 → 4.9.135"));
-        assert!(text.contains("new permissions: `debugger`"));
+        assert!(text.contains(&format!("{} → {}", old.version, new.version)));
+        assert!(text.contains(&format!("new permissions: `{FAKE_PERMISSION}`")));
     }
 
-    /// Dark Reader 4.9.134 → 4.9.135 from its own repository, same permissions.
+    /// Dark Reader one version up, from its own repository, same permissions.
     fn bumped() -> Index {
         let mut head = market::builtin().clone();
         let e = head.extensions.iter_mut().find(|e| e.id == "dark-reader").unwrap();
-        e.version = "4.9.135".into();
+        e.version = next(&e.version);
+        let repo = e.source.as_ref().unwrap().repo.clone();
         for p in e.platforms.values_mut() {
-            p.url = p.url.replace("v4.9.134", "v4.9.135");
+            p.url = format!("https://github.com/{repo}/releases/download/v{}/x.zip", e.version);
             p.sha256 = "1".repeat(64);
         }
         head
@@ -633,14 +643,15 @@ mod tests {
 
     #[test]
     fn anything_else_needs_a_review() {
-        assert!(reasons_for(|e| e.permissions.push("debugger".into()))[0].contains("debugger"));
-        assert!(!reasons_for(|e| e.version = "4.9.134".into()).is_empty());
-        assert!(!reasons_for(|e| e.version = "4.9.0".into()).is_empty());
+        assert!(reasons_for(|e| e.permissions.push(FAKE_PERMISSION.into()))[0].contains(FAKE_PERMISSION));
+        let current = market::builtin().find("dark-reader").unwrap().version.clone();
+        assert!(!reasons_for(|e| e.version = current).is_empty());
+        assert!(!reasons_for(|e| e.version = "0.0.1".into()).is_empty());
         assert!(!reasons_for(|e| e.source.as_mut().unwrap().repo = "evil/darkreader".into()).is_empty());
         assert!(!reasons_for(|e| e.name = "Dark Reader Pro".into()).is_empty());
         assert!(!reasons_for(|e| {
             e.platforms.get_mut("windows").unwrap().url =
-                "https://github.com/evil/darkreader/releases/download/v4.9.135/x.zip".into();
+                "https://github.com/evil/darkreader/releases/download/v1/x.zip".into();
         })
         .is_empty());
         assert!(!reasons_for(|e| { e.platforms.remove("macos"); }).is_empty());
