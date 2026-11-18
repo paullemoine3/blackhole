@@ -19,6 +19,7 @@ fn page(url: &str, title: &str, n: u32, days: u64, kind: VisitKind, space: u64) 
         visits: n,
         recent: (0..u64::from(n.min(10))).map(|i| Visit { at: last - i * 2 * DAY, kind }).collect(),
         spaces: vec![space],
+        changed: last,
     }
 }
 

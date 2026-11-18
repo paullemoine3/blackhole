@@ -75,6 +75,9 @@ pub struct Settings {
     /// Order of the start page sections chosen by dragging them (names of `HOME_SECTIONS`);
     /// empty: the default order. Read through `home_order`.
     pub home_order: Vec<String>,
+    /// Paired devices exchange the history in the background (with what ranks the command bar),
+    /// apart from the tab sync modes. On by default.
+    pub history_sync: bool,
 }
 
 /// Quick access tile sizes, smallest first (`medium` is the default: four tiles a row).
@@ -219,6 +222,7 @@ impl Default for Settings {
             quick_access_size: "medium".to_owned(),
             hidden_home_sections: BTreeSet::new(),
             home_order: Vec::new(),
+            history_sync: true,
         }
     }
 }

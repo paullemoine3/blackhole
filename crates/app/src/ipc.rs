@@ -316,6 +316,12 @@ pub enum UiCommand {
     DeviceSyncNow {
         id: String,
     },
+    /// Settings > Devices: paired devices exchange the history in the background, or not.
+    SetHistorySync {
+        on: bool,
+    },
+    /// Settings > Devices: asks every online device for its history changes now.
+    HistorySyncNow,
     /// The proposal to synchronize with a device: `merge` (once), `always` or `later`.
     SyncAnswer {
         id: String,

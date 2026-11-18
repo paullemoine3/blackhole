@@ -35,6 +35,7 @@ pub mod wormhole;
 pub use easel::{Easel, Easels, Item as EaselItem, ItemKind as EaselItemKind};
 pub use extension::{matches_pattern, ContentScript, Extension, Injection};
 pub use history::{History, HistoryEntry, Visit, VisitKind};
+pub use history::Shared as SharedHistory;
 pub use meetings::Meeting;
 pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchEngine};
 pub use privacy::{is_third_party, privacy_grade, BlockLog, BlockedHost, PrivacyDecision, PrivacyPolicy, Shields};

@@ -719,6 +719,7 @@ impl Core {
                 None => return Vec::new(),
             },
             ("animations", Some(on), _) => self.svc.set_animations(on),
+            ("history_sync", Some(on), _) => self.svc.set_history_sync(on),
             ("trackers", Some(on), _) => self.svc.set_tracker_blocking(on),
             ("ads" | "hide_ads" | "video_ads" | "cookie_banners", Some(on), _) => {
                 self.svc.set_shield(name, on);
@@ -1089,6 +1090,7 @@ impl Core {
             | C::DeviceForget { .. }
             | C::DeviceSync { .. }
             | C::DeviceSyncNow { .. }
+            | C::HistorySyncNow
             | C::SyncAnswer { .. }
             | C::ContinueOn { .. } => self.device_command(command),
         }
@@ -1435,6 +1437,7 @@ impl Core {
                     "engine": settings.search_engine.id(),
                     "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
                     "animations": settings.animations,
+                    "history_sync": settings.history_sync,
                     "language": settings.language,
                     "languages": blackhole_domain::i18n::LANGUAGES.iter().map(|(id, label)| json!({"id": id, "label": label})).collect::<Vec<_>>(),
                     "theme": self.prefs.theme,

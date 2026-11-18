@@ -7,6 +7,11 @@
 //! same service: the rules are `blackhole_domain::sync`, the ledger `blackhole_infrastructure::
 //! sync`. A device coming online gets this device's ledger; an `auto` device also gets it a few
 //! seconds after each change; a received ledger is merged at once (`auto`) or proposed (`ask`).
+//!
+//! The history syncs apart (0.8.18, `blackhole_infrastructure::history_sync`): one switch
+//! (`Settings::history_sync`), no question. Every `HISTORY_EVERY`, when a device comes online
+//! and on "Sync now", this device asks each online device for what changed since the mark it
+//! reached there; it answers the same asks. Only changes travel.
 
 use crate::i18n::{message, t, tf, tn};
 use crate::{ipc::UiCommand, Running, TabId};
@@ -15,6 +20,7 @@ use blackhole_domain::signals::Kind;
 use blackhole_domain::verbs::{self, Target, Verb};
 use blackhole_domain::wormhole;
 use blackhole_infrastructure::handoff::{self, Cargo, DeviceInfo, Event, Handle, Request};
+use blackhole_infrastructure::history_sync::{self, Incoming, Marks};
 use blackhole_infrastructure::sync::{decide, Decision, Received, SyncEngine};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -26,6 +32,10 @@ use url::Url;
 const OBSERVE_EVERY: Duration = Duration::from_secs(2);
 /// After a change, `auto` devices get the ledger once things have settled this long.
 const SEND_AFTER: Duration = Duration::from_secs(3);
+/// The history is asked of each online device this often (only its changes travel).
+const HISTORY_EVERY: Duration = Duration::from_secs(5 * 60);
+/// The first asks after launch.
+const HISTORY_FIRST: Duration = Duration::from_secs(20);
 
 /// Where the video of the page is (the longest one that has started), in seconds.
 const POSITION_JS: &str = "(()=>{const v=[...document.querySelectorAll('video')].filter(v=>v.currentTime>0&&!v.ended).sort((a,b)=>(b.duration||0)-(a.duration||0))[0];return v?v.currentTime:null})()";
@@ -53,6 +63,11 @@ pub struct Nearby {
     later: HashSet<String>,
     observe_at: Instant,
     changed_at: Option<Instant>,
+    /// The mark reached in each device's history; when the next asks go; the last exchange
+    /// (device name, seconds) for Settings > Devices.
+    marks: Marks,
+    history_at: Instant,
+    history_last: Option<(String, u64)>,
     /// Wormhole: files picked in the system's dialog (on a thread of its own), by device.
     pick_tx: Sender<(String, std::path::PathBuf)>,
     pick_rx: Receiver<(String, std::path::PathBuf)>,
@@ -94,6 +109,10 @@ impl Nearby {
             later: HashSet::new(),
             observe_at: Instant::now(),
             changed_at: None,
+            marks: Marks::open(data),
+            // A little after launch: the window and the tabs come first.
+            history_at: Instant::now() + HISTORY_FIRST,
+            history_last: None,
             pick_tx,
             pick_rx,
             texts: Vec::new(),
@@ -280,6 +299,10 @@ impl Running {
                         .filter(|d| d.online && d.sync != "off" && !self.nearby.online.contains(&d.id))
                         .map(|d| d.id.clone())
                         .collect();
+                    // A device coming online is asked for its history soon (any sync mode).
+                    if list.iter().any(|d| d.online && !self.nearby.online.contains(&d.id)) {
+                        self.nearby.history_at = self.nearby.history_at.min(Instant::now() + SEND_AFTER);
+                    }
                     self.nearby.online = list.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
                     self.nearby.devices = list;
                     for device in came {
@@ -288,7 +311,10 @@ impl Running {
                     self.ui_settings();
                     self.ui_state();
                 }
-                Event::Snapshot { device, name, json } => self.on_ledger(device, name, &json),
+                Event::Snapshot { device, name, json } => match history_sync::parse(&json) {
+                    Some(incoming) => self.on_history(device, name, incoming),
+                    None => self.on_ledger(device, name, &json),
+                },
                 Event::Code(code) => {
                     self.nearby.code = code;
                     if self.nearby.code.is_some() {
@@ -399,6 +425,15 @@ impl Running {
             return;
         }
         let now = Instant::now();
+        if now >= self.nearby.history_at {
+            self.nearby.history_at = now + HISTORY_EVERY;
+            if self.svc.settings().history_sync {
+                let online: Vec<String> = self.nearby.devices.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
+                for device in online {
+                    self.ask_history(&device);
+                }
+            }
+        }
         if now >= self.nearby.observe_at {
             self.nearby.observe_at = now + OBSERVE_EVERY;
             if self.nearby.sync.observe(&self.svc) {
@@ -416,6 +451,42 @@ impl Running {
                 .collect();
             for device in auto {
                 self.send_ledger(&device, false, false);
+            }
+        }
+    }
+
+    /// Asks `device` for what changed in its history since the mark reached there.
+    fn ask_history(&self, device: &str) {
+        let json = history_sync::pull(self.nearby.marks.get(device));
+        self.nearby.request(Request::Snapshot { device: device.to_owned(), json });
+    }
+
+    /// A history message from a paired device: an ask is answered with the changes made here
+    /// since its mark; changes are merged, and asked again while more wait. Nothing with the
+    /// switch off.
+    fn on_history(&mut self, device: String, name: String, incoming: Incoming) {
+        if !self.svc.settings().history_sync || !self.nearby.devices.iter().any(|d| d.id == device) {
+            return;
+        }
+        match incoming {
+            Incoming::Pull { since } => {
+                let json = history_sync::batch(&self.svc, &self.choices.data, since);
+                self.nearby.request(Request::Snapshot { device, json });
+            }
+            Incoming::Batch(batch) => {
+                let (history, choices) = history_sync::merge(&mut self.svc, &mut self.choices.data, &batch);
+                if choices {
+                    self.choices.save();
+                }
+                self.nearby.marks.set(&device, batch.until);
+                if batch.more {
+                    self.ask_history(&device);
+                }
+                self.nearby.history_last = Some((name, crate::now_secs()));
+                if history && self.home_shown() {
+                    self.ui_home();
+                }
+                self.ui_settings();
             }
         }
     }
@@ -496,6 +567,11 @@ impl Running {
             "list": self.nearby.menu_json(),
             "code": self.nearby.code,
             "status": crate::i18n::render(&self.nearby.status),
+            // The history switch and the last exchange (device, seconds).
+            "history": {
+                "on": self.svc.settings().history_sync,
+                "last": self.nearby.history_last.as_ref().map(|(name, at)| json!({"name": name, "at": at})),
+            },
         })
     }
 
@@ -504,6 +580,17 @@ impl Running {
             UiCommand::DeviceShowCode => self.nearby.request(Request::ShowCode),
             UiCommand::DeviceJoin { code } => self.nearby.request(Request::Join(code)),
             UiCommand::DeviceCancelPairing => self.nearby.request(Request::CancelPairing),
+            UiCommand::SetHistorySync { on } => {
+                self.svc.set_history_sync(on);
+                if on {
+                    self.nearby.history_at = Instant::now();
+                }
+                self.ui_settings();
+            }
+            // "Sync now" of the history: every online device is asked at the next turn.
+            UiCommand::HistorySyncNow => {
+                self.nearby.history_at = Instant::now();
+            }
             UiCommand::DeviceForget { id } => {
                 self.nearby.status.clear();
                 self.nearby.request(Request::Forget(id));

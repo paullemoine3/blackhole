@@ -353,6 +353,7 @@
   <section id="devices" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1 data-i18n="settings.devices">Devices</h1><p class="lead"><span data-i18n="settings.devices_lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.paired_devices">Paired devices</h2><div class="list rows" id="devlist"></div></div>
+    <div class="card" id="histcard"><h2 data-i18n="settings.history_sync">History</h2><div class="rows" id="histsync"></div></div>
     <div class="card" id="devpair"><h2 data-i18n="settings.pair_device">Pair a device</h2>
       <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note"><span data-i18n="settings.code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</span></p><div class="actions"><button class="btn" id="devcancel"><span data-i18n="common.cancel">Cancel</span></button></div></div>
       <div class="actions" id="devask"><button class="btn primary" id="devshow"><span data-i18n="settings.show_code">Show a pairing code</span></button></div>
@@ -948,6 +949,17 @@ function renderDevices(d) {
   $('devpair').hidden = !d.available;
   $('devcode').hidden = !d.code;
   $('devask').hidden = !!d.code;
+  // The history: one switch, in the background, and a manual exchange with the online devices.
+  const h = d.history || {};
+  const last = h.last ? bhT('settings.history_last', { name: h.last.name, time: new Date(h.last.at * 1000).toLocaleTimeString(bhI18n.lang, { hour: '2-digit', minute: '2-digit' }) }) : bhT('settings.history_sync_sub');
+  const now = iconBtn('btn small', 'reload', bhT('settings.sync_now'));
+  now.id = 'histnow';
+  now.disabled = !h.on || !d.list.some(dev => dev.online);
+  now.onclick = () => send({ cmd: 'history_sync_now' });
+  const nowRow = el('div', 'opt');
+  nowRow.append(el('span', 'grow sub', last), now);
+  put($('histsync'), option(bhT('settings.history_sync_label'), !!h.on, () => send({ cmd: 'set_history_sync', on: !h.on }), true, bhT('settings.history_sync_note')), nowRow);
+  $('histcard').hidden = !d.available || !d.list.length;
   $('devcodetext').textContent = d.code || '';
   $('devstatus').textContent = d.status || '';
 }

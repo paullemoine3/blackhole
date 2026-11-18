@@ -40,6 +40,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ## 🆕 Nouveautés 0.8.18
 
 - 🔎 **Recherche bien plus juste** — dans la barre de commandes (Ctrl/⌘+L), chaque page n'apparaît qu'une fois, les pages de connexion et de redirection disparaissent, les accents et une faute de frappe ne gênent plus, vos sites habituels et vos choix passés passent devant, l'adresse d'un site quotidien se complète en gris (Tab), et vos recherches passées comme les onglets des autres espaces sont proposés.
+- 🔗 **Historique partagé entre appareils** — un interrupteur, puis tout se fait en arrière-plan sur le réseau local, sans serveur : seules les nouveautés voyagent, avec ce qui rend la recherche pertinente ; une page effacée sur l'un l'est sur l'autre (bouton « Synchroniser maintenant » au besoin).
 - 🔄 **Rechargement forcé** — Ctrl+Maj+R (⌘⇧R), Ctrl+F5 ou Maj+clic sur le bouton ; à chaque rechargement, la flèche tourne jusqu'à la fin du chargement.
 - 👻 **Moins de « Site injoignable » fantômes** — un échec au milieu d'une redirection n'est plus affiché, et une connexion coupée est retentée une fois en silence.
 - 🧲 **Accueil réorganisable** — glissez une section par son titre (ou Alt+↑/↓) : l'ordre est gardé.

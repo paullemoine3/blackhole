@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use url::Url;
 
 const MAX_ENTRIES: usize = 1000;
@@ -77,23 +79,197 @@ pub struct HistoryEntry {
     pub recent: Vec<Visit>,
     /// The spaces the page was seen in (ids, `SPACES_KEPT` at most, newest first).
     pub spaces: Vec<u64>,
+    /// When the entry last changed on this device (seconds of its clock: a visit, a merge):
+    /// what a paired device asks for (`History::changes_since`).
+    pub changed: u64,
 }
 
-/// Browsing history, most recent first, one entry per URL.
+/// Pages forgotten (Library > History) are remembered this long, so a paired device does not
+/// bring them back (seconds).
+pub const FORGOTTEN_FOR: u64 = 30 * 86_400;
+/// Forgotten pages remembered at most.
+const FORGOTTEN_MAX: usize = 500;
+
+/// Browsing history, most recent first, one entry per URL. It also remembers what the user
+/// erased (`forgotten`, `cleared_at`): a paired device that still has those pages must not
+/// bring them back (`merge`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct History {
     entries: Vec<HistoryEntry>,
+    /// Pages forgotten one by one: (address without fragment, when, in seconds).
+    forgotten: Vec<(String, u64)>,
+    /// When the whole history was last cleared (seconds; 0: never).
+    cleared_at: u64,
+}
+
+/// A batch of history changes between paired devices (`History::changes_since`), as
+/// `History::merge` takes it: entries changed after a mark of the sender (their spaces already
+/// given the receiver's ids), pages forgotten and the clearing made after it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Shared {
+    pub entries: Vec<HistoryEntry>,
+    pub forgotten: Vec<(String, u64)>,
+    pub cleared_at: u64,
+    /// The sender's mark reached by this batch: the next request starts from it.
+    pub until: u64,
+    /// More changes wait after `until` (the batch was full): ask again at once.
+    pub more: bool,
+}
+
+/// The address an entry is known by between devices: no fragment.
+pub fn sync_key(url: &Url) -> String {
+    let mut url = url.clone();
+    url.set_fragment(None);
+    url.into()
 }
 
 impl History {
     pub fn restore(mut entries: Vec<HistoryEntry>) -> Self {
         entries.sort_by_key(|e| std::cmp::Reverse(e.visited_at));
         entries.truncate(MAX_ENTRIES);
-        Self { entries }
+        Self { entries, forgotten: Vec::new(), cleared_at: 0 }
+    }
+
+    /// Restores what was erased (from `history.json`).
+    pub fn with_erased(mut self, mut forgotten: Vec<(String, u64)>, cleared_at: u64) -> Self {
+        forgotten.truncate(FORGOTTEN_MAX);
+        self.forgotten = forgotten;
+        self.cleared_at = cleared_at;
+        self
     }
 
     pub fn entries(&self) -> &[HistoryEntry] {
         &self.entries
+    }
+
+    pub fn forgotten(&self) -> &[(String, u64)] {
+        &self.forgotten
+    }
+
+    pub fn cleared_at(&self) -> u64 {
+        self.cleared_at
+    }
+
+    /// Forgets one page and remembers it was forgotten (for paired devices); returns whether
+    /// it was there.
+    pub fn forget(&mut self, url: &Url, now: u64) -> bool {
+        let key = sync_key(url);
+        self.forgotten.retain(|(k, at)| *k != key && now.saturating_sub(*at) < FORGOTTEN_FOR);
+        self.forgotten.insert(0, (key.clone(), now));
+        self.forgotten.truncate(FORGOTTEN_MAX);
+        let before = self.entries.len();
+        self.entries.retain(|e| sync_key(&e.url) != key);
+        self.entries.len() != before
+    }
+
+    /// Clears everything and remembers when (for paired devices).
+    pub fn clear_at(&mut self, now: u64) {
+        self.entries.clear();
+        self.forgotten.clear();
+        self.cleared_at = self.cleared_at.max(now);
+    }
+
+    /// Merges a batch of changes from a paired device; `now` marks what changes here (so it
+    /// goes on to other devices). Idempotent and the same in both directions: visits are united
+    /// (the last `RECENT_VISITS`, each once), the count is the larger one, the title is the
+    /// latest visit's (a page's own title over a bare host), spaces are united; what either
+    /// device erased stays erased, a later visit brings the page back. Returns whether anything
+    /// changed here.
+    pub fn merge(&mut self, other: &Shared, now: u64) -> bool {
+        let mut changed = false;
+        if other.cleared_at > self.cleared_at {
+            self.cleared_at = other.cleared_at;
+            changed = true;
+        }
+        for (key, at) in &other.forgotten {
+            match self.forgotten.iter_mut().find(|(k, _)| k == key) {
+                Some((_, mine)) if *at > *mine => {
+                    *mine = *at;
+                    changed = true;
+                }
+                Some(_) => {}
+                None => {
+                    self.forgotten.push((key.clone(), *at));
+                    changed = true;
+                }
+            }
+        }
+        self.forgotten.sort_by_key(|(_, at)| std::cmp::Reverse(*at));
+        self.forgotten.truncate(FORGOTTEN_MAX);
+        let forgotten: HashMap<&str, u64> = self.forgotten.iter().map(|(k, at)| (k.as_str(), *at)).collect();
+        let cleared = self.cleared_at;
+        let erased = |key: &str, at: u64| (cleared > 0 && at <= cleared) || forgotten.get(key).is_some_and(|when| *when >= at);
+        let mut index: HashMap<String, usize> =
+            self.entries.iter().enumerate().map(|(i, e)| (sync_key(&e.url), i)).collect();
+        for theirs in &other.entries {
+            if !matches!(theirs.url.scheme(), "http" | "https") {
+                continue;
+            }
+            let key = sync_key(&theirs.url);
+            if erased(&key, theirs.visited_at) {
+                continue;
+            }
+            match index.get(&key) {
+                Some(&i) => {
+                    let mine = &mut self.entries[i];
+                    let before = mine.clone();
+                    merge_entry(mine, theirs);
+                    if *mine != before {
+                        mine.changed = now;
+                        changed = true;
+                    }
+                }
+                None => {
+                    let mut e = theirs.clone();
+                    e.url.set_fragment(None);
+                    e.recent.truncate(RECENT_VISITS);
+                    e.spaces.truncate(SPACES_KEPT);
+                    e.visits = e.visits.max(1).max(e.recent.len() as u32);
+                    e.changed = now;
+                    index.insert(key, self.entries.len());
+                    self.entries.push(e);
+                    changed = true;
+                }
+            }
+        }
+        let before = self.entries.len();
+        self.entries.retain(|e| !erased(&sync_key(&e.url), e.visited_at));
+        changed |= self.entries.len() != before;
+        if changed {
+            self.entries.sort_by_key(|e| std::cmp::Reverse(e.visited_at));
+            self.entries.truncate(MAX_ENTRIES);
+        }
+        changed
+    }
+
+    /// What changed here after the mark `since` (seconds of this device's clock), oldest change
+    /// first, `max` entries at most: the batch a paired device asked for. `until` is the mark to
+    /// ask from next time.
+    pub fn changes_since(&self, since: u64, max: usize) -> Shared {
+        let mut changed: Vec<&HistoryEntry> = self.entries.iter().filter(|e| e.changed > since).collect();
+        changed.sort_by_key(|e| e.changed);
+        // Marks are seconds: a batch never stops inside one, or the rest of it would be lost
+        // (the next request asks for what changed after it). It may exceed `max` for that.
+        let more = changed.len() > max;
+        if more {
+            let last = changed[max.max(1) - 1].changed;
+            let keep = changed.iter().take_while(|e| e.changed <= last).count();
+            changed.truncate(keep);
+        }
+        let more = more && self.entries.iter().any(|e| e.changed > changed.last().map_or(since, |e| e.changed));
+        let forgotten: Vec<(String, u64)> = self.forgotten.iter().filter(|(_, at)| *at > since).cloned().collect();
+        let cleared_at = if self.cleared_at > since { self.cleared_at } else { 0 };
+        let until = if more {
+            changed.last().map_or(since, |e| e.changed)
+        } else {
+            changed
+                .iter()
+                .map(|e| e.changed)
+                .chain(forgotten.iter().map(|(_, at)| *at))
+                .chain(std::iter::once(cleared_at))
+                .fold(since, u64::max)
+        };
+        Shared { entries: changed.into_iter().cloned().collect(), forgotten, cleared_at, until, more }
     }
 
     /// Records a visit reached by a link, in no particular space (see `visit_as`).
@@ -120,6 +296,7 @@ impl History {
                 visits: 0,
                 recent: Vec::new(),
                 spaces: Vec::new(),
+                changed: now,
             },
         };
         let again = entry.visits == 0 || now.saturating_sub(entry.visited_at) >= SAME_VISIT_SECS;
@@ -136,6 +313,7 @@ impl History {
         }
         entry.visits = entry.visits.max(1);
         entry.visited_at = now;
+        entry.changed = now;
         if let Some(space) = space {
             entry.spaces.retain(|s| *s != space);
             entry.spaces.insert(0, space);
@@ -191,6 +369,37 @@ impl History {
     pub fn clear(&mut self) {
         self.entries.clear();
     }
+}
+
+/// One page known on both devices: see `History::merge`.
+fn merge_entry(mine: &mut HistoryEntry, theirs: &HistoryEntry) {
+    let bare = |e: &HistoryEntry| e.title.trim().is_empty() || e.title == e.url.host_str().unwrap_or_default();
+    if theirs.visited_at > mine.visited_at {
+        if !bare(theirs) || bare(mine) {
+            mine.title = theirs.title.clone();
+        }
+        if mine.url.scheme() == "http" && theirs.url.scheme() == "https" {
+            mine.url = theirs.url.clone();
+            mine.url.set_fragment(None);
+        }
+    } else if bare(mine) && !bare(theirs) {
+        mine.title = theirs.title.clone();
+    }
+    mine.visited_at = mine.visited_at.max(theirs.visited_at);
+    for v in &theirs.recent {
+        if !mine.recent.contains(v) {
+            mine.recent.push(*v);
+        }
+    }
+    mine.recent.sort_by_key(|v| std::cmp::Reverse((v.at, v.kind.id())));
+    mine.recent.truncate(RECENT_VISITS);
+    mine.visits = mine.visits.max(theirs.visits).max(mine.recent.len() as u32).max(1);
+    for s in &theirs.spaces {
+        if !mine.spaces.contains(s) {
+            mine.spaces.push(*s);
+        }
+    }
+    mine.spaces.truncate(SPACES_KEPT);
 }
 
 #[cfg(test)]
@@ -257,6 +466,81 @@ mod tests {
         for k in [VisitKind::Link, VisitKind::Typed, VisitKind::Bookmark, VisitKind::Redirect] {
             assert_eq!(VisitKind::from_id(k.id()), k);
         }
+    }
+
+    /// Everything `from` changed after `since`, as one batch (the tests send no more).
+    fn batch(from: &History, since: u64) -> Shared {
+        from.changes_since(since, 10_000)
+    }
+
+    #[test]
+    fn two_devices_merge_their_visits_and_agree() {
+        let mut a = History::default();
+        let mut b = History::default();
+        a.visit_as(&u("https://mail.test/"), 100, VisitKind::Typed, Some(1));
+        a.visit_as(&u("https://mail.test/"), 1000, VisitKind::Typed, Some(1));
+        a.set_title(&u("https://mail.test/"), "Mail");
+        b.visit_as(&u("https://mail.test/#inbox"), 500, VisitKind::Link, Some(7));
+        b.visit_as(&u("https://news.test/"), 600, VisitKind::Link, None);
+        assert!(a.merge(&batch(&b, 0), 2000));
+        let mail = a.entries().iter().find(|e| e.url.host_str() == Some("mail.test")).unwrap();
+        assert_eq!(mail.recent.len(), 3, "visits of both devices, each once");
+        assert_eq!(mail.visits, 3);
+        assert_eq!(mail.title, "Mail", "a bare host never replaces a title");
+        assert_eq!(mail.spaces, vec![1, 7]);
+        assert_eq!(mail.changed, 2000, "a merged change goes on to other devices");
+        assert!(!a.merge(&batch(&b, 0), 3000), "merging twice changes nothing");
+        assert!(b.merge(&batch(&a, 0), 2000));
+        assert!(!a.merge(&batch(&b, 0), 4000) && !b.merge(&batch(&a, 0), 4000), "they agree");
+        assert_eq!(a.entries().len(), b.entries().len());
+    }
+
+    #[test]
+    fn batches_carry_only_what_changed_after_the_mark_oldest_first() {
+        let mut h = History::default();
+        for i in 0..5u64 {
+            h.visit(&u(&format!("https://p{i}.test/")), 100 + i);
+        }
+        let first = h.changes_since(0, 3);
+        assert!(first.more);
+        assert_eq!(first.until, 102);
+        assert_eq!(first.entries.iter().map(|e| e.visited_at).collect::<Vec<_>>(), [100, 101, 102]);
+        let rest = h.changes_since(first.until, 3);
+        assert!(!rest.more);
+        assert_eq!(rest.entries.len(), 2);
+        assert_eq!(rest.until, 104);
+        let none = h.changes_since(rest.until, 3);
+        assert!(none.entries.is_empty() && none.forgotten.is_empty() && none.cleared_at == 0);
+        assert_eq!(none.until, 104, "nothing new: the mark stays");
+        h.forget(&u("https://p0.test/"), 200);
+        let gone = h.changes_since(104, 3);
+        assert_eq!(gone.forgotten, vec![("https://p0.test/".to_owned(), 200)]);
+        assert_eq!(gone.until, 200);
+    }
+
+    #[test]
+    fn what_one_device_erased_never_comes_back() {
+        let mut a = History::default();
+        let mut b = History::default();
+        a.visit(&u("https://secret.test/"), 100);
+        a.visit(&u("https://kept.test/"), 100);
+        b.merge(&batch(&a, 0), 150);
+        a.forget(&u("https://secret.test/#x"), 200);
+        b.merge(&batch(&a, 150), 250);
+        assert!(b.entries().iter().all(|e| e.url.host_str() != Some("secret.test")));
+        // b sending its older copy back does not revive it on a.
+        a.merge(&batch(&b, 0), 260);
+        assert!(a.entries().iter().all(|e| e.url.host_str() != Some("secret.test")));
+        // Visited again after it was forgotten: it is history again.
+        b.visit(&u("https://secret.test/"), 300);
+        a.merge(&batch(&b, 0), 310);
+        assert!(a.entries().iter().any(|e| e.url.host_str() == Some("secret.test")));
+        // Cleared on one device: everything before goes on both.
+        b.clear_at(400);
+        a.visit(&u("https://after.test/"), 500);
+        a.merge(&batch(&b, 0), 510);
+        let left: Vec<_> = a.entries().iter().map(|e| e.url.host_str().unwrap().to_owned()).collect();
+        assert_eq!(left, ["after.test"]);
     }
 
     #[test]

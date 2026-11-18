@@ -633,7 +633,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Mode par appareil dans `devices.bin` (`ask` par défaut, `auto`, `off`, `Request::SetSync`) ; `ask`
   propose (toast Merge / Always / Later), une réponse à une fusion acceptée s'applique sans question.
   Desktop : `app/src/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
-  `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, historique, dossiers.
+  `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, dossiers. L'historique a sa propre synchro depuis 0.8.18 (voir la section 0.8.18).
 - Test : `scripts\test-sync.ps1` (Windows devtools ↔ émulateur, ports `BH_HANDOFF_PORT`/`_PEER_PORT`).
 
 ## Langues de l'interface (i18n)
@@ -835,6 +835,24 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
     (`History::name_if_bare`), le moteur ne signalant pas un titre inchangé. Android : `suggestions`
     passe par `rank_rows`/`pick` (sans choix appris). « Recent activity » de l'accueil : sans bruit ni
     doublon (`home_recent_json`).
+- Synchro de l'historique (0.8.18), à part de celle des onglets : un interrupteur (`Settings::history_sync`,
+  vrai par défaut, `SetHistorySync`, Réglages > Devices carte `#histcard`, Android `data-set="history_sync"`),
+  aucune question, en arrière-plan. `infrastructure/history_sync.rs` : messages `"v": 2` sur le transport des
+  registres (`Request::Snapshot`, ignorés par un appareil plus ancien) : `history_pull { since }` (quelques
+  octets) et `history { until, more, pages, forgotten, cleared_at, choices }`. Incrémental : chaque entrée
+  porte `HistoryEntry::changed` (horloge de l'appareil : visite, fusion qui change quelque chose) ;
+  `History::changes_since` rend ce qui a changé après le repère, plus ancien d'abord, `BATCH` (200) pages
+  (jamais coupé au milieu d'une seconde) ; `Marks` (`history-sync.json`) garde le repère atteint par
+  appareil. Rien de changé : réponse vide. Une page porte ce qui la classe (visites datées et typées,
+  titre, espaces **par nom**), les pages oubliées et l'effacement voyagent (`History::forget` / `clear_at`,
+  `history-erased.json` à part pour qu'une version plus ancienne relise `history.json`, oubli gardé 30 j),
+  et les choix appris de la barre de commandes (`Adaptive::merge`, le plus récent gagne ; Android n'en a
+  pas). `History::merge` idempotente et symétrique (index par adresse) ; écrite au prochain `flush`, pas
+  sur le fil d'interface. Cadence : `HISTORY_FIRST` (20 s) après le lancement, puis `HISTORY_EVERY`
+  (5 min), quelques secondes après qu'un appareil se connecte, et « Sync now » (`HistorySyncNow`). Jamais
+  en fenêtre privée (pas de Nearby) ni pour un onglet trou noir (absent de l'historique). Tests :
+  `history::tests`, `history_sync::tests`, test Android de bout en bout (`devices.rs`, deux cœurs appairés),
+  contrôle `histsw` de `test-android.ps1` (non exécuté).
 - Rechargement : Mod+R et F5 = `reload`, Mod+Maj+R / Ctrl+F5 / Maj+F5 / Maj+clic = `UiCommand::HardReload`
   (`views::hard_reload`), aussi dans le menu de page et la palette (`key:shift+r`). Tout rechargement de la
   page affichée appelle `spin_reload` → `bh.reloading()` de `bar.html` : seule l'icône (`#reload svg`)

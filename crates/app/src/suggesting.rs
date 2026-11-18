@@ -32,7 +32,7 @@ impl Choices {
         Self { store, data, rows: RefCell::new((Vec::new(), Vec::new())) }
     }
 
-    fn save(&self) {
+    pub(crate) fn save(&self) {
         if !private_mode() {
             self.store.save(&self.data);
         }

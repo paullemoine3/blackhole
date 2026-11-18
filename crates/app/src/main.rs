@@ -5683,6 +5683,8 @@ impl Running {
             | UiCommand::DeviceForget { .. }
             | UiCommand::DeviceSync { .. }
             | UiCommand::DeviceSyncNow { .. }
+            | UiCommand::SetHistorySync { .. }
+            | UiCommand::HistorySyncNow
             | UiCommand::SyncAnswer { .. }
             | UiCommand::BeamText { .. }
             | UiCommand::BeamClipboard { .. }

@@ -66,6 +66,10 @@ pub struct BrowserService<R: WorkspaceRepository> {
     arrived: std::collections::HashMap<TabId, (Url, u64)>,
 }
 
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
 /// A page left this quickly, without the user asking for the next one, was a step of a redirect
 /// made by the page (its visit no longer counts for the ranking).
 const BOUNCE_SECS: u64 = 3;
@@ -173,15 +177,37 @@ impl<R: WorkspaceRepository> BrowserService<R> {
 
     /// Forgets one page of the history (Library → History).
     pub fn forget_history(&mut self, url: &Url) {
-        if self.history.remove(url) {
-            let _ = self.repo.save_history(&self.history);
-        }
+        // Remembered as forgotten even when absent here: a paired device must drop it too.
+        self.history.forget(url, now_secs());
+        let _ = self.repo.save_history(&self.history);
     }
 
     pub fn clear_history(&mut self) {
-        self.history.clear();
+        self.history.clear_at(now_secs());
         let _ = self.repo.save_history(&self.history);
     }
+
+    /// What changed in the history after `since` (this device's clock), for a paired device.
+    pub fn history_changes_since(&self, since: u64, max: usize) -> blackhole_domain::SharedHistory {
+        self.history.changes_since(since, max)
+    }
+
+    /// Merges a batch from a paired device (see `History::merge`). Written by the next `flush`,
+    /// like the visits (not on the UI thread at once).
+    pub fn merge_history(&mut self, other: &blackhole_domain::SharedHistory) -> bool {
+        let changed = self.history.merge(other, now_secs());
+        if changed {
+            self.unsaved_pages = true;
+        }
+        changed
+    }
+
+    /// Whether paired devices exchange the history (Settings > Devices).
+    pub fn set_history_sync(&mut self, on: bool) {
+        self.settings.history_sync = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
 
     pub fn workspace(&self) -> &Workspace {
         &self.workspace

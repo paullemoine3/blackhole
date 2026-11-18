@@ -8,6 +8,8 @@ use crate::core::{Core, text_f, text_n};
 use blackhole_domain::handoff::{can_continue, resume_url};
 use blackhole_domain::TabId;
 use blackhole_infrastructure::handoff::{self, DeviceInfo, DeviceStore, Event, Handle, Request};
+use blackhole_domain::suggest::Adaptive;
+use blackhole_infrastructure::history_sync::{self, Incoming, Marks};
 use blackhole_infrastructure::sync::{decide, Decision, Received, SyncEngine};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -18,6 +20,10 @@ use url::Url;
 
 const OBSERVE_EVERY: Duration = Duration::from_secs(2);
 const SEND_AFTER: Duration = Duration::from_secs(3);
+/// The history is asked of each online device this often (only its changes travel), as on the
+/// desktop (`app/src/handoff.rs`).
+const HISTORY_EVERY: Duration = Duration::from_secs(5 * 60);
+const HISTORY_FIRST: Duration = Duration::from_secs(20);
 
 pub(crate) struct Nearby {
     handle: Handle,
@@ -30,6 +36,9 @@ pub(crate) struct Nearby {
     later: HashSet<String>,
     observe_at: Instant,
     changed_at: Option<Instant>,
+    /// The mark reached in each device's history, and when the next asks go.
+    marks: Marks,
+    history_at: Instant,
 }
 
 /// Where the service talks: the local network, or (tests, emulator) a given address.
@@ -60,6 +69,8 @@ impl Nearby {
             later: HashSet::new(),
             observe_at: Instant::now(),
             changed_at: None,
+            marks: Marks::open(data),
+            history_at: Instant::now() + HISTORY_FIRST,
         }
     }
 }
@@ -111,6 +122,12 @@ impl Core {
                     n.later.remove(&id);
                 }
                 self.request(Request::SetSync { device: id, mode });
+            }
+            C::HistorySyncNow => {
+                if let Some(n) = &mut self.nearby {
+                    n.history_at = Instant::now();
+                }
+                return vec![Self::toast(&self.t("synchronizing"), false)];
             }
             C::DeviceSyncNow { id } => {
                 if let Some(n) = &mut self.nearby {
@@ -199,6 +216,33 @@ impl Core {
         out
     }
 
+    /// A history message (see the desktop's `on_history`): an ask is answered with the changes
+    /// made here since its mark; changes are merged, and asked again while more wait. Android
+    /// learns no command bar choices: it sends none and keeps none.
+    fn on_history(&mut self, device: &str, incoming: Incoming) {
+        if !self.svc.settings().history_sync {
+            return;
+        }
+        let Some(n) = &mut self.nearby else { return };
+        if !n.devices.iter().any(|d| d.id == device) {
+            return;
+        }
+        match incoming {
+            Incoming::Pull { since } => {
+                let json = history_sync::batch(&self.svc, &Adaptive::default(), since);
+                n.handle.request(Request::Snapshot { device: device.to_owned(), json });
+            }
+            Incoming::Batch(batch) => {
+                history_sync::merge(&mut self.svc, &mut Adaptive::default(), &batch);
+                n.marks.set(device, batch.until);
+                if batch.more {
+                    let json = history_sync::pull(batch.until);
+                    n.handle.request(Request::Snapshot { device: device.to_owned(), json });
+                }
+            }
+        }
+    }
+
     fn on_ledger(&mut self, device: String, name: String, json: &str) -> Vec<Effect> {
         let Some(received) = SyncEngine::parse(json) else {
             return Vec::new();
@@ -265,6 +309,10 @@ impl Core {
                         .filter(|d| d.online && d.sync != "off" && !n.online.contains(&d.id))
                         .map(|d| d.id.clone())
                         .collect();
+                    // A device coming online is asked for its history soon (any sync mode).
+                    if list.iter().any(|d| d.online && !n.online.contains(&d.id)) {
+                        n.history_at = n.history_at.min(Instant::now() + SEND_AFTER);
+                    }
                     n.online = list.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
                     n.devices = list;
                     for device in came {
@@ -308,7 +356,10 @@ impl Core {
                     out.push(Self::toast(&self.tf("beam_text", &[("name", &from), ("text", &short)]), false));
                 }
                 Event::BeamFile { .. } | Event::BeamSent { .. } => {}
-                Event::Snapshot { device, name, json } => out.extend(self.on_ledger(device, name, &json)),
+                Event::Snapshot { device, name, json } => match history_sync::parse(&json) {
+                    Some(incoming) => self.on_history(&device, incoming),
+                    None => out.extend(self.on_ledger(device, name, &json)),
+                },
                 Event::Status(status) => {
                     let status = blackhole_domain::i18n::catalog(self.lang).render(&status);
                     out.push(Self::toast(&status, false));
@@ -322,6 +373,15 @@ impl Core {
         // Local changes: observed now and then, sent to `auto` devices once settled.
         if let Some(n) = &mut self.nearby {
             let now = Instant::now();
+            if now >= n.history_at {
+                n.history_at = now + HISTORY_EVERY;
+                if self.svc.settings().history_sync {
+                    for d in n.devices.iter().filter(|d| d.online) {
+                        let json = history_sync::pull(n.marks.get(&d.id));
+                        n.handle.request(Request::Snapshot { device: d.id.clone(), json });
+                    }
+                }
+            }
             if !n.devices.is_empty() && now >= n.observe_at {
                 n.observe_at = now + OBSERVE_EVERY;
                 if n.sync.observe(&self.svc) {
@@ -404,6 +464,10 @@ mod tests {
         let mut pc = core(db.path(), "Desk", pb, pa);
         phone.command(MobileCommand::Navigate { input: "https://phone.example/".into(), new_tab: true, private: false });
         pc.command(MobileCommand::Navigate { input: "https://desk.example/".into(), new_tab: true, private: false });
+        // A page read on the desk (another tab): its history reaches the phone in the background.
+        let notes = pc.svc.open_tab("https://desk.example/notes").unwrap();
+        pc.svc.page_changed(notes, Some(url::Url::parse("https://desk.example/notes").unwrap()), Some("Desk notes".into()));
+        pc.svc.close_tab(notes);
 
         pc.command(MobileCommand::DeviceShowCode);
         let out = until(&mut phone, &mut pc, true, |e| matches!(e, Effect::Ui { msg } if msg["devices"]["code"].is_string()));
@@ -430,6 +494,11 @@ mod tests {
             matches!(e, Effect::Ui { msg } if msg["type"] == "state" && msg["tabs"].as_array().is_some_and(|t| t.len() == 2))
         });
         settle(&mut phone, &mut pc, |p| p.devices_json()["list"][0]["sync"] == "auto");
+        // The history: asked of the online device a moment after it came online.
+        phone.command(MobileCommand::HistorySyncNow);
+        settle(&mut phone, &mut pc, |p| {
+            p.svc.recent_activity(50).iter().any(|e| e.url.as_str() == "https://desk.example/notes" && e.title == "Desk notes")
+        });
 
         // Continue on: the shown tab opens on the desk.
         settle(&mut phone, &mut pc, |p| p.devices_json()["list"][0]["online"] == true);

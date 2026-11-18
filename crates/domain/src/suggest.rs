@@ -399,6 +399,44 @@ impl Adaptive {
         uses / (uses + 1.0)
     }
 
+    /// The newest `max` choices, what goes to a paired device.
+    pub fn shared(&self, max: usize) -> Vec<Learned> {
+        let mut out = self.entries.clone();
+        out.sort_by_key(|e| std::cmp::Reverse(e.at));
+        out.truncate(max);
+        out
+    }
+
+    /// Merges the choices of a paired device: for one input and one row, the latest choice
+    /// wins (idempotent, the same in both directions). Returns whether anything changed.
+    pub fn merge(&mut self, others: &[Learned]) -> bool {
+        let mut changed = false;
+        for o in others {
+            let input: String = fold(o.input.trim()).chars().take(ADAPTIVE_INPUT_MAX).collect();
+            if input.is_empty() || o.key.is_empty() || !o.uses.is_finite() || o.uses <= 0.0 {
+                continue;
+            }
+            let uses = o.uses.min(1000.0);
+            match self.entries.iter_mut().find(|e| e.input == input && e.key == o.key) {
+                Some(e) if (o.at, uses) > (e.at, e.uses) => {
+                    e.at = o.at;
+                    e.uses = uses;
+                    changed = true;
+                }
+                Some(_) => {}
+                None => {
+                    self.entries.push(Learned { input, key: o.key.clone(), uses, at: o.at });
+                    changed = true;
+                }
+            }
+        }
+        if self.entries.len() > ADAPTIVE_MAX {
+            self.entries.sort_by_key(|e| std::cmp::Reverse(e.at));
+            self.entries.truncate(ADAPTIVE_MAX);
+        }
+        changed
+    }
+
     /// Forgets the choices of pages that are gone (history cleared or one page forgotten).
     pub fn forget(&mut self, key: &str) {
         self.entries.retain(|e| e.key != key);
@@ -783,6 +821,7 @@ mod tests {
             visits,
             recent: Vec::new(),
             spaces: Vec::new(),
+            changed: at,
         }
     }
 
@@ -923,6 +962,22 @@ mod tests {
         assert_eq!(match_quality("github.com/rust", "", Some(&gh)), Some(1.0));
         assert!(match_quality("lang", "Something", Some(&gh)).unwrap() < 0.5);
         assert_eq!(match_quality("zoom", "Zoom in", None), Some(0.9), "an action has no address");
+    }
+
+    #[test]
+    fn choices_of_two_devices_merge_the_latest_way() {
+        let mut a = Adaptive::default();
+        let mut b = Adaptive::default();
+        a.record("ma", "mail.test", NOW);
+        b.record("ma", "mail.test", NOW + DAY);
+        b.record("ma", "mail.test", NOW + DAY);
+        b.record("gi", "github.com", NOW);
+        assert!(a.merge(&b.shared(100)));
+        assert!(!a.merge(&b.shared(100)), "twice changes nothing");
+        assert_eq!(a.entries().len(), 2);
+        assert!(a.boost("ma", "mail.test", NOW + DAY) > 0.6, "the later choice (used twice) won");
+        assert!(!b.merge(&a.shared(100)), "b already had the latest");
+        assert_eq!(a.shared(1).len(), 1);
     }
 
     #[test]
