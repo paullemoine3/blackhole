@@ -52,6 +52,12 @@
   .search svg { flex: none; opacity: .7; }
   #q { flex: 1; min-width: 0; font: inherit; font-size: 18px; color: inherit; background: transparent; border: 0; outline: none; user-select: text; -webkit-user-select: text; }
   #q::placeholder { color: rgba(236,234,245,.4); }
+  /* The completion of the field: what is typed (invisible, for its width) then the rest of the
+     address in grey, drawn behind the field at the same place and size. */
+  .qwrap { position: relative; flex: 1; min-width: 0; display: flex; }
+  #ghost { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font: inherit; font-size: 18px; white-space: pre; pointer-events: none; overflow: hidden; max-width: 100%; }
+  #ghost .typed { visibility: hidden; }
+  #ghost .rest { color: rgba(236,234,245,.42); }
   #list { padding: 8px; max-height: 52vh; overflow-y: auto; }
   .row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 10px; cursor: pointer; min-width: 0; }
   .row.sel { background: var(--sel); color: #fff; }
@@ -198,7 +204,7 @@
   <div id="panel">
     <div class="search">
       <i data-icon="search" data-size="md"></i>
-      <input id="q" data-i18n-placeholder="palette.placeholder" spellcheck="false" autocomplete="off">
+      <span class="qwrap"><input id="q" data-i18n-placeholder="palette.placeholder" spellcheck="false" autocomplete="off"><span id="ghost" hidden aria-hidden="true"><span class="typed"></span><span class="rest"></span></span></span>
     </div>
     <div id="list"></div>
     <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> <span data-i18n="palette.foot_navigate">navigate</span></span><span><kbd>↵</kbd> <span data-i18n="palette.foot_open">open</span></span><span id="fkeep" hidden><kbd id="fkeepk"></kbd> <span data-i18n="palette.foot_keep">to the Easel</span></span><span><kbd>esc</kbd> <span data-i18n="palette.foot_close">close</span></span></div>
@@ -251,7 +257,7 @@ const keepKey = (e) => (bhMac ? e.metaKey : e.ctrlKey);
 let items = [], sel = 0, pristine = true, target = null;
 // Recall: the last query sent, its answer, and the timer that waits for the typing to pause.
 let recallSeq = 0, recallHits = [], recallNow = 0, recallTimer = 0, recallAsked = '';
-const RECALL_FROM = 3, PER_GROUP = 3, ACTION_ROWS = 3;
+const RECALL_FROM = 3, PER_GROUP = 3;
 const EMOJIS = ['🏠','💼','🎮','📚','🎓','🛒','💰','🎵','🎬','📷','✈️','🍳','🧪','💻','🛠️','🎨','📰','🔒','❤️','⭐','🚀','🌍','🔥','🌱','☕','🧠','📁','📌','🗂️','🧩','🎯','💡','🧳','🏋️','🐱','🐶','🌙','☀️','🍀','🎁'];
 
 const hue = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ',60%,50%)'; };
@@ -301,46 +307,68 @@ function askRecall() {
   }, 160);
 }
 
-// How well a row answers what was typed, 0–1, null when a word is missing: the same rules as
-// domain::suggest::match_quality (tested there). Every word must be found; the start of the
-// host or of the title wins, then the start of a word, the middle of a word last; one letter
-// only matches a start. An empty query matches everything (0).
-const BOUND = /[\s\-_./·:()|,–—\[\]'"]/;
-function place(text, w) {
-  let best = -1, from = 0, i;
-  while ((i = text.indexOf(w, from)) >= 0) {
-    const p = i === 0 ? 0 : BOUND.test(text[i - 1]) ? 1 : 2;
-    if (best < 0 || p < best) best = p;
-    if (p === 0) break;
-    from = i + Math.max(1, w.length);
-  }
-  return best;
+// What is typed is ranked by the shell (domain::suggest, the same rules as Android, tested
+// there and measured by suggest_eval.rs): each key press asks `suggest` with a number, the
+// answer comes back in bh.suggested. Until it does, the rows of the previous answer stay.
+let suggestSeq = 0, suggestAsked = null, suggested = { seq: 0, query: '', rows: [], complete: null };
+// The field is completed only while the user adds letters (never after a deletion).
+let completing = true;
+function askSuggest() {
+  const q = $('q').value.trim();
+  if (S.mode === 'recall' || !q || q === suggestAsked) return;
+  suggestAsked = q;
+  send({ cmd: 'suggest', query: q, seq: ++suggestSeq });
 }
-function quality(query, title, url) {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return 0;
-  let h = '', rest = (url || '').toLowerCase();
-  try { const u = new URL(url); h = u.hostname.toLowerCase().replace(/^www\./, ''); rest = rest.slice(rest.indexOf(h) + h.length); } catch (e) {}
-  const t = (title || '').toLowerCase();
-  const one = words.length === 1 && [...words[0]].length === 1;
-  let total = 0;
-  for (const w of words) {
-    let best = 0;
-    if (h && (h.startsWith(w) || (h + rest).startsWith(w))) best = 1;
-    const pt = place(t, w);
-    if (pt === 0) best = Math.max(best, 0.9);
-    else if (pt === 1) best = Math.max(best, 0.75);
-    else if (pt === 2 && !one) best = Math.max(best, 0.35);
-    const ph = h ? place(h, w) : -1;
-    if (ph === 0 || ph === 1) best = Math.max(best, 0.7);
-    else if (ph === 2 && !one) best = Math.max(best, 0.3);
-    const pr = h ? place(rest, w) : -1;
-    if ((pr === 0 || pr === 1) && !one) best = Math.max(best, 0.45);
-    else if (pr === 2 && !one && [...w].length >= 3) best = Math.max(best, 0.2);
-    if (!best) return null;
-    total += best;
+// The completion shown in the field: the address it ends with (grey after what is typed).
+function completion() {
+  const c = suggested.complete, raw = $('q').value;
+  if (!c || !completing || pristine || !raw || suggested.query !== raw.trim()) return null;
+  if (!c.text.toLowerCase().startsWith(raw.toLowerCase()) || c.text.length <= raw.length) return null;
+  const q = $('q');
+  if (q.selectionStart !== raw.length || q.selectionEnd !== raw.length) return null;
+  return c;
+}
+function ghost() {
+  const c = completion(), g = $('ghost');
+  const raw = $('q').value;
+  const fits = $('q').scrollWidth <= $('q').clientWidth + 1;
+  g.hidden = !c || !fits;
+  if (g.hidden) return;
+  g.querySelector('.typed').textContent = raw;
+  g.querySelector('.rest').textContent = c.text.slice(raw.length);
+}
+// Tab or → at the end of the field takes the completion.
+function takeCompletion() {
+  const c = completion();
+  if (!c) return false;
+  $('q').value = c.text;
+  $('q').setSelectionRange(c.text.length, c.text.length);
+  $('q').dispatchEvent(new Event('input'));
+  return true;
+}
+// The user took a row for what they typed: the shell learns it (never in a private window).
+const chosen = (key) => { const q = $('q').value.trim(); if (q && key && !pristine) send({ cmd: 'suggest_chosen', input: q, key }); };
+// A row of the shell's answer as the list draws it.
+function suggestedRow(r) {
+  const open = (via) => () => { chosen(r.key); send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input: r.url, via }); };
+  switch (r.kind) {
+    case 'tab':
+      return site(r.url, r.title || host(r.url), bhT('palette.switch_to_tab'), () => { chosen(r.key); send({ cmd: 'activate', id: +r.id }); });
+    case 'other':
+      return { ...site(r.url, r.title || host(r.url), bhT('palette.switch_to_tab'), () => { chosen(r.key); send({ cmd: 'activate', id: +r.id }); }), sub: [host(r.url), r.space].filter(Boolean).join(' · ') };
+    case 'favorite':
+    case 'bookmark':
+      return site(r.url, r.title || host(r.url), host(r.url), open('bookmark'));
+    case 'search':
+      return { glyph: 'history', title: r.title, sub: bhT('palette.previous_search'), hint: bhT('palette.search'), run: () => { chosen(r.key); send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input: r.title }); } };
+    case 'action':
+      return {
+        glyph: 'bolt', title: r.label || r.title, sub: '', hint: r.keys ? bhKeys(r.keys) : r.hint || bhT('palette.action'),
+        confirm: r.confirm, id: 'action:' + r.id, action: true, run: () => { chosen(r.key); send({ cmd: 'action', id: r.id }); },
+      };
+    default:
+      return site(r.url, r.title || host(r.url), host(r.url), open());
   }
-  return total / words.length;
 }
 
 function build() {
@@ -351,61 +379,34 @@ function build() {
   const out = [];
   const enter = (input) => send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input });
   if (q) {
-    out.push(looksLikeUrl(q)
-      ? { glyph: 'go', title: q, sub: bhT('palette.go_to_site'), hint: bhT('menu.open'), run: () => enter(q) }
-      : { glyph: 'search', title: q, sub: bhT('palette.search_with', { engine: S.engine }), hint: bhT('palette.search'), run: () => enter(q) });
+    const c = completion();
+    out.push(c
+      // The field completes an address: the first row opens it.
+      ? { glyph: 'go', title: c.text, sub: bhT('palette.go_to_site'), hint: bhT('menu.open'), run: () => { chosen(c.key); enter(c.url); } }
+      : looksLikeUrl(q)
+        ? { glyph: 'go', title: q, sub: bhT('palette.go_to_site'), hint: bhT('menu.open'), run: () => enter(q) }
+        : { glyph: 'search', title: q, sub: bhT('palette.search_with', { engine: S.engine }), hint: bhT('palette.search'), run: () => enter(q) });
   }
   const match = (...f) => !q || f.some(v => (v || '').toLowerCase().includes(ql));
-  // Rows are scored, higher is better: how well the row answers what was typed (quality, the
-  // rules of domain::suggest::match_quality, 0–1 × 100), plus a bonus for what it is (an open
-  // tab, quick access, a bookmark) and for the habit of visiting it (h, 0–1, from the shell).
+  if (q) return [...out, ...suggested.rows.map(suggestedRow), ...groups(q, match)];
+  // Before the first letter: the tabs of the space, quick access, then the commands.
   const rows = [];
-  const add = (score, row) => rows.push({ r: score, n: rows.length, row });
-  // The same page reached by several ways (tab, quick access, bookmark, history) is offered once,
-  // under the best of them; `key` comes from the shell (http/https, www, slash, tracking folded).
   const seen = new Set();
-  const keyOf = (e) => e.key || e.url;
   for (const t of S.tabs) {
-    const k = quality(q, t.title, t.url);
-    if (k === null) continue;
-    seen.add(keyOf(t));
-    add(k * 100 + 30, site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
+    seen.add(t.key || t.url);
+    rows.push(site(t.url, t.title || host(t.url), bhT('palette.switch_to_tab'), () => send({ cmd: 'activate', id: t.id })));
   }
-  const pool = q
-    ? [...S.favorites.map(e => ({ ...e, bonus: 25 })), ...(S.bookmarks || []).map(e => ({ ...e, bonus: 15 })), ...S.recent]
-    : S.favorites;
-  for (const e of pool) {
-    if (seen.has(keyOf(e))) continue;
-    const k = quality(q, e.title || e.name, e.url);
-    if (k === null) continue;
-    seen.add(keyOf(e));
-    add(k * 100 + (e.bonus || 0) + (e.h || 0) * 45, site(e.url, e.title || e.name || host(e.url), host(e.url), () => enter(e.url)));
+  for (const f of S.favorites) {
+    if (seen.has(f.key || f.url)) continue;
+    rows.push(site(f.url, f.name || host(f.url), host(f.url), () => send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input: f.url, via: 'bookmark' })));
   }
   for (const a of S.actions) {
-    const k = q ? quality(q, a.label, '') : 0;
-    if (k === null) continue;
-    // An action named by what was typed comes first: "zoom" finds "Zoom in" before zoom.us.
-    const row = {
+    rows.push({
       glyph: 'bolt', title: a.label, sub: '', hint: a.keys ? bhKeys(a.keys) : a.hint || bhT('palette.action'),
       confirm: a.confirm, id: 'action:' + a.id, run: () => send({ cmd: 'action', id: a.id }), action: true,
-    };
-    rows.push({ r: k >= 0.9 ? 1000 : k * 100, n: rows.length, row });
+    });
   }
-  if (!q) return [...out, ...rows.map(x => x.row)].slice(0, 10);
-  rows.sort((a, b) => b.r - a.r || a.n - b.n);
-  // Nine rows at most, the search row included; however much history matches, the best few
-  // actions keep a place (up to ACTION_ROWS) so a command is never hidden behind sites.
-  const room = 9 - out.length;
-  let picked = rows.slice(0, room);
-  const actions = rows.filter(x => x.row.action);
-  const want = Math.min(ACTION_ROWS, actions.length);
-  const have = picked.filter(x => x.row.action).length;
-  if (have < want) {
-    const extra = actions.filter(x => !picked.includes(x)).slice(0, want - have);
-    const sites = picked.filter(x => !x.row.action).slice(0, room - have - extra.length);
-    picked = [...picked.filter(x => x.row.action), ...extra, ...sites].sort((a, b) => b.r - a.r || a.n - b.n);
-  }
-  return [...out, ...picked.map(x => x.row), ...groups(q, match)];
+  return [...out, ...rows].slice(0, 10);
 }
 // One search for everything: what the Library keeps (highlights, watched areas, archive,
 // downloads) and what Recall finds, a few rows per group under its own head. Their text comes
@@ -805,6 +806,13 @@ function clearAuth() { $('apass').value = ''; $('apass').blur(); $('auser').blur
 
 window.bh = {
   save: saveBoost,
+  // The shell's rows for the query numbered `seq` (an older answer is dropped).
+  suggested(a) {
+    if (a.seq !== suggestSeq) return;
+    suggested = a;
+    draw();
+    ghost();
+  },
   // The store's answer to the query numbered `seq` (an older one is dropped).
   recall(a) {
     if (a.seq !== recallSeq) return;
@@ -868,6 +876,7 @@ window.bh = {
     // The next address opens in a black hole tab: the field says so.
     $('q').dataset.i18nPlaceholder = s.mode === 'recall' ? 'palette.placeholder_recall' : s.burner ? 'palette.placeholder_burner' : 'palette.placeholder';
     recallHits = []; recallAsked = ''; recallSeq++;
+    suggested = { seq: 0, query: '', rows: [], complete: null }; suggestAsked = null; suggestSeq++; completing = true;
     if (s.mode === 'recall') pristine = false;
     $('q').placeholder = bhT($('q').dataset.i18nPlaceholder);
     $('q').value = s.mode === 'url' ? s.url : '';
@@ -879,12 +888,16 @@ window.bh = {
   hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'leaving', 'comparing', 'authing'); $('q').blur(); $('eq').blur(); clearAuth(); },
 };
 
-$('q').addEventListener('input', () => {
+$('q').addEventListener('input', (e) => {
   pristine = false; armed = null;
+  completing = !(e.inputType || '').startsWith('delete');
   if (S.mode === 'recall') { sel = recallHits.length ? 0 : -1; askRecall(); }
-  else { sel = $('q').value.trim() ? 0 : -1; askRecall(); }
+  else { sel = $('q').value.trim() ? 0 : -1; askRecall(); askSuggest(); }
   draw();
+  ghost();
 });
+$('q').addEventListener('keyup', (e) => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') ghost(); });
+$('q').addEventListener('mouseup', ghost);
 document.addEventListener('keydown', (e) => {
   if (!document.body.classList.contains('open')) return;
   if (e.key === 'Escape') { e.preventDefault(); close(); return; }
@@ -897,6 +910,10 @@ document.addEventListener('keydown', (e) => {
   if (document.body.classList.contains('boosting')) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveBoost(); }
     return;
+  }
+  // Tab, or → at the end of the field, takes the grey completion.
+  if ((e.key === 'Tab' && !e.shiftKey) || (e.key === 'ArrowRight' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+    if (e.target === $('q') && takeCompletion()) { e.preventDefault(); return; }
   }
   if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); step(1); }
   else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); step(-1); }

@@ -3,7 +3,8 @@ pub const RELEASES: &[(&str, &[&str])] = &[
     (
         "0.8.18",
         &[
-            "A smarter search in the command bar (Ctrl/Cmd+L): each page is offered once, however its address was written; sign-in, logout and redirect steps are left out; every word you type must match, and the pages you open often come first",
+            "A smarter search in the command bar (Ctrl/Cmd+L): each page is offered once, however its address was written; sign-in, logout and redirect steps are left out; every word you type must match, accents and one typo aside; the sites you type or pick often come first, and what you chose before for the same letters comes first next time",
+            "The command bar completes the address of a site you use every day in grey: Tab or the right arrow takes it, Enter opens it. Searches you made before come back by their words, and tabs of your other spaces are offered too",
             "Hard refresh with Ctrl+Shift+R (Cmd+Shift+R on macOS), Ctrl+F5, Shift+F5 or a Shift+click on the reload button. Every reload turns the arrow of the button, until the page has loaded",
             "Fewer ghost \"Site unreachable\" pages: a failure is now judged a moment later (a redirect has often already moved on), and a connection that was cut or reset is asked again once, without a word, before the error page",
             "Rearrange the start page: drag a section by its title (or Alt+Up / Alt+Down on it), the order is kept",

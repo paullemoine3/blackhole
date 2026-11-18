@@ -635,6 +635,7 @@ strong_password = "Use a strong password"
 unlock_passwords = "Unlock saved passwords…"
 
 [palette]
+previous_search = "Searched before"
 action = "Action"
 apply = "Apply"
 auth_insecure = "This connection is not secure: the password is sent in clear text."

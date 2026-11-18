@@ -1,5 +1,6 @@
 # 0.8.18 scenarios on Windows, driven by the devtools harness (see crates/app/src/devtools.rs):
-# the command bar search (one row per page, no sign-in steps), the reload arrow (it turns, the
+# the command bar search ranked by the shell (one row per page, no sign-in steps, accents and a
+# typo forgiven, the grey completion, a choice learned, a tab of another space), the reload arrow (it turns, the
 # button does not), the Settings in the page card ("Changes applied", Mod+W), the start page
 # sections moved (keyboard and pointer), the silent second try of a cut connection (a broken hop
 # of a redirect too, never a redirect loop), the jump list.
@@ -26,16 +27,53 @@ cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/page?a=1&b=2"}
 wait 2000
 cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/login?next=/"}
 wait 2000
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/accent"}
+wait 2000
 cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/other"}
 wait 2000
 cmd {"cmd":"palette","mode":"new"}
 wait 1200
-eval palette 'sr1:' + (() => { const q = document.getElementById('q'); q.value = 'bh'; q.dispatchEvent(new Event('input')); const t = [...document.querySelectorAll('#list .row .t')].map(x => x.textContent); return t.filter(x => x === 'bh page').length + '|' + t.filter(x => x === 'bh login').length + '|' + t.filter(x => x === 'bh other').length; })()
-eval palette 'sr2:' + (() => { const q = document.getElementById('q'); q.value = 'other bh'; q.dispatchEvent(new Event('input')); return [...document.querySelectorAll('#list .row .t')].map(x => x.textContent).join(','); })()
-eval palette 'sr3:' + (() => { const q = document.getElementById('q'); q.value = 'bh zzz'; q.dispatchEvent(new Event('input')); return document.querySelectorAll('#list .row').length; })()
+eval palette 'sr0:' + (window.__t = (v) => { const q = document.getElementById('q'); q.value = v; q.setSelectionRange(v.length, v.length); q.dispatchEvent(new Event('input')); return v; }, window.__rows = () => [...document.querySelectorAll('#list .row .t')].map(x => x.textContent), 'ready')
+eval palette 'sr00:' + __t('bh')
+wait 400
+eval palette 'sr1:' + (() => { const t = __rows(); return t.filter(x => x === 'bh page').length + '|' + t.filter(x => x === 'bh login').length + '|' + t.filter(x => x === 'bh other').length; })()
+eval palette 'sr01:' + __t('other bh')
+wait 400
+eval palette 'sr2:' + __rows().join(',')
+eval palette 'sr02:' + __t('bh zzz')
+wait 400
+eval palette 'sr3:' + document.querySelectorAll('#list .row').length
+eval palette 'sr03:' + __t('reglages')
+wait 400
+eval palette 'sr4:' + __rows().slice(1, 2).join(',')
+eval palette 'sr04:' + __t('otehr')
+wait 400
+eval palette 'sr5:' + __rows().slice(1, 2).join(',')
+eval palette 'sr05:' + __t('127.0')
+wait 400
+eval palette 'sr6:' + !document.getElementById('ghost').hidden + '|' + document.getElementById('ghost').textContent + '|' + __rows()[0]
+shot g00-search-complete
+eval palette 'sr7:' + (document.getElementById('q').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })), document.getElementById('q').value)
+eval palette 'sr07:' + __t('bh')
+wait 400
+eval palette 'sr8:' + __rows()[1]
+eval palette 'sr08:' + (window.ipc.postMessage(JSON.stringify({ cmd: 'suggest_chosen', input: 'bh', key: '127.0.0.1:__PORT__/accent' })), __t('bh p'), __t('bh'))
+wait 400
+eval palette 'sr9:' + __rows()[1]
 shot g00-search
 cmd {"cmd":"palette_close"}
 wait 800
+cmd {"cmd":"new_space","name":"Work","color":"#3fb950"}
+wait 1500
+cmd {"cmd":"palette","mode":"new"}
+wait 1200
+eval palette 'sr010:' + (window.__t = (v) => { const q = document.getElementById('q'); q.value = v; q.dispatchEvent(new Event('input')); return v; }, __t('bh other'))
+wait 400
+eval palette 'sr10:' + [...document.querySelectorAll('#list .row')].slice(1, 2).map(r => r.querySelector('.t').textContent + '|' + r.querySelector('.s').textContent + '|' + r.querySelector('.hint').textContent).join('')
+cmd {"cmd":"palette_close"}
+wait 600
+eval chrome 'sr011:' + (send({ cmd: 'space', id: state.spaces[0].id }), 'back')
+wait 1200
 # ---- reload: the arrow turns, never the button ----
 cmd {"cmd":"hard_reload"}
 wait 120
@@ -125,6 +163,7 @@ $server = Start-Job -ArgumentList $port -ScriptBlock {
             elseif ($path -like '/favicon*') { $status = '404 Not Found'; $body = 'none' }
             elseif ($path -like '/page*') { $body = '<title>bh page</title><h1>Page</h1>' }
             elseif ($path -like '/login*') { $body = '<title>bh login</title><form><input type=password></form>' }
+            elseif ($path -like '/accent*') { $body = '<title>bh R&eacute;glages avanc&eacute;s</title><h1>Accents</h1>' }
             elseif ($path -like '/flaky*') { $body = '<title>bh-retry-ok</title><h1>Second try</h1>' }
             elseif ($path -like '/landing*') { $body = '<title>bh-hop-ok</title><h1>After the redirect</h1>' }
             else { $body = '<title>bh other</title><h1>Other</h1>' }
@@ -151,9 +190,16 @@ $fail = $false
 function Check($ok, $name) {
     if ($ok) { Write-Host "ok   $name" } else { Write-Host "FAIL $name"; $script:fail = $true }
 }
-Check ((Ev sr1) -match 'sr1:1\|0\|1"') 'search: a page met under four addresses is offered once, the sign-in page never'
+Check ((Ev sr1) -match 'sr1:2\|0\|1"') 'search: four spellings of two pages give two rows (slash and parameter order folded), the sign-in page never'
 Check ((Ev sr2) -match 'sr2:other bh,bh other"') 'search: every word typed must match'
 Check ((Ev sr3) -match 'sr3:1"') 'search: nothing but the search row when a word matches nothing'
+Check ((Ev sr4) -match 'sr4:bh R.+glages avanc.+s"') 'search: accents do not matter (reglages finds the accented title)'
+Check ((Ev sr5) -match 'sr5:bh other"') 'search: one typo is forgiven (otehr finds other)'
+Check ((Ev sr6) -match 'sr6:true\|127\.0\.0\.1:47984\|127\.0\.0\.1:47984"') 'search: the field completes the address of an open tab in grey, the first row opens it'
+Check ((Ev sr7) -match 'sr7:127\.0\.0\.1:47984"') 'search: Tab takes the completion'
+Check ((Ev sr8) -match 'sr8:bh page"') 'search: before any choice, the page visited most comes first'
+Check ((Ev sr9) -match 'sr9:bh R.+glages avanc.+s"') 'search: a row chosen for what was typed comes first next time'
+Check ((Ev sr10) -match 'sr10:bh other\|127\.0\.0\.1 .+ Personal\|Switch to tab') 'search: a tab of another space is offered with its space'
 Check ((Ev rl1) -match 'rl1:spin\|spin\|none"') 'reload: the arrow turns, the button does not'
 Check ((Ev rl2) -match 'rl2:\|"') 'reload: the arrow stops once the page has loaded'
 Check ((Ev rl3) -match 'rl3:spin"') 'reload: the keyboard reload turns the arrow too'

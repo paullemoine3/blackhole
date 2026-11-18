@@ -764,31 +764,72 @@ impl Core {
                 None => items.push(json!({"kind": "search", "title": text, "engine": engine.label()})),
             }
         }
-        // Same rules as the desktop palette (domain::suggest): every word must match, one row
-        // per page (`key`), no sign-in steps, history ranked by match then habit.
-        use blackhole_domain::suggest;
-        let matches = |title: &str, url: &Url| suggest::match_quality(text, title, url).is_some();
-        let mut seen: Vec<String> = Vec::new();
-        for t in self.svc.workspace().active_space().tabs.iter().filter(|t| matches(&t.title, &t.url)) {
-            seen.push(suggest::key(&t.url));
-            items.push(json!({"kind": "tab", "title": t.title, "url": t.url.as_str(), "tab": t.id.0}));
-        }
-        for f in self.svc.favorites().iter().filter(|f| matches(&f.name, &f.url)) {
-            let key = suggest::key(&f.url);
-            if !seen.contains(&key) {
-                seen.push(key);
-                items.push(json!({"kind": "favorite", "title": f.name, "url": f.url.as_str()}));
-            }
-        }
+        // Same ranking as the desktop command bar (domain::suggest): one row per page, no
+        // sign-in steps, accents and one typo forgiven, habits and the space shown first. Nothing
+        // is learned from choices here (the desktop keeps them).
+        use blackhole_domain::suggest::{self, Adaptive, Context, Row, RowKind};
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        let pool = suggest::pool(self.svc.recent_activity(usize::MAX), now);
-        for h in suggest::rank(&pool, text, 16) {
-            if !seen.contains(&h.key) {
-                seen.push(h.key.clone());
-                items.push(json!({"kind": "history", "title": h.title, "url": h.url.as_str()}));
+        let ws = self.svc.workspace();
+        let space = ws.active_space().id.0;
+        let mut rows: Vec<Row> = Vec::new();
+        for t in &ws.active_space().tabs {
+            rows.push(Row {
+                kind: RowKind::Tab,
+                id: t.id.0.to_string(),
+                title: t.title.clone(),
+                key: suggest::key(&t.url),
+                url: Some(t.url.clone()),
+                frecency: 0.0,
+                spaces: vec![space],
+            });
+        }
+        for f in self.svc.favorites() {
+            rows.push(Row {
+                kind: RowKind::Favorite,
+                id: String::new(),
+                title: f.name.clone(),
+                key: suggest::key(&f.url),
+                url: Some(f.url.clone()),
+                frecency: 0.0,
+                spaces: Vec::new(),
+            });
+        }
+        for h in suggest::pool(self.svc.recent_activity(usize::MAX), now) {
+            rows.push(Row {
+                kind: if h.search.is_some() { RowKind::Search } else { RowKind::History },
+                id: String::new(),
+                title: h.title,
+                key: h.key,
+                url: Some(h.url),
+                frecency: h.frecency,
+                spaces: h.spaces,
+            });
+        }
+        let none = Adaptive::default();
+        let ctx = Context { space, adaptive: &none, now };
+        let shown: Vec<usize> = if text.is_empty() {
+            // Before the first letter: the tabs, quick access, then the best habits.
+            (0..rows.len()).filter(|i| rows[*i].kind != RowKind::Search).collect()
+        } else {
+            let ranked = suggest::rank_rows(&rows, text, &ctx);
+            suggest::pick(&rows, &ranked, 8, 0, 2).iter().map(|r| r.index).collect()
+        };
+        let mut seen: Vec<&str> = Vec::new();
+        for i in shown {
+            let row = &rows[i];
+            if seen.contains(&row.key.as_str()) {
+                continue;
             }
+            seen.push(&row.key);
+            let url = row.url.as_ref().map_or("", Url::as_str);
+            items.push(match row.kind {
+                RowKind::Tab => json!({"kind": "tab", "title": row.title, "url": url, "tab": row.id.parse::<u64>().unwrap_or(0)}),
+                RowKind::Favorite => json!({"kind": "favorite", "title": row.title, "url": url}),
+                // A search made before opens its page of results again.
+                _ => json!({"kind": "history", "title": row.title, "url": url}),
+            });
         }
         items.truncate(8);
         Effect::Ui {

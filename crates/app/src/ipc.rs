@@ -25,6 +25,10 @@ pub enum UiCommand {
     LibraryReady,
     Open {
         input: String,
+        /// How it was asked for: `bookmark` (quick access, a favorite, a bookmark), else typed
+        /// or chosen. Weighs the visit in the command bar's ranking.
+        #[serde(default)]
+        via: Option<String>,
     },
     Home,
     ClearHistory,
@@ -76,6 +80,18 @@ pub enum UiCommand {
     },
     Navigate {
         input: String,
+        #[serde(default)]
+        via: Option<String>,
+    },
+    /// The command bar's query numbered `seq`: the shell ranks and answers `bh.suggested`.
+    Suggest {
+        query: String,
+        seq: u64,
+    },
+    /// The row `key` was taken for what was typed (`input`): learned for next time.
+    SuggestChosen {
+        input: String,
+        key: String,
     },
     Activate {
         id: u64,

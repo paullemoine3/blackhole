@@ -634,6 +634,7 @@ strong_password = "Utiliser un mot de passe fort"
 unlock_passwords = "Déverrouiller les mots de passe enregistrés…"
 
 [palette]
+previous_search = "Recherche précédente"
 action = "Action"
 apply = "Appliquer"
 auth_insecure = "Cette connexion n’est pas sécurisée : le mot de passe est envoyé en clair."

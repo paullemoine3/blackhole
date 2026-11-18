@@ -58,7 +58,17 @@ pub struct BrowserService<R: WorkspaceRepository> {
     /// Page events only mark the session stale; `flush` writes it (each event used to rewrite
     /// the whole history and workspace on the UI thread).
     unsaved_pages: bool,
+    /// How the next page of a tab was asked for (typed, chosen, quick access): its visit weighs
+    /// that much in the command bar's ranking. A tab with none follows a link.
+    expected: std::collections::HashMap<TabId, blackhole_domain::VisitKind>,
+    /// The last page each tab arrived on, and when (seconds): a page left within `BOUNCE_SECS`
+    /// without the user asking was a step of a redirect.
+    arrived: std::collections::HashMap<TabId, (Url, u64)>,
 }
+
+/// A page left this quickly, without the user asking for the next one, was a step of a redirect
+/// made by the page (its visit no longer counts for the ranking).
+const BOUNCE_SECS: u64 = 3;
 
 impl<R: WorkspaceRepository> Drop for BrowserService<R> {
     fn drop(&mut self) {
@@ -94,6 +104,8 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             repo,
             fresh,
             unsaved_pages: false,
+            expected: std::collections::HashMap::new(),
+            arrived: std::collections::HashMap::new(),
         }
     }
 
@@ -749,6 +761,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    /// The next page of `tab` was asked for this way (an address typed, a result chosen, quick
+    /// access): its visit counts as such.
+    pub fn expect_visit(&mut self, tab: TabId, kind: blackhole_domain::VisitKind) {
+        self.expected.insert(tab, kind);
+    }
+
     pub fn page_changed(&mut self, id: TabId, url: Option<Url>, title: Option<String>) {
         // A black hole tab leaves no trace: its pages stay out of the history.
         if self.workspace.is_burner(id) {
@@ -759,7 +777,41 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs());
-            self.history.visit(url, now);
+            let mut kind = self.expected.remove(&id).unwrap_or_default();
+            // Left at once without being asked: the page before was a step of a redirect, and
+            // this one is what the user was after (it takes over how that one was reached).
+            if let Some((before, at)) = self.arrived.get(&id) {
+                let moved = blackhole_domain::suggest::key(before) != blackhole_domain::suggest::key(url);
+                if moved && kind == blackhole_domain::VisitKind::Link && now.saturating_sub(*at) <= BOUNCE_SECS {
+                    if let Some(was) = self.history.bounced(before) {
+                        kind = was;
+                    }
+                }
+            }
+            let space = self
+                .workspace
+                .spaces()
+                .iter()
+                .find(|s| s.tabs.iter().any(|t| t.id == id))
+                .map(|s| s.id.0);
+            // The tab's title before this page: a page of the same site often keeps it, and the
+            // engine then reports no title change (the entry would stay named after its host).
+            let before = self
+                .workspace
+                .spaces()
+                .iter()
+                .flat_map(|s| s.tabs.iter())
+                .find(|t| t.id == id)
+                .filter(|t| t.url.host_str() == url.host_str() && !t.title.trim().is_empty())
+                .map(|t| t.title.clone());
+            self.history.visit_as(url, now, kind, space);
+            if let Some(before) = before {
+                self.history.name_if_bare(url, &before);
+            }
+            self.arrived.insert(id, (url.clone(), now));
+            if self.arrived.len() > 256 {
+                self.arrived.retain(|_, (_, at)| now.saturating_sub(*at) <= BOUNCE_SECS);
+            }
         }
         self.workspace.update_page(id, url, title.clone());
         if let Some(title) = title {
@@ -1083,6 +1135,36 @@ mod tests {
         assert!(svc.settings().recall && svc.settings().recall_exclude.contains("bank.test"));
         svc.set_recall_excluded("bank.test", false);
         assert!(svc.settings().recall_exclude.is_empty());
+    }
+
+    #[test]
+    fn a_page_of_the_same_site_keeps_the_tab_title_until_its_own_arrives() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let tab = svc.open_tab("https://shop.test/a").expect("tab");
+        svc.page_changed(tab, Some(Url::parse("https://shop.test/a").unwrap()), Some("Shop".into()));
+        svc.page_changed(tab, Some(Url::parse("https://shop.test/a?page=2").unwrap()), None);
+        assert_eq!(svc.recent_activity(1)[0].title, "Shop", "no title event: the tab's title");
+        svc.page_changed(tab, None, Some("Shop, page 2".into()));
+        assert_eq!(svc.recent_activity(1)[0].title, "Shop, page 2");
+        svc.page_changed(tab, Some(Url::parse("https://other.test/").unwrap()), None);
+        assert_eq!(svc.recent_activity(1)[0].title, "other.test", "another site never takes it");
+    }
+
+    #[test]
+    fn a_typed_page_left_at_once_hands_its_kind_to_the_next() {
+        use blackhole_domain::VisitKind;
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let tab = svc.open_tab("https://step.test/").expect("tab");
+        svc.expect_visit(tab, VisitKind::Typed);
+        svc.page_changed(tab, Some(Url::parse("https://step.test/").unwrap()), None);
+        svc.page_changed(tab, Some(Url::parse("https://final.test/").unwrap()), None);
+        let kind_of = |svc: &BrowserService<Memory>, host: &str| {
+            svc.recent_activity(10).iter().find(|e| e.url.host_str() == Some(host)).map(|e| e.recent[0].kind)
+        };
+        assert_eq!(kind_of(&svc, "step.test"), Some(VisitKind::Redirect));
+        assert_eq!(kind_of(&svc, "final.test"), Some(VisitKind::Typed));
+        let space = svc.workspace().active_space().id.0;
+        assert_eq!(svc.recent_activity(1)[0].spaces, vec![space]);
     }
 
     #[test]

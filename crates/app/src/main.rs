@@ -25,6 +25,7 @@ mod watching;
 mod passwords;
 mod pilot;
 mod recall;
+mod suggesting;
 mod trackers;
 mod sidebar;
 mod stats;
@@ -534,6 +535,11 @@ struct Running {
     recall: recall::Recall,
     /// Trackers learned while browsing (see trackers.rs).
     trackers: trackers::Learning,
+    /// The command bar's ranking: candidates of the open palette, choices learned.
+    choices: suggesting::Choices,
+    /// How the address of the command running now was asked for (typed, quick access): the
+    /// visit of the page it opens counts as such (`BrowserService::expect_visit`).
+    next_visit: Option<blackhole_domain::VisitKind>,
     /// Highlights and notes on pages (see highlights.rs).
     marks: highlights::Marks,
     /// The tab comparator (see compare.rs).
@@ -797,6 +803,7 @@ impl Running {
         // Learned trackers are blocked from the first page; a private window reads the main
         // profile's and writes nothing.
         let learning = trackers::Learning::new(&profile, private_mode());
+        let choices = suggesting::Choices::new(&profile);
         svc.policy().set_learned(
             learning.data.learned().iter().cloned(),
             learning.data.allowed().iter().cloned(),
@@ -1009,6 +1016,8 @@ impl Running {
             watching: watching::Watching::new(&data),
             recall: recall::Recall::new(&data, private_mode()),
             trackers: learning,
+            choices,
+            next_visit: None,
             marks: highlights::Marks::new(&data, private_mode()),
             comparing: compare::Comparing::new(),
             tidied: None,
@@ -3019,6 +3028,7 @@ impl Running {
             UiCommand::ForgetHistory { url } => {
                 if let Ok(url) = Url::parse(&url) {
                     self.svc.forget_history(&url);
+                    self.suggest_forget(Some(&url));
                     self.recall_forget(Some(url.as_str()));
                     self.ui_library();
                 }
@@ -4413,6 +4423,9 @@ impl Running {
             NavigationOutcome::Go(url) => {
                 let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
                 let tab = self.svc.open_tab(input);
+                if let (Some(tab), Some(kind)) = (tab, self.next_visit) {
+                    self.svc.expect_visit(tab, kind);
+                }
                 if let (Some(tab), "http", "https") = (tab, typed.scheme(), url.scheme()) {
                     self.on_upgraded(tab, typed);
                 }
@@ -4443,6 +4456,9 @@ impl Running {
         };
         match (active, self.svc.resolve(input)) {
             (Some(id), NavigationOutcome::Go(url)) => {
+                if let Some(kind) = self.next_visit {
+                    self.svc.expect_visit(id, kind);
+                }
                 if typed.scheme() == "http" && url.scheme() == "https" {
                     self.on_upgraded(id, typed);
                 }
@@ -4624,6 +4640,9 @@ impl Running {
 
     fn push_palette(&self) {
         let state = self.palette_state();
+        if matches!(self.palette_mode.as_str(), "new" | "url") {
+            self.suggest_prepare(state["actions"].as_array().map_or(&[][..], Vec::as_slice));
+        }
         let _ = self
             .palette
             .evaluate_script(&format!("window.bh&&bh.open({state})"));
@@ -4921,12 +4940,8 @@ impl Running {
             // Every row carries its `key` (domain::suggest): the same page met twice is offered once.
             "tabs": space.tabs.iter().map(|t| json!({"id": t.id.0, "title": t.title, "url": t.url.as_str(), "key": suggest::key(&t.url)})).collect::<Vec<_>>(),
             "favorites": self.svc.favorites().iter().map(|f| json!({"name": f.name, "url": f.url.as_str(), "key": suggest::key(&f.url)})).collect::<Vec<_>>(),
-            "bookmarks": self.bookmarks.load().iter().map(|b| json!({"title": b.title, "url": b.url, "key": suggest::key_of_str(&b.url)})).collect::<Vec<_>>(),
-            // History prepared for the search: one row per page, no sign-in steps, best habits
-            // first; `h` is the habit (0–1) the palette adds to the quality of a match.
-            "recent": suggest::pool(self.svc.recent_activity(usize::MAX), now_secs()).iter().map(|e| json!({
-                "title": e.title, "url": e.url.as_str(), "key": e.key, "h": suggest::habit(e.frecency),
-            })).collect::<Vec<_>>(),
+            // What is typed is ranked by the shell (`UiCommand::Suggest`, suggesting.rs): the
+            // palette only lists the tabs and quick access before the first letter.
             "actions": actions,
         })
     }
@@ -5361,7 +5376,11 @@ impl Running {
                     self.library_intro();
                 }
             }
-            UiCommand::Open { input } => self.open(&input),
+            UiCommand::Open { input, via } => {
+                self.next_visit = Some(visit_kind(via.as_deref()));
+                self.open(&input);
+                self.next_visit = None;
+            }
             UiCommand::Home => {
                 self.close_palette();
                 self.close_peek();
@@ -5449,13 +5468,32 @@ impl Running {
             }
             UiCommand::ClearHistory => {
                 self.svc.clear_history();
+                self.suggest_forget(None);
                 self.recall_forget(None);
                 self.ui_state();
             }
-            UiCommand::Navigate { input } => self.navigate(&input),
+            UiCommand::Navigate { input, via } => {
+                self.next_visit = Some(visit_kind(via.as_deref()));
+                self.navigate(&input);
+                self.next_visit = None;
+            }
+            UiCommand::Suggest { query, seq } => self.suggest_answer(&query, seq),
+            UiCommand::SuggestChosen { input, key } => self.suggest_chosen(&input, &key),
             UiCommand::Activate { id } => {
                 self.close_palette();
                 self.close_peek();
+                // A tab of another space (offered by the command bar): its space first.
+                let elsewhere = self
+                    .svc
+                    .workspace()
+                    .spaces()
+                    .iter()
+                    .find(|s| s.tabs.iter().any(|t| t.id.0 == id))
+                    .map(|s| s.id)
+                    .filter(|s| *s != self.svc.workspace().active_space().id);
+                if let Some(space) = elsewhere {
+                    self.svc.switch_space(space);
+                }
                 self.svc.activate_tab(TabId(id));
                 self.home_visible = false;
                 self.easel_tab = false;
@@ -7210,6 +7248,15 @@ fn window_tasks() {
         (t("palette.new_window"), String::new()),
         (t("palette.new_private_window"), "--private".to_owned()),
     ]);
+}
+
+/// How an address the interface sends was asked for: `bookmark` for quick access, a favorite or
+/// a bookmark; anything else was typed or chosen.
+fn visit_kind(via: Option<&str>) -> blackhole_domain::VisitKind {
+    match via {
+        Some("bookmark") => blackhole_domain::VisitKind::Bookmark,
+        _ => blackhole_domain::VisitKind::Typed,
+    }
 }
 
 /// The page this window was asked to open at launch.

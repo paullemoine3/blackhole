@@ -805,17 +805,36 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 
 ## 0.8.18 : recherche, rechargement forcé, échecs fantômes, accueil réorganisable, jump list, Réglages en onglet
 
-- Recherche de la barre de commandes : règles pures `domain/suggest.rs`. `key` (même page quelle que soit
-  l'écriture : schéma, `www.`, `/` final, `/index.html`, fragment, paramètres de pistage, ordre des
-  paramètres), `is_noise` (connexion, OAuth/SSO, `callback`, `logout`, redirections, `?code=&state=` :
-  jamais proposés), `frecency` (visites × récence, paliers façon Firefox), `pool` (une ligne par page,
-  `POOL_MAX`, page d'accueil d'un site vu par `ROOT_FROM_PAGES` pages), `match_quality` (chaque mot
-  doit correspondre ; début d'hôte/titre > début de mot > milieu ; une lettre ne vaut qu'un début),
-  `rank`. `HistoryEntry::visits` (`history.json` : `visits`, absent = 1 ; une visite dans
-  `SAME_VISIT_SECS` n'en est qu'une ; 1 000 entrées). La palette reçoit `recent` préparé (`key`, `h` =
-  `habit`) et `key` pour onglets, accès rapide, favoris ; `quality()` de `palette.html` recopie
-  `match_quality` (à garder en phase, testé côté Rust). Android : `suggestions` passe par `rank`.
-  « Recent activity » de l'accueil : sans bruit ni doublon (`home_recent_json`).
+- Recherche de la barre de commandes : règles pures `domain/suggest.rs`, classement fait par le shell à
+  chaque frappe (`UiCommand::Suggest { query, seq }` → `bh.suggested`, `app/src/suggesting.rs`) : la
+  palette ne classe plus rien, elle dessine (avant la première lettre : onglets, accès rapide, commandes).
+  Candidats construits à l'ouverture (`suggest_prepare`) : onglets de tous les espaces (`OtherTab`, nom de
+  l'espace, `Activate` change d'espace), accès rapide, favoris, `pool` de l'historique, commandes.
+  - `key` (même page quelle que soit l'écriture), `is_noise` (connexion, OAuth/SSO, `callback`, `logout`,
+    redirections, `?code=&state=`, segments français `connexion`…), `pool` (une ligne par page, page
+    d'accueil d'un site vu par `ROOT_FROM_PAGES` pages ; page de résultats d'un moteur → recherche
+    précédente, `search_terms`, `RowKind::Search`, deux au plus).
+  - Visites : `HistoryEntry::recent` (10 dernières, date + `VisitKind` : `Typed` pour `open`/`navigate`
+    de l'interface, `Bookmark` si `via: "bookmark"`, `Link` sinon, `Redirect` pour une page quittée en
+    `BOUNCE_SECS` sans demande : elle passe son type à la suivante) et `spaces` ; `history.json` :
+    `visits`, `recent` `[(s, kind)]`, `spaces` (absents = anciens fichiers). `BrowserService::expect_visit`,
+    `Running::next_visit`. `frecency` = moyenne (âge × poids du type) × (1 + 1,5 ln visites).
+  - `match_quality` : `fold` (casse, accents, œ/æ/ß), chaque mot doit correspondre, une faute permise
+    à partir de 4 lettres (`typo_of`, distance OSA ≤ 1 en début de mot, score plus bas).
+  - `Adaptive` (choix appris façon Firefox, `suggest.json`, `ChoiceStore`, 500 au plus, demi-vie 30 j,
+    jamais en fenêtre privée ni en trou noir) : `UiCommand::SuggestChosen { input, key }` à chaque ligne
+    prise ; oublié avec l'historique (`suggest_forget`).
+  - `rank_rows` (score = qualité × 100 + habitude × 45 + choix × 70 + type + 10 pour l'espace affiché ;
+    une commande nommée par la saisie d'abord ; une page trouvée par plusieurs voies est offerte sous sa
+    forme la plus utile, onglet d'abord), `pick` (8 lignes, 3 commandes gardées, 2 recherches),
+    `completion` (un mot de 2 lettres ou plus qui commence l'adresse d'un site habituel : texte gris dans
+    le champ, `#ghost`, Tab ou → le prend, la première ligne l'ouvre ; jamais après un effacement).
+  - Jeu d'évaluation : `domain/src/suggest_eval.rs` (historique réaliste, requête → résultat attendu) ;
+    tout réglage de poids s'y mesure, un cas s'y ajoute quand une requête répond mal.
+  - Titres : une nouvelle page du même site reprend le titre de l'onglet tant qu'elle n'a pas le sien
+    (`History::name_if_bare`), le moteur ne signalant pas un titre inchangé. Android : `suggestions`
+    passe par `rank_rows`/`pick` (sans choix appris). « Recent activity » de l'accueil : sans bruit ni
+    doublon (`home_recent_json`).
 - Rechargement : Mod+R et F5 = `reload`, Mod+Maj+R / Ctrl+F5 / Maj+F5 / Maj+clic = `UiCommand::HardReload`
   (`views::hard_reload`), aussi dans le menu de page et la palette (`key:shift+r`). Tout rechargement de la
   page affichée appelle `spin_reload` → `bh.reloading()` de `bar.html` : seule l'icône (`#reload svg`)
@@ -844,7 +863,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   État `embedded` : `body.embedded` masque `#top`, fond et ciel de l'accueil. Barre du haut : `place`
   « settings ». Pastille `#applied` (« Changes applied ») 450 ms après la dernière commande qui change un
   réglage, 2 s à l'écran. Devtools : `shots` capture la fenêtre principale, `eval settings` le panneau.
-- Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*`, `rl*`, `se*`, `ho*`,
+- Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*` dont accents, faute, complétion, choix appris, onglet d'un autre espace, `rl*`, `se*`, `ho*`,
   `rt*`, jump list lue dans `CustomDestinations`). macOS : compilation croisée seulement.
 
 ## Livraison et entretien

@@ -2,7 +2,7 @@
 
 use blackhole_application::{StorageError, WorkspaceRepository};
 use blackhole_domain::{
-    ContentScript, Extension, Folder, FolderId, History, HistoryEntry, PrivacyPolicy, SearchEngine,
+    ContentScript, Extension, Folder, FolderId, History, HistoryEntry, Visit, VisitKind, PrivacyPolicy, SearchEngine,
     Settings, Space, SpaceId, Tab, TabId, Workspace,
 };
 use serde::{Deserialize, Serialize};
@@ -553,6 +553,13 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                     title: d.title,
                     visited_at: d.visited_at,
                     visits: d.visits.max(1),
+                    recent: d
+                        .recent
+                        .iter()
+                        .take(blackhole_domain::history::RECENT_VISITS)
+                        .map(|&(at, kind)| Visit { at, kind: VisitKind::from_id(kind) })
+                        .collect(),
+                    spaces: d.spaces.into_iter().take(blackhole_domain::history::SPACES_KEPT).collect(),
                 })
             })
             .collect();
@@ -568,6 +575,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 title: e.title.clone(),
                 visited_at: e.visited_at,
                 visits: e.visits,
+                recent: e.recent.iter().map(|v| (v.at, v.kind.id())).collect(),
+                spaces: e.spaces.clone(),
             })
             .collect();
         let json = serde_json::to_string(&dtos).map_err(|e| StorageError(e.to_string()))?;
@@ -589,6 +598,12 @@ struct HistoryDto {
     /// Absent in files written before 0.8.18: one visit.
     #[serde(default)]
     visits: u32,
+    /// The last visits: (seconds, `VisitKind::id`), newest first. Absent before 0.8.18.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recent: Vec<(u64, u8)>,
+    /// Spaces the page was seen in. Absent before 0.8.18.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    spaces: Vec<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
