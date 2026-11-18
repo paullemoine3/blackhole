@@ -1,0 +1,269 @@
+{
+  "schema": 1,
+  "seq": 0,
+  "expires": 0,
+  "extensions": [
+    {
+      "id": "ublock-origin-lite",
+      "name": "uBlock Origin Lite",
+      "description": {
+        "en": "Ad and tracker blocker (Manifest V3, declarativeNetRequest).",
+        "fr": "Bloqueur de publicités et de traqueurs (Manifest V3, declarativeNetRequest)."
+      },
+      "homepage": "https://github.com/uBlockOrigin/uBOL-home",
+      "category": "blocking",
+      "version": "2026.1026.1812",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1026.1812/uBOLite_2026.1026.1812.chromium.zip",
+          "sha256": "d3788eac9f0a44c67f3745a43c3fd446ef33d56b1121f469b19e0fa0a836c2b5",
+          "size": 9009606
+        },
+        "windows": {
+          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1026.1812/uBOLite_2026.1026.1812.chromium.zip",
+          "sha256": "d3788eac9f0a44c67f3745a43c3fd446ef33d56b1121f469b19e0fa0a836c2b5",
+          "size": 9009606
+        }
+      },
+      "permissions": [
+        "<all_urls>",
+        "activeTab",
+        "alarms",
+        "declarativeNetRequest",
+        "offscreen",
+        "scripting",
+        "storage",
+        "unlimitedStorage",
+        "userScripts"
+      ],
+      "source": {
+        "repo": "uBlockOrigin/uBOL-home",
+        "tag_prefix": "",
+        "assets": {
+          "macos": "uBOLite_*.chromium.zip",
+          "windows": "uBOLite_*.chromium.zip"
+        }
+      }
+    },
+    {
+      "id": "dark-reader",
+      "name": "Dark Reader",
+      "description": {
+        "en": "Dark mode for every site (Manifest V3).",
+        "fr": "Mode sombre pour tous les sites (Manifest V3)."
+      },
+      "homepage": "https://github.com/darkreader/darkreader",
+      "category": "appearance",
+      "version": "4.9.134",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/darkreader/darkreader/releases/download/v4.9.134/darkreader-chrome-mv3.zip",
+          "sha256": "40402188ad23154a1b8fa094171f2b6908209ed6673ccf58276b75ce661acfaf",
+          "size": 847966
+        },
+        "windows": {
+          "url": "https://github.com/darkreader/darkreader/releases/download/v4.9.134/darkreader-chrome-mv3.zip",
+          "sha256": "40402188ad23154a1b8fa094171f2b6908209ed6673ccf58276b75ce661acfaf",
+          "size": 847966
+        }
+      },
+      "permissions": [
+        "*://*/*",
+        "alarms",
+        "fontSettings",
+        "scripting",
+        "storage"
+      ],
+      "source": {
+        "repo": "darkreader/darkreader",
+        "tag_prefix": "v",
+        "assets": {
+          "macos": "darkreader-chrome-mv3.zip",
+          "windows": "darkreader-chrome-mv3.zip"
+        }
+      }
+    },
+    {
+      "id": "sponsorblock",
+      "name": "SponsorBlock",
+      "description": {
+        "en": "Skips sponsors and intros in YouTube videos.",
+        "fr": "Saute les sponsors et intros dans les vidéos YouTube."
+      },
+      "homepage": "https://github.com/ajayyy/SponsorBlock",
+      "category": "video",
+      "version": "6.1.7",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/ajayyy/SponsorBlock/releases/download/6.1.7/ChromeExtension.zip",
+          "sha256": "7c8e3dc8b5e560b480ae8efdf28f4f1101fce0cc32434562a336a89e4962eda3",
+          "size": 1845183
+        },
+        "windows": {
+          "url": "https://github.com/ajayyy/SponsorBlock/releases/download/6.1.7/ChromeExtension.zip",
+          "sha256": "7c8e3dc8b5e560b480ae8efdf28f4f1101fce0cc32434562a336a89e4962eda3",
+          "size": 1845183
+        }
+      },
+      "permissions": [
+        "https://*.youtube.com/*",
+        "https://sponsor.ajay.app/*",
+        "scripting",
+        "storage",
+        "unlimitedStorage"
+      ],
+      "source": {
+        "repo": "ajayyy/SponsorBlock",
+        "tag_prefix": "",
+        "assets": {
+          "macos": "ChromeExtension.zip",
+          "windows": "ChromeExtension.zip"
+        }
+      }
+    },
+    {
+      "id": "ghostify",
+      "name": "Ghostify",
+      "description": {
+        "en": "Hides read, typing and story-view indicators on Instagram, Facebook and Messenger.",
+        "fr": "Masque les indicateurs de lecture, de saisie et de vues de stories sur Instagram, Facebook et Messenger."
+      },
+      "homepage": "https://github.com/Hendrizzzz/ghostify",
+      "category": "privacy",
+      "version": "2.1.1",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/Hendrizzzz/ghostify/releases/download/v2.1.1/ghostify-v2.1.1-chrome-web-store.zip",
+          "sha256": "527e9ca664f8af2231dc09b19a32b8e30ecbc7a79701726b322e42eda5d1e23c",
+          "size": 440247
+        },
+        "windows": {
+          "url": "https://github.com/Hendrizzzz/ghostify/releases/download/v2.1.1/ghostify-v2.1.1-chrome-web-store.zip",
+          "sha256": "527e9ca664f8af2231dc09b19a32b8e30ecbc7a79701726b322e42eda5d1e23c",
+          "size": 440247
+        }
+      },
+      "permissions": [
+        "declarativeNetRequest",
+        "https://*.facebook.com/*",
+        "https://*.instagram.com/*",
+        "https://*.messenger.com/*",
+        "https://ghostify-extension.vercel.app/*",
+        "https://www.fbsbx.com/*",
+        "storage"
+      ],
+      "source": {
+        "repo": "Hendrizzzz/ghostify",
+        "tag_prefix": "v",
+        "assets": {
+          "macos": "ghostify-v*-chrome-web-store.zip",
+          "windows": "ghostify-v*-chrome-web-store.zip"
+        }
+      }
+    },
+    {
+      "id": "ghostery",
+      "name": "Ghostery",
+      "description": {
+        "en": "Ad and tracker blocker (Manifest V3, declarativeNetRequest).",
+        "fr": "Bloqueur de publicités et de traqueurs (Manifest V3, declarativeNetRequest)."
+      },
+      "homepage": "https://github.com/ghostery/ghostery-extension",
+      "category": "blocking",
+      "version": "10.6.10",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.10/ghostery-chromium-10.6.10.zip",
+          "sha256": "26eefef7c787f606fb99481898e13ba655adbb97704f28cbff41dfca5ee6e2a2",
+          "size": 7736545
+        },
+        "windows": {
+          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.10/ghostery-chromium-10.6.10.zip",
+          "sha256": "26eefef7c787f606fb99481898e13ba655adbb97704f28cbff41dfca5ee6e2a2",
+          "size": 7736545
+        }
+      },
+      "permissions": [
+        "activeTab",
+        "alarms",
+        "contextMenus",
+        "cookies",
+        "declarativeNetRequest",
+        "declarativeNetRequestFeedback",
+        "http://*/*",
+        "https://*/*",
+        "offscreen",
+        "scripting",
+        "storage",
+        "tabs",
+        "userScripts",
+        "webNavigation",
+        "webRequest",
+        "ws://*/*",
+        "wss://*/*"
+      ],
+      "source": {
+        "repo": "ghostery/ghostery-extension",
+        "tag_prefix": "v",
+        "assets": {
+          "macos": "ghostery-chromium-*.zip",
+          "windows": "ghostery-chromium-*.zip"
+        }
+      }
+    },
+    {
+      "id": "bitwarden",
+      "name": "Bitwarden",
+      "description": {
+        "en": "Password manager (popup in the toolbar).",
+        "fr": "Gestionnaire de mots de passe (popup dans la barre d’outils)."
+      },
+      "homepage": "https://github.com/bitwarden/clients",
+      "category": "security",
+      "version": "2026.10.1",
+      "platforms": {
+        "macos": {
+          "url": "https://github.com/bitwarden/clients/releases/download/browser-v2026.10.1/dist-firefox-2026.10.1.zip",
+          "sha256": "80b19fe076e3a86c9eaa33c18d0be1401862cf97638eacaa284b6ea7deae3e9d",
+          "size": 22540321
+        },
+        "windows": {
+          "url": "https://github.com/bitwarden/clients/releases/download/browser-v2026.10.1/dist-chrome-2026.10.1.zip",
+          "sha256": "d7c2d924f0d21ccb36f57e39bdaf732732644e94db95d5dd967629d8b878b93a",
+          "size": 25759241
+        }
+      },
+      "permissions": [
+        "*://*/*",
+        "<all_urls>",
+        "activeTab",
+        "alarms",
+        "clipboardRead",
+        "clipboardWrite",
+        "contextMenus",
+        "http://*/*",
+        "https://*/*",
+        "idle",
+        "notifications",
+        "offscreen",
+        "scripting",
+        "sidePanel",
+        "storage",
+        "tabs",
+        "unlimitedStorage",
+        "webNavigation",
+        "webRequest",
+        "webRequestAuthProvider",
+        "webRequestBlocking"
+      ],
+      "source": {
+        "repo": "bitwarden/clients",
+        "tag_prefix": "browser-v",
+        "assets": {
+          "macos": "dist-firefox-*.zip",
+          "windows": "dist-chrome-*.zip"
+        }
+      }
+    }
+  ]
+}

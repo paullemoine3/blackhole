@@ -132,7 +132,7 @@ pub fn release_from_sums(tag: &str, sums: &str, os: &str) -> Option<Release> {
     })
 }
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .user_agent(concat!("BlackHole/", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Duration::from_secs(15))
@@ -140,7 +140,7 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
-fn read_limited(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn read_limited(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     resp.into_reader()
         .take(limit + 1)
@@ -154,7 +154,7 @@ fn read_limited(resp: ureq::Response, limit: u64) -> Result<Vec<u8>, String> {
 
 /// Why GitHub did not answer, as a message the interface renders in its own language
 /// (no connection, too slow, GitHub's own error): never the transport's raw English text.
-fn reach_error(e: ureq::Error) -> String {
+pub(crate) fn reach_error(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(code, _) => message("msg.update_github_error", &[("code", &code.to_string())]),
         ureq::Error::Transport(t) => {

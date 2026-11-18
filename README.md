@@ -15,7 +15,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0817) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0819) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -37,20 +37,17 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.18
+## 🆕 Nouveautés 0.8.19
 
-- 🔎 **Recherche bien plus juste** — dans la barre de commandes (Ctrl/⌘+L), chaque page n'apparaît qu'une fois, les pages de connexion et de redirection disparaissent, les accents et une faute de frappe ne gênent plus, vos sites habituels et vos choix passés passent devant, l'adresse d'un site quotidien se complète en gris (Tab), et vos recherches passées comme les onglets des autres espaces sont proposés.
-- 🔗 **Historique partagé entre appareils** — un interrupteur, puis tout se fait en arrière-plan sur le réseau local, sans serveur : seules les nouveautés voyagent, avec ce qui rend la recherche pertinente ; une page effacée sur l'un l'est sur l'autre (bouton « Synchroniser maintenant » au besoin).
-- 🔄 **Rechargement forcé** — Ctrl+Maj+R (⌘⇧R), Ctrl+F5 ou Maj+clic sur le bouton ; à chaque rechargement, la flèche tourne jusqu'à la fin du chargement.
-- 👻 **Moins de « Site injoignable » fantômes** — un échec au milieu d'une redirection n'est plus affiché, et une connexion coupée est retentée une fois en silence.
-- 🧲 **Accueil réorganisable** — glissez une section par son titre (ou Alt+↑/↓) : l'ordre est gardé.
-- 🪟 **Barre des tâches Windows** — clic droit sur BlackHole : nouvelle fenêtre ou nouvelle fenêtre privée.
-- ⚙️ **Réglages dans la page** — ils s'ouvrent comme un onglet, sur le ciel de l'accueil, et une pastille « Modification appliquée » confirme chaque changement.
+- 🧩 **Catalogue d'extensions signé** — la liste des extensions (uBlock Origin Lite, Dark Reader, Bitwarden…) arrive désormais signée, une fois par jour, depuis les releases GitHub de BlackHole : une nouvelle version d'extension n'attend plus une mise à jour du navigateur. Chaque paquet reste vérifié par son SHA-256 épinglé avant l'installation, et Réglages › Extensions indique la date de signature de la liste.
+- ↩️ **Jamais de retour en arrière** — « Rechercher des mises à jour » récupère d'abord la dernière liste ; hors ligne, ou avec une liste périmée, aucune version plus ancienne n'est proposée.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
+
+- 🔎 **0.8.18** — recherche bien plus juste dans la barre de commandes, historique partagé entre appareils, rechargement forcé, moins de « Site injoignable » fantômes, accueil réorganisable, Réglages dans la page.
 
 - 🏠 **0.8.17** — tuiles d'accès rapide en trois tailles, accueil à la carte (zones surveillées, téléchargements), clés d'accès macOS, profils d'import nommés, image disque macOS à glisser.
 - 🐧 **0.8.16** — Linux en aperçu (`.deb` et archive), couleur libre pour chaque espace, inspecteur web ancré dans la page, style 3D sans inclinaison.
@@ -149,7 +146,7 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 
 ## 🧩 Extensions
 
-De **vraies WebExtensions**, installables en un clic depuis **Réglages → Extensions** : uBlock Origin Lite, Dark Reader, SponsorBlock, Bitwarden. Chaque paquet provient de sa release officielle et est vérifié par **SHA-256 épinglé**.
+De **vraies WebExtensions**, installables en un clic depuis **Réglages → Extensions** : uBlock Origin Lite, Dark Reader, SponsorBlock, Bitwarden. Chaque paquet provient de sa release officielle et est vérifié par **SHA-256 épinglé** ; la liste elle-même (`market/market.json`) est signée (Ed25519) et rafraîchie chaque jour, sans attendre une nouvelle version de BlackHole.
 
 |   | macOS | Windows |
 |---|---|---|

@@ -123,14 +123,6 @@ unreachable_hint = "The connection got lost in the void. Check your network or V
 unreachable_title = "Site unreachable"
 clear_cookies_retry = "Clear this site’s cookies and try again"
 
-[extdesc]
-bitwarden = "Password manager (popup in the toolbar)."
-dark-reader = "Dark mode for every site (Manifest V3)."
-ghostery = "Ad and tracker blocker (Manifest V3, declarativeNetRequest)."
-ghostify = "Hides read, typing and story-view indicators on Instagram, Facebook and Messenger."
-sponsorblock = "Skips sponsors and intros in YouTube videos."
-ublock-origin-lite = "Ad and tracker blocker (Manifest V3, declarativeNetRequest)."
-
 [home]
 clear = "Clear"
 clear_confirm = "Click again to erase all history"
@@ -817,6 +809,11 @@ calendar = "Calendar"
 calendar_lead = "Your Google Calendar meetings with Google Meet: join them from the sidebar, the command bar or a reminder."
 catalog = "Catalog"
 catalog_note = "Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed."
+market_builtin = "List of extensions included in this version of BlackHole."
+market_checking = "Looking for the latest list of extensions…"
+market_failed = "The latest list could not be fetched ({why}); the one shown stays."
+market_none = "No extension of the catalog runs on this system yet."
+market_signed = "List of extensions signed on {date}."
 check_updates = "Check for updates"
 clean_links = "Clean links"
 clear_history = "Clear history"

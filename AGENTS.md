@@ -15,8 +15,9 @@ un aperçu depuis 0.8.16 (voir la section 0.8.16).
 
 - `crates/domain` : types et règles métier, sans I/O ni dépendance système.
 - `crates/application` : cas d'usage et traits de persistance ; dépend du domaine.
-- `crates/infrastructure` : persistance, réseau, import, coffre chiffré, catalogue
-  d'extensions et mises à jour ; implémente les traits de l'application.
+- `crates/infrastructure` : persistance, réseau, import, coffre chiffré, market
+  d'extensions signé (`market.rs`, liste `market/market.json`) et mises à jour ; implémente
+  les traits de l'application. `crates/market-tool` (`bh-market`) tient la liste (CI, jamais embarqué).
 - `crates/app` : binaire `blackhole`, composition, fenêtres, vues et IPC.
   `src/main.rs` orchestre l'état, `src/views.rs` construit les vues,
   `src/ipc.rs` définit les commandes et `ui/` contient le HTML/CSS/JS embarqué.
@@ -102,7 +103,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   autorisés pour les onglets ; aucune navigation externe des vues d'interface.
 - Garder CSP, insertion des données externes par `textContent`, absence de
   télémétrie, téléchargements HTTPS sur hôtes attendus et vérification SHA-256.
-  Les sources du catalogue d'extensions ont des hashes épinglés par plateforme.
+  Les paquets du market d'extensions ont des hashes épinglés par plateforme, dans une liste signée
+  (Ed25519, `market::PUBLIC_KEYS`) ; aucune autre source n'est installée.
 
 ## Commandes et validation
 
@@ -883,6 +885,48 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   réglage, 2 s à l'écran. Devtools : `shots` capture la fenêtre principale, `eval settings` le panneau.
 - Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*` dont accents, faute, complétion, choix appris, onglet d'un autre espace, `rl*`, `se*`, `ho*`,
   `rt*`, jump list lue dans `CustomDestinations`). macOS : compilation croisée seulement.
+
+## 0.8.19 : market d'extensions signé
+
+- Source unique : `market/market.json` (racine du dépôt). Chaque entrée : `id` (nom de fichier,
+  `domain::market::valid_id`), `name`, `description` `{en, fr}` (plus de clés `extdesc.*`),
+  `homepage`, `category`, `version`, `platforms` (`macos` / `windows` → `url` de release GitHub,
+  `sha256`, `size`), `permissions` (manifest : `permissions` + `host_permissions`), `source` (dépôt,
+  `tag_prefix`, motif d'asset par plateforme ; lu par l'outil, ignoré par l'app). L'app l'embarque
+  (`market::builtin`, `include_str!`) comme plancher hors ligne ; `CATALOG` / `CatalogEntry` n'existent plus.
+- Règles pures `domain/market.rs` : `platform_key` (pas d'hôte d'extensions = pas d'entrée : Linux,
+  Android), `trusted_package_url` (seulement `https://github.com/<o>/<r>/releases/download/<tag>/<fichier>`),
+  `valid_sha256`, `compare_versions` / `is_upgrade` (jamais de retour en arrière : une liste plus ancienne
+  ne propose rien), `accept` (schéma, `seq` jamais en recul, `expires`), `asset_matches`, `added_permissions`.
+- `infrastructure/market.rs` : `Index` / `Entry` / `Package` (serde), `validate`, signature Ed25519
+  (`ed25519-dalek` épinglé en 2.1.1 pour la MSRV 1.80, `verify_strict`) sur les octets exacts de
+  `market.json`, clés publiques `PUBLIC_KEYS` (deux possibles pendant une rotation). `fetch` lit
+  `github.com/<repo>/releases/download/market/market.json` + `.sig` (pas d'API REST, pas de quota),
+  `accept_download` refuse signature fausse, `seq` 0, index plus ancien ou expiré, puis écrit
+  `<données>/market/` (JSON puis signature, `.part` + renommage). `current` = cache valide sinon `builtin`.
+  `catalog.rs` ne garde que l'installation : `install(data, &Entry)` (paquet de l'OS courant, URL de release
+  GitHub, 64 Mo, SHA-256), `store(data, id, version, sha, bytes)`, `needs_update` (via `is_upgrade`).
+- App : `Running::market` (lu au lancement depuis le profil des extensions), `refresh_market(asked)` sur un
+  fil, `poll_market` (dans `poll_webext`) : `FIRST_MARKET_CHECK` 20 s puis `MARKET_CHECK_EVERY` 24 h,
+  `MARKET_RETRY` 1 h après un échec ; automatique seulement si `updates_enabled()` (pas en build `cargo`,
+  `devtools` ni privé). « Check for updates » (`CheckCatalogUpdates`) télécharge d'abord la liste et compte
+  les mises à jour à l'arrivée (`market_fetching = Some(true)`). État Réglages : `market` (`signed`,
+  `signedAt` = `seq`, `checking`, `error`) ; `settings.html` : `#catsrc` sous la note du catalogue, bouton
+  qui tourne pendant la recherche, état vide `settings.market_none` quand l'OS n'a aucune entrée.
+- Outil `crates/market-tool` (binaire `bh-market`, jamais embarqué) : `keygen`, `check`, `audit [--write]`
+  (télécharge chaque paquet épinglé, vérifie le hash, remplit `size` et `permissions`), `update --summary`
+  (releases amont par l'API avec `GITHUB_TOKEN`, première release publiée au bon `tag_prefix`, digest
+  `sha256:` de GitHub recoupé, manifest lu, refus d'une version non plus récente), `sign` (`seq` = maintenant,
+  `expires` = +30 j, clé `MARKET_SIGNING_KEY` en hex, refusée si absente de `PUBLIC_KEYS`), `verify`.
+- Workflow `.github/workflows/market.yml` : `track` (quotidien ou manuel) ouvre une PR `market/update` avec
+  versions, URLs, hashes et permissions nouvelles (⚠️) : rien n'atteint les utilisateurs avant la fusion ;
+  `publish` (push de `market/market.json` sur `main`, quotidien, manuel sur `main`) signe et téléverse dans
+  la pré-release `market` (jamais « latest » : l'updater de l'app l'ignore). Secret `MARKET_SIGNING_KEY`
+  absent : avertissement, rien de publié, l'app garde sa liste embarquée. Autoriser Actions à créer des PR
+  (Settings > Actions > General).
+- Tests : `domain::market::tests`, `infrastructure::market::tests` (signature, rejeu, expiration, entrées
+  dangereuses, liste embarquée valide pour macOS et Windows), `catalog::tests`, `bh-market` (manifest,
+  choix de release et d'asset, signature d'une liste tamponnée). Réseau : `bh-market audit`.
 
 ## Livraison et entretien
 
