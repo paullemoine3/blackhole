@@ -626,7 +626,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   dangereuses, liste embarquée valide pour macOS et Windows), `catalog::tests`, `bh-market` (manifest,
   choix de release et d'asset, signature d'une liste tamponnée). Réseau : `bh-market audit`.
 
-## 0.8.20 : écran Market, accord aux nouvelles permissions, Réglages plus larges
+## 0.8.20 : écran Market, accord aux nouvelles permissions, Réglages plus larges (ajout depuis GitHub : 0.8.21)
 
 - Permissions lisibles, `domain/market.rs` : `permission_lines` (une ligne par sorte, `PermissionLine { key,
   sensitive, items }`, sensibles d'abord ; `<all_urls>` et tout motif d'hôte `*` → `all_sites`, qui couvre
@@ -649,6 +649,24 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   GitHub), « Pour cet appareil » (système, fichier, taille, SHA-256 copiable), permissions. Échap ferme la fiche
   avant les Réglages. État dans `mk` (non persisté) ; rendu `put`/`morph` comme le reste de la page.
 - Réglages : `section` jusqu'à 1100 px (680 avant), `.note` limitée à 110 caractères.
+- Ajouter depuis GitHub (0.8.21, étape 3 du market, confiance au premier usage) : règles `domain::market` `github_repo`
+  (`owner/repo` ou adresse ; propriétaire = lettres, chiffres, tirets), `sideload_id` (`gh-<owner>-<repo>`,
+  jamais un id du market), `asset_rank` (Windows : Chromium puis générique, jamais Firefox ni Safari ; macOS :
+  Chromium, générique, puis Firefox), `asset_pattern` (version du nom → `*`), `display_name`.
+  `infrastructure/github_ext.rs` : `latest_release` (API REST `releases/latest` : un clic de la personne, pas
+  une veille ; 403/429 → `msg.github_rate_limited`), `parse_release` (seuls les fichiers
+  `github.com/<owner>/<repo>/releases/download/…`), `prepare` / `check_package` (téléchargement par
+  `catalog::fetch`, SHA-256, `digest` de GitHub comparé quand il existe, manifest lu), `install` (`catalog::store`
+  puis épinglage dans `extensions-github.json` : fichier, motif, URL, SHA-256, permissions), `update_of` (release
+  plus récente avec un fichier du même motif), `remove`. App `github_ext.rs` : `Sideload` (`pinned`, `flow`
+  Idle → Looking → Choose → Preparing → Ready → Installing → Done / Failed, numéro de flux contre les réponses
+  périmées, `updates`), commandes `GithubLookup`, `GithubPrepare { asset | update }`, `GithubInstall`,
+  `GithubCancel` (interdites aux pages) ; « Check for updates » cherche aussi une release plus récente de chaque
+  extension épinglée ; « Update all » ne les prend jamais. Chargées au lancement comme celles du market.
+  Écran : bouton `#mkgh`, panneau `#mkgithub` à la place de la grille (saisie, fichier recommandé, aperçu
+  « Non vérifiée par BlackHole » avec empreinte, conformité au digest GitHub et permissions, « Installer quand
+  même »), cartes et fiches marquées « Non vérifiée », catégorie `github`. Une extension du market trouvée par
+  son dépôt renvoie vers sa fiche. Test : `scripts\test-github-ext.ps1` (réseau, API GitHub anonyme).
 - Tests : `domain::market::tests`, `catalog::tests::remembers_the_permissions_of_the_installed_package`,
   `scripts\test-ext.ps1` (carte du market, fiche d'une extension installée : permissions et hash). macOS :
   compilation croisée seulement.

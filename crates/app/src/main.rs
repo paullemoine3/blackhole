@@ -12,6 +12,7 @@ mod devtools;
 mod errors;
 mod extensions;
 mod favicons;
+mod github_ext;
 mod ipc;
 mod media;
 mod compare;
@@ -616,6 +617,8 @@ struct Running {
     market_fetching: Option<bool>,
     /// Why the last market download failed (the list in use stays).
     market_error: Option<String>,
+    /// Extensions added from GitHub (unreviewed, pinned) and the add-from-GitHub steps.
+    github: github_ext::Sideload,
     /// Outdated extensions found by the last "Check for updates"; `None` until it is pressed.
     catalog_checked: Option<usize>,
     update: UpdateState,
@@ -932,6 +935,7 @@ impl Running {
         let (market_tx, market_rx) = std::sync::mpsc::channel();
         // The signed list kept by the main profile (a private window reads it from there too).
         let market_index = market::current(&ext_src_dir, market::now());
+        let github = github_ext::Sideload::new(&ext_src_dir);
         let easel_store = EaselStore::new(&data);
         let easels = easel_store.load();
         let webext = blackhole_macos_webext::ExtensionHost::new();
@@ -944,9 +948,14 @@ impl Running {
             for e in app_ext.iter().filter(|e| app_extension_enabled(src, &e.id)) {
                 host.load(&e.id, &e.path);
             }
-            for entry in market_index.for_this_system() {
-                if catalog::is_installed(src, &entry.id) && svc.extension_enabled(&entry.id) {
-                    host.load(&entry.id, &catalog::package_path(src, &entry.id));
+            // The market's, then those added from GitHub (pinned to the package accepted).
+            let ids = market_index
+                .for_this_system()
+                .map(|e| e.id.clone())
+                .chain(github.pinned.iter().map(|p| p.id.clone()));
+            for id in ids {
+                if catalog::is_installed(src, &id) && svc.extension_enabled(&id) {
+                    host.load(&id, &catalog::package_path(src, &id));
                 }
             }
         }
@@ -1079,6 +1088,7 @@ impl Running {
             installing: Default::default(),
             catalog_checked: None,
             market: market_index,
+            github,
             market_tx,
             market_rx,
             next_market_check: updates_enabled().then(|| Instant::now() + FIRST_MARKET_CHECK),
@@ -1692,6 +1702,7 @@ impl Running {
             .map(|(id, label)| json!({"id": id, "label": label}))
             .collect::<Vec<_>>());
         state["market"] = self.market_json();
+        state["github"] = self.github_json();
         state["systemLanguage"] = json!(blackhole_domain::i18n::resolve(
             blackhole_domain::i18n::SYSTEM,
             &i18n::system_languages()
@@ -1772,9 +1783,7 @@ impl Running {
                 .map(|l| json!({"key": l.key, "sensitive": l.sensitive, "items": l.items}))
                 .collect::<Vec<_>>()
         };
-        self.market
-            .for_this_system()
-            .map(|e| {
+        let describe = |e: &market::Entry| {
                 let installed = catalog::is_installed(&self.data, &e.id);
                 let loaded = self.webext.as_ref().and_then(|h| h.state(&e.id));
                 let status = if self.installing.contains(&e.id) {
@@ -1812,14 +1821,34 @@ impl Running {
                 item["permissions"] = json!(lines(blackhole_domain::market::permission_lines(&e.permissions)));
                 item["updateAdds"] = json!(lines(self.update_adds(e)));
                 item
+        };
+        let mut list: Vec<_> = self
+            .market
+            .for_this_system()
+            .map(|e| {
+                let mut item = describe(e);
+                item["unverified"] = json!(false);
+                item
             })
-            .collect()
+            .collect();
+        // Added from GitHub: not reviewed; an update is a newer release, shown before it is taken.
+        for (e, p) in self.github_entries() {
+            let mut item = describe(&e);
+            let update = self.github.updates.get(&p.id);
+            item["unverified"] = json!(true);
+            item["repo"] = json!(p.repo_path());
+            item["outdated"] = json!(update.is_some());
+            item["offered"] = json!(update.map(|(release, _)| release.tag.as_str()));
+            list.push(item);
+        }
+        list
     }
 
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
         self.poll_update();
         self.poll_market();
+        self.poll_github();
         self.poll_downloads();
         self.poll_captures();
         self.poll_passwords();
@@ -2094,7 +2123,10 @@ impl Running {
                 }
             }
             if self.market_fetching.take() == Some(true) {
-                self.catalog_checked = Some(self.outdated_extensions().len());
+                // The extensions from GitHub may still be looked up: `poll_github` counts then.
+                if self.github.checking == 0 {
+                    self.catalog_checked = Some(self.outdated_extensions().len() + self.github.updates.len());
+                }
             }
             self.ui_state();
         }
@@ -6220,9 +6252,15 @@ impl Running {
             | UiCommand::LibraryOpenTab { .. }
             | UiCommand::ClearTabs) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
+            UiCommand::GithubLookup { input } => self.github_lookup(&input),
+            UiCommand::GithubPrepare { asset, update } => self.github_prepare(asset, update),
+            UiCommand::GithubInstall => self.github_install(),
+            UiCommand::GithubCancel => self.github_cancel(),
             UiCommand::CheckCatalogUpdates => {
                 // The newest signed list first; the count comes when it has arrived (or failed).
                 self.refresh_market(true);
+                // And a newer release of every extension added from GitHub.
+                self.github_check_updates();
                 self.ui_state();
             }
             UiCommand::UpdateAllCatalog => {
@@ -6335,10 +6373,16 @@ impl Running {
                 if let Some(host) = &self.webext {
                     host.unload(&id);
                 }
-                catalog::remove(&self.data, &id);
+                if self.github.find(&id).is_some() {
+                    self.github_remove(&id);
+                } else {
+                    catalog::remove(&self.data, &id);
+                }
                 self.ui_state();
             }
-            UiCommand::SetExtensionEnabled { id, enabled } if self.market.find(&id).is_some() => {
+            UiCommand::SetExtensionEnabled { id, enabled }
+                if self.market.find(&id).is_some() || self.github.find(&id).is_some() =>
+            {
                 self.svc.set_enabled_flag(&id, enabled);
                 if let Some(host) = &self.webext {
                     if enabled && catalog::is_installed(&self.data, &id) {

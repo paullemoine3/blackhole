@@ -1,6 +1,12 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.21",
+        &[
+            "Add an extension from its GitHub repository (Settings > Extensions > Add from GitHub): BlackHole finds its latest release, picks the package for your system, checks it against the fingerprint GitHub publishes and shows you its permissions before you install it. Such an extension stays marked as not verified, and its updates are shown to you before they replace anything",
+        ],
+    ),
+    (
         "0.8.20",
         &[
             "An extension market in Settings > Extensions: search, categories, tabs for what is installed and what has an update, and a sheet for each extension with the file this system gets, its size, its SHA-256 and what it may do, the sensitive permissions first",
