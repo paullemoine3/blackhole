@@ -113,14 +113,15 @@ pub fn install(data: &Path, entry: &Entry) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::market::Package;
-    use std::collections::BTreeMap;
 
     // sha256("abc")
     const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
+    // Systems with an extension host only (elsewhere no entry has a package for the system).
     #[cfg(any(target_os = "macos", windows))]
     fn entry(version: &str) -> Entry {
+        use crate::market::Package;
+        use std::collections::BTreeMap;
         let package = Package {
             url: "https://github.com/a/b/releases/download/t/f.zip".into(),
             sha256: ABC.into(),
