@@ -87,6 +87,94 @@ pub fn added_permissions(old: &[String], new: &[String]) -> Vec<String> {
     new.iter().filter(|p| !old.contains(p)).cloned().collect()
 }
 
+/// The repository named by what the person typed: `owner/repo`, `github.com/owner/repo` or any
+/// `https://github.com/owner/repo/…` address (`.git` dropped). GitHub's own name rules: letters,
+/// digits, `-`, `_` and `.`, never `.` or `..` alone.
+pub fn github_repo(input: &str) -> Option<(String, String)> {
+    let s = input.trim();
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(s);
+    let s = s.strip_prefix("www.").unwrap_or(s);
+    let s = s.strip_prefix("github.com/").unwrap_or(s);
+    let mut parts = s.split(['/', '?', '#']);
+    let owner = parts.next()?.trim();
+    let repo = parts.next()?.trim();
+    let repo = repo.strip_suffix(".git").unwrap_or(repo);
+    let ok = |p: &str| {
+        (1..=100).contains(&p.len())
+            && p != "."
+            && p != ".."
+            && p.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    };
+    // Account names: letters, digits and hyphens only (so `gitlab.com/a/b` is no owner).
+    let account = owner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    (ok(owner) && account && ok(repo) && !input.trim().contains(' ')).then(|| (owner.to_owned(), repo.to_owned()))
+}
+
+/// The id of an extension added from a GitHub repository: `gh-<owner>-<repo>`, a safe file name
+/// (`valid_id`) that no market entry uses.
+pub fn sideload_id(owner: &str, repo: &str) -> String {
+    let mut id = String::from("gh-");
+    for c in format!("{owner}-{repo}").chars() {
+        let c = if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' };
+        if !(c == '-' && id.ends_with('-')) {
+            id.push(c);
+        }
+    }
+    let mut id: String = id.chars().take(64).collect();
+    while id.ends_with('-') {
+        id.pop();
+    }
+    id
+}
+
+/// How well a release file fits the extension host of `platform` (higher is better); `None`
+/// when it cannot run there or is not an extension package. WebView2 (Windows) takes Chromium
+/// builds; WKWebView (macOS) runs Chromium builds too and Firefox-style ones as a fallback.
+pub fn asset_rank(platform: &str, name: &str) -> Option<u8> {
+    if !matches!(platform, "windows" | "macos") {
+        return None;
+    }
+    let n = name.to_ascii_lowercase();
+    if !n.ends_with(".zip") || ["source", "src.zip", "-src", "_src"].iter().any(|s| n.contains(s)) {
+        return None;
+    }
+    let firefox = n.contains("firefox") || n.contains("gecko") || n.contains("mozilla");
+    let safari = n.contains("safari") || n.contains("xcode");
+    let chromium = ["chrome", "chromium", "edge", "opera", "mv3"].iter().any(|s| n.contains(s));
+    match (platform, safari, chromium, firefox) {
+        (_, true, _, _) => None,
+        (_, _, true, _) => Some(3),
+        ("windows", _, _, true) => None,
+        ("macos", _, _, true) => Some(1),
+        ("windows" | "macos", ..) => Some(2),
+        _ => None,
+    }
+}
+
+/// The pattern that finds the same kind of file in a later release: the version in its name
+/// becomes `*` (`ext-chrome-1.4.0.zip` → `ext-chrome-*.zip`); a name without it stays as is.
+pub fn asset_pattern(name: &str, tag: &str) -> String {
+    let version = tag.trim_start_matches(|c: char| !c.is_ascii_digit());
+    if version.is_empty() || !name.contains(version) {
+        return name.to_owned();
+    }
+    name.replace(version, "*")
+}
+
+/// The name shown for an extension added from GitHub: its manifest's, unless that is a locale
+/// placeholder (`__MSG_appName__`) or empty, then the repository's.
+pub fn display_name(manifest_name: &str, repo: &str) -> String {
+    let n = manifest_name.trim();
+    if n.is_empty() || n.starts_with("__MSG_") {
+        repo.to_owned()
+    } else {
+        n.chars().take(80).collect()
+    }
+}
+
 /// One line of the permissions an extension asks for, as the market shows them: `key` names
 /// the text (`perm.<key>` in the interface catalogs), `items` the sites of `some_sites` or the
 /// raw names of `other`, `sensitive` lines come first and are marked.
@@ -332,6 +420,50 @@ mod tests {
         let both = permission_lines(&strings(&["*://*.youtube.com/*", "*://*/*"]));
         assert_eq!(both.len(), 1);
         assert_eq!(both[0].key, "all_sites");
+    }
+
+    #[test]
+    fn repositories_from_what_is_typed() {
+        let r = |s: &str| github_repo(s).map(|(o, r)| format!("{o}/{r}"));
+        assert_eq!(r("darkreader/darkreader").as_deref(), Some("darkreader/darkreader"));
+        assert_eq!(r(" https://github.com/ajayyy/SponsorBlock/releases ").as_deref(), Some("ajayyy/SponsorBlock"));
+        assert_eq!(r("github.com/a-b/c.d.git").as_deref(), Some("a-b/c.d"));
+        assert_eq!(r("http://www.github.com/x/y?tab=readme").as_deref(), Some("x/y"));
+        for bad in ["", "darkreader", "a/..", "a b/c", "https://gitlab.com/a/b/c", "a/b c", "../x"] {
+            assert_eq!(r(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn sideloaded_ids_are_safe_and_apart_from_the_market() {
+        assert_eq!(sideload_id("Hendrizzzz", "ghostify"), "gh-hendrizzzz-ghostify");
+        assert_eq!(sideload_id("a-b", "c.d_e"), "gh-a-b-c-d-e");
+        let long = sideload_id(&"x".repeat(80), "y");
+        assert!(valid_id(&long) && long.len() <= 64);
+        assert!(valid_id(&sideload_id("-_-", "--x")));
+    }
+
+    #[test]
+    fn release_files_for_each_system() {
+        assert_eq!(asset_rank("windows", "dist-chrome-1.0.zip"), Some(3));
+        assert_eq!(asset_rank("windows", "dist-firefox-1.0.zip"), None);
+        assert_eq!(asset_rank("macos", "dist-firefox-1.0.zip"), Some(1));
+        assert_eq!(asset_rank("macos", "uBOLite_1.chromium.zip"), Some(3));
+        assert_eq!(asset_rank("windows", "extension.zip"), Some(2));
+        assert_eq!(asset_rank("windows", "ext-safari.zip"), None);
+        assert_eq!(asset_rank("windows", "source-code.zip"), None);
+        assert_eq!(asset_rank("windows", "ext.xpi"), None);
+        assert_eq!(asset_rank("linux", "ext-chrome.zip"), None);
+    }
+
+    #[test]
+    fn patterns_follow_the_version() {
+        assert_eq!(asset_pattern("tab-tamer-chromium-1.4.0.zip", "v1.4.0"), "tab-tamer-chromium-*.zip");
+        assert_eq!(asset_pattern("dist-chrome-2026.10.1.zip", "browser-v2026.10.1"), "dist-chrome-*.zip");
+        assert_eq!(asset_pattern("ChromeExtension.zip", "6.1.7"), "ChromeExtension.zip");
+        assert!(asset_matches(&asset_pattern("a-1.4.0.zip", "1.4.0"), "a-1.5.2.zip"));
+        assert_eq!(display_name("__MSG_extName__", "ghostify"), "ghostify");
+        assert_eq!(display_name(" Tab Tamer ", "tab-tamer"), "Tab Tamer");
     }
 
     #[test]

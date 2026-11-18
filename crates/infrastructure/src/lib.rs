@@ -10,6 +10,7 @@ use std::{fs, path::PathBuf};
 use url::Url;
 
 pub mod catalog;
+pub mod github_ext;
 pub mod handoff;
 pub mod history_sync;
 pub mod import;

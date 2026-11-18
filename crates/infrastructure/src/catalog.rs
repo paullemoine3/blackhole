@@ -136,10 +136,16 @@ pub fn install(data: &Path, entry: &Entry) -> Result<PathBuf, String> {
     let package = entry
         .package()
         .ok_or_else(|| "no package for this system".to_owned())?;
-    if !rules::trusted_package_url(&package.url) {
+    let bytes = fetch(&package.url)?;
+    store(data, &entry.id, &entry.version, &package.sha256, &bytes)
+}
+
+/// Blocking download of a package from a GitHub release (64 MB at most). The caller checks it.
+pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
+    if !rules::trusted_package_url(url) {
         return Err("refusing a source that is not a GitHub release".into());
     }
-    let resp = ureq::get(&package.url).call().map_err(|e| e.to_string())?;
+    let resp = ureq::get(url).call().map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     resp.into_reader()
         .take(MAX_BYTES + 1)
@@ -148,7 +154,7 @@ pub fn install(data: &Path, entry: &Entry) -> Result<PathBuf, String> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err("package too large".into());
     }
-    store(data, &entry.id, &entry.version, &package.sha256, &bytes)
+    Ok(bytes)
 }
 
 #[cfg(test)]
