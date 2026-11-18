@@ -606,13 +606,18 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   les mises à jour à l'arrivée (`market_fetching = Some(true)`). État Réglages : `market` (`signed`,
   `signedAt` = `seq`, `checking`, `error`) ; `settings.html` : `#catsrc` sous la note du catalogue, bouton
   qui tourne pendant la recherche, état vide `settings.market_none` quand l'OS n'a aucune entrée.
-- Outil `crates/market-tool` (binaire `bh-market`, jamais embarqué) : `keygen`, `check`, `audit [--write]`
+- Outil `crates/market-tool` (binaire `bh-market`, jamais embarqué) : `keygen`, `check`, `review`, `audit [--write]`
   (télécharge chaque paquet épinglé, vérifie le hash, remplit `size` et `permissions`), `update --summary`
   (releases amont par l'API avec `GITHUB_TOKEN`, première release publiée au bon `tag_prefix`, digest
   `sha256:` de GitHub recoupé, manifest lu, refus d'une version non plus récente), `sign` (`seq` = maintenant,
   `expires` = +30 j, clé `MARKET_SIGNING_KEY` en hex, refusée si absente de `PUBLIC_KEYS`), `verify`.
 - Workflow `.github/workflows/market.yml` : `track` (quotidien ou manuel) ouvre une PR `market/update` avec
-  versions, URLs, hashes et permissions nouvelles (⚠️) : rien n'atteint les utilisateurs avant la fusion ;
+  versions, URLs, hashes et raisons de revue (⚠️) : rien n'atteint les utilisateurs avant la fusion ; `merge`
+  (après `track`) la fusionne seul si elle ne touche que `market/market.json`, que son dernier commit a 48 h
+  et que `bh-market review main.json pr.json` ne trouve rien (`review_reasons` : mêmes extensions, mêmes
+  noms, sources et plateformes, version plus récente, paquets du dépôt suivi, aucune permission ajoutée) ;
+  sinon elle attend un humain (fermer la PR arrête tout). Une fusion par le jeton du workflow ne relance
+  aucun workflow : `publish` vient après `merge` dans le même run et extrait `main` à jour ;
   `publish` (push de `market/market.json` sur `main`, quotidien, manuel sur `main`) signe et téléverse dans
   la pré-release `market` (jamais « latest » : l'updater de l'app l'ignore). Secret `MARKET_SIGNING_KEY`
   absent : avertissement, rien de publié, l'app garde sa liste embarquée. Autoriser Actions à créer des PR

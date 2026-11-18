@@ -4,8 +4,12 @@ name: Market
 # bh-market tool in crates/market-tool).
 # - track (daily, or by hand): follows each extension's upstream GitHub releases, downloads the
 #   new packages, hashes them (checked against GitHub's own digest when published), reads their
-#   permissions, and opens a pull request. Nothing reaches users before a human merges it.
+#   permissions, and opens a pull request. Nothing reaches users before it is merged.
 #   Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+# - merge (after track): merges that pull request by itself when it only changes
+#   market/market.json, its last change is 48 hours old, and `bh-market review` finds nothing to
+#   review (newer versions of the same extensions, same sources, no new permission). Anything else
+#   waits for a human. Closing the pull request stops it.
 # - publish (push of market/market.json on main, daily, or by hand on main): stamps the list with a
 #   sequence and an expiry (30 days), signs it with the secret MARKET_SIGNING_KEY (Ed25519 seed,
 #   hex; its public half is in market::PUBLIC_KEYS) and uploads market.json + market.json.sig to
@@ -58,15 +62,59 @@ jobs:
           labels: market
           delete-branch: true
 
+  merge:
+    # After `track` (which may have just changed the pull request: its 48 hours start again).
+    needs: track
+    if: ${{ !cancelled() && github.event_name != 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      # bh-market links blackhole-infrastructure, whose Linux keyring needs libdbus (pkg-config).
+      - name: D-Bus headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Merge a quiet update 48 hours after its last change
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --head market/update --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then echo "No market pull request open."; exit 0; fi
+          files=$(gh pr diff "$pr" --name-only)
+          if [ "$files" != "market/market.json" ]; then
+            echo "::notice::#$pr changes more than market/market.json: left for a review"; exit 0
+          fi
+          last=$(gh pr view "$pr" --json commits --jq '.commits[-1].committedDate')
+          age=$(( $(date +%s) - $(date -d "$last" +%s) ))
+          if [ "$age" -lt 172800 ]; then
+            echo "#$pr: last change $(( age / 3600 )) h ago, merged after 48 h."; exit 0
+          fi
+          git fetch --no-tags origin market/update
+          git show FETCH_HEAD:market/market.json > "$RUNNER_TEMP/head.json"
+          if ! cargo run --locked -q -p blackhole-market-tool -- review market/market.json "$RUNNER_TEMP/head.json"; then
+            echo "::notice::#$pr needs a review: not merged automatically"; exit 0
+          fi
+          gh pr merge "$pr" --squash --delete-branch
+
   publish:
     # Only main's reviewed list is ever signed (a schedule runs on the default branch). Daily, so
-    # the 30-day expiry never comes near while the workflow is healthy.
-    if: github.ref == 'refs/heads/main'
+    # the 30-day expiry never comes near while the workflow is healthy. After `merge`: a merge
+    # made with the workflow's token starts no new run, so the list it brings is signed here.
+    needs: merge
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       # bh-market links blackhole-infrastructure, whose Linux keyring needs libdbus (pkg-config).
       - name: D-Bus headers
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev pkg-config
