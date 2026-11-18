@@ -1,4 +1,4 @@
-# Extension scenario on Windows (WebView2): installs Dark Reader from the catalog, checks it is
+# Extension scenario on Windows (WebView2): installs Dark Reader from the market, checks it is
 # injected into a plain page and that its toolbar button is present; then uBlock Origin Lite,
 # whose popup must see the page in front as its active tab (WebView2 answers with the popup). Uses the scratch profile
 # %TEMP%\bh_data (wiped first); needs network access.
@@ -33,6 +33,13 @@ eval extpopup (window.__front = '', chrome.tabs.query({active:true,currentWindow
 wait 1000
 eval extpopup window.__front + '#' + document.body.innerText.replace(/\s+/g, ' ').slice(0, 120)
 shot ext-ubol
+cmd {"cmd":"close_ext_popup"}
+cmd {"cmd":"open_settings","tab":"extensions"}
+wait 1500
+cmd {"cmd":"check_catalog_updates"}
+wait 8000
+eval settings document.querySelectorAll('#catalog .row').length + '|' + document.getElementById('catsrc').textContent + '|' + document.getElementById('chk-msg').textContent
+shot ext-market
 quit
 '@
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
@@ -52,4 +59,7 @@ Check ($evals[1] -match 'rgb\(24, 26, 27\)') 'content: Dark Reader darkens the p
 Check ($evals[2] -match 'Dark Reader' -and $evals[2] -notmatch '__MSG_') 'toolbar: the button carries the name of the extension'
 Check ($evals[3] -match '\d' -and ($evals[3] -replace '.*-> ', '') -eq ($evals[5] -replace '.*-> ', '')) 'popout: a window asked by an extension from a page opens as its popup, not as a tab'
 Check ($evals[7] -match 'https://example\.com/#' -and $evals[7] -notmatch 'pas un site|not a web') 'popup: the active tab of an extension popup is the page in front'
+# Market: six entries for this system; before the first signed list is published, the build's own
+# list stays and the note says so (with the failed download), the check still answers.
+Check ($evals[8] -match '-> "?6\|' -and $evals[8] -match 'included in this version|incluse dans cette version' -and $evals[8] -match 'up to date|update|à jour|mise')'settings: the market lists the extensions of this system and says where the list comes from'
 if ($fail) { exit 1 }

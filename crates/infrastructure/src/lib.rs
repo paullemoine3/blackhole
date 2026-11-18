@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod handoff;
 pub mod history_sync;
 pub mod import;
+pub mod market;
 pub mod peers;
 pub mod recall;
 pub mod store;

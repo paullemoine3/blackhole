@@ -41,6 +41,7 @@ use blackhole_domain::{
     BlockLog, Easels, FolderId, Removed, SearchEngine, Settings, SpaceId, TabId,
 };
 use blackhole_infrastructure::catalog;
+use blackhole_infrastructure::market;
 use blackhole_infrastructure::peers;
 use blackhole_infrastructure::updater::{self, Release};
 use blackhole_infrastructure::{
@@ -277,6 +278,10 @@ const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(15);
 const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 /// After a failed check (offline, GitHub unreachable), try again well before `UPDATE_CHECK_EVERY`.
 const UPDATE_RETRY: Duration = Duration::from_secs(30 * 60);
+/// The signed extension market (`market::fetch`): first look shortly after launch, then daily.
+const FIRST_MARKET_CHECK: Duration = Duration::from_secs(20);
+const MARKET_CHECK_EVERY: Duration = Duration::from_secs(24 * 3600);
+const MARKET_RETRY: Duration = Duration::from_secs(3600);
 
 /// Where the self-update stands; shown as a button at the bottom of the sidebar.
 enum UpdateState {
@@ -602,6 +607,15 @@ struct Running {
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
+    /// Extensions offered: the signed market list kept on this device, else the build's own.
+    market: market::Index,
+    market_tx: std::sync::mpsc::Sender<Result<market::Index, String>>,
+    market_rx: std::sync::mpsc::Receiver<Result<market::Index, String>>,
+    next_market_check: Option<Instant>,
+    /// A market download is running; `Some(true)` when "Check for updates" waits for it.
+    market_fetching: Option<bool>,
+    /// Why the last market download failed (the list in use stays).
+    market_error: Option<String>,
     /// Outdated extensions found by the last "Check for updates"; `None` until it is pressed.
     catalog_checked: Option<usize>,
     update: UpdateState,
@@ -915,6 +929,9 @@ impl Running {
         let (import_tx, import_rx) = std::sync::mpsc::channel();
         let (dl_size_tx, dl_size_rx) = std::sync::mpsc::channel();
         let (capture_tx, capture_rx) = std::sync::mpsc::channel();
+        let (market_tx, market_rx) = std::sync::mpsc::channel();
+        // The signed list kept by the main profile (a private window reads it from there too).
+        let market_index = market::current(&ext_src_dir, market::now());
         let easel_store = EaselStore::new(&data);
         let easels = easel_store.load();
         let webext = blackhole_macos_webext::ExtensionHost::new();
@@ -927,9 +944,9 @@ impl Running {
             for e in app_ext.iter().filter(|e| app_extension_enabled(src, &e.id)) {
                 host.load(&e.id, &e.path);
             }
-            for entry in catalog::CATALOG {
-                if catalog::is_installed(src, entry.id) && svc.extension_enabled(entry.id) {
-                    host.load(entry.id, &catalog::package_path(src, entry.id));
+            for entry in market_index.for_this_system() {
+                if catalog::is_installed(src, &entry.id) && svc.extension_enabled(&entry.id) {
+                    host.load(&entry.id, &catalog::package_path(src, &entry.id));
                 }
             }
         }
@@ -1061,6 +1078,12 @@ impl Running {
             webext,
             installing: Default::default(),
             catalog_checked: None,
+            market: market_index,
+            market_tx,
+            market_rx,
+            next_market_check: updates_enabled().then(|| Instant::now() + FIRST_MARKET_CHECK),
+            market_fetching: None,
+            market_error: None,
             update: UpdateState::Idle,
             update_tx,
             update_rx,
@@ -1668,6 +1691,7 @@ impl Running {
             .iter()
             .map(|(id, label)| json!({"id": id, "label": label}))
             .collect::<Vec<_>>());
+        state["market"] = self.market_json();
         state["systemLanguage"] = json!(blackhole_domain::i18n::resolve(
             blackhole_domain::i18n::SYSTEM,
             &i18n::system_languages()
@@ -1714,13 +1738,25 @@ impl Running {
         });
     }
 
+    /// Where the market list comes from, for the note under the catalog (Settings > Extensions).
+    fn market_json(&self) -> serde_json::Value {
+        json!({
+            "signed": self.market.is_signed(),
+            // `seq` is the UNIX time of the signature.
+            "signedAt": self.market.is_signed().then_some(self.market.seq),
+            "checking": self.market_fetching == Some(true),
+            "error": self.market_error.as_deref().map(i18n::render),
+        })
+    }
+
+    /// The market's entries that have a package for this system.
     fn catalog_state(&self) -> Vec<serde_json::Value> {
-        catalog::CATALOG
-            .iter()
+        self.market
+            .for_this_system()
             .map(|e| {
-                let installed = catalog::is_installed(&self.data, e.id);
-                let loaded = self.webext.as_ref().and_then(|h| h.state(e.id));
-                let status = if self.installing.contains(e.id) {
+                let installed = catalog::is_installed(&self.data, &e.id);
+                let loaded = self.webext.as_ref().and_then(|h| h.state(&e.id));
+                let status = if self.installing.contains(&e.id) {
                     "installing"
                 } else {
                     match loaded {
@@ -1731,19 +1767,18 @@ impl Running {
                         None => "available",
                     }
                 };
-                let error = match self.webext.as_ref().and_then(|h| h.state(e.id)) {
+                let error = match self.webext.as_ref().and_then(|h| h.state(&e.id)) {
                     Some(blackhole_macos_webext::LoadState::Failed(why)) => Some(why),
-                    _ => self.install_errors.get(e.id).cloned(),
+                    _ => self.install_errors.get(&e.id).cloned(),
                 };
-                // The catalog's descriptions are translated by extension id (`extdesc.<id>`).
-                let key = format!("extdesc.{}", e.id);
-                let description = Some(t(&key)).filter(|d| *d != key).unwrap_or_else(|| e.description.to_owned());
+                // The market carries its own translations (English when the language is missing).
                 json!({
-                    "id": e.id, "name": e.name, "description": description, "version": e.version,
-                    "homepage": e.homepage, "installed": installed, "status": status, "error": error,
-                    "installedVersion": catalog::installed_version(&self.data, e.id),
+                    "id": e.id, "name": e.name, "description": e.description_in(i18n::lang()),
+                    "version": e.version, "homepage": e.homepage, "category": e.category,
+                    "installed": installed, "status": status, "error": error,
+                    "installedVersion": catalog::installed_version(&self.data, &e.id),
                     "outdated": catalog::needs_update(&self.data, e),
-                    "enabled": self.svc.extension_enabled(e.id),
+                    "enabled": self.svc.extension_enabled(&e.id),
                     "supported": self.webext.is_some(),
                 })
             })
@@ -1753,6 +1788,7 @@ impl Running {
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
         self.poll_update();
+        self.poll_market();
         self.poll_downloads();
         self.poll_captures();
         self.poll_passwords();
@@ -1966,16 +2002,16 @@ impl Running {
         self.ui_state();
     }
 
-    fn outdated_extensions(&self) -> Vec<&'static str> {
-        catalog::CATALOG
-            .iter()
+    fn outdated_extensions(&self) -> Vec<String> {
+        self.market
+            .for_this_system()
             .filter(|e| catalog::needs_update(&self.data, e))
-            .map(|e| e.id)
+            .map(|e| e.id.clone())
             .collect()
     }
 
     fn install_catalog(&mut self, id: &str) {
-        let Some(entry) = catalog::find(id) else {
+        let Some(entry) = self.market.find(id).cloned() else {
             return;
         };
         if self.webext.is_none() || !self.installing.insert(id.to_owned()) {
@@ -1984,8 +2020,53 @@ impl Running {
         self.install_errors.remove(id);
         let (tx, data) = (self.install_tx.clone(), self.data.clone());
         std::thread::spawn(move || {
-            let _ = tx.send((entry.id.to_owned(), catalog::install(&data, entry)));
+            let result = catalog::install(&data, &entry);
+            let _ = tx.send((entry.id, result));
         });
+    }
+
+    /// Downloads the signed market list off the UI thread (`market_rx`). `asked`: "Check for
+    /// updates" waits for it before counting what is outdated.
+    fn refresh_market(&mut self, asked: bool) {
+        if let Some(waiting) = &mut self.market_fetching {
+            *waiting |= asked;
+            return;
+        }
+        self.market_fetching = Some(asked);
+        let (tx, data) = (self.market_tx.clone(), self.data.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(market::fetch(&data, market::now()));
+        });
+    }
+
+    /// Runs the daily market refresh and applies what the download thread reports.
+    fn poll_market(&mut self) {
+        if let Some(at) = self.next_market_check {
+            if Instant::now() >= at {
+                self.next_market_check = Some(Instant::now() + MARKET_CHECK_EVERY);
+                self.refresh_market(false);
+            }
+        }
+        while let Ok(result) = self.market_rx.try_recv() {
+            match result {
+                Ok(index) => {
+                    self.market_error = None;
+                    self.market = index;
+                }
+                Err(why) => {
+                    tracing::warn!("extension market: {why}");
+                    self.market_error = Some(why);
+                    let retry = Instant::now() + MARKET_RETRY;
+                    if let Some(at) = &mut self.next_market_check {
+                        *at = (*at).min(retry);
+                    }
+                }
+            }
+            if self.market_fetching.take() == Some(true) {
+                self.catalog_checked = Some(self.outdated_extensions().len());
+            }
+            self.ui_state();
+        }
     }
 
     /// Shows the Settings in the page card, like a tab (no window of their own any more): the
@@ -6109,12 +6190,13 @@ impl Running {
             | UiCommand::ClearTabs) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => self.install_catalog(&id),
             UiCommand::CheckCatalogUpdates => {
-                self.catalog_checked = Some(self.outdated_extensions().len());
+                // The newest signed list first; the count comes when it has arrived (or failed).
+                self.refresh_market(true);
                 self.ui_state();
             }
             UiCommand::UpdateAllCatalog => {
                 for id in self.outdated_extensions() {
-                    self.install_catalog(id);
+                    self.install_catalog(&id);
                 }
                 self.catalog_checked = Some(0);
                 self.ui_state();
@@ -6217,7 +6299,7 @@ impl Running {
                 catalog::remove(&self.data, &id);
                 self.ui_state();
             }
-            UiCommand::SetExtensionEnabled { id, enabled } if catalog::find(&id).is_some() => {
+            UiCommand::SetExtensionEnabled { id, enabled } if self.market.find(&id).is_some() => {
                 self.svc.set_enabled_flag(&id, enabled);
                 if let Some(host) = &self.webext {
                     if enabled && catalog::is_installed(&self.data, &id) {

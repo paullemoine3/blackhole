@@ -323,7 +323,7 @@
         <span class="sub" id="chk-msg" aria-live="polite"></span>
       </div>
       <div class="list rows" id="catalog"></div>
-      <p class="note" id="catnote"><span data-i18n="settings.catalog_note">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</span></p>
+      <p class="note" id="catnote"><span data-i18n="settings.catalog_note">Each entry is downloaded over HTTPS from its official release and checked against a pinned SHA-256 before it is installed.</span> <span id="catsrc"></span></p>
     </div>
     <div class="card" id="appcard"><h2 data-i18n="settings.found_in_apps">Found in your apps</h2><div class="list rows" id="appexts"></div>
       <p class="note"><span data-i18n="settings.apps_note">Safari web extensions shipped by apps installed on this Mac (for example Bitwarden). They run on the same native host, with their toolbar button and popup. Features that rely on the app itself (Touch ID unlock, native messaging) are not available.</span></p>
@@ -712,10 +712,20 @@ window.bh = {
     $('version').textContent = s.version;
     renderAppUpdate(s.appUpdate, s.version);
     const outdated = s.catalog.filter(c => c.outdated && c.supported);
-    $('upd-all').hidden = !outdated.length;
-    $('chk-msg').textContent = s.catalogChecked == null ? '' : outdated.length
+    const mk = s.market || {};
+    $('upd-all').hidden = !outdated.length || mk.checking;
+    $('chk-ext').disabled = !!mk.checking;
+    $('chk-ext').classList.toggle('spin', !!mk.checking);
+    $('chk-msg').textContent = mk.checking ? bhT('settings.market_checking')
+      : s.catalogChecked == null ? '' : outdated.length
       ? bhTn('settings.updates_available', outdated.length) : bhT('settings.up_to_date');
-    put($('catalog'), ...s.catalog.map(c => {
+    // Where the list comes from: signed by the market workflow, or carried by this build.
+    $('catsrc').textContent = [
+      mk.signed ? bhT('settings.market_signed', { date: new Date(mk.signedAt * 1000).toLocaleDateString(bhI18n.lang, { day: 'numeric', month: 'long', year: 'numeric' }) })
+        : bhT('settings.market_builtin'),
+      mk.error ? bhT('settings.market_failed', { why: mk.error }) : '',
+    ].filter(Boolean).join(' ');
+    put($('catalog'), ...(s.catalog.length ? [] : [empty('puzzle', bhT('settings.market_none'))]), ...s.catalog.map(c => {
       const row = el('div', 'row');
       const text = el('div', 'grow');
       const labels = { installing: 'library.downloading', loading: 'settings.starting', active: 'settings.active', disabled: 'settings.turned_off', failed: 'settings.error' };

@@ -122,14 +122,6 @@ unreachable_hint = "La connexion s’est perdue dans le vide. Vérifiez votre r�
 unreachable_title = "Site injoignable"
 clear_cookies_retry = "Effacer les cookies de ce site et réessayer"
 
-[extdesc]
-bitwarden = "Gestionnaire de mots de passe (popup dans la barre d’outils)."
-dark-reader = "Mode sombre pour tous les sites (Manifest V3)."
-ghostery = "Bloqueur de publicités et de traqueurs (Manifest V3, declarativeNetRequest)."
-ghostify = "Masque les indicateurs de lecture, de saisie et de vues de stories sur Instagram, Facebook et Messenger."
-sponsorblock = "Saute les sponsors et intros dans les vidéos YouTube."
-ublock-origin-lite = "Bloqueur de publicités et de traqueurs (Manifest V3, declarativeNetRequest)."
-
 [home]
 clear = "Effacer"
 clear_confirm = "Cliquez à nouveau pour effacer tout l’historique"
@@ -816,6 +808,11 @@ calendar = "Agenda"
 calendar_lead = "Vos réunions Google Agenda avec Google Meet : rejoignez-les depuis la barre latérale, la barre de commande ou un rappel."
 catalog = "Catalogue"
 catalog_note = "Chaque entrée est téléchargée en HTTPS depuis sa version officielle et vérifiée par un SHA-256 épinglé avant son installation."
+market_builtin = "Liste d’extensions incluse dans cette version de BlackHole."
+market_checking = "Recherche de la dernière liste d’extensions…"
+market_failed = "Impossible de récupérer la dernière liste ({why}) ; celle affichée reste en place."
+market_none = "Aucune extension du catalogue ne fonctionne encore sur ce système."
+market_signed = "Liste d’extensions signée le {date}."
 check_updates = "Rechercher des mises à jour"
 clean_links = "Nettoyer les liens"
 clear_history = "Effacer l’historique"

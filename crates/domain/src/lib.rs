@@ -11,6 +11,7 @@ pub mod highlights;
 pub mod history;
 pub mod http_auth;
 pub mod i18n;
+pub mod market;
 pub mod meetings;
 pub mod notice;
 pub mod omnibox;

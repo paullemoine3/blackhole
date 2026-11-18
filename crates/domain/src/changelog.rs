@@ -1,6 +1,13 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.19",
+        &[
+            "The extension catalog now comes from a signed list that BlackHole fetches once a day: new versions of uBlock Origin Lite, Dark Reader, Bitwarden and the others reach you without waiting for a BlackHole update. Each package is still checked against its pinned SHA-256 before it is installed, and Settings > Extensions shows when the list was signed",
+            "Check for updates in Settings > Extensions fetches the latest list first; an older list (offline, or a copy that is no longer signed) never offers to go back to an earlier version",
+        ],
+    ),
+    (
         "0.8.18",
         &[
             "A smarter search in the command bar (Ctrl/Cmd+L): each page is offered once, however its address was written; sign-in, logout and redirect steps are left out; every word you type must match, accents and one typo aside; the sites you type or pick often come first, and what you chose before for the same letters comes first next time",

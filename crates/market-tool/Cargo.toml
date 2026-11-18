@@ -1,0 +1,23 @@
+[package]
+name = "blackhole-market-tool"
+version.workspace = true
+edition.workspace = true
+description = "Keeps market/market.json: follows upstream GitHub releases, audits packages, signs the published index"
+publish = false
+
+[[bin]]
+name = "bh-market"
+path = "src/main.rs"
+
+[dependencies]
+blackhole-domain.workspace = true
+blackhole-infrastructure.workspace = true
+serde_json.workspace = true
+ureq = { version = "2", default-features = false, features = ["native-certs", "tls", "json"] }
+sha2 = "0.10"
+ed25519-dalek = "=2.1.1"
+getrandom = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

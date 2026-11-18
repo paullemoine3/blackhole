@@ -1,0 +1,91 @@
+name: Market
+
+# Extension market (market/market.json, see crates/infrastructure/src/market.rs and the
+# bh-market tool in crates/market-tool).
+# - track (daily, or by hand): follows each extension's upstream GitHub releases, downloads the
+#   new packages, hashes them (checked against GitHub's own digest when published), reads their
+#   permissions, and opens a pull request. Nothing reaches users before a human merges it.
+#   Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+# - publish (push of market/market.json on main, daily, or by hand on main): stamps the list with a
+#   sequence and an expiry (30 days), signs it with the secret MARKET_SIGNING_KEY (Ed25519 seed,
+#   hex; its public half is in market::PUBLIC_KEYS) and uploads market.json + market.json.sig to
+#   the `market` pre-release. A pre-release is never "latest": the app updater is not disturbed.
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  push:
+    branches: [main]
+    paths: [market/market.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  track:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Follow upstream releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo run --locked -q -p blackhole-market-tool -- update market/market.json --summary "$RUNNER_TEMP/market.md"
+      - name: Summary
+        run: cat "$RUNNER_TEMP/market.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: market/update
+          commit-message: "chore(ext): new upstream releases in the extension market"
+          title: "chore(ext): extension market update"
+          body-path: ${{ runner.temp }}/market.md
+          add-paths: market/market.json
+          labels: market
+          delete-branch: true
+
+  publish:
+    # Only main's reviewed list is ever signed (a schedule runs on the default branch). Daily, so
+    # the 30-day expiry never comes near while the workflow is healthy.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check the list
+        run: cargo run --locked -q -p blackhole-market-tool -- check market/market.json
+      - name: Sign
+        env:
+          MARKET_SIGNING_KEY: ${{ secrets.MARKET_SIGNING_KEY }}
+        run: |
+          if [ -z "$MARKET_SIGNING_KEY" ]; then
+            echo "::warning::MARKET_SIGNING_KEY is not set: the market list is not published"
+            exit 0
+          fi
+          cargo run --locked -q -p blackhole-market-tool -- sign market/market.json out --days 30
+          cargo run --locked -q -p blackhole-market-tool -- verify out/market.json out/market.json.sig
+      - name: Upload to the market pre-release
+        if: hashFiles('out/market.json.sig') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view market >/dev/null 2>&1; then
+            gh release create market --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "Extension market" \
+              --notes "Signed list of the extensions BlackHole offers (market.json + Ed25519 signature). Updated by the Market workflow; not an app release."
+          fi
+          gh release upload market out/market.json out/market.json.sig --clobber

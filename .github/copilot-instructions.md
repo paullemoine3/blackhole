@@ -6,7 +6,8 @@ Navigateur Rust (winit + wry) : WKWebView sur macOS, WebView2 sur Windows, WebKi
 `domain` → `application` → `infrastructure` → `app` (composition root : winit + wry). Les dépendances vont uniquement vers la gauche.
 - `domain` : types et règles métier, sans I/O ni dépendance système.
 - `application` : cas d'usage (`Service`), orchestre le domaine via des traits.
-- `infrastructure` : persistance, réseau, catalogue d'extensions (`catalog.rs`), mise à jour (`updater.rs`), import, coffre chiffré.
+- `infrastructure` : persistance, réseau, market d'extensions signé (`market.rs`) et paquets installés (`catalog.rs`), mise à jour (`updater.rs`), import, coffre chiffré.
+- `market-tool` (binaire `bh-market`) : tient `market/market.json` (suivi des releases amont, audit, signature) ; utilisé par `.github/workflows/market.yml`, jamais embarqué.
 - `app` : fenêtres, vues web (`views.rs`), IPC (`ipc.rs`), état (`main.rs`), UI HTML/JS dans `crates/app/ui/`, harnais `devtools.rs`.
 - `macos-url`, `macos-webext` : intégration système. `macos-webext` contient `lib.rs` (macOS), `win.rs` (Windows, WebView2) et un stub pour les autres cibles ; les trois exposent la même API `ExtensionHost`.
 - `android` (`crates/android`, cdylib + rlib) : cœur de la version Android, au-dessus de `application`/`infrastructure` ; coque Kotlin dans `android/` (Gradle). Voir la section Android.
@@ -27,7 +28,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 ## Sécurité et qualité
 - `unsafe_code = "forbid"` dans le workspace, sauf crates `macos-url` et `macos-webext`.
 - Navigation : seuls http(s) sont autorisés dans les onglets (plus les schémas d'extension `webkit-extension`/`safari-web-extension`/`chrome-extension`). Les vues d'UI ne naviguent jamais hors de `about`/`data`.
-- Téléchargements : HTTPS uniquement, hôtes attendus, **SHA-256 épinglé** vérifié (catalogue, mises à jour). Une URL/hash par plateforme via `CatalogEntry::source()` (champ `windows`).
+- Téléchargements : HTTPS uniquement, hôtes attendus, **SHA-256 épinglé** vérifié (market, mises à jour). Une URL/hash par plateforme : table `platforms` (`macos`, `windows`) de chaque entrée de `market/market.json`, `Entry::package()`.
 - Écritures de fichiers atomiques ; UI avec CSP et `textContent` (pas d'`innerHTML` sur des données externes) ; aucune télémétrie.
 - `cargo clippy --workspace --all-targets` doit être sans avertissement, y compris `cargo clippy -p blackhole --features devtools`.
 - Commentaires seulement quand ils clarifient un « pourquoi » non évident.
@@ -55,8 +56,8 @@ cargo test --workspace --locked
 
 ## Extensions
 - macOS : `WKWebExtensionController`. Windows : `ICoreWebView2Profile7::AddBrowserExtension` (zips Chromium dépaquetés dans `<données>/webext/unpacked/<id>`, `catalog::remove` supprime aussi ce dossier).
-- Bitwarden : build Firefox sur macOS, build Chromium (`chromium`/`windows` dans `CatalogEntry`) sur Windows.
-- Ajouter une extension au catalogue : URL de la release officielle, télécharger puis calculer le SHA-256, ajouter une entrée avec test (`catalog.rs` vérifie longueurs de hash et https).
+- Bitwarden : build Firefox sur macOS, build Chromium sur Windows (`platforms.macos` / `platforms.windows` de son entrée).
+- Ajouter une extension au market : une entrée dans `market/market.json` (id, nom, descriptions `en`/`fr`, `platforms` avec URL de release GitHub et SHA-256, `source` = dépôt, préfixe de tag, motif d'asset par plateforme), puis `cargo run -p blackhole-market-tool -- audit --write` (télécharge, vérifie le hash, remplit taille et permissions) ; le test `builtin_list_is_valid_and_covers_both_systems` valide la liste.
 - Limites WebView2 : pas de badge, pas d'onglet actif exposé aux extensions ; le popup est une vue `chrome-extension://<id>/<popup>` sur le même profil.
 
 ## Ponts entre fonctions (0.8.8)
@@ -577,6 +578,48 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   réglage, 2 s à l'écran. Devtools : `shots` capture la fenêtre principale, `eval settings` le panneau.
 - Test Windows : `scripts\test-0818.ps1` (serveur local 47984, contrôles nommés `sr*` dont accents, faute, complétion, choix appris, onglet d'un autre espace, `rl*`, `se*`, `ho*`,
   `rt*`, jump list lue dans `CustomDestinations`). macOS : compilation croisée seulement.
+
+## 0.8.19 : market d'extensions signé
+
+- Source unique : `market/market.json` (racine du dépôt). Chaque entrée : `id` (nom de fichier,
+  `domain::market::valid_id`), `name`, `description` `{en, fr}` (plus de clés `extdesc.*`),
+  `homepage`, `category`, `version`, `platforms` (`macos` / `windows` → `url` de release GitHub,
+  `sha256`, `size`), `permissions` (manifest : `permissions` + `host_permissions`), `source` (dépôt,
+  `tag_prefix`, motif d'asset par plateforme ; lu par l'outil, ignoré par l'app). L'app l'embarque
+  (`market::builtin`, `include_str!`) comme plancher hors ligne ; `CATALOG` / `CatalogEntry` n'existent plus.
+- Règles pures `domain/market.rs` : `platform_key` (pas d'hôte d'extensions = pas d'entrée : Linux,
+  Android), `trusted_package_url` (seulement `https://github.com/<o>/<r>/releases/download/<tag>/<fichier>`),
+  `valid_sha256`, `compare_versions` / `is_upgrade` (jamais de retour en arrière : une liste plus ancienne
+  ne propose rien), `accept` (schéma, `seq` jamais en recul, `expires`), `asset_matches`, `added_permissions`.
+- `infrastructure/market.rs` : `Index` / `Entry` / `Package` (serde), `validate`, signature Ed25519
+  (`ed25519-dalek` épinglé en 2.1.1 pour la MSRV 1.80, `verify_strict`) sur les octets exacts de
+  `market.json`, clés publiques `PUBLIC_KEYS` (deux possibles pendant une rotation). `fetch` lit
+  `github.com/<repo>/releases/download/market/market.json` + `.sig` (pas d'API REST, pas de quota),
+  `accept_download` refuse signature fausse, `seq` 0, index plus ancien ou expiré, puis écrit
+  `<données>/market/` (JSON puis signature, `.part` + renommage). `current` = cache valide sinon `builtin`.
+  `catalog.rs` ne garde que l'installation : `install(data, &Entry)` (paquet de l'OS courant, URL de release
+  GitHub, 64 Mo, SHA-256), `store(data, id, version, sha, bytes)`, `needs_update` (via `is_upgrade`).
+- App : `Running::market` (lu au lancement depuis le profil des extensions), `refresh_market(asked)` sur un
+  fil, `poll_market` (dans `poll_webext`) : `FIRST_MARKET_CHECK` 20 s puis `MARKET_CHECK_EVERY` 24 h,
+  `MARKET_RETRY` 1 h après un échec ; automatique seulement si `updates_enabled()` (pas en build `cargo`,
+  `devtools` ni privé). « Check for updates » (`CheckCatalogUpdates`) télécharge d'abord la liste et compte
+  les mises à jour à l'arrivée (`market_fetching = Some(true)`). État Réglages : `market` (`signed`,
+  `signedAt` = `seq`, `checking`, `error`) ; `settings.html` : `#catsrc` sous la note du catalogue, bouton
+  qui tourne pendant la recherche, état vide `settings.market_none` quand l'OS n'a aucune entrée.
+- Outil `crates/market-tool` (binaire `bh-market`, jamais embarqué) : `keygen`, `check`, `audit [--write]`
+  (télécharge chaque paquet épinglé, vérifie le hash, remplit `size` et `permissions`), `update --summary`
+  (releases amont par l'API avec `GITHUB_TOKEN`, première release publiée au bon `tag_prefix`, digest
+  `sha256:` de GitHub recoupé, manifest lu, refus d'une version non plus récente), `sign` (`seq` = maintenant,
+  `expires` = +30 j, clé `MARKET_SIGNING_KEY` en hex, refusée si absente de `PUBLIC_KEYS`), `verify`.
+- Workflow `.github/workflows/market.yml` : `track` (quotidien ou manuel) ouvre une PR `market/update` avec
+  versions, URLs, hashes et permissions nouvelles (⚠️) : rien n'atteint les utilisateurs avant la fusion ;
+  `publish` (push de `market/market.json` sur `main`, quotidien, manuel sur `main`) signe et téléverse dans
+  la pré-release `market` (jamais « latest » : l'updater de l'app l'ignore). Secret `MARKET_SIGNING_KEY`
+  absent : avertissement, rien de publié, l'app garde sa liste embarquée. Autoriser Actions à créer des PR
+  (Settings > Actions > General).
+- Tests : `domain::market::tests`, `infrastructure::market::tests` (signature, rejeu, expiration, entrées
+  dangereuses, liste embarquée valide pour macOS et Windows), `catalog::tests`, `bh-market` (manifest,
+  choix de release et d'asset, signature d'une liste tamponnée). Réseau : `bh-market audit`.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
