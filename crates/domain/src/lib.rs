@@ -30,6 +30,7 @@ pub mod sync;
 pub mod trackers;
 pub mod verbs;
 pub mod watch;
+pub mod welcome;
 pub mod workspace;
 pub mod wormhole;
 

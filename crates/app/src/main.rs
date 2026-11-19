@@ -381,6 +381,17 @@ const DOWNLOAD_LINGER: Duration = Duration::from_secs(8);
 const DOWNLOAD_POLL: Duration = Duration::from_millis(500);
 /// Debug builds only, with `BH_TRACE` set: one line on stderr for what a page asks the shell
 /// (navigations, new windows, page events), to follow a click that misbehaves. Never in release.
+/// When the process started: start-up steps are traced against it (`BH_TRACE`).
+static LAUNCHED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// Traces a start-up step with the time since launch (debug builds with `BH_TRACE` only).
+fn trace_startup(step: &str) {
+    trace(|| {
+        let ms = LAUNCHED.get().map_or(0, |t| t.elapsed().as_millis());
+        format!("startup {ms} ms: {step}")
+    });
+}
+
 pub(crate) fn trace(line: impl FnOnce() -> String) {
     static ON: std::sync::LazyLock<bool> =
         std::sync::LazyLock::new(|| cfg!(debug_assertions) && std::env::var_os("BH_TRACE").is_some());
@@ -420,8 +431,11 @@ fn partial_size(path: &std::path::Path) -> u64 {
 struct Running {
     chrome: WebView,
     /// Copy of the sidebar floating over the page while the real one is hidden.
-    flyout: WebView,
-    hotzone: WebView,
+    /// The overlays (hotzone, flyout, command bar) are created just after the window shows its
+    /// first views (`raise_due` at launch), not before: three engine views less before the window
+    /// has content. `None` until then (or if the engine refused one).
+    flyout: Option<WebView>,
+    hotzone: Option<WebView>,
     bar: WebView,
     home: WebView,
     tabs: HashMap<TabId, WebView>,
@@ -578,7 +592,7 @@ struct Running {
     release_notes: Vec<serde_json::Value>,
     /// Command bar overlay; rebuilt whenever a view is added so it stays on top.
     splitbar: LazyView,
-    palette: WebView,
+    palette: Option<WebView>,
     /// Context menu being shown by the overlay (position and items).
     menu: Option<serde_json::Value>,
     palette_ready: bool,
@@ -608,6 +622,13 @@ struct Running {
     /// Native WebExtension host (macOS 15.4+); `None` where unsupported.
     webext: Option<blackhole_macos_webext::ExtensionHost>,
     installing: std::collections::HashSet<String>,
+    /// Private window: drops the welcome pages its freshly installed extensions open
+    /// (`domain::welcome`); `ext_loaded` counts the loaded extensions to notice a new one.
+    welcome: blackhole_domain::welcome::WelcomePages,
+    /// The launch splash plays on the start page: only for the first window, never for a new
+    /// window opened beside others (`is_new_window`).
+    intro: bool,
+    ext_loaded: usize,
     /// Extensions offered: the signed market list kept on this device, else the build's own.
     market: market::Index,
     market_tx: std::sync::mpsc::Sender<Result<market::Index, String>>,
@@ -774,7 +795,9 @@ impl Running {
                 .with_fullsize_content_view(true)
                 .with_title_hidden(true);
         }
+        trace_startup("event loop running");
         let window = Rc::new(event_loop.create_window(attrs).expect("window"));
+        trace_startup("window created");
         #[cfg(windows)]
         let backdrop = backdrop::Backdrop::new(&window);
 
@@ -817,6 +840,7 @@ impl Running {
                 exts.map(|h| h.join().unwrap_or_default()),
             )
         });
+        trace_startup("session, icons and extensions read");
         // Learned trackers are blocked from the first page; a private window reads the main
         // profile's and writes nothing.
         let learning = trackers::Learning::new(&profile, private_mode());
@@ -826,6 +850,7 @@ impl Running {
             learning.data.allowed().iter().cloned(),
         );
         views::prepare_blocking(svc.policy());
+        trace_startup("blocking lists ready");
         // A private window has no extensions unless the main profile's settings allow them.
         let ext_src = if private_mode() {
             let shared = JsonWorkspaceRepository::new(profile.clone())
@@ -876,6 +901,7 @@ impl Running {
             &mailbox,
         )
         .expect("sidebar view");
+        trace_startup("sidebar view");
         let bar = views::ui_view(
             &window,
             &mut web_context,
@@ -896,36 +922,7 @@ impl Running {
             &mailbox,
         )
         .expect("start page view");
-        let hotzone = views::ui_view(
-            &window,
-            &mut web_context,
-            HOTZONE_HTML,
-            hotzone_rect(&sidebar, &size),
-            !sidebar.is_open(),
-            true,
-            &mailbox,
-        )
-        .expect("sidebar hotzone view");
-        let flyout = views::ui_view(
-            &window,
-            &mut web_context,
-            CHROME_HTML,
-            flyout_rect(&sidebar, &size),
-            false,
-            false,
-            &mailbox,
-        )
-        .expect("sidebar flyout view");
-        let palette = views::ui_view(
-            &window,
-            &mut web_context,
-            PALETTE_HTML,
-            palette_rect(false, &size),
-            false,
-            true,
-            &mailbox,
-        )
-        .expect("command bar view");
+        trace_startup("interface views");
 
         let (install_tx, install_rx) = std::sync::mpsc::channel();
         let (update_tx, update_rx) = std::sync::mpsc::channel();
@@ -967,6 +964,7 @@ impl Running {
             let _ = std::fs::write(&filed, b"1");
         }
 
+        trace_startup("extensions asked for");
         let release_notes: Vec<serde_json::Value> = svc
             .take_release_notes(env!("CARGO_PKG_VERSION"))
             .into_iter()
@@ -976,8 +974,8 @@ impl Running {
         Self {
             release_notes,
             chrome,
-            flyout,
-            hotzone,
+            flyout: None,
+            hotzone: None,
             bar,
             home,
             tabs: HashMap::new(),
@@ -987,7 +985,8 @@ impl Running {
             last_active: HashMap::new(),
             zoom: HashMap::new(),
             zoomed: HashSet::new(),
-            raise_due: None,
+            // The overlays come once the first views are up (see `flyout`).
+            raise_due: Some(Instant::now()),
             shown: None,
             pip_tab: None,
             pip_seen: false,
@@ -1072,7 +1071,7 @@ impl Running {
             settings_seq: 0,
             home_visible: true,
             splitbar: LazyView::new(),
-            palette,
+            palette: None,
             menu: None,
             palette_ready: false,
             palette_open: false,
@@ -1086,6 +1085,13 @@ impl Running {
             ext_anchors: HashMap::new(),
             webext,
             installing: Default::default(),
+            welcome: if private_mode() && ext_src.is_some() {
+                blackhole_domain::welcome::WelcomePages::private(Instant::now())
+            } else {
+                blackhole_domain::welcome::WelcomePages::off()
+            },
+            ext_loaded: 0,
+            intro: !is_new_window(),
             catalog_checked: None,
             market: market_index,
             github,
@@ -1260,17 +1266,17 @@ impl Running {
             .bar
             .set_bounds(views::rect(0.0, 0.0, size.width, BAR_HEIGHT));
         let _ = self.chrome.set_bounds(chrome_rect(&self.sidebar, &size));
-        let _ = self.flyout.set_bounds(flyout_rect(&self.sidebar, &size));
-        let _ = self
-            .flyout
-            .set_visible(self.sidebar.flyout_shown() && !self.library);
-        let _ = self.hotzone.set_bounds(hotzone_rect(&self.sidebar, &size));
-        let _ = self
-            .hotzone
-            .set_visible(!self.sidebar.is_open() && !self.library);
-        let _ = self
-            .palette
-            .set_bounds(palette_rect(self.palette_open, &size));
+        if let Some(flyout) = &self.flyout {
+            let _ = flyout.set_bounds(flyout_rect(&self.sidebar, &size));
+            let _ = flyout.set_visible(self.sidebar.flyout_shown() && !self.library);
+        }
+        if let Some(hotzone) = &self.hotzone {
+            let _ = hotzone.set_bounds(hotzone_rect(&self.sidebar, &size));
+            let _ = hotzone.set_visible(!self.sidebar.is_open() && !self.library);
+        }
+        if let Some(palette) = &self.palette {
+            let _ = palette.set_bounds(palette_rect(self.palette_open, &size));
+        }
         if let Some(peek) = &self.peek {
             let _ = peek
                 .scrim
@@ -1505,9 +1511,9 @@ impl Running {
 
     pub(crate) fn ui(&self, js: String) {
         let _ = self.chrome.evaluate_script(&js);
-        let _ = self
-            .flyout
-            .evaluate_script(&format!("window.bh&&(bh.role='flyout');{js}"));
+        if let Some(flyout) = &self.flyout {
+            let _ = flyout.evaluate_script(&format!("window.bh&&(bh.role='flyout');{js}"));
+        }
     }
 
     /// The space an easel shows in: its folder's, else the one it was created in.
@@ -1844,6 +1850,28 @@ impl Running {
         list
     }
 
+    /// Private window: each extension that finishes loading runs its first-install code now,
+    /// so the time its welcome page is dropped starts over (`domain::welcome`).
+    fn watch_extension_loads(&mut self) {
+        let now = Instant::now();
+        if !self.welcome.watching(now) {
+            return;
+        }
+        let Some(host) = &self.webext else { return };
+        let loaded = self
+            .market
+            .for_this_system()
+            .map(|e| e.id.as_str())
+            .chain(self.github.pinned.iter().map(|p| p.id.as_str()))
+            .chain(self.app_ext.iter().map(|e| e.id.as_str()))
+            .filter(|id| matches!(host.state(id), Some(blackhole_macos_webext::LoadState::Loaded)))
+            .count();
+        if loaded > self.ext_loaded {
+            self.welcome.extension_loaded(now);
+        }
+        self.ext_loaded = loaded;
+    }
+
     /// Applies finished downloads and refreshes the settings window when a state changed.
     fn poll_webext(&mut self) {
         self.poll_update();
@@ -1879,7 +1907,12 @@ impl Running {
         // Pages an extension asked for itself (`tabs.create`, `windows.create`: Bitwarden's
         // security key sign-in) open as tabs, never as its popup again.
         let opened = self.webext.as_ref().map(|h| h.take_opened()).unwrap_or_default();
+        self.watch_extension_loads();
         for url in opened {
+            if self.welcome.drops(false, Instant::now()) {
+                trace(|| format!("welcome page dropped {url}"));
+                continue;
+            }
             trace(|| format!("extension opens {url}"));
             self.open(&url);
         }
@@ -2217,9 +2250,7 @@ impl Running {
         };
         let Some(window) = window else { return };
         match action {
-            "drag" => {
-                let _ = window.drag_window();
-            }
+            "drag" => drag_window(window),
             "minimize" => window.set_minimized(true),
             "maximize" => {
                 window.set_maximized(!window.is_maximized());
@@ -3492,6 +3523,7 @@ impl Running {
         let mut state = json!({
             "engine": self.svc.settings().search_engine.label(),
             "animations": self.svc.settings().animations,
+            "intro": self.intro,
             "depth": self.svc.settings().depth,
             "favorites": self.svc.favorites().iter()
                 .map(|f| json!({
@@ -3536,14 +3568,10 @@ impl Running {
         i18n::apply(&self.svc.settings().language);
         window_tasks();
         self.close_palette();
-        let mut views: Vec<&WebView> = vec![
-            &self.chrome,
-            &self.flyout,
-            &self.hotzone,
-            &self.bar,
-            &self.home,
-            &self.palette,
-        ];
+        let mut views: Vec<&WebView> = vec![&self.chrome, &self.bar, &self.home];
+        views.extend(self.flyout.as_ref());
+        views.extend(self.hotzone.as_ref());
+        views.extend(self.palette.as_ref());
         views.extend(self.peek.as_ref().map(|p| &p.scrim));
         views.extend(self.splitbar.view.as_ref());
         views.extend(self.library_panel.view.as_ref());
@@ -3813,9 +3841,13 @@ impl Running {
 
     fn raise_overlays(&mut self) {
         // Restacking the existing overlays: rebuilding them made the sidebar flash.
-        if views::raise_views(&[&self.hotzone, &self.flyout, &self.palette]) {
-            self.apply_focus();
-            return;
+        if let (Some(hotzone), Some(flyout), Some(palette)) =
+            (&self.hotzone, &self.flyout, &self.palette)
+        {
+            if views::raise_views(&[hotzone, flyout, palette]) {
+                self.apply_focus();
+                return;
+            }
         }
         let size = self.window_size();
         match views::ui_view(
@@ -3827,7 +3859,7 @@ impl Running {
             true,
             &self.mailbox,
         ) {
-            Ok(view) => self.hotzone = view,
+            Ok(view) => self.hotzone = Some(view),
             Err(error) => tracing::error!("cannot create sidebar hotzone: {error}"),
         }
         match views::ui_view(
@@ -3839,7 +3871,7 @@ impl Running {
             false,
             &self.mailbox,
         ) {
-            Ok(view) => self.flyout = view,
+            Ok(view) => self.flyout = Some(view),
             Err(error) => tracing::error!("cannot create sidebar flyout: {error}"),
         }
         let bounds = palette_rect(false, &size);
@@ -3853,7 +3885,7 @@ impl Running {
             &self.mailbox,
         ) {
             Ok(view) => {
-                self.palette = view;
+                self.palette = Some(view);
                 self.palette_ready = false;
                 self.palette_open = false;
             }
@@ -4521,8 +4553,8 @@ impl Running {
     }
 
     fn apply_focus(&self) {
-        let _ = if self.palette_open {
-            self.palette.focus()
+        let _ = if let (true, Some(palette)) = (self.palette_open, &self.palette) {
+            palette.focus()
         } else if let Some(peek) = &self.peek {
             peek.page.focus()
         } else {
@@ -4772,11 +4804,11 @@ impl Running {
         self.palette_mode = mode.to_owned();
         self.palette_open = true;
         self.apply_slots();
-        let _ = self
-            .palette
-            .set_bounds(palette_rect(true, &self.window_size()));
-        let _ = self.palette.set_visible(true);
-        let _ = self.palette.focus();
+        if let Some(palette) = &self.palette {
+            let _ = palette.set_bounds(palette_rect(true, &self.window_size()));
+            let _ = palette.set_visible(true);
+            let _ = palette.focus();
+        }
         if self.palette_ready {
             self.push_palette();
         }
@@ -4787,9 +4819,9 @@ impl Running {
         if matches!(self.palette_mode.as_str(), "new" | "url") {
             self.suggest_prepare(state["actions"].as_array().map_or(&[][..], Vec::as_slice));
         }
-        let _ = self
-            .palette
-            .evaluate_script(&format!("window.bh&&bh.open({state})"));
+        if let Some(palette) = &self.palette {
+            let _ = palette.evaluate_script(&format!("window.bh&&bh.open({state})"));
+        }
     }
 
     fn close_palette(&mut self) {
@@ -4800,11 +4832,11 @@ impl Running {
         self.palette_open = false;
         self.sidebar.hold_for_menu(false);
         self.apply_slots();
-        let _ = self.palette.evaluate_script("window.bh&&bh.hide()");
-        let _ = self.palette.set_visible(false);
-        let _ = self
-            .palette
-            .set_bounds(palette_rect(false, &self.window_size()));
+        if let Some(palette) = &self.palette {
+            let _ = palette.evaluate_script("window.bh&&bh.hide()");
+            let _ = palette.set_visible(false);
+            let _ = palette.set_bounds(palette_rect(false, &self.window_size()));
+        }
         self.apply_focus();
         // Closing the sign-in prompt any other way (Esc, click outside, another palette)
         // cancels it: the server's own 401 page shows.
@@ -5513,7 +5545,10 @@ impl Running {
 
     fn handle_ui(&mut self, command: UiCommand) {
         match command {
-            UiCommand::Ready => self.sync(),
+            UiCommand::Ready => {
+                trace_startup("an interface page is ready");
+                self.sync()
+            }
             UiCommand::LibraryReady => {
                 self.ui_library();
                 if self.library {
@@ -6183,9 +6218,7 @@ impl Running {
                 self.ui_settings();
             }
             UiCommand::FocusContent => self.focus_content(),
-            UiCommand::DragWindow => {
-                let _ = self.window.drag_window();
-            }
+            UiCommand::DragWindow => drag_window(&self.window),
             UiCommand::WindowMinimize => self.window.set_minimized(true),
             UiCommand::WindowMaximize => self.window.set_maximized(!self.window.is_maximized()),
             UiCommand::WindowClose => self.quit = true,
@@ -6445,9 +6478,9 @@ impl Running {
                 if self.peek.is_some() {
                     self.peek_to_tab();
                 } else if self.palette_open && self.palette_mode == "boost" {
-                    let _ = self
-                        .palette
-                        .evaluate_script("window.bh&&bh.save&&bh.save()");
+                    if let Some(palette) = &self.palette {
+                        let _ = palette.evaluate_script("window.bh&&bh.save&&bh.save()");
+                    }
                 }
                 return;
             }
@@ -6771,9 +6804,20 @@ impl Running {
                         url.host_str().unwrap_or_default(),
                         (self.window_size().width, BAR_HEIGHT, 0.0, 0.0),
                     ) => {}
+            Msg::OpenTab(url) if self.welcome.drops(false, Instant::now()) => {
+                trace(|| format!("welcome page dropped {url}"));
+            }
             Msg::OpenTab(url) => {
                 trace(|| format!("open tab {url}"));
                 self.open(url.as_str());
+            }
+            // No tab behind it (a view not showing a tab yet, never the Peek page).
+            Msg::OpenTabFrom(opener, url)
+                if self
+                    .welcome
+                    .drops(opener != PEEK_TAB || self.peek.is_some(), Instant::now()) =>
+            {
+                trace(|| format!("welcome page dropped {url}"));
             }
             Msg::OpenTabFrom(opener, url) => {
                 trace(|| format!("open tab {url} from tab {}", opener.0));
@@ -7369,11 +7413,38 @@ fn can_self_update() -> bool {
     !private_mode() && updater::supported()
 }
 
+/// Moves a window with the mouse, from a press in the top bar its page draws. On Windows the move
+/// is started natively (`blackhole_macos_webext::drag_window`): winit's `drag_window` stops working
+/// for good after one quick click on the bar. Elsewhere winit's own.
+fn drag_window(window: &Window) {
+    #[cfg(windows)]
+    {
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        if let Ok(handle) = window.window_handle() {
+            if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                blackhole_macos_webext::drag_window(h.hwnd.get());
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = window.drag_window();
+    }
+}
+
 /// A private window runs in its own process with a throwaway profile (cookies, history, tabs,
 /// bookmarks), deleted when it closes.
 fn private_mode() -> bool {
     static PRIVATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *PRIVATE.get_or_init(|| std::env::args().any(|a| a == "--private"))
+}
+
+/// Whether this window opens beside others ("New window", a private window, the taskbar while
+/// the app runs) rather than starting the app: no launch splash then.
+fn is_new_window() -> bool {
+    private_mode()
+        || std::env::args().any(|a| a == "--new-window")
+        || !peers::peers(&peers_dir(), std::process::id()).is_empty()
 }
 
 /// Dev builds keep their window registry in the scratch folder, away from the real app.
@@ -7399,6 +7470,7 @@ fn open_window(private: bool, url: Option<&str>) -> bool {
         return false;
     };
     let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--new-window");
     if private {
         cmd.arg("--private");
     }
@@ -7439,6 +7511,7 @@ fn launch_url() -> Option<String> {
 const GTK_PUMP: Duration = Duration::from_millis(8);
 
 fn main() {
+    LAUNCHED.get_or_init(Instant::now);
     #[cfg(target_os = "linux")]
     let event_loop = {
         use winit::platform::x11::EventLoopBuilderExtX11;

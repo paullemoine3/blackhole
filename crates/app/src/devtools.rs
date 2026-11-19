@@ -101,10 +101,10 @@ impl Running {
                         None => return delay,
                     },
                     "chrome" => &self.chrome,
-                    "flyout" => &self.flyout,
+                    "flyout" => self.flyout.as_ref().unwrap_or(&self.home),
                     "bar" => &self.bar,
                     "home" => &self.home,
-                    "palette" => &self.palette,
+                    "palette" => self.palette.as_ref().unwrap_or(&self.home),
                     "peek" => self.peek.as_ref().map_or(&self.home, |p| &p.page),
                     // The popup of an extension's button (Windows), when one is open.
                     #[cfg(windows)]

@@ -285,9 +285,23 @@ $('wclose').onclick = () => send({ cmd: 'window_close' });
 document.addEventListener('dblclick', (e) => {
   if (e.button === 0 && !e.target.closest('button, input')) send({ cmd: 'window_maximize' });
 });
+// Moving the window. On Windows the move only starts once the pointer has moved a few pixels
+// with the button held: the system's move loop swallows the next click, so a click or the
+// double-click that maximises must never enter it.
+let press = null;
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && !e.target.closest('button, input')) send({ cmd: 'drag_window' });
+  if (e.button !== 0 || e.target.closest('button, input')) return;
+  if (document.body.classList.contains('windows')) press = { x: e.screenX, y: e.screenY };
+  else send({ cmd: 'drag_window' });
 });
+document.addEventListener('mousemove', (e) => {
+  if (!press) return;
+  if (!(e.buttons & 1)) { press = null; return; }
+  if (Math.abs(e.screenX - press.x) + Math.abs(e.screenY - press.y) < 4) return;
+  press = null;
+  send({ cmd: 'drag_window' });
+});
+document.addEventListener('mouseup', () => { press = null; });
 send({ cmd: 'ready' });
 </script>
 </body>

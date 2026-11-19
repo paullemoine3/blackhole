@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.22",
+        &[
+            "Windows: the window moves again when you hold the left button in the top bar and drag; one quick click on the bar used to stop it for good",
+            "Private windows no longer open the welcome page of each extension allowed there, as if it had just been installed",
+            "A new window opens faster and goes straight to its start page: the launch animation only plays when BlackHole starts",
+        ],
+    ),
+    (
         "0.8.21",
         &[
             "Add an extension from its GitHub repository (Settings > Extensions > Add from GitHub): BlackHole finds its latest release, picks the package for your system, checks it against the fingerprint GitHub publishes and shows you its permissions before you install it. Such an extension stays marked as not verified, and its updates are shown to you before they replace anything",

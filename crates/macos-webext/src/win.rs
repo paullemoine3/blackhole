@@ -208,6 +208,46 @@ pub fn app_is_active() -> bool {
     }
 }
 
+/// Starts moving the window `hwnd` with the mouse, as a drag of its title bar would, when the
+/// primary button is still held. Replaces winit's `drag_window`: winit sets a `dragging` flag that
+/// only `WM_EXITSIZEMOVE` clears, and a quick click on the top bar (released before the shell
+/// handles the page's message) never starts the move loop, so the flag stayed set and every later
+/// drag was ignored for the life of the window. Returns whether a move was started.
+pub fn drag_window(hwnd: isize) -> bool {
+    use windows::Win32::{
+        Foundation::{HWND, LPARAM, POINT, WPARAM},
+        UI::{
+            Input::KeyboardAndMouse::{GetAsyncKeyState, ReleaseCapture, VK_LBUTTON, VK_RBUTTON},
+            WindowsAndMessaging::{
+                GetCursorPos, GetSystemMetrics, PostMessageW, HTCAPTION, SM_SWAPBUTTON,
+                WM_NCLBUTTONDOWN,
+            },
+        },
+    };
+    // SAFETY: plain Win32 calls on a window of this thread.
+    unsafe {
+        // The physical left button is the logical right one when the buttons are swapped.
+        let primary = if GetSystemMetrics(SM_SWAPBUTTON) != 0 { VK_RBUTTON } else { VK_LBUTTON };
+        if GetAsyncKeyState(i32::from(primary.0)) >= 0 {
+            return false;
+        }
+        let mut at = POINT::default();
+        if GetCursorPos(&mut at).is_err() {
+            return false;
+        }
+        let _ = ReleaseCapture();
+        // Screen coordinates packed as POINTS, like the system's own WM_NCLBUTTONDOWN.
+        let packed = (at.x as u16 as u32) | ((at.y as u16 as u32) << 16);
+        PostMessageW(
+            Some(HWND(hwnd as *mut _)),
+            WM_NCLBUTTONDOWN,
+            WPARAM(HTCAPTION as usize),
+            LPARAM(packed as i32 as isize),
+        )
+        .is_ok()
+    }
+}
+
 /// Screen rectangle `(x, y, width, height)` in pixels of the foreground window when it belongs to
 /// another application. `None` when it is the desktop or a minimised window.
 pub fn frontmost_foreign_window() -> Option<(f64, f64, f64, f64)> {

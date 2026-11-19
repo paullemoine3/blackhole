@@ -20,7 +20,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 - Imports spécifiques : les placer dans le bloc `cfg` correspondant (sinon avertissements `unused_imports`/`dead_code` sur l'autre plateforme).
 - Exemples : `ExtAction` (macOS : popover natif ; Windows : vue popup + scrim `extpopup.html`), fenêtre sans décorations + boutons dans `ui/bar.html` sous Windows (`body.windows`), `backdrop.rs` (softbuffer) contre les bords blancs, icône via `build.rs` (`winresource`).
 - Windows : toutes les vues d'un même dossier de données doivent avoir les mêmes réglages moteur (extensions activées, GPU, arguments) → toujours passer par `views::builder()` (il fixe aussi `--process-per-site`).
-- Mémoire : chaque vue = un renderer. Pages de shell rares (`library_panel`, `easel_panel`, `splitbar`) = `LazyView` créées à la demande (dans `ensure_panels`) et libérées après 60 s masquées ; les overlays (hotzone, flyout, palette) sont recréés au-dessus des nouveaux onglets via `raise_palette` (différé, `flush_raise`). Plafond `max_live_tabs` (domain `overflow_to_release`), préchargement des voisins (`preload_next_tab`), cible mémoire WebView2 « Low » sur les onglets masqués (`set_view_background`, rien à faire sur macOS). Vues de réserve (`spares`) : réglage `spare_views` (0, 1 ou 2 ; défaut 2, ~50 Mo chacune).
+- Mémoire : chaque vue = un renderer. Pages de shell rares (`library_panel`, `easel_panel`, `splitbar`) = `LazyView` créées à la demande (dans `ensure_panels`) et libérées après 60 s masquées ; les overlays (hotzone, flyout, palette, `Option<WebView>`) sont créés juste après les premières vues au lancement puis recréés au-dessus des nouveaux onglets via `raise_palette` (différé, `flush_raise`). Plafond `max_live_tabs` (domain `overflow_to_release`), préchargement des voisins (`preload_next_tab`), cible mémoire WebView2 « Low » sur les onglets masqués (`set_view_background`, rien à faire sur macOS). Vues de réserve (`spares`) : réglage `spare_views` (0, 1 ou 2 ; défaut 2, ~50 Mo chacune).
 - **Parité systématique :** toute modification ou demande réalisable sur les deux OS est appliquée aux deux dans la même passe (logique commune dans domain/pplication/HTML, branches cfg pour le natif). Si un côté est impossible ou non testable, le dire explicitement et laisser un repli, jamais l'ignorer en silence. Ex. : un popout d'extension s'ouvre en popup sur Windows (show_ext_popup) et en popover natif sur macOS (show_native_popup).
 - Pas de build macOS complet sous Windows (pas de SDK Apple), mais une vérification de types est possible : `rustup target add aarch64-apple-darwin`, puis `cargo clippy --workspace --all-targets --target aarch64-apple-darwin` avec `CC_aarch64_apple_darwin`/`AR_aarch64_apple_darwin` pointant vers un faux compilateur qui crée des fichiers vides (seuls les scripts de build C en ont besoin). La faire après toute modification sous `cfg(target_os = "macos")` ; le comportement reste non testé sur macOS, le signaler.
 - MSRV `rust-version = "1.80"` : pas d'API plus récente (ex. `as_chunks`, 1.88) même si clippy la suggère.
@@ -670,6 +670,28 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Tests : `domain::market::tests`, `catalog::tests::remembers_the_permissions_of_the_installed_package`,
   `scripts\test-ext.ps1` (carte du market, fiche d'une extension installée : permissions et hash). macOS :
   compilation croisée seulement.
+
+## 0.8.22 : déplacement de fenêtre (Windows), extensions en privé, nouvelle fenêtre plus rapide
+
+- Déplacer une fenêtre (barre du haut, barre de l'Easel) : `drag_window` de l'app, jamais `Window::drag_window`
+  de winit sous Windows. winit 0.30 pose un drapeau `dragging` que seul `WM_EXITSIZEMOVE` efface : un clic
+  rapide sur la barre (relâché avant que le shell traite le message) le laissait levé et plus aucun glisser ne
+  marchait. `blackhole_macos_webext::drag_window` (win.rs) lance le déplacement natif (`WM_NCLBUTTONDOWN`,
+  `HTCAPTION`) seulement si le bouton principal est encore enfoncé. Côté page (`bar.html`, `easel.html`), sous
+  Windows le glisser ne part qu'après 4 px de mouvement bouton enfoncé : la boucle de déplacement avale le
+  clic suivant, donc un clic ou le double-clic qui agrandit n'y entre jamais. macOS inchangé (winit).
+  Test manuel : clic rapide sur la barre puis glisser, double-clic agrandir/restaurer.
+- Fenêtre privée : son profil WebView2 est neuf, chaque extension y est réinstallée et ouvre sa page
+  d'accueil (Dark Reader, Ghostery, Bitwarden). `domain::welcome::WelcomePages` : pendant `WELCOME_WINDOW`
+  (15 s) après le chargement d'une extension, une page demandée sans onglet d'origine (`Msg::OpenTab`,
+  `OpenTabFrom` de l'onglet 0 hors Peek, `take_opened`) est écartée ; jamais en fenêtre normale. Un lien
+  d'une page affichée a toujours son onglet. macOS : stockage des extensions déjà gardé (identifiant stable),
+  la règle ne gêne rien.
+- Nouvelle fenêtre (`is_new_window` : `--new-window` passé par `open_window`, fenêtre privée, ou autre
+  fenêtre vivante dans le registre `peers`) : pas de splash (champ `intro` de l'état de l'accueil).
+  Démarrage : hotzone, flyout et palette (`Option<WebView>`) sont créés juste après les premières vues par
+  `raise_due` (palette forcée par `open_palette` via `flush_raise(true)`) ; mesures `BH_TRACE=1` en debug
+  (`startup N ms: …`). Contenu affiché vers 0,8 s pour une nouvelle fenêtre, 1,2 s en privé.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).

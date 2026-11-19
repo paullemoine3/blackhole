@@ -182,9 +182,11 @@ impl Running {
                             .map(|h| json!({"url": h.url, "title": h.title, "snippet": h.snippet, "at": h.at}))
                             .collect();
                         let answer = json!({"seq": id, "hits": list, "now": now()});
-                        let _ = self
-                            .palette
-                            .evaluate_script(&format!("window.bh&&bh.recall&&bh.recall({answer})"));
+                        if let Some(palette) = &self.palette {
+                            let _ = palette.evaluate_script(&format!(
+                                "window.bh&&bh.recall&&bh.recall({answer})"
+                            ));
+                        }
                     }
                 }
                 Event::Count(n) => {

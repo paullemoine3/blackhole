@@ -331,7 +331,7 @@ pub fn set_window_tasks(tasks: &[(String, String)]) {
 pub fn set_window_tasks(_tasks: &[(String, String)]) {}
 #[cfg(windows)]
 pub use win::{
-    app_is_active, block_hosts, delete_profile, frontmost_foreign_window, on_renderer_gone,
+    app_is_active, block_hosts, delete_profile, drag_window, frontmost_foreign_window, on_renderer_gone,
     raise_view, referrer_once, round_view,
     set_view_background, ExtensionHost,
 };

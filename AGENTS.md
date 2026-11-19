@@ -46,7 +46,8 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   Éviter les vues natives persistantes inutiles et les I/O sur le thread UI.
   Chaque vue = un renderer : pages de shell rares en `LazyView` (créées dans
   `ensure_panels`, libérées après 60 s masquées), plafond `max_live_tabs`,
-  vues de réserve via le réglage `spare_views` (0–2), overlays recréés par `raise_palette`.
+  vues de réserve via le réglage `spare_views` (0–2), overlays (`Option`) créés après les premières vues
+  puis recréés par `raise_palette`.
 - Ne pas appeler `focus_window()` sur la fenêtre principale depuis un handler
   (panique winit sur macOS). La vue live de l'Easel doit être déclarée/droppée
   avant la fenêtre qui l'héberge. Fermer l'Easel passe par `retire_window` (les Réglages sont dans la
@@ -977,6 +978,28 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Tests : `domain::market::tests`, `catalog::tests::remembers_the_permissions_of_the_installed_package`,
   `scripts\test-ext.ps1` (carte du market, fiche d'une extension installée : permissions et hash). macOS :
   compilation croisée seulement.
+
+## 0.8.22 : déplacement de fenêtre (Windows), extensions en privé, nouvelle fenêtre plus rapide
+
+- Déplacer une fenêtre (barre du haut, barre de l'Easel) : `drag_window` de l'app, jamais `Window::drag_window`
+  de winit sous Windows. winit 0.30 pose un drapeau `dragging` que seul `WM_EXITSIZEMOVE` efface : un clic
+  rapide sur la barre (relâché avant que le shell traite le message) le laissait levé et plus aucun glisser ne
+  marchait. `blackhole_macos_webext::drag_window` (win.rs) lance le déplacement natif (`WM_NCLBUTTONDOWN`,
+  `HTCAPTION`) seulement si le bouton principal est encore enfoncé. Côté page (`bar.html`, `easel.html`), sous
+  Windows le glisser ne part qu'après 4 px de mouvement bouton enfoncé : la boucle de déplacement avale le
+  clic suivant, donc un clic ou le double-clic qui agrandit n'y entre jamais. macOS inchangé (winit).
+  Test manuel : clic rapide sur la barre puis glisser, double-clic agrandir/restaurer.
+- Fenêtre privée : son profil WebView2 est neuf, chaque extension y est réinstallée et ouvre sa page
+  d'accueil (Dark Reader, Ghostery, Bitwarden). `domain::welcome::WelcomePages` : pendant `WELCOME_WINDOW`
+  (15 s) après le chargement d'une extension, une page demandée sans onglet d'origine (`Msg::OpenTab`,
+  `OpenTabFrom` de l'onglet 0 hors Peek, `take_opened`) est écartée ; jamais en fenêtre normale. Un lien
+  d'une page affichée a toujours son onglet. macOS : stockage des extensions déjà gardé (identifiant stable),
+  la règle ne gêne rien.
+- Nouvelle fenêtre (`is_new_window` : `--new-window` passé par `open_window`, fenêtre privée, ou autre
+  fenêtre vivante dans le registre `peers`) : pas de splash (champ `intro` de l'état de l'accueil).
+  Démarrage : hotzone, flyout et palette (`Option<WebView>`) sont créés juste après les premières vues par
+  `raise_due` (palette forcée par `open_palette` via `flush_raise(true)`) ; mesures `BH_TRACE=1` en debug
+  (`startup N ms: …`). Contenu affiché vers 0,8 s pour une nouvelle fenêtre, 1,2 s en privé.
 
 ## Livraison et entretien
 
