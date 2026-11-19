@@ -15,7 +15,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0821) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0822) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -37,14 +37,18 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.21
+## 🆕 Nouveautés 0.8.22
 
-- 🐙 **Ajouter depuis GitHub** — dans Réglages › Extensions, bouton « Ajouter depuis GitHub » : collez l'adresse d'un dépôt, BlackHole trouve sa dernière version, choisit le paquet de votre système, le vérifie contre l'empreinte publiée par GitHub et vous montre ses permissions avant l'installation. L'extension reste marquée « Non vérifiée », et chaque mise à jour vous est montrée avant de remplacer quoi que ce soit.
+- 🪟 **La fenêtre se déplace de nouveau (Windows)** — maintenir le clic gauche dans la barre du haut et glisser déplace la fenêtre ; un simple clic rapide sur la barre ne bloque plus le déplacement pour de bon.
+- 🕶️ **Fenêtres privées plus calmes** — les extensions autorisées en navigation privée n'y ouvrent plus leur page d'accueil comme si elles venaient d'être installées.
+- ⚡ **Nouvelle fenêtre plus rapide** — elle s'ouvre directement sur sa page d'accueil, sans l'animation de lancement, réservée au démarrage de BlackHole.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
+
+- 🐙 **0.8.21** — ajouter une extension depuis son dépôt GitHub, vérifiée contre l'empreinte publiée, marquée « Non vérifiée ».
 
 - 🧩 **0.8.20** — market d'extensions (recherche, catégories, fiche détaillée avec empreinte et permissions), accord demandé quand une mise à jour ajoute des permissions, Réglages plus larges.
 

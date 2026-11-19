@@ -303,7 +303,22 @@ const win = (action) => send({ cmd: 'panel_window', window: 'easel', action });
 $('wmin').onclick = () => win('minimize');
 $('wmax').onclick = () => win('maximize');
 $('wclose').onclick = () => { flush(); win('close'); };
-$('top').addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('button')) win('drag'); });
+// Moving the window: on Windows only once the pointer has moved with the button held (as in the
+// main window's bar), so the double-click that maximises never enters the system's move loop.
+let press = null;
+$('top').addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || e.target.closest('button')) return;
+  if (document.body.classList.contains('windows')) press = { x: e.screenX, y: e.screenY };
+  else win('drag');
+});
+document.addEventListener('mousemove', (e) => {
+  if (!press) return;
+  if (!(e.buttons & 1)) { press = null; return; }
+  if (Math.abs(e.screenX - press.x) + Math.abs(e.screenY - press.y) < 4) return;
+  press = null;
+  win('drag');
+});
+document.addEventListener('mouseup', () => { press = null; });
 $('top').addEventListener('dblclick', (e) => { if (!e.target.closest('button')) win('maximize'); });
 
 window.bh = {

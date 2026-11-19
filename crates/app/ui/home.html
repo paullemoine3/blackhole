@@ -499,15 +499,17 @@ window.bh = {
     applyHidden(s);
     if (!drag) placeSections(s.sections || []);
     // Tiles rise one after another as the start page emerges from the launch splash. A render
-    // that comes in meanwhile (icons arriving) keeps the same schedule.
-    if (!focused && s.animations) riseAt = performance.now() + 1750;
+    // that comes in meanwhile (icons arriving) keeps the same schedule. A new window opened
+    // beside others (`intro` false) shows its start page at once, without the splash.
+    const intro = s.animations && s.intro !== false;
+    if (!focused && intro) riseAt = performance.now() + 1750;
     const wait = riseAt - performance.now();
     if (wait > 0) {
       [...$('favs').children, ...$('recent').children].forEach((n, i) => {
         n.style.animation = `rise .42s cubic-bezier(.2,.85,.25,1.1) ${Math.round(wait + i * 26)}ms backwards`;
       });
     }
-    if (!focused) { focused = true; if (s.animations) splash(); }
+    if (!focused) { focused = true; if (intro) splash(); }
   },
 };
 // Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).

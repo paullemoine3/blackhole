@@ -156,7 +156,9 @@ impl Running {
             json!({"text": c.text, "url": c.url.as_str(), "key": key})
         });
         let answer = json!({"seq": seq, "query": query, "rows": out, "complete": complete});
-        let _ = self.palette.evaluate_script(&format!("window.bh&&bh.suggested&&bh.suggested({answer})"));
+        if let Some(palette) = &self.palette {
+            let _ = palette.evaluate_script(&format!("window.bh&&bh.suggested&&bh.suggested({answer})"));
+        }
     }
 
     /// The user took the row `key` for what they typed: it comes first next time.
