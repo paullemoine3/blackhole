@@ -528,7 +528,6 @@ function bodyStyle() {
     colors.append(b);
   }
   const look = h('div', 'ob-seg', null, { role: 'radiogroup', 'aria-label': T('style_look') });
-  // Flat first: the tour's own choice (applied when the step opens, see `mount`).
   for (const [on, key] of [[false, 'style_flat'], [true, 'style_3d']]) {
     const pv = h('span', 'ob-pv' + (on ? ' d3' : '')); pv.append(h('i'), h('i'));
     look.append(radio(null, S.depth === on, () => send({ cmd: 'set_depth', on }), pv, h('span', null, T(key))));
@@ -632,12 +631,6 @@ function mount(i, entering) {
   stopLife();
   const stage = $('ob-stage');
   S.i = i;
-  // The style step starts on Flat, the tour's suggestion (once: a choice made then is kept). Only
-  // this first-launch tour does it; the app's own default and existing profiles keep 3D.
-  if (order()[i] === 'style' && !S.styled) {
-    S.styled = true;
-    if (S.depth) { S.depth = false; send({ cmd: 'set_depth', on: false }); }
-  }
   const el = build(order()[i]);
   if (entering && !calm()) { el.classList.add('entering'); setTimeout(() => el.classList.remove('entering'), 900); }
   stage.replaceChildren(el);

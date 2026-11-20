@@ -41,6 +41,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 - 🕳️ **Un accueil pour bien démarrer** — au premier lancement, une visite présente l'essentiel (espaces, barre de commandes, Shields…), puis propose d'importer vos favoris, de faire de BlackHole votre navigateur par défaut, quelques extensions et la couleur de votre premier espace. Entre chaque étape, le trou noir avale la page.
 - 🔁 **Revoir la présentation** — depuis Réglages › Général, à tout moment.
+- 🧊 **Style plat par défaut** — pour un nouveau profil ; le vôtre est conservé, et le 3D reste à un clic dans Réglages › Général.
 - 🪟 **Navigateur par défaut sous Windows** — l'installateur enregistre BlackHole comme navigateur : il se choisit dans Paramètres › Applications par défaut.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
