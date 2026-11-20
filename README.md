@@ -15,7 +15,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0823) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0824) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -37,17 +37,19 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.23
+## 🆕 Nouveautés 0.8.24
 
-- 🕳️ **Un accueil pour bien démarrer** — au premier lancement, une visite présente l'essentiel (espaces, barre de commandes, Shields…), puis propose d'importer vos favoris, de faire de BlackHole votre navigateur par défaut, quelques extensions et la couleur de votre premier espace. Entre chaque étape, le trou noir avale la page.
-- 🔁 **Revoir la présentation** — depuis Réglages › Général, à tout moment.
-- 🧊 **Style plat par défaut** — pour un nouveau profil ; le vôtre est conservé, et le 3D reste à un clic dans Réglages › Général.
-- 🪟 **Navigateur par défaut sous Windows** — l'installateur enregistre BlackHole comme navigateur : il se choisit dans Paramètres › Applications par défaut.
+- 🫥 **Protection contre l'empreinte numérique** — ce que les sites lisent pour reconnaître votre appareil (canvas, WebGL, audio, carte graphique, nombre de cœurs) change d'un site à l'autre et à chaque lancement. Activée par défaut, désactivable dans Réglages › Confidentialité › Shields.
+- 🔐 **DNS chiffré** — les noms des sites visités partent chiffrés vers Quad9, Mullvad, Cloudflare, AdGuard ou le résolveur de votre choix. Windows : le moteur de BlackHole, au prochain lancement ; macOS : un profil système à installer.
+- 🐧 **Mise à jour depuis l'app sous Linux** — le paquet `.deb` (avec le mot de passe administrateur) comme l'archive.
+- 📞 **Grosses visioconférences plus légères** — plus de PiP forcé sur un appel que l'on écoute, une surveillance des médias allégée, une carte de réunion plus sobre et, sous Windows, un appel laissé en arrière-plan garde sa mémoire.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
+
+- 🕳️ **0.8.23** — une visite au premier lancement (import, navigateur par défaut, extensions, couleur du premier espace), style plat pour un nouveau profil, BlackHole choisissable comme navigateur par défaut sous Windows.
 
 - 🪟 **0.8.22** — la fenêtre se déplace de nouveau sous Windows, fenêtres privées plus calmes, nouvelle fenêtre plus rapide.
 
