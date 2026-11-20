@@ -4,7 +4,7 @@
 use std::{fs, io, path::Path, process::Command};
 use std::time::{Duration, Instant};
 
-use blackhole_infrastructure::{catalog, extensions_dir, load_extensions};
+use blackhole_infrastructure::{app_extensions, catalog, extensions_dir, load_extensions};
 use serde_json::json;
 
 use crate::views;
@@ -69,34 +69,6 @@ pub fn reveal(dir: &Path) {
         "open"
     };
     let _ = Command::new(opener).arg(dir).spawn();
-}
-
-fn app_extensions_file(data: &std::path::Path) -> std::path::PathBuf {
-    data.join("app_extensions.json")
-}
-
-fn enabled_app_extensions(data: &std::path::Path) -> Vec<String> {
-    std::fs::read_to_string(app_extensions_file(data))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
-
-pub(crate) fn app_extension_enabled(data: &std::path::Path, id: &str) -> bool {
-    enabled_app_extensions(data).iter().any(|e| e == id)
-}
-
-pub(crate) fn set_app_extension_enabled(data: &std::path::Path, id: &str, on: bool) {
-    let mut list = enabled_app_extensions(data);
-    list.retain(|e| e != id);
-    if on {
-        list.push(id.to_owned());
-    }
-    let _ = std::fs::create_dir_all(data);
-    let _ = std::fs::write(
-        app_extensions_file(data),
-        serde_json::to_vec(&list).unwrap_or_default(),
-    );
 }
 
 impl Running {
@@ -312,7 +284,7 @@ impl Running {
             }
             UiCommand::SetAppExtension { id, on } => {
                 if let Some(e) = self.app_ext.iter().find(|e| e.id == id).cloned() {
-                    set_app_extension_enabled(&self.data, &id, on);
+                    app_extensions::set_enabled(&self.data, &id, on);
                     if let Some(host) = &self.webext {
                         if on {
                             host.load(&id, &e.path);

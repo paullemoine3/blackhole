@@ -1,8 +1,7 @@
 //! Importing bookmarks and passwords from other browsers or files.
 
-use std::collections::HashMap;
-
-use blackhole_application::BrowserService;
+use blackhole_application::{BrowserService, ImportedLink};
+use blackhole_domain::SpaceId;
 use blackhole_infrastructure::{import, JsonWorkspaceRepository};
 use blackhole_infrastructure::store::{BookmarkStore, Vault};
 
@@ -13,23 +12,14 @@ use crate::state::Running;
 /// Result of an import job: message, vault size, and the bookmarks to file as tabs.
 pub(crate) type ImportDone = (Option<String>, usize, Vec<import::Bookmark>);
 
+/// Files bookmarks as tabs of their space (`BrowserService::file_links`).
 pub(crate) fn file_bookmarks(svc: &mut BrowserService<JsonWorkspaceRepository>, list: Vec<import::Bookmark>) {
-    let first = svc.workspace().spaces().first().map_or(0, |s| s.id.0);
-    let mut by_space: HashMap<u64, Vec<(String, String, url::Url)>> = HashMap::new();
-    for b in list {
-        let Ok(u) = url::Url::parse(&b.url) else {
-            continue;
-        };
-        if matches!(u.scheme(), "http" | "https") {
-            by_space
-                .entry(b.space.unwrap_or(first))
-                .or_default()
-                .push((b.folder, b.title, u));
-        }
-    }
-    for (space, links) in by_space {
-        svc.import_tabs(blackhole_domain::SpaceId(space), links);
-    }
+    svc.file_links(list.into_iter().map(|b| ImportedLink {
+        space: b.space.map(SpaceId),
+        folder: b.folder,
+        title: b.title,
+        url: b.url,
+    }));
 }
 
 pub(crate) fn store_bookmarks(

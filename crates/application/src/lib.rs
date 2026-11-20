@@ -25,6 +25,17 @@ pub struct Favorite {
     pub tab: Option<TabId>,
 }
 
+/// A link brought from another browser or a file, to be filed as a tab of its space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedLink {
+    /// Its space; `None` (links saved before each space had its own) means the first space.
+    pub space: Option<SpaceId>,
+    /// Folder path, `/`-separated (empty: the "Imported" folder).
+    pub folder: String,
+    pub title: String,
+    pub url: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("storage error: {0}")]
 pub struct StorageError(pub String);
@@ -628,6 +639,27 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    /// Files imported links as tabs, space by space; only http(s) addresses are kept.
+    /// Returns how many tabs were added.
+    pub fn file_links(&mut self, links: impl IntoIterator<Item = ImportedLink>) -> usize {
+        let first = self.workspace.spaces().first().map_or(0, |s| s.id.0);
+        let mut by_space: std::collections::BTreeMap<u64, Vec<(String, String, Url)>> =
+            std::collections::BTreeMap::new();
+        for link in links {
+            let Ok(url) = Url::parse(&link.url) else {
+                continue;
+            };
+            if matches!(url.scheme(), "http" | "https") {
+                let space = link.space.map_or(first, |s| s.0);
+                by_space.entry(space).or_default().push((link.folder, link.title, url));
+            }
+        }
+        by_space
+            .into_iter()
+            .map(|(space, links)| self.import_tabs(SpaceId(space), links))
+            .sum()
+    }
+
     pub fn import_tabs(&mut self, space: SpaceId, links: Vec<(String, String, Url)>) -> usize {
         let added = self.workspace.import_tabs(space, links);
         if added > 0 {
@@ -909,6 +941,31 @@ mod tests {
             *self.2.lock().unwrap() = Some(h.clone());
             Ok(())
         }
+    }
+
+    #[test]
+    fn imported_links_are_filed_in_their_space_and_only_web_addresses_kept() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let first = svc.workspace().spaces()[0].id;
+        let link = |space: Option<SpaceId>, url: &str| ImportedLink {
+            space,
+            folder: "Work/Docs".into(),
+            title: url.into(),
+            url: url.into(),
+        };
+        let added = svc.file_links([
+            link(None, "https://a.example/"),
+            link(Some(first), "http://b.example/"),
+            link(None, "javascript:alert(1)"),
+            link(None, "ftp://c.example/"),
+            link(None, "not a url"),
+            link(Some(SpaceId(999_999)), "https://elsewhere.example/"),
+            link(None, "https://a.example/"),
+        ]);
+        assert_eq!(added, 2);
+        let tabs = &svc.workspace().spaces()[0].tabs;
+        assert!(tabs.iter().any(|t| t.url.as_str() == "https://a.example/"));
+        assert!(tabs.iter().any(|t| t.url.as_str() == "http://b.example/"));
     }
 
     #[test]

@@ -1,13 +1,12 @@
 //! Commands about the tabs of the window: open, show, close, move, split, tidy.
 
-use blackhole_domain::{FolderId, SpaceId, TabId};
+use blackhole_domain::{FolderId, SpaceId, TabId, VisitKind};
 use serde_json::json;
 use url::Url;
 
 use crate::views;
 use crate::i18n::{t, tf, tn};
 use crate::ipc::UiCommand;
-use crate::platform::visit_kind;
 use crate::shell::notices;
 use crate::shell::render::TIDY_MIN;
 use crate::shell::windows::open_window;
@@ -19,7 +18,7 @@ impl Running {
     pub(crate) fn handle_tabs(&mut self, command: UiCommand) {
         match command {
             UiCommand::Open { input, via } => {
-                self.next_visit = Some(visit_kind(via.as_deref()));
+                self.next_visit = Some(VisitKind::asked_via(via.as_deref()));
                 self.open(&input);
                 self.next_visit = None;
             }
@@ -34,7 +33,7 @@ impl Running {
             }
             UiCommand::NewTab => self.new_tab(),
             UiCommand::Navigate { input, via } => {
-                self.next_visit = Some(visit_kind(via.as_deref()));
+                self.next_visit = Some(VisitKind::asked_via(via.as_deref()));
                 self.navigate(&input);
                 self.next_visit = None;
             }

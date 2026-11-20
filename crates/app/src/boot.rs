@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use blackhole_application::{BrowserService, WorkspaceRepository};
 use blackhole_domain::{BlockLog, http_auth};
+use blackhole_infrastructure::app_extensions;
 use blackhole_infrastructure::{
     catalog,
     default_privacy_policy,
@@ -38,7 +39,6 @@ use crate::features::{
     trackers,
     watching,
 };
-use crate::features::extensions::app_extension_enabled;
 use crate::features::imports::file_bookmarks;
 use crate::features::market::FIRST_MARKET_CHECK;
 use crate::features::updates::{FIRST_UPDATE_CHECK, updates_enabled, UpdateState};
@@ -289,7 +289,7 @@ impl Running {
             host.attach(&chrome);
         }
         if let (Some(host), Some(src)) = (&webext, &ext_src) {
-            for e in app_ext.iter().filter(|e| app_extension_enabled(src, &e.id)) {
+            for e in app_ext.iter().filter(|e| app_extensions::is_enabled(src, &e.id)) {
                 host.load(&e.id, &e.path);
             }
             // The market's, then those added from GitHub (pinned to the package accepted).

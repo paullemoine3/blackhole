@@ -1,6 +1,5 @@
 //! Messages from the engine and from background threads (`Msg`), handled on the UI thread.
 
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -8,12 +7,11 @@ use url::Url;
 
 use crate::views;
 use crate::i18n::{t, tf};
-use crate::ipc::{Msg, PageEvent, UiCommand};
-use crate::platform::{now_secs, trace};
+use crate::ipc::{Msg, PageEvent};
+use crate::platform::trace;
 use crate::shell::notices;
 use crate::shell::peek::PEEK_TAB;
 use crate::state::Running;
-use crate::tabs::downloads::{DOWNLOAD_NAV, DOWNLOAD_REVEAL, DownloadLive};
 
 #[cfg(target_os = "macos")]
 use crate::shell::layout::BAR_HEIGHT;
@@ -232,105 +230,8 @@ impl Running {
                     let _ = view.load_url(url.as_str());
                 }
             }
-            Msg::DownloadStarted { tab, url, path } => {
-                trace(|| format!("download started tab={} {url}", tab.0));
-                // The navigation became a download: the tab is not waiting for a page any more
-                // (else "Site injoignable" after CONNECT_MAX). A tab opened for the file alone,
-                // that never showed a page, closes once the file is done, as in other browsers.
-                if self.awaiting.remove(&tab).is_some() && self.splash.contains_key(&tab) {
-                    self.dl_only_tabs.insert(url.clone(), tab);
-                }
-                self.dl_navs.retain(|_, at| at.elapsed() < DOWNLOAD_NAV);
-                self.dl_navs.insert(tab, Instant::now());
-                if self.aborted.remove(&tab).is_some() {
-                    self.forget_failure(tab);
-                }
-                self.loading.remove(&tab);
-                self.pending.remove(&tab);
-                self.reveal_sidebar(DOWNLOAD_REVEAL);
-                let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
-                let name = path
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                let remote = url.clone();
-                self.downloads
-                    .push(blackhole_infrastructure::store::DownloadRec {
-                        id,
-                        name,
-                        path: path.to_string_lossy().into_owned(),
-                        url,
-                        at: now_secs(),
-                        done: false,
-                        ok: false,
-                    });
-                self.save_downloads();
-                self.dl_live.insert(
-                    id,
-                    DownloadLive {
-                        name: self
-                            .downloads
-                            .last()
-                            .map(|d| d.name.clone())
-                            .unwrap_or_default(),
-                        path: path.clone(),
-                        received: 0,
-                        total: None,
-                        finished: None,
-                    },
-                );
-                self.dl_polled = Instant::now();
-                let tx = self.dl_size_tx.clone();
-                std::thread::spawn(move || {
-                    if let Some(total) = blackhole_infrastructure::remote_size(&remote) {
-                        let _ = tx.send((id, total));
-                    }
-                });
-                let list = self.downloads_json();
-                self.ui(format!("window.bh&&bh.downloads({list})"));
-                self.sync_bar_notice();
-                self.notify(notices::Notice::Download, &t("toast.download_started"), serde_json::Value::Null);
-                self.ui_library();
-            }
-            Msg::DownloadDone { url, path, ok } => {
-                if let Some(tab) = self.dl_only_tabs.remove(&url) {
-                    if self.tabs.contains_key(&tab) {
-                        self.handle_ui(UiCommand::Close { id: tab.0 });
-                    }
-                }
-                if let Some(d) = self
-                    .downloads
-                    .iter_mut()
-                    .rev()
-                    .find(|d| d.url == url && !d.done)
-                {
-                    d.done = true;
-                    d.ok = ok;
-                    if let Some(p) = path {
-                        d.path = p.to_string_lossy().into_owned();
-                    }
-                    if let Some(live) = self.dl_live.get_mut(&d.id) {
-                        live.finished = Some((ok, Instant::now()));
-                        live.path = PathBuf::from(&d.path);
-                        if ok {
-                            let size = std::fs::metadata(&live.path).map_or(0, |m| m.len());
-                            live.received = size;
-                            live.total = Some(size.max(1));
-                        }
-                    }
-                }
-                self.save_downloads();
-                let list = self.downloads_json();
-                self.ui(format!("window.bh&&bh.downloads({list})"));
-                self.reveal_sidebar(DOWNLOAD_REVEAL);
-                self.sync_bar_notice();
-                let (kind, key) = if ok {
-                    (notices::Notice::Done, "toast.download_complete")
-                } else {
-                    (notices::Notice::Problem, "toast.download_failed")
-                };
-                self.notify(kind, &t(key), serde_json::Value::Null);
-                self.ui_library();
-            }
+            Msg::DownloadStarted { tab, url, path } => self.download_started(tab, url, path),
+            Msg::DownloadDone { url, path, ok } => self.download_done(url, path, ok),
             // A navigation the user started: the space shown.
             Msg::Blocked { why, host } => {
                 let space = self.svc.workspace().active_space().id.0;

@@ -20,21 +20,6 @@ pub(crate) const DISMISS_GRACE: Duration = Duration::from_millis(2000);
 /// How long after the shell brings a floating video back its "left PiP" is taken as an echo.
 const PIP_SHELL_EXIT: Duration = Duration::from_millis(1500);
 
-/// Share of the browser window another window must hide before a video floats.
-#[cfg(any(target_os = "macos", windows))]
-const COVERED_SHARE: f64 = 0.5;
-
-/// Share of the rectangle `own` (`x, y, w, h`) that `other` covers.
-#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
-fn overlap_share(own: (f64, f64, f64, f64), other: (f64, f64, f64, f64)) -> f64 {
-    let w = (own.0 + own.2).min(other.0 + other.2) - own.0.max(other.0);
-    let h = (own.1 + own.3).min(other.1 + other.3) - own.1.max(other.1);
-    if own.2 <= 0.0 || own.3 <= 0.0 || w <= 0.0 || h <= 0.0 {
-        return 0.0;
-    }
-    w * h / (own.2 * own.3)
-}
-
 impl Running {
     /// A video left its floating window. The window's close button pauses it: nothing changes;
     /// its "back to tab" button leaves it playing: its tab is shown, as in Safari. WebView2
@@ -147,7 +132,7 @@ impl Running {
                 f64::from(size.width) / scale,
                 f64::from(size.height) / scale,
             );
-            return overlap_share(own, front) >= COVERED_SHARE;
+            return blackhole_domain::pip::window_covered(own, front);
         }
         #[allow(unreachable_code)]
         true
@@ -162,18 +147,5 @@ impl Running {
                 self.pip_shell_exits.insert(id.0, Instant::now());
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::overlap_share;
-
-    #[test]
-    fn overlap_share_is_the_hidden_part_of_the_window() {
-        let own = (0.0, 0.0, 1000.0, 800.0);
-        assert_eq!(overlap_share(own, (1200.0, 0.0, 800.0, 600.0)), 0.0);
-        assert_eq!(overlap_share(own, (-10.0, -10.0, 2000.0, 1000.0)), 1.0);
-        assert!((overlap_share(own, (500.0, 0.0, 1000.0, 800.0)) - 0.5).abs() < 1e-9);
     }
 }

@@ -69,15 +69,6 @@ pub(crate) fn drag_window(window: &Window) {
     }
 }
 
-/// How an address the interface sends was asked for: `bookmark` for quick access, a favorite or
-/// a bookmark; anything else was typed or chosen.
-pub(crate) fn visit_kind(via: Option<&str>) -> blackhole_domain::VisitKind {
-    match via {
-        Some("bookmark") => blackhole_domain::VisitKind::Bookmark,
-        _ => blackhole_domain::VisitKind::Typed,
-    }
-}
-
 /// Why the system cannot be asked to make BlackHole the default browser.
 pub(crate) fn default_browser_unavailable() -> String {
     if cfg!(windows) {

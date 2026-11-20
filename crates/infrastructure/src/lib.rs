@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use url::Url;
 
+pub mod app_extensions;
 pub mod catalog;
 pub mod github_ext;
 pub mod handoff;
@@ -63,6 +64,20 @@ pub fn remote_size(url: &str) -> Option<u64> {
         .parse()
         .ok()
         .filter(|n| *n > 0)
+}
+
+/// Size of the file a download is writing: browsers use a temporary name until it completes.
+pub fn partial_size(path: &std::path::Path) -> u64 {
+    let size = |p: &std::path::Path| fs::metadata(p).map_or(0, |m| m.len());
+    let with = |ext: &str| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(ext);
+        PathBuf::from(name)
+    };
+    size(path)
+        .max(size(&with(".crdownload")))
+        .max(size(&with(".partial")))
+        .max(size(&with(".download")))
 }
 
 /// Where downloaded files land.
@@ -779,6 +794,17 @@ fn write_atomic_now(path: &std::path::Path, contents: &str) -> Result<(), Storag
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_download_in_progress_is_measured_under_its_temporary_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("big.zip");
+        assert_eq!(super::partial_size(&file), 0);
+        std::fs::write(dir.path().join("big.zip.crdownload"), [0u8; 10]).unwrap();
+        assert_eq!(super::partial_size(&file), 10);
+        std::fs::write(&file, [0u8; 25]).unwrap();
+        assert_eq!(super::partial_size(&file), 25);
+    }
+
     #[test]
     fn download_helpers_pick_free_names_and_encode_images() {
         let dir = tempfile::tempdir().unwrap();

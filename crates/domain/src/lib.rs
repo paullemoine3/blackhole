@@ -3,6 +3,7 @@
 
 pub mod changelog;
 pub mod clean_link;
+pub mod downloads;
 pub mod easel;
 pub mod error_page;
 pub mod extension;

@@ -3,12 +3,11 @@
 use std::time::Instant;
 
 use blackhole_domain::{SearchEngine, Settings};
-use blackhole_infrastructure::extensions_dir;
+use blackhole_infrastructure::{app_extensions, extensions_dir};
 use serde_json::json;
 use wry::WebView;
 
 use crate::i18n;
-use crate::features::extensions::app_extension_enabled;
 use crate::ipc::UiCommand;
 use crate::state::Running;
 use crate::tabs::lifecycle::SPARES_DELAY;
@@ -55,7 +54,7 @@ impl Running {
             "catalogChecked": self.catalog_checked,
             "appUpdate": self.app_update_json(),
             "appExtensions": self.app_ext.iter().map(|e| {
-                let on = app_extension_enabled(&self.data, &e.id);
+                let on = app_extensions::is_enabled(&self.data, &e.id);
                 let state = self.webext.as_ref().and_then(|h| h.state(&e.id));
                 json!({
                     "id": e.id, "name": e.name, "enabled": on, "supported": self.webext.is_some(),
