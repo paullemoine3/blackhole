@@ -276,7 +276,7 @@ impl Running {
                     .filter(|id| {
                         probes
                             .get(&id.0)
-                            .is_some_and(|p| p.playing || p.watching || p.cam || p.mic || p.call)
+                            .is_some_and(|p| p.keeps_page())
                     })
                     .copied()
                     .collect()
@@ -432,7 +432,9 @@ impl Running {
         for (id, view) in &self.tabs {
             let shown = (Some(*id) == active && waiting.is_none()) || Some(*id) == split;
             let _ = view.set_visible(shown);
-            views::set_background(view, !shown);
+            // A call or media left for another tab keeps its memory: trimmed, its sound
+            // crackled and its video froze (WebView2's "low" target).
+            views::set_background(view, !shown && !self.keeps_running(*id));
         }
         let _ = self
             .home

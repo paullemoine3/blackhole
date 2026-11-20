@@ -80,6 +80,19 @@ pub(crate) struct MediaProbe {
     pub(crate) mic_on: bool,
 }
 
+impl MediaProbe {
+    /// The page is in a call: a camera or microphone open, or a live WebRTC connection. A
+    /// listener of a large meeting opens neither and is still in the call.
+    pub(crate) fn in_call(&self) -> bool {
+        self.cam || self.mic || self.call
+    }
+
+    /// The page must keep its full resources while hidden: a call, or media playing.
+    pub(crate) fn keeps_page(&self) -> bool {
+        self.playing || self.watching || self.in_call()
+    }
+}
+
 /// How often background tabs are asked whether they play audio or video.
 const MEDIA_EVERY: Duration = Duration::from_millis(1500);
 
@@ -93,8 +106,11 @@ const MEDIA_HINT_FOR: Duration = Duration::from_secs(5);
 pub(crate) struct MediaWatch {
     /// Latest report of each tab's probe (written by the views' handlers).
     pub(crate) probes: Arc<Mutex<HashMap<u64, MediaProbe>>>,
-    /// When the background tabs are next asked what they play.
+    /// When the probes run next: every `MEDIA_EVERY`, or more often while a video floats.
     pub(crate) due: Instant,
+    /// When the tabs other than the floating one are next asked: a floating video needs a
+    /// quick probe of its own tab only, not of the call or the music playing elsewhere.
+    pub(crate) all_due: Instant,
     /// When each tab last said its media may have changed (see `PageEvent::Media`).
     pub(crate) hints: HashMap<u64, Instant>,
     /// The media card as last sent to the sidebar.
@@ -112,6 +128,7 @@ impl MediaWatch {
         Self {
             probes: Arc::default(),
             due: Instant::now(),
+            all_due: Instant::now(),
             hints: HashMap::new(),
             seen: serde_json::Value::Null,
             hold: Linger::new(LINGER),
@@ -134,7 +151,7 @@ impl Running {
                 Some(json!({
                     "id": t.id.0, "playing": p.playing, "muted": p.muted,
                     "cam": p.cam, "mic": p.mic, "camOn": p.cam_on, "micOn": p.mic_on,
-                    "call": p.cam || p.mic || p.call,
+                    "call": p.in_call(),
                 }))
             })
             .collect();
@@ -144,6 +161,10 @@ impl Running {
     /// Asks every loaded tab about its media, and refreshes the sidebar when something changed.
     pub(crate) fn service_media(&mut self) {
         if Instant::now() >= self.media.due {
+            let everyone = Instant::now() >= self.media.all_due;
+            if everyone {
+                self.media.all_due = Instant::now() + MEDIA_EVERY;
+            }
             self.media.due = Instant::now()
                 + if self.pip.seen {
                     Duration::from_millis(500)
@@ -173,6 +194,9 @@ impl Running {
                 let sink = Arc::clone(&self.media.probes);
                 let id = id.0;
                 if !self.media.hints.contains_key(&id) && !active.contains(&id) && floating != Some(id) {
+                    continue;
+                }
+                if !everyone && floating != Some(id) {
                     continue;
                 }
                 let _ = view.evaluate_script_with_callback(views::MEDIA_PROBE_JS, move |raw| {
@@ -249,7 +273,7 @@ impl Running {
                 .lock()
                 .ok()
                 .and_then(|probes| probes.get(&id.0).copied())
-                .is_some_and(|p| p.cam || p.mic || p.call)
+                .is_some_and(|p| p.in_call())
         {
             let _ = view.evaluate_script(views::CALL_HANG_UP_JS);
         }
@@ -279,6 +303,16 @@ impl Running {
     }
 
     /// Whether the last probe of a tab heard it play something.
+    /// Whether a hidden tab must keep its full resources (Windows: no "low" memory target): a
+    /// call, media playing, its video floating, or seen busy a moment ago.
+    pub(crate) fn keeps_running(&self, tab: TabId) -> bool {
+        self.pip.tab == Some(tab)
+            || self.media.busy_seen.contains_key(&tab)
+            || self.media.probes
+                .lock()
+                .is_ok_and(|probes| probes.get(&tab.0).is_some_and(MediaProbe::keeps_page))
+    }
+
     pub(crate) fn is_playing(&self, tab: TabId) -> bool {
         self.media.probes
             .lock()
@@ -289,6 +323,19 @@ impl Running {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_listener_without_camera_or_microphone_is_in_the_call() {
+        let listener = MediaProbe { call: true, ..MediaProbe::default() };
+        assert!(listener.in_call());
+        assert!(listener.keeps_page());
+        let speaker = MediaProbe { mic: true, ..MediaProbe::default() };
+        assert!(speaker.in_call());
+        let music = MediaProbe { playing: true, ..MediaProbe::default() };
+        assert!(!music.in_call());
+        assert!(music.keeps_page());
+        assert!(!MediaProbe::default().keeps_page());
+    }
 
     #[test]
     fn a_short_gap_in_the_reports_keeps_the_card() {

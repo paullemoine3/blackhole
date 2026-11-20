@@ -145,8 +145,14 @@
   .sg .cl:hover { opacity: 1; background: var(--bh-fill-control-hover); }
   #meet .mt { display: flex; align-items: center; gap: var(--bh-space-9); padding: var(--bh-space-8) var(--bh-space-8) var(--bh-space-8) var(--bh-space-10);
     background: color-mix(in srgb, var(--bh-accent) 22%, var(--bh-fill-card)); box-shadow: inset 0 0 0 1px var(--bh-accent-border); }
-  #meet .mt.on { box-shadow: var(--bh-shadow-meet-live); animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards, meet-live var(--bh-duration-breathe) ease-in-out infinite; }
-  @keyframes meet-live { 50% { box-shadow: 0 0 0 1px var(--bh-accent), 0 0 20px -2px var(--bh-accent-glow); } }
+  #meet .mt.on { position: relative; box-shadow: var(--bh-shadow-meet-live); animation: card-in var(--bh-duration-spring) var(--bh-ease-pop) backwards; }
+  /* The live glow breathes on a layer of its own whose opacity alone changes: the compositor
+     animates it without repainting the sidebar, for the whole length of the call (animating the
+     card's blurred box-shadow repainted it every frame, on top of the call's own video work). */
+  #meet .mt.on::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    box-shadow: 0 0 0 1px var(--bh-accent), 0 0 20px -2px var(--bh-accent-glow); opacity: 0; will-change: opacity;
+    animation: meet-live var(--bh-duration-breathe) ease-in-out infinite; }
+  @keyframes meet-live { 50% { opacity: 1; } }
   #meet .mt svg { flex: none; width: var(--bh-icon-md); height: var(--bh-icon-md); fill: none; stroke: currentColor; stroke-width: var(--bh-icon-stroke); stroke-linecap: round; stroke-linejoin: round; opacity: var(--bh-opacity-soft); }
   /* The meeting's icon is also its close button: a cross while it is hovered or focused. */
   #meet button.ic { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin: 0 -2px; padding: 0; background: none; color: inherit; }
@@ -202,7 +208,7 @@
   @keyframes dl-out { to { opacity: 0; transform: translateY(8px) scale(.97); } }
   @keyframes dl-done { from { box-shadow: inset 0 0 0 1px var(--bh-success), 0 0 0 0 color-mix(in srgb, var(--bh-success) 50%, transparent); } to { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-success) 45%, transparent), 0 0 0 10px transparent; } }
   @keyframes dl-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-  body.noanim .dl, body.noanim .dl *, body.noanim #tidy .td, body.noanim #meet .mt { animation: none !important; transition: none !important; }
+  body.noanim .dl, body.noanim .dl *, body.noanim #tidy .td, body.noanim #meet .mt, body.noanim #meet .mt::after { animation: none !important; transition: none !important; }
   .newrow { display: flex; align-items: center; margin: 4px 0; } .newrow .new { flex: 1; }
   .tab { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 13px; border-radius: 9px; cursor: pointer; min-width: 0; }
   .tab:hover { background: rgba(255,255,255,.08); }

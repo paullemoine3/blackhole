@@ -305,13 +305,13 @@ impl Running {
             .map(|t| t.id)
     }
 
-    /// Whether the last probe of a tab saw its camera or microphone open (a call).
+    /// Whether the last probe of a tab saw it in a call (camera, microphone or a live connection).
     pub(crate) fn in_call(&self, tab: TabId) -> bool {
         self.media.probes
             .lock()
             .ok()
             .and_then(|probes| probes.get(&tab.0).copied())
-            .is_some_and(|p| p.cam || p.mic)
+            .is_some_and(|p| p.in_call())
     }
 
     /// Command bar actions: a new meeting, and joining the meetings of the next hours.
