@@ -721,7 +721,11 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Commandes : `onboarding_open {on}` (la page montre ou cache sa fenêtre), `onboarding_done`, `replay_tour`,
   `set_default_browser` ; la visite réutilise `import_bookmarks`, `import_file` (`logins`), `install_catalog`,
   `set_space_color`, `set_depth`, `set_engine`, `set_recall`, `set_language`. Une extension installée depuis la
-  visite n'ouvre pas sa page d'accueil par-dessus (`WelcomePages::tour_installs`, même règle qu'en privé).
+  visite n'ouvre pas sa page d'accueil par-dessus (`WelcomePages::tour_open`, posé par `onboarding_open` :
+  tant que la visite est ouverte, quelle que soit la durée du téléchargement, puis `WELCOME_WINDOW` après).
+  Import : un import par profil (coché ✓), un autre profil reste importable. Extensions : « Téléchargement… »
+  et une barre par carte pendant l'installation, « Installation… » sur le bouton, puis « Installée » ; un
+  échec se relance en recochant (l'état arrive par `poll_webext` → `ui_home`).
 - Voile de la barre latérale et de la barre du haut : `bhDim(on)` de `theme.js` (voile fixe qui avale les clics),
   envoyé par `sync_dim` à `chrome`, `flyout` et `bar` tant que la fenêtre est ouverte et que l'accueil est devant
   (`start_page_front`) ; appelé à la fin de `ui_state`. Barre du haut : `html.bh-dimmed .win` garde les boutons
@@ -735,9 +739,9 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   Build `cargo` ou zip portable : non enregistré, la visite le dit (`default_cannot_win`). Un lien reçu ouvre
   une nouvelle fenêtre (`--open`, registre `peers`), pas un onglet de la fenêtre déjà ouverte. Linux : rien.
 - Harnais : un build `devtools` ne montre pas la visite (profils neufs des scripts) sauf avec `BH_ONBOARDING=1`.
-  Test Windows : `scripts\test-onboarding.ps1` (24 contrôles `obN:` : ouverture après le splash, voiles, trou à
+  Test Windows : `scripts\test-onboarding.ps1` (27 contrôles `obN:` : ouverture après le splash, voiles, trou à
   mi-transition, étapes, couleur appliquée, fin sans défilement, levée des voiles, rejeu depuis les Réglages,
-  animations coupées, Échap, français ; rien d'installé, sans réseau). Captures prises à l'écran : la fenêtre
+  animations coupées, Échap, français ; Dark Reader et SponsorBlock installés : réseau requis). Captures prises à l'écran : la fenêtre
   doit rester devant. Tests : `onboarding::tests`, `welcome::tests::the_welcome_tour_drops_…`,
   `release_notes_are_shown_once_after_an_update` (`first_launch`). macOS : compilation croisée seulement.
 

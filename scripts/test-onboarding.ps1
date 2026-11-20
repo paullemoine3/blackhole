@@ -1,3 +1,4 @@
+# Needs the network (Dark Reader and SponsorBlock are downloaded from their releases).
 # Welcome tour (0.8.23) on Windows, driven by the devtools harness (see crates/app/src/devtools.rs):
 # at the first launch the start page is veiled once the splash has landed and a dialog walks
 # through the features (the hole between two steps, mid-transition shot), the import, the default
@@ -47,7 +48,17 @@ eval home 'ob14:' + (document.getElementById('ob-skip').click(), 'not now')
 wait 1200
 eval home 'ob15:' + document.getElementById('ob-title').textContent + '|' + document.querySelectorAll('.ob-ext').length + '|' + document.getElementById('ob-next').textContent
 shot ob08-extensions
-eval home 'ob16:' + (document.getElementById('ob-skip').click(), 'later')
+eval home 'ob39:' + (window.__busy = [], new MutationObserver(() => { const b = document.querySelectorAll('.ob-ext .st.busy').length; if (b) __busy.push(b + '|' + document.getElementById('ob-next').textContent); }).observe(document.getElementById('ob-stage'), { subtree: true, childList: true }), 'watching')
+eval home 'ob40:' + (document.getElementById('ob-next').click(), 'install')
+wait 600
+eval home 'ob41:' + (__busy[0] || 'never')
+shot ob08b-downloading
+wait 30000
+eval home 'ob42:' + document.getElementById('ob-next').textContent + '|' + [...document.querySelectorAll('.ob-ext .st')].map(x => x.textContent).join(',')
+eval bar 'ob43:' + document.getElementById('url').textContent
+eval chrome 'ob44:' + document.querySelectorAll('[data-id]').length
+shot ob08c-installed
+eval home 'ob16:' + (document.getElementById('ob-next').click(), 'next')
 wait 1200
 eval home 'ob17:' + document.getElementById('ob-title').textContent
 eval home 'ob18:' + (document.querySelectorAll('.ob-sw8 button')[2].click(), 'green')
@@ -120,6 +131,9 @@ Check ((Ev ob11) -match 'ob11:Bring your bookmarks\|') 'Skip the tour goes to th
 Check ((Ev ob13) -match 'ob13:Open your links in BlackHole\|') 'then the default browser'
 Check ((Ev ob13) -match 'installer|Click here to open Settings') 'the Windows text points to Settings (or to the installer for a cargo build)'
 Check ((Ev ob15) -match 'ob15:A few extensions to get started\|[1-4]\|Install 2 extensions') 'the starter extensions of the market, two ticked'
+Check ((Ev ob41) -match 'ob41:[12]\|Installing') 'installing: the extensions said they were downloading, the button waited'
+Check ((Ev ob42) -match 'ob42:Continue.+\|.+Installed,.+Installed"') 'installed: both marked, the button goes on'
+Check (((Ev ob43) -match 'ob43:') -and ((Ev ob43) -notmatch 'chrome-extension|darkreader|sponsor|github')) 'no welcome page of an extension opened over the tour'
 Check ((Ev ob17) -match 'ob17:Make it yours"') 'then the style'
 Check ((Ev ob19) -match 'ob19:#2fd4a0\|true"') 'a color picked recolors the space and the dialog'
 Check ((Ev ob21) -match 'ob21:Have a good trip to the edge of the horizon\|4\|true"') 'the last step fits without scrolling'

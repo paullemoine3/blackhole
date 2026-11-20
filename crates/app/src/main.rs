@@ -1976,6 +1976,10 @@ impl Running {
         if sig != self.webext_sig {
             self.webext_sig = sig;
             self.ui_settings();
+            // An extension the welcome tour installs is downloaded, installed or failed.
+            if self.onboarding.is_some() && self.start_page_front() {
+                self.ui_home();
+            }
         }
     }
 
@@ -6388,19 +6392,23 @@ impl Running {
             | UiCommand::LibraryOpenTab { .. }
             | UiCommand::ClearTabs) => self.handle_easel(command),
             UiCommand::InstallCatalog { id } => {
-                // Installed from the tour: their welcome pages would open as tabs over it.
-                if self.onboarding.is_some() {
-                    self.welcome.tour_installs(Instant::now());
-                }
                 self.install_catalog(&id);
+                // The tour shows the download at once (`installing`).
+                if self.onboarding.is_some() {
+                    self.ui_home();
+                }
             }
             UiCommand::OnboardingOpen { on } => {
                 self.onboarding_open = on;
+                // The extensions it installs must not open their welcome pages over it.
+                let welcome = on && self.onboarding == Some(blackhole_domain::onboarding::Mode::Welcome);
+                self.welcome.tour_open(welcome, Instant::now());
                 self.sync_dim();
             }
             UiCommand::OnboardingDone => {
                 self.onboarding = None;
                 self.onboarding_open = false;
+                self.welcome.tour_open(false, Instant::now());
                 self.default_asked = false;
                 self.sync_dim();
                 self.ui_home();
