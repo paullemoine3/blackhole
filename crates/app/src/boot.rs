@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use blackhole_application::{BrowserService, WorkspaceRepository};
-use blackhole_domain::{BlockLog, http_auth};
+use blackhole_domain::BlockLog;
 use blackhole_infrastructure::app_extensions;
 use blackhole_infrastructure::{
     catalog,
@@ -15,7 +15,6 @@ use blackhole_infrastructure::{
     import,
     JsonWorkspaceRepository,
     load_extensions,
-    market,
 };
 use blackhole_infrastructure::store::{BookmarkStore, EaselStore};
 use serde_json::json;
@@ -40,8 +39,8 @@ use crate::features::{
     watching,
 };
 use crate::features::imports::file_bookmarks;
-use crate::features::market::FIRST_MARKET_CHECK;
-use crate::features::updates::{FIRST_UPDATE_CHECK, updates_enabled, UpdateState};
+use crate::features::market::Market;
+use crate::features::updates::Updates;
 use crate::ipc::Mailbox;
 use crate::platform::trace_startup;
 use crate::shell::pane_motion;
@@ -58,6 +57,8 @@ use crate::shell::windows::{
 };
 use crate::state::Running;
 use crate::tabs::{errors, favicons, media};
+use crate::tabs::auth::Auth;
+use crate::tabs::downloads::Downloads;
 use crate::tabs::lifecycle::{ANCHORS_DELAY, SPARES_DELAY};
 
 #[cfg(feature = "devtools")]
@@ -272,13 +273,9 @@ impl Running {
         trace_startup("interface views");
 
         let (install_tx, install_rx) = std::sync::mpsc::channel();
-        let (update_tx, update_rx) = std::sync::mpsc::channel();
         let (import_tx, import_rx) = std::sync::mpsc::channel();
-        let (dl_size_tx, dl_size_rx) = std::sync::mpsc::channel();
         let (capture_tx, capture_rx) = std::sync::mpsc::channel();
-        let (market_tx, market_rx) = std::sync::mpsc::channel();
-        // The signed list kept by the main profile (a private window reads it from there too).
-        let market_index = market::current(&ext_src_dir, market::now());
+        let market = Market::new(&ext_src_dir);
         let github = github_ext::Sideload::new(&ext_src_dir);
         let easel_store = EaselStore::new(&data);
         let easels = easel_store.load();
@@ -293,7 +290,8 @@ impl Running {
                 host.load(&e.id, &e.path);
             }
             // The market's, then those added from GitHub (pinned to the package accepted).
-            let ids = market_index
+            let ids = market
+                .index
                 .for_this_system()
                 .map(|e| e.id.clone())
                 .chain(github.pinned.iter().map(|p| p.id.clone()));
@@ -360,10 +358,7 @@ impl Running {
             awaiting: HashMap::new(),
             pending: HashMap::new(),
             errors: errors::Errors::default(),
-            auth: http_auth::AuthPrompts::default(),
-            auth_replies: HashMap::new(),
-            auth_shown: None,
-            auth_origins: HashMap::new(),
+            auth: Auth::default(),
             signals: Default::default(),
             received: None,
             #[cfg(target_os = "macos")]
@@ -450,20 +445,9 @@ impl Running {
             dimmed: std::cell::Cell::new(false),
             onboarding_imports: 0,
             default_asked: false,
-            catalog_checked: None,
-            market: market_index,
+            market,
             github,
-            market_tx,
-            market_rx,
-            next_market_check: updates_enabled().then(|| Instant::now() + FIRST_MARKET_CHECK),
-            market_fetching: None,
-            market_error: None,
-            update: UpdateState::Idle,
-            update_tx,
-            update_rx,
-            next_update_check: updates_enabled().then(|| Instant::now() + FIRST_UPDATE_CHECK),
-            update_checking: false,
-            update_checked: None,
+            updates: Updates::new(),
             quit: false,
             maximized: false,
             install_errors: HashMap::new(),
@@ -472,14 +456,8 @@ impl Running {
             import_tx,
             import_rx,
             webext_sig: String::new(),
-            downloads: blackhole_infrastructure::store::DownloadStore::new(&data).load(),
-            dl_live: HashMap::new(),
-            dl_only_tabs: HashMap::new(),
-            dl_navs: HashMap::new(),
+            downloads: Downloads::new(&data),
             aborted: HashMap::new(),
-            dl_polled: Instant::now(),
-            dl_size_tx,
-            dl_size_rx,
             archive: blackhole_infrastructure::store::ArchiveStore::new(&data).load(),
             data,
             ext_src: ext_src_dir,

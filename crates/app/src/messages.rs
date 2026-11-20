@@ -111,7 +111,7 @@ impl Running {
             }
             Msg::LoadStart(tab) => {
                 self.aborted.remove(&tab);
-                self.dl_navs.remove(&tab);
+                self.downloads.navs.remove(&tab);
                 self.errors_load_start(tab);
                 self.awaiting.remove(&tab);
                 self.pending.remove(&tab);
@@ -129,7 +129,7 @@ impl Running {
                 self.pilot_mark(tab);
                 self.media_hinted(tab);
                 self.errors_loaded(tab, &url);
-                self.auth.loaded(tab);
+                self.auth.prompts.loaded(tab);
                 self.loading.remove(&tab);
                 self.pending.remove(&tab);
                 if self.splash.remove(&tab).is_some() {

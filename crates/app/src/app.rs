@@ -97,7 +97,7 @@ impl ApplicationHandler<Wake> for App {
                 app.pip_on_blur();
                 wake = wake.min(BLUR_DELAY);
             }
-            if !app.dl_live.is_empty() {
+            if !app.downloads.live.is_empty() {
                 wake = wake.min(DOWNLOAD_POLL);
             }
             #[cfg(windows)]

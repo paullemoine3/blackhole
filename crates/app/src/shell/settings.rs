@@ -51,7 +51,7 @@ impl Running {
             "tab": self.settings_tab.clone(),
             "tabSeq": self.settings_seq,
             "catalog": self.catalog_state(),
-            "catalogChecked": self.catalog_checked,
+            "catalogChecked": self.market.outdated,
             "appUpdate": self.app_update_json(),
             "appExtensions": self.app_ext.iter().map(|e| {
                 let on = app_extensions::is_enabled(&self.data, &e.id);

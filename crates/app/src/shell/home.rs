@@ -57,13 +57,13 @@ impl Running {
         let space = self.svc.workspace().active_space();
         // Only where extensions can run (not Linux, not without an extension host).
         let available: Vec<&str> = match &self.webext {
-            Some(_) => self.market.for_this_system().map(|e| e.id.as_str()).collect(),
+            Some(_) => self.market.index.for_this_system().map(|e| e.id.as_str()).collect(),
             None => Vec::new(),
         };
         let extensions: Vec<_> = onboarding::starters(available)
             .into_iter()
             .filter_map(|(id, on)| {
-                let e = self.market.for_this_system().find(|e| e.id == id)?;
+                let e = self.market.index.for_this_system().find(|e| e.id == id)?;
                 Some(json!({
                     "id": id, "name": e.name, "description": e.description_in(i18n::lang()),
                     "category": e.category, "on": on,

@@ -81,7 +81,7 @@ impl Running {
         }
         let Some(host) = &self.webext else { return };
         let loaded = self
-            .market
+            .market.index
             .for_this_system()
             .map(|e| e.id.as_str())
             .chain(self.github.pinned.iter().map(|p| p.id.as_str()))
@@ -247,14 +247,14 @@ impl Running {
                 // click (the market shows what it adds): "Update all" leaves it out.
                 let mut waiting = 0;
                 for id in self.outdated_extensions() {
-                    let quiet = self.market.find(&id).is_some_and(|e| self.update_adds(e).is_empty());
+                    let quiet = self.market.index.find(&id).is_some_and(|e| self.update_adds(e).is_empty());
                     if quiet {
                         self.install_catalog(&id);
                     } else {
                         waiting += 1;
                     }
                 }
-                self.catalog_checked = Some(waiting);
+                self.market.outdated = Some(waiting);
                 self.ui_state();
             }
             UiCommand::ExtAction { id, x, y, w, h: hh } => {
@@ -307,7 +307,7 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::SetExtensionEnabled { id, enabled }
-                if self.market.find(&id).is_some() || self.github.find(&id).is_some() =>
+                if self.market.index.find(&id).is_some() || self.github.find(&id).is_some() =>
             {
                 self.svc.set_enabled_flag(&id, enabled);
                 if let Some(host) = &self.webext {

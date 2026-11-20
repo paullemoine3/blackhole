@@ -1,10 +1,22 @@
 //! HTTP authentication prompts of the tabs.
 
+use std::collections::HashMap;
+
 use blackhole_domain::{http_auth, TabId};
 use url::Url;
 
 use crate::shell::peek::PEEK_TAB;
 use crate::state::Running;
+
+/// HTTP authentication prompts waiting for the user, their engine answers, and the one shown.
+#[derive(Default)]
+pub(crate) struct Auth {
+    pub(crate) prompts: http_auth::AuthPrompts,
+    pub(crate) replies: HashMap<u64, wry::HttpAuthResponder>,
+    pub(crate) shown: Option<u64>,
+    /// The exact origin of each prompt (read from the engine), for the logins saved for it.
+    pub(crate) origins: HashMap<u64, String>,
+}
 
 impl Running {
     /// A server asks for a user name and password. The tab is not unreachable: it waits for
@@ -17,15 +29,15 @@ impl Running {
         self.pending.remove(&tab);
         let realm = http_auth::realm_of(&challenge.challenge);
         let id = self
-            .auth
+            .auth.prompts
             .push(tab, &challenge.host, &realm, challenge.secure, challenge.retry);
-        self.auth_replies.insert(id, reply);
+        self.auth.replies.insert(id, reply);
         // The logins saved for exactly this origin (https or localhost) can answer it.
         let origin = Url::parse(&challenge.url)
             .ok()
             .and_then(|u| blackhole_domain::passwords::origin_of(&u));
         if let Some(origin) = origin {
-            self.auth_origins.insert(id, origin);
+            self.auth.origins.insert(id, origin);
         }
         if self.splash.remove(&tab).is_some() {
             self.sync();
@@ -51,41 +63,41 @@ impl Running {
 
     /// Shows the oldest prompt of a tab on screen, unless one is up; drops those of closed tabs.
     pub(crate) fn service_auth(&mut self) {
-        if self.auth.is_empty() {
+        if self.auth.prompts.is_empty() {
             return;
         }
         let gone: Vec<TabId> = self
-            .auth_replies
+            .auth.replies
             .keys()
-            .filter_map(|id| self.auth.get(*id).map(|c| c.tab))
+            .filter_map(|id| self.auth.prompts.get(*id).map(|c| c.tab))
             .filter(|tab| !self.auth_tab_alive(*tab))
             .collect();
         for tab in gone {
-            for id in self.auth.drop_tab(tab) {
-                self.auth_replies.remove(&id);
-                if self.auth_shown == Some(id) {
-                    self.auth_shown = None;
+            for id in self.auth.prompts.drop_tab(tab) {
+                self.auth.replies.remove(&id);
+                if self.auth.shown == Some(id) {
+                    self.auth.shown = None;
                     if self.palette_mode == "auth" {
                         self.close_palette();
                     }
                 }
             }
         }
-        if self.auth_shown.is_some() {
+        if self.auth.shown.is_some() {
             return;
         }
-        let Some((id, _)) = self.auth.next_for(&self.auth_tabs_shown()) else {
+        let Some((id, _)) = self.auth.prompts.next_for(&self.auth_tabs_shown()) else {
             return;
         };
-        self.auth_shown = Some(id);
+        self.auth.shown = Some(id);
         self.open_palette("auth");
     }
 
     /// Sends the answer to the engine (credentials are never kept nor logged), for every
     /// challenge of the same site, then shows the next prompt if any.
     pub(crate) fn answer_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
-        if self.auth_shown == Some(id) {
-            self.auth_shown = None;
+        if self.auth.shown == Some(id) {
+            self.auth.shown = None;
             if self.palette_mode == "auth" {
                 self.close_palette();
             }
@@ -95,9 +107,9 @@ impl Running {
     }
 
     pub(crate) fn reply_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
-        for each in self.auth.answer(id, credentials.is_some()) {
-            self.auth_origins.remove(&each);
-            if let Some(reply) = self.auth_replies.remove(&each) {
+        for each in self.auth.prompts.answer(id, credentials.is_some()) {
+            self.auth.origins.remove(&each);
+            if let Some(reply) = self.auth.replies.remove(&each) {
                 reply.respond(credentials.clone());
             }
         }

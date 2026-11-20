@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use blackhole_application::BrowserService;
-use blackhole_domain::{BlockLog, Easels, http_auth, Removed, TabId};
-use blackhole_infrastructure::{import, JsonWorkspaceRepository, market};
+use blackhole_domain::{BlockLog, Easels, Removed, TabId};
+use blackhole_infrastructure::{import, JsonWorkspaceRepository};
 use blackhole_infrastructure::store::{BookmarkStore, EaselStore};
 use url::Url;
 use winit::window::Window;
@@ -30,14 +30,16 @@ use crate::features::{
 };
 use crate::features::easel::{Capture, EaselWindow};
 use crate::features::imports::ImportDone;
-use crate::features::updates::{UpdateMsg, UpdateState};
+use crate::features::market::Market;
+use crate::features::updates::Updates;
 use crate::ipc::Mailbox;
 use crate::shell::pane_motion;
 use crate::shell::panels::LazyView;
 use crate::shell::peek::{Peek, PEEK_TAB};
 use crate::shell::sidebar::Sidebar;
 use crate::tabs::{errors, favicons, media};
-use crate::tabs::downloads::DownloadLive;
+use crate::tabs::auth::Auth;
+use crate::tabs::downloads::Downloads;
 use crate::tabs::media::MediaProbe;
 
 #[cfg(feature = "devtools")]
@@ -114,11 +116,7 @@ pub(crate) struct Running {
     /// Error pages of the tabs and what led to them (`errors.rs`).
     pub(crate) errors: errors::Errors,
     /// HTTP authentication prompts waiting for the user, their engine answers, and the one shown.
-    pub(crate) auth: http_auth::AuthPrompts,
-    pub(crate) auth_replies: HashMap<u64, wry::HttpAuthResponder>,
-    pub(crate) auth_shown: Option<u64>,
-    /// The exact origin of each prompt (read from the engine), for the logins saved for it.
-    pub(crate) auth_origins: HashMap<u64, String>,
+    pub(crate) auth: Auth,
     /// Cards of the sidebar that stay until answered (`bridges.rs`, `domain::signals`).
     pub(crate) signals: blackhole_domain::signals::Signals,
     /// The last tab received from another device: from whom, its address, when (start page).
@@ -260,27 +258,12 @@ pub(crate) struct Running {
     /// again when the window gets the focus back (from the system's dialog or Settings app).
     pub(crate) default_asked: bool,
     pub(crate) ext_loaded: usize,
-    /// Extensions offered: the signed market list kept on this device, else the build's own.
-    pub(crate) market: market::Index,
-    pub(crate) market_tx: std::sync::mpsc::Sender<Result<market::Index, String>>,
-    pub(crate) market_rx: std::sync::mpsc::Receiver<Result<market::Index, String>>,
-    pub(crate) next_market_check: Option<Instant>,
-    /// A market download is running; `Some(true)` when "Check for updates" waits for it.
-    pub(crate) market_fetching: Option<bool>,
-    /// Why the last market download failed (the list in use stays).
-    pub(crate) market_error: Option<String>,
+    /// The extension market: the list in use, its background refresh, the last check.
+    pub(crate) market: Market,
     /// Extensions added from GitHub (unreviewed, pinned) and the add-from-GitHub steps.
     pub(crate) github: github_ext::Sideload,
-    /// Outdated extensions found by the last "Check for updates"; `None` until it is pressed.
-    pub(crate) catalog_checked: Option<usize>,
-    pub(crate) update: UpdateState,
-    pub(crate) update_tx: std::sync::mpsc::Sender<UpdateMsg>,
-    pub(crate) update_rx: std::sync::mpsc::Receiver<UpdateMsg>,
-    pub(crate) next_update_check: Option<Instant>,
-    /// A release check is running (background or Settings > Updates).
-    pub(crate) update_checking: bool,
-    /// What the last finished check said: up to date, or why it failed (Settings > Updates).
-    pub(crate) update_checked: Option<Result<(), String>>,
+    /// Self-update of the app: where it stands, the background check and its answers.
+    pub(crate) updates: Updates,
     pub(crate) quit: bool,
     pub(crate) maximized: bool,
     pub(crate) install_errors: HashMap<String, String>,
@@ -315,20 +298,11 @@ pub(crate) struct Running {
     /// The Library page, over the whole window below the bar, while `library`.
     pub(crate) library_panel: LazyView,
     pub(crate) library: bool,
-    pub(crate) downloads: Vec<blackhole_infrastructure::store::DownloadRec>,
-    pub(crate) dl_live: HashMap<u64, DownloadLive>,
-    /// Tabs opened for a file alone (no page shown), by download URL: closed once it is done
-    /// (closing the view earlier would cancel the download).
-    pub(crate) dl_only_tabs: HashMap<String, TabId>,
-    /// Tabs whose navigation just became a download: the engine ends that navigation as a
-    /// failure, which is no error to show.
-    pub(crate) dl_navs: HashMap<TabId, Instant>,
+    /// Downloads: their record, the cards of the running ones, and the tabs they came from.
+    pub(crate) downloads: Downloads,
     /// Failed navigations waiting `ABORT_GRACE` (an error page unless a download, a new load
     /// or a page follows), with the engine's address when they failed (`errors::settle_failure`).
     pub(crate) aborted: HashMap<TabId, (Instant, Url, Option<String>)>,
-    pub(crate) dl_polled: Instant,
-    pub(crate) dl_size_tx: std::sync::mpsc::Sender<(u64, u64)>,
-    pub(crate) dl_size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
     pub(crate) archive: Vec<blackhole_infrastructure::store::ArchivedTab>,
     pub(crate) thumbs: std::cell::RefCell<HashMap<u64, Option<String>>>,
     pub(crate) easel: Option<EaselWindow>,

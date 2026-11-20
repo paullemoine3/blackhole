@@ -361,8 +361,8 @@ impl Running {
                 // by itself.
                 Event::BeamText { from, text } => self.beam_text_received(&from, text),
                 Event::BeamFile { from, name, path } => {
-                    let id = self.downloads.iter().map(|d| d.id).max().unwrap_or(0) + 1;
-                    self.downloads.push(blackhole_infrastructure::store::DownloadRec {
+                    let id = self.downloads.records.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+                    self.downloads.records.push(blackhole_infrastructure::store::DownloadRec {
                         id,
                         name: name.clone(),
                         path: path.to_string_lossy().into_owned(),
@@ -649,7 +649,7 @@ impl Running {
             }
             UiCommand::SendDownload { id, device } => {
                 let path = self
-                    .downloads
+                    .downloads.records
                     .iter()
                     .find(|d| d.id == id && d.done && d.ok)
                     .map(|d| std::path::PathBuf::from(&d.path))

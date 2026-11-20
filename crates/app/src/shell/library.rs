@@ -21,7 +21,7 @@ impl Running {
         let exists = |d: &blackhole_infrastructure::store::DownloadRec| {
             std::path::Path::new(&d.path).exists()
         };
-        let downloads: Vec<_> = self.downloads.iter().rev().collect();
+        let downloads: Vec<_> = self.downloads.records.iter().rev().collect();
         let mut thumbs = self.thumbs.borrow_mut();
         let mut budget = 60;
         let media: Vec<_> = downloads

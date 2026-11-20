@@ -351,12 +351,12 @@ impl Running {
             UiCommand::OpenLibrary { section } => self.open_library(section.as_deref()),
             UiCommand::CloseLibrary => self.close_library(),
             UiCommand::LibraryOpenFile { id } => {
-                if let Some(d) = self.downloads.iter().find(|d| d.id == id) {
+                if let Some(d) = self.downloads.records.iter().find(|d| d.id == id) {
                     open_download(std::path::Path::new(&d.path));
                 }
             }
             UiCommand::LibraryDeleteDownload { id } => {
-                self.downloads.retain(|d| d.id != id);
+                self.downloads.records.retain(|d| d.id != id);
                 self.thumbs.borrow_mut().remove(&id);
                 self.save_downloads();
                 self.ui_library();
@@ -364,7 +364,7 @@ impl Running {
             UiCommand::LibraryClear { kind } => {
                 match kind.as_str() {
                     "downloads" => {
-                        self.downloads.clear();
+                        self.downloads.records.clear();
                         self.thumbs.borrow_mut().clear();
                         self.save_downloads();
                     }

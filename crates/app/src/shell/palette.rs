@@ -16,7 +16,7 @@ impl Running {
     pub(crate) fn open_palette(&mut self, mode: &str) {
         // Another use of the palette replaces the sign-in prompt: it is cancelled.
         if mode != "auth" {
-            if let Some(id) = self.auth_shown.take() {
+            if let Some(id) = self.auth.shown.take() {
                 self.reply_auth(id, None);
             }
         }
@@ -62,7 +62,7 @@ impl Running {
         // Closing the sign-in prompt any other way (Esc, click outside, another palette)
         // cancels it: the server's own 401 page shows.
         if self.palette_mode == "auth" {
-            if let Some(id) = self.auth_shown.take() {
+            if let Some(id) = self.auth.shown.take() {
                 self.answer_auth(id, None);
             }
         }
@@ -213,14 +213,14 @@ impl Running {
             "color": space.color,
             "menu": self.menu,
             "compare": self.comparing.result,
-            "auth": self.auth_shown.and_then(|id| self.auth.get(id)).map(|c| json!({
-                "id": self.auth_shown,
+            "auth": self.auth.shown.and_then(|id| self.auth.prompts.get(id)).map(|c| json!({
+                "id": self.auth.shown,
                 "host": c.host,
                 "realm": c.realm,
                 "secure": c.secure,
                 "retry": c.retry,
                 // User names only: the password goes from the wallet to the engine.
-                "saved": self.auth_shown.map(|id| self.auth_saved_users(id)).unwrap_or_default(),
+                "saved": self.auth.shown.map(|id| self.auth_saved_users(id)).unwrap_or_default(),
             })),
             // The highlights, watched areas, archive and downloads the search also looks in.
             "found": if matches!(self.palette_mode.as_str(), "new" | "url") { self.found_json() } else { json!(null) },

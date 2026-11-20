@@ -6,6 +6,7 @@ use blackhole_infrastructure::{catalog, market};
 use serde_json::json;
 
 use crate::i18n;
+use crate::features::updates::updates_enabled;
 use crate::state::Running;
 
 /// The signed extension market (`market::fetch`): first look shortly after launch, then daily.
@@ -15,15 +16,47 @@ const MARKET_CHECK_EVERY: Duration = Duration::from_secs(24 * 3600);
 
 const MARKET_RETRY: Duration = Duration::from_secs(3600);
 
+/// The extension market: the list in use, its background refresh, the last check.
+pub(crate) struct Market {
+    /// Extensions offered: the signed market list kept on this device, else the build's own.
+    pub(crate) index: market::Index,
+    pub(crate) tx: std::sync::mpsc::Sender<Result<market::Index, String>>,
+    pub(crate) rx: std::sync::mpsc::Receiver<Result<market::Index, String>>,
+    /// When the list is next refreshed in the background (`None`: never).
+    pub(crate) next_check: Option<Instant>,
+    /// A market download is running; `Some(true)` when "Check for updates" waits for it.
+    pub(crate) fetching: Option<bool>,
+    /// Why the last market download failed (the list in use stays).
+    pub(crate) error: Option<String>,
+    /// Outdated extensions found by the last "Check for updates"; `None` until it is pressed.
+    pub(crate) outdated: Option<usize>,
+}
+
+impl Market {
+    /// The list kept by the profile at `ext_src` (a private window reads the main profile's).
+    pub(crate) fn new(ext_src: &std::path::Path) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        Self {
+            index: market::current(ext_src, market::now()),
+            tx,
+            rx,
+            next_check: updates_enabled().then(|| Instant::now() + FIRST_MARKET_CHECK),
+            fetching: None,
+            error: None,
+            outdated: None,
+        }
+    }
+}
+
 impl Running {
     /// Where the market list comes from, for the note under the catalog (Settings > Extensions).
     pub(crate) fn market_json(&self) -> serde_json::Value {
         json!({
-            "signed": self.market.is_signed(),
+            "signed": self.market.index.is_signed(),
             // `seq` is the UNIX time of the signature.
-            "signedAt": self.market.is_signed().then_some(self.market.seq),
-            "checking": self.market_fetching == Some(true),
-            "error": self.market_error.as_deref().map(i18n::render),
+            "signedAt": self.market.index.is_signed().then_some(self.market.index.seq),
+            "checking": self.market.fetching == Some(true),
+            "error": self.market.error.as_deref().map(i18n::render),
             // The system the packages are chosen for (`None`: no extension host here).
             "platform": blackhole_domain::market::platform_key(std::env::consts::OS),
         })
@@ -90,7 +123,7 @@ impl Running {
                 item
         };
         let mut list: Vec<_> = self
-            .market
+            .market.index
             .for_this_system()
             .map(|e| {
                 let mut item = describe(e);
@@ -112,7 +145,7 @@ impl Running {
     }
 
     pub(crate) fn outdated_extensions(&self) -> Vec<String> {
-        self.market
+        self.market.index
             .for_this_system()
             .filter(|e| catalog::needs_update(&self.data, e))
             .map(|e| e.id.clone())
@@ -120,7 +153,7 @@ impl Running {
     }
 
     pub(crate) fn install_catalog(&mut self, id: &str) {
-        let Some(entry) = self.market.find(id).cloned() else {
+        let Some(entry) = self.market.index.find(id).cloned() else {
             return;
         };
         if self.webext.is_none() || !self.installing.insert(id.to_owned()) {
@@ -137,12 +170,12 @@ impl Running {
     /// Downloads the signed market list off the UI thread (`market_rx`). `asked`: "Check for
     /// updates" waits for it before counting what is outdated.
     pub(crate) fn refresh_market(&mut self, asked: bool) {
-        if let Some(waiting) = &mut self.market_fetching {
+        if let Some(waiting) = &mut self.market.fetching {
             *waiting |= asked;
             return;
         }
-        self.market_fetching = Some(asked);
-        let (tx, data) = (self.market_tx.clone(), self.data.clone());
+        self.market.fetching = Some(asked);
+        let (tx, data) = (self.market.tx.clone(), self.data.clone());
         std::thread::spawn(move || {
             let _ = tx.send(market::fetch(&data, market::now()));
         });
@@ -150,31 +183,31 @@ impl Running {
 
     /// Runs the daily market refresh and applies what the download thread reports.
     pub(crate) fn poll_market(&mut self) {
-        if let Some(at) = self.next_market_check {
+        if let Some(at) = self.market.next_check {
             if Instant::now() >= at {
-                self.next_market_check = Some(Instant::now() + MARKET_CHECK_EVERY);
+                self.market.next_check = Some(Instant::now() + MARKET_CHECK_EVERY);
                 self.refresh_market(false);
             }
         }
-        while let Ok(result) = self.market_rx.try_recv() {
+        while let Ok(result) = self.market.rx.try_recv() {
             match result {
                 Ok(index) => {
-                    self.market_error = None;
-                    self.market = index;
+                    self.market.error = None;
+                    self.market.index = index;
                 }
                 Err(why) => {
                     tracing::warn!("extension market: {why}");
-                    self.market_error = Some(why);
+                    self.market.error = Some(why);
                     let retry = Instant::now() + MARKET_RETRY;
-                    if let Some(at) = &mut self.next_market_check {
+                    if let Some(at) = &mut self.market.next_check {
                         *at = (*at).min(retry);
                     }
                 }
             }
-            if self.market_fetching.take() == Some(true) {
+            if self.market.fetching.take() == Some(true) {
                 // The extensions from GitHub may still be looked up: `poll_github` counts then.
                 if self.github.checking == 0 {
-                    self.catalog_checked = Some(self.outdated_extensions().len() + self.github.updates.len());
+                    self.market.outdated = Some(self.outdated_extensions().len() + self.github.updates.len());
                 }
             }
             self.ui_state();

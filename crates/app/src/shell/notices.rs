@@ -50,7 +50,7 @@ impl Running {
     /// then), and how many things wait in a hidden one (the dot on the sidebar button).
     pub(crate) fn bar_notice_state(&self) -> (bool, usize) {
         let side = !notice::in_top_bar(self.sidebar.is_open(), self.sidebar.flyout_shown());
-        let waiting = self.dl_live.values().filter(|d| d.finished.is_none()).count()
+        let waiting = self.downloads.live.values().filter(|d| d.finished.is_none()).count()
             + self.signals.all().len();
         (side, waiting)
     }

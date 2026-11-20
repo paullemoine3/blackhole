@@ -131,8 +131,8 @@ impl Running {
             }
             UiCommand::DismissDownload { id } => {
                 // A download still running keeps its card.
-                if self.dl_live.get(&id).is_some_and(|d| d.finished.is_some()) {
-                    self.dl_live.remove(&id);
+                if self.downloads.live.get(&id).is_some_and(|d| d.finished.is_some()) {
+                    self.downloads.live.remove(&id);
                     let list = self.downloads_json();
                     self.ui(format!("window.bh&&bh.downloads({list})"));
                 }

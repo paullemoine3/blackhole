@@ -221,7 +221,7 @@ impl Running {
                     let repo = format!("{}/{}", release.owner, release.repo);
                     // The same repository in the market: the reviewed entry is the one to install.
                     let in_market = self
-                        .market
+                        .market.index
                         .extensions
                         .iter()
                         .find(|e| e.source.as_ref().is_some_and(|s| s.repo.eq_ignore_ascii_case(&repo)))
@@ -280,8 +280,8 @@ impl Running {
                         }
                         Err(why) => tracing::warn!("{id}: {why}"),
                     }
-                    if self.github.checking == 0 && self.market_fetching.is_none() {
-                        self.catalog_checked = Some(self.outdated_extensions().len() + self.github.updates.len());
+                    if self.github.checking == 0 && self.market.fetching.is_none() {
+                        self.market.outdated = Some(self.outdated_extensions().len() + self.github.updates.len());
                     }
                 }
             }

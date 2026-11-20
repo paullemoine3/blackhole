@@ -256,7 +256,7 @@ impl Running {
 
     /// The start page's downloads: the last files that arrived and are still on disk.
     pub(crate) fn home_downloads_json(&self) -> Value {
-        json!(self.downloads.iter().rev()
+        json!(self.downloads.records.iter().rev()
             .filter(|d| d.done && d.ok && std::path::Path::new(&d.path).exists())
             .take(HOME_LIST)
             .map(|d| json!({"id": d.id, "name": d.name, "url": d.url, "at": d.at}))
@@ -274,7 +274,7 @@ impl Running {
             "archive": self.archive.iter().enumerate().rev().take(FOUND_MAX)
                 .map(|(i, a)| json!({"index": i, "title": a.title, "url": a.url}))
                 .collect::<Vec<_>>(),
-            "downloads": self.downloads.iter().rev().filter(|d| d.done && d.ok).take(FOUND_MAX)
+            "downloads": self.downloads.records.iter().rev().filter(|d| d.done && d.ok).take(FOUND_MAX)
                 .map(|d| json!({"id": d.id, "name": d.name, "url": d.url}))
                 .collect::<Vec<_>>(),
         })
@@ -330,8 +330,8 @@ impl Running {
             }
             UiCommand::AuthSaved { id, index } => {
                 let (Some(origin), Some(realm)) = (
-                    self.auth_origins.get(&id).cloned(),
-                    self.auth.get(id).map(|c| c.realm.clone()),
+                    self.auth.origins.get(&id).cloned(),
+                    self.auth.prompts.get(id).map(|c| c.realm.clone()),
                 ) else {
                     return;
                 };
@@ -345,7 +345,7 @@ impl Running {
 
     /// The user names saved for the sign-in prompt `id` (never a password).
     pub(crate) fn auth_saved_users(&self, id: u64) -> Vec<String> {
-        match (self.auth_origins.get(&id), self.auth.get(id)) {
+        match (self.auth.origins.get(&id), self.auth.prompts.get(id)) {
             (Some(origin), Some(c)) if self.svc.settings().password_manager => {
                 self.passwords.auth_users(origin, &c.realm)
             }
