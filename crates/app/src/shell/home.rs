@@ -1,10 +1,14 @@
 //! The start page and its welcome tour.
 
+use std::time::Instant;
+
 use blackhole_domain::{SearchEngine, suggest};
 use blackhole_infrastructure::catalog;
 use serde_json::json;
 
 use crate::i18n;
+use crate::ipc::UiCommand;
+use crate::platform::default_browser_unavailable;
 use crate::state::Running;
 
 impl Running {
@@ -124,5 +128,40 @@ impl Running {
             .take(12)
             .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))
             .collect()
+    }
+}
+
+impl Running {
+    /// Commands of the welcome tour.
+    pub(crate) fn handle_onboarding(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::OnboardingOpen { on } => {
+                self.onboarding_open = on;
+                // The extensions it installs must not open their welcome pages over it.
+                let welcome = on && self.onboarding == Some(blackhole_domain::onboarding::Mode::Welcome);
+                self.welcome.tour_open(welcome, Instant::now());
+                self.sync_dim();
+            }
+            UiCommand::OnboardingDone => {
+                self.onboarding = None;
+                self.onboarding_open = false;
+                self.welcome.tour_open(false, Instant::now());
+                self.default_asked = false;
+                self.sync_dim();
+                self.ui_home();
+            }
+            UiCommand::ReplayTour => {
+                self.onboarding = Some(blackhole_domain::onboarding::Mode::Tour);
+                self.handle_ui(UiCommand::Home);
+            }
+            UiCommand::SetDefaultBrowser => {
+                self.default_asked = blackhole_macos_url::set_default_browser();
+                if !self.default_asked {
+                    self.toast(&default_browser_unavailable());
+                }
+                self.ui_home();
+            }
+            _ => {}
+        }
     }
 }

@@ -7,6 +7,7 @@ use blackhole_infrastructure::{import, JsonWorkspaceRepository};
 use blackhole_infrastructure::store::{BookmarkStore, Vault};
 
 use crate::i18n::message;
+use crate::ipc::UiCommand;
 use crate::state::Running;
 
 /// Result of an import job: message, vault size, and the bookmarks to file as tabs.
@@ -115,5 +116,62 @@ impl Running {
             };
             let _ = tx.send((msg, vault.count(), list));
         });
+    }
+}
+
+impl Running {
+    /// Commands that import bookmarks and passwords.
+    pub(crate) fn handle_imports(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::ImportScan => {
+                self.import_sources = import::detect();
+                self.ui_settings();
+                self.spawn_import(|_, _| None);
+            }
+            UiCommand::ImportBookmarks { source } => {
+                let found = self.import_sources.iter().find(|s| s.id == source).cloned();
+                let space = self.svc.workspace().active_space().id.0;
+                self.spawn_import(move |bookmarks, _| {
+                    Some(match found {
+                        Some(s) => match import::read_bookmarks(&s) {
+                            Ok(list) => store_bookmarks(bookmarks, list, &s.browser, space),
+                            Err(e) => (message("settings.import_failed", &[("from", &s.browser), ("why", &e.to_string())]), Vec::new()),
+                        },
+                        None => (message("settings.import_no_source", &[]), Vec::new()),
+                    })
+                });
+            }
+            UiCommand::AddBookmark { title, url, folder } => {
+                let allowed =
+                    url::Url::parse(&url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
+                self.import_msg = if allowed {
+                    let title = if title.trim().is_empty() {
+                        url.clone()
+                    } else {
+                        title
+                    };
+                    self.store_dropped(vec![import::Bookmark {
+                        title,
+                        url,
+                        folder,
+                        space: None,
+                    }])
+                } else {
+                    String::new()
+                };
+            }
+            UiCommand::ImportHtml { text } => {
+                let list = import::parse_html(&text);
+                self.import_msg = self.store_dropped(list);
+            }
+            UiCommand::ImportFile { kind } => {
+                let space = self.svc.workspace().active_space().id.0;
+                let logins = self.passwords.import_sender();
+                self.spawn_import(move |bookmarks, _| {
+                    Some(import_file(bookmarks, &logins, &kind, space))
+                });
+            }
+            _ => {}
+        }
     }
 }

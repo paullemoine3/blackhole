@@ -1,5 +1,7 @@
 //! The Settings page, shown in the page card like a tab.
 
+use std::time::Instant;
+
 use blackhole_domain::{SearchEngine, Settings};
 use blackhole_infrastructure::extensions_dir;
 use serde_json::json;
@@ -7,7 +9,9 @@ use wry::WebView;
 
 use crate::i18n;
 use crate::features::extensions::app_extension_enabled;
+use crate::ipc::UiCommand;
 use crate::state::Running;
+use crate::tabs::lifecycle::SPARES_DELAY;
 
 impl Running {
     pub(crate) fn ui_settings(&self) {
@@ -128,6 +132,118 @@ impl Running {
     pub(crate) fn close_settings(&mut self) {
         if std::mem::take(&mut self.settings_shown) {
             self.sync();
+        }
+    }
+}
+
+impl Running {
+    /// Commands of the Settings page (and the start page's own preferences).
+    pub(crate) fn handle_settings(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::SetTabSleep { minutes } => {
+                self.svc.set_tab_sleep_minutes(minutes);
+                self.ui_state();
+            }
+            UiCommand::SetMaxLiveTabs { tabs } => {
+                self.svc.set_max_live_tabs(tabs);
+                self.discard_idle_tabs();
+                self.ui_state();
+            }
+            UiCommand::SetSpareViews { count } => {
+                self.svc.set_spare_views(count);
+                self.trim_spares();
+                self.spares_due = Some(Instant::now());
+                self.ui_state();
+            }
+            UiCommand::SetHardwareAcceleration { on } => {
+                self.svc.set_hardware_acceleration(on);
+                self.ui_state();
+            }
+            UiCommand::SetTrackerBlocking { on } => {
+                self.svc.set_tracker_blocking(on);
+                // Spare views carry the blocklist of their creation time.
+                self.spares.clear();
+                self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                self.ui_state();
+            }
+            UiCommand::SetShield { name, on } => {
+                if self.svc.set_shield(&name, on) {
+                    // Spare views carry the lists and page scripts of their creation time.
+                    self.spares.clear();
+                    self.spares_due = Some(Instant::now() + SPARES_DELAY);
+                    self.ui_state();
+                }
+            }
+            UiCommand::SetSectionCollapsed { section, collapsed } => {
+                self.svc.set_section_collapsed(&section, collapsed);
+            }
+            UiCommand::SetExtensionsInPrivate { on } => {
+                self.svc.set_extensions_in_private(on);
+                self.ui_state();
+            }
+            UiCommand::SetAnimations { on } => {
+                self.svc.set_animations(on);
+                self.ui_state();
+            }
+            UiCommand::SetDepth { on } => {
+                self.svc.set_depth(on);
+                self.ui_state();
+                self.ui_easel();
+            }
+            UiCommand::SetLanguage { language } => {
+                if self.svc.set_language(&language) {
+                    self.language_changed();
+                }
+            }
+            UiCommand::ClearHistory => {
+                self.svc.clear_history();
+                self.suggest_forget(None);
+                self.recall_forget(None);
+                self.ui_state();
+            }
+            UiCommand::DismissReleaseNotes => {
+                self.release_notes.clear();
+                self.ui_home();
+            }
+            UiCommand::SetEngine { id } => {
+                if let Some(engine) = SearchEngine::from_id(&id) {
+                    self.svc.set_search_engine(engine);
+                    self.ui_state();
+                }
+            }
+            UiCommand::SetQuickAccessSize { size } => {
+                if self.svc.set_quick_access_size(&size) {
+                    self.ui_state();
+                    self.ui_settings();
+                }
+            }
+            UiCommand::SetHomeSection { section, shown } => {
+                if self.svc.set_home_section(&section, shown) {
+                    self.ui_home();
+                    self.ui_settings();
+                }
+            }
+            UiCommand::SetHomeOrder { order } => {
+                self.svc.set_home_order(&order);
+                self.ui_home();
+                self.ui_settings();
+            }
+            UiCommand::OpenSettings { tab } => {
+                self.settings_tab = tab;
+                self.settings_seq += 1;
+                self.settings_wanted = true;
+            }
+            UiCommand::ClearBlocked => {
+                self.blocked.clear();
+                self.ui_state();
+            }
+            UiCommand::CloseSettings => self.close_settings(),
+            UiCommand::ApplyUpdate => self.start_update(),
+            UiCommand::CheckAppUpdate => {
+                self.check_for_update();
+                self.ui_state();
+            }
+            _ => {}
         }
     }
 }

@@ -4,10 +4,11 @@
 use std::{fs, io, path::Path, process::Command};
 use std::time::{Duration, Instant};
 
-use blackhole_infrastructure::{extensions_dir, load_extensions};
+use blackhole_infrastructure::{catalog, extensions_dir, load_extensions};
 use serde_json::json;
 
 use crate::views;
+use crate::ipc::UiCommand;
 use crate::platform::{trace, web_view_ptr};
 use crate::state::Running;
 
@@ -243,6 +244,123 @@ impl Running {
                 let injection = self.svc.injection_for(&tab.url);
                 views::apply_injection(view, &injection.css, &injection.js);
             }
+        }
+    }
+}
+
+impl Running {
+    /// Commands about extensions: market, GitHub, toolbar buttons and popups, the system's app extensions.
+    pub(crate) fn handle_extensions(&mut self, command: UiCommand) {
+        match command {
+            UiCommand::InstallCatalog { id } => {
+                self.install_catalog(&id);
+                // The tour shows the download at once (`installing`).
+                if self.onboarding.is_some() {
+                    self.ui_home();
+                }
+            }
+            UiCommand::GithubLookup { input } => self.github_lookup(&input),
+            UiCommand::GithubPrepare { asset, update } => self.github_prepare(asset, update),
+            UiCommand::GithubInstall => self.github_install(),
+            UiCommand::GithubCancel => self.github_cancel(),
+            UiCommand::CheckCatalogUpdates => {
+                // The newest signed list first; the count comes when it has arrived (or failed).
+                self.refresh_market(true);
+                // And a newer release of every extension added from GitHub.
+                self.github_check_updates();
+                self.ui_state();
+            }
+            UiCommand::UpdateAllCatalog => {
+                // An update that asks for more than the installed version had waits for its own
+                // click (the market shows what it adds): "Update all" leaves it out.
+                let mut waiting = 0;
+                for id in self.outdated_extensions() {
+                    let quiet = self.market.find(&id).is_some_and(|e| self.update_adds(e).is_empty());
+                    if quiet {
+                        self.install_catalog(&id);
+                    } else {
+                        waiting += 1;
+                    }
+                }
+                self.catalog_checked = Some(waiting);
+                self.ui_state();
+            }
+            UiCommand::ExtAction { id, x, y, w, h: hh } => {
+                #[cfg(target_os = "macos")]
+                self.show_native_popup(&id, (x, y, w, hh));
+                #[cfg(windows)]
+                {
+                    let url = self.webext.as_ref().and_then(|host| host.popup_url(&id));
+                    if let Some(url) = url {
+                        self.open_ext_popup(&url, (x, y, w, hh));
+                    }
+                }
+                #[cfg(not(any(target_os = "macos", windows)))]
+                let _ = (id, x, y, w, hh);
+            }
+            UiCommand::CloseExtPopup => {
+                #[cfg(windows)]
+                self.close_ext_popup();
+            }
+            UiCommand::ExtAnchors { anchors } => {
+                #[cfg(windows)]
+                {
+                    self.ext_anchors = anchors;
+                }
+                #[cfg(not(windows))]
+                let _ = anchors;
+            }
+            UiCommand::SetAppExtension { id, on } => {
+                if let Some(e) = self.app_ext.iter().find(|e| e.id == id).cloned() {
+                    set_app_extension_enabled(&self.data, &id, on);
+                    if let Some(host) = &self.webext {
+                        if on {
+                            host.load(&id, &e.path);
+                        } else {
+                            host.unload(&id);
+                        }
+                    }
+                    self.ui_settings();
+                }
+            }
+            UiCommand::RemoveCatalog { id } => {
+                if let Some(host) = &self.webext {
+                    host.unload(&id);
+                }
+                if self.github.find(&id).is_some() {
+                    self.github_remove(&id);
+                } else {
+                    catalog::remove(&self.data, &id);
+                }
+                self.ui_state();
+            }
+            UiCommand::SetExtensionEnabled { id, enabled }
+                if self.market.find(&id).is_some() || self.github.find(&id).is_some() =>
+            {
+                self.svc.set_enabled_flag(&id, enabled);
+                if let Some(host) = &self.webext {
+                    if enabled && catalog::is_installed(&self.data, &id) {
+                        host.load(&id, &catalog::package_path(&self.data, &id));
+                    } else {
+                        host.unload(&id);
+                    }
+                }
+                self.ui_state();
+            }
+            UiCommand::SetExtensionEnabled { id, enabled } => {
+                self.svc.set_extension_enabled(&id, enabled);
+                self.reapply_extensions();
+                self.ui_state();
+            }
+            UiCommand::ReloadExtensions => self.reload_extensions(),
+            UiCommand::OpenExtensionsFolder => reveal(&extensions_dir(&self.data)),
+            UiCommand::InstallSampleExtension => {
+                let installed = install_sample(&extensions_dir(&self.data)).is_ok();
+                if installed {
+                    self.reload_extensions();
+                }
+            }
+            _ => {}
         }
     }
 }
