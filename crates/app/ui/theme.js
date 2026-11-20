@@ -287,4 +287,23 @@
     sheet.replaceSync(css);
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   } catch (e) {}
+  // Dims the page under the welcome tour's dialog shown on the start page (the shell calls it
+  // on the sidebar and the top bar): the same veil as the start page's, which swallows clicks.
+  // A page keeps a control usable above it with `.bh-over-dim` (the window buttons of the bar).
+  let veil = null;
+  window.bhDim = (on) => {
+    if (!veil) {
+      veil = document.createElement('div');
+      veil.setAttribute('aria-hidden', 'true');
+      veil.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(6,5,12,.62);'
+        + '-webkit-backdrop-filter:blur(7px) saturate(.8);backdrop-filter:blur(7px) saturate(.8);'
+        + 'opacity:0;visibility:hidden;transition:opacity .5s ease,visibility 0s .5s';
+      document.documentElement.append(veil);
+    }
+    const calm = document.body && document.body.classList.contains('noanim');
+    veil.style.transition = calm ? 'none' : on ? 'opacity .5s ease' : 'opacity .5s ease,visibility 0s .5s';
+    veil.style.opacity = on ? '1' : '0';
+    veil.style.visibility = on ? 'visible' : 'hidden';
+    document.documentElement.classList.toggle('bh-dimmed', !!on);
+  };
 })();

@@ -113,6 +113,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         }
     }
 
+    /// No settings existed when this service started: the first launch of the profile (the
+    /// welcome tour is offered then, `domain::onboarding`).
+    pub fn first_launch(&self) -> bool {
+        self.fresh
+    }
+
     /// Release notes to show once after an update; remembers `current` so they never come back.
     pub fn take_release_notes(
         &mut self,
@@ -1097,12 +1103,14 @@ mod tests {
             first.take_release_notes("0.3.0").is_empty(),
             "fresh install"
         );
+        assert!(first.first_launch());
 
         let mut updated = BrowserService::start(repo.clone(), PrivacyPolicy::default());
         assert_eq!(updated.take_release_notes("0.4.0")[0].0, "0.4.0");
 
         let mut restarted = BrowserService::start(repo, PrivacyPolicy::default());
         assert!(restarted.take_release_notes("0.4.0").is_empty());
+        assert!(!restarted.first_launch());
     }
 
     #[test]

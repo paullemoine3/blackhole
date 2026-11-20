@@ -1,0 +1,778 @@
+<!-- Welcome tour of the start page (domain::onboarding), appended to home.html at build time
+     (HOME_HTML in main.rs): at the first launch of a profile, once the launch splash has landed,
+     the start page is veiled and a dialog walks through the main features, then offers to import
+     bookmarks, make BlackHole the default browser, install a few extensions and pick the look of
+     the first space. Settings > General replays the features alone (`mode` "tour").
+     Between two steps the hole of the launch splash comes back, alone and pure black: it is born
+     in the middle of the card, grows until it swallows it, and the next step comes out of the dark
+     (0.7 s + 0.25 s). The last step lets the whole start page fall into it. Only transform and
+     opacity move; with animations off the steps simply swap.
+     Every class is prefixed `ob-` so the start page's own rules (.tile, .more, .item…) stay out. -->
+<style>
+  #ob-veil { position: fixed; inset: 0; z-index: 20; background: rgba(6,5,12,.62); -webkit-backdrop-filter: blur(7px) saturate(.8); backdrop-filter: blur(7px) saturate(.8);
+    opacity: 0; visibility: hidden; transition: opacity .5s ease, visibility 0s .5s; }
+  #ob-veil.on { opacity: 1; visibility: visible; transition: opacity .5s ease; }
+  #ob { --ob-accent: #7c5cff; --ob-rgb: 124,92,255; --ob-k: 1; position: fixed; z-index: 21; left: 50%; top: 50%; width: 740px; height: 580px; display: grid;
+    border-radius: 18px; overflow: hidden; visibility: hidden; color: #eceaf5; font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(520px 300px at 50% -12%, rgba(var(--ob-rgb),.2), transparent 70%), #100f17;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.09), 0 30px 80px rgba(0,0,0,.6), 0 0 120px rgba(var(--ob-rgb),.18);
+    transform: translate(-50%, -50%) scale(var(--ob-k)); }
+  #ob.on { visibility: visible; animation: ob-rise .6s cubic-bezier(.2,1.3,.4,1) both; }
+  #ob.off { visibility: visible; animation: ob-gone .01s .7s both; }
+  @keyframes ob-rise { from { opacity: 0; transform: translate(-50%, calc(-50% + 22px)) scale(calc(var(--ob-k) * .96)); } }
+  @keyframes ob-gone { to { opacity: 0; visibility: hidden; } }
+  #ob button { font: inherit; color: inherit; }
+  .ob-pane { position: relative; overflow: hidden; display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+  .ob-stage { position: relative; overflow: hidden; min-height: 0; }
+  .ob-step { position: absolute; inset: 0; display: grid; grid-template-rows: 250px auto 1fr; }
+  .ob-step.form { grid-template-rows: 0 auto 1fr; }
+  .ob-step.form .ob-vis { visibility: hidden; }
+  .ob-step.slim { grid-template-rows: 150px auto 1fr; }
+  .ob-step.slim .ob-vis { visibility: visible; }
+  .ob-step.ready { grid-template-rows: 186px auto 1fr; }
+  .ob-step.leaving { animation: ob-suck .7s cubic-bezier(.5,0,.9,.5) both; }
+  .ob-step.entering { animation: ob-emerge .5s cubic-bezier(.2,.85,.25,1) both; }
+  @keyframes ob-suck { 0%, 40% { transform: none; filter: none; } 100% { transform: scale(.9); filter: blur(3px); opacity: .4; } }
+  @keyframes ob-emerge { from { opacity: 0; transform: scale(1.08); } }
+
+  /* The hole between two steps: pure black, no accretion and no ring. Born with a bounce, it
+     grows until it covers the card (or the whole start page, for the last step). */
+  .ob-warp { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; visibility: hidden; }
+  .ob-warp.all { position: fixed; z-index: 30; }
+  .ob-warp .void { width: 64px; height: 64px; border-radius: 50%; background: #000; box-shadow: 0 0 24px 6px rgba(0,0,0,.55); transform: scale(0); }
+  .ob-warp.go { visibility: visible; animation: ob-out .25s ease-out .7s both; }
+  .ob-warp.go .void { animation: ob-swallow .7s both; }
+  .ob-warp .void { --dive: 17; } .ob-warp.all .void { --dive: 40; }
+  @keyframes ob-swallow { 0% { transform: scale(0); animation-timing-function: cubic-bezier(.2,1.3,.4,1); } 40% { transform: scale(1); animation-timing-function: cubic-bezier(.6,0,.9,.4); } 100% { transform: scale(var(--dive)); } }
+  @keyframes ob-out { to { opacity: 0; visibility: hidden; } }
+  main.ob-emerge { animation: ob-emerge .5s cubic-bezier(.2,.85,.25,1) both; }
+
+  .ob-foot { display: flex; align-items: center; gap: 10px; padding: 14px 22px 18px; position: relative; z-index: 6; }
+  .ob-prog { display: flex; gap: 6px; align-items: center; margin-right: auto; }
+  .ob-prog i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.18); transition: all .4s cubic-bezier(.2,.85,.25,1); }
+  .ob-prog i.done { background: rgba(var(--ob-rgb),.55); }
+  .ob-prog i.cur { width: 22px; border-radius: 3px; background: var(--ob-accent); box-shadow: 0 0 10px rgba(var(--ob-rgb),.5); }
+  .ob-prog b { width: 1px; height: 10px; background: rgba(255,255,255,.12); margin: 0 3px; }
+  .ob-btn { font-size: 13.5px; border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer; background: rgba(255,255,255,.07); transition: background .2s, transform .2s cubic-bezier(.3,1.4,.5,1); white-space: nowrap; }
+  .ob-btn:hover { background: rgba(255,255,255,.12); }
+  .ob-btn:active { transform: scale(.96); }
+  .ob-btn:focus-visible { outline: 2px solid var(--ob-accent); outline-offset: 2px; }
+  .ob-btn.pri { background: var(--ob-accent); color: #fff; font-weight: 600; box-shadow: 0 4px 18px rgba(var(--ob-rgb),.35); }
+  .ob-btn.pri:hover { filter: brightness(1.1); }
+  .ob-btn.ghost { background: transparent; opacity: .6; }
+  .ob-btn.ghost:hover { opacity: 1; background: rgba(255,255,255,.06); }
+  .ob-btn[hidden] { display: none; }
+  .ob-btn .k { margin-left: 8px; opacity: .65; font-size: 11px; }
+
+  .ob-vis { position: relative; overflow: hidden; display: grid; place-items: center; -webkit-mask: linear-gradient(#000 75%, transparent); mask: linear-gradient(#000 75%, transparent); }
+  .ob-step.slim .ob-vis > * { transform: scale(.88); }
+  .ob-stars { position: absolute; left: 0; top: 0; width: 1px; height: 1px; border-radius: 50%; opacity: .7; animation: ob-twinkle 5s ease-in-out infinite alternate; }
+  @keyframes ob-twinkle { to { opacity: .35; } }
+  .ob-txt { padding: 18px 34px 0; text-align: center; }
+  .ob-step.form .ob-txt { padding-top: 30px; text-align: left; }
+  .ob-step.slim .ob-txt { padding-top: 0; }
+  .ob-step.ready .ob-txt { padding-top: 6px; }
+  .ob-eye { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ob-accent); filter: brightness(1.35); }
+  .ob-txt h2 { font-size: 26px; font-weight: 600; letter-spacing: -.015em; margin: 4px 0 6px; line-height: 1.2; }
+  .ob-txt p { opacity: .7; max-width: 560px; margin: 0 auto; }
+  .ob-step.form .ob-txt p { margin: 0; }
+  .ob-body { padding: 14px 34px 0; min-height: 0; }
+  .ob-step:not(.form) .ob-body { text-align: center; }
+  .entering .ob-eye, .entering .ob-txt h2, .entering .ob-txt p, .entering .ob-body > * { animation: ob-up .55s cubic-bezier(.2,.85,.25,1) both; }
+  .entering .ob-txt h2 { animation-delay: .05s; } .entering .ob-txt p { animation-delay: .1s; } .entering .ob-body > * { animation-delay: .16s; } .entering .ob-body > * + * { animation-delay: .22s; }
+  @keyframes ob-up { from { opacity: 0; transform: translateY(10px); } }
+  .ob-kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,.1); box-shadow: inset 0 -1px 0 rgba(255,255,255,.12); }
+
+  /* The logo, sized by --s, as on the start page. */
+  .ob-bh { position: relative; width: 1em; height: 1em; font-size: var(--s, 84px); flex: none; }
+  .ob-bh i { position: absolute; border-radius: 50%; }
+  .ob-bh .disc { inset: 0; background: radial-gradient(circle, #000 0 34%, rgba(255,170,60,.95) 38%, rgba(255,90,40,.5) 52%, rgba(124,92,255,.3) 64%, transparent 76%);
+    box-shadow: 0 0 .48em rgba(255,120,40,.3), 0 0 1.07em rgba(124,92,255,.25); animation: ob-breathe 5s ease-in-out infinite; }
+  .ob-bh .ring { inset: -11%; border: max(1.5px, .024em) solid transparent; border-top-color: rgba(255,205,120,.9); border-right-color: rgba(124,92,255,.8); animation: ob-spin 6s linear infinite; }
+  .ob-bh .glow { inset: -45%; background: radial-gradient(circle, rgba(255,120,40,.3), rgba(124,92,255,.16) 45%, transparent 70%); animation: ob-breathe 6s ease-in-out infinite; }
+  @keyframes ob-breathe { 50% { transform: scale(1.06); } }
+  @keyframes ob-spin { to { transform: rotate(360deg); } }
+  .ob-orbit { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px dashed rgba(255,255,255,.08); animation: ob-orbit var(--t) linear infinite; }
+  .ob-orbit i { position: absolute; left: 50%; top: -3px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--c, #fff); box-shadow: 0 0 6px 1px #beaaffe6; }
+  @keyframes ob-orbit { from { transform: translate(-50%, -50%) rotate(0); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+  .ob-lang { display: inline-flex; margin-top: 16px; background: rgba(255,255,255,.06); border-radius: 999px; padding: 3px; font-size: 12px; }
+  .ob-lang button { border: 0; background: transparent; padding: 4px 12px; border-radius: 999px; cursor: pointer; opacity: .6; }
+  .ob-lang button[aria-pressed="true"] { background: rgba(255,255,255,.12); opacity: 1; }
+
+  /* Spaces: the mini sidebar changes space, color and tabs. */
+  .ob-mw { position: relative; width: 340px; height: 190px; border-radius: 12px; overflow: hidden; display: flex; box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 20px 50px rgba(0,0,0,.5); background: #100f17; }
+  .ob-ms { position: relative; width: 112px; padding: 26px 8px 8px; display: flex; flex-direction: column; gap: 5px; }
+  .ob-tint { position: absolute; inset: 0; opacity: .3; transition: background-color .6s ease; }
+  .ob-lbl { position: relative; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .8; margin: 0 4px 2px; height: 14px; overflow: hidden; }
+  .ob-lbl span { display: block; height: 14px; line-height: 14px; transition: transform .5s cubic-bezier(.2,.85,.25,1); }
+  .ob-tabs { position: relative; overflow: hidden; flex: 1; }
+  .ob-track { display: flex; width: 300%; height: 100%; transition: transform .55s cubic-bezier(.2,.85,.25,1); }
+  .ob-col { width: 33.333%; display: flex; flex-direction: column; gap: 5px; }
+  .ob-col i { height: 17px; border-radius: 5px; background: rgba(255,255,255,.08); display: flex; align-items: center; gap: 5px; padding: 0 5px; }
+  .ob-col i::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--c, rgba(255,255,255,.35)); }
+  .ob-col i::after { content: ""; height: 3px; width: var(--w, 50%); border-radius: 2px; background: rgba(255,255,255,.25); }
+  .ob-sd { position: relative; display: flex; gap: 7px; justify-content: center; padding-top: 6px; }
+  .ob-sd i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); opacity: .35; transition: all .4s; }
+  .ob-sd i.on { opacity: 1; transform: scale(1.35); box-shadow: 0 0 6px var(--c); }
+  .ob-mp { flex: 1; margin: 6px 6px 6px 0; border-radius: 8px; background: #0c0b12; box-shadow: 0 0 0 1px rgba(255,255,255,.06); padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .ob-mp b { height: 10px; width: 60%; border-radius: 3px; background: rgba(255,255,255,.18); }
+  .ob-mp s { height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); }
+  .ob-mp u { margin-top: auto; height: 50px; border-radius: 7px; transition: background-color .6s; opacity: .35; }
+
+  /* Command bar: a few letters, the rows come. */
+  .ob-pal { width: 380px; border-radius: 16px; background: rgba(22,20,32,.92); box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 24px 60px rgba(0,0,0,.6), 0 0 40px rgba(var(--ob-rgb),.25); overflow: hidden; text-align: left; }
+  .ob-in { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 15px; }
+  .ob-in .bh-i { opacity: .5; }
+  .ob-typed::after { content: ""; display: inline-block; width: 1.5px; height: 16px; background: var(--ob-accent); margin-left: 1px; vertical-align: -3px; animation: ob-caret 1s steps(1) infinite; }
+  @keyframes ob-caret { 50% { opacity: 0; } }
+  .ob-in .ob-keys { margin-left: auto; display: flex; gap: 4px; }
+  .ob-res { list-style: none; padding: 6px; margin: 0; }
+  .ob-res li { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 8px; font-size: 12.5px; opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .35s cubic-bezier(.2,.85,.25,1); }
+  .ob-res li.show { opacity: 1; transform: none; }
+  .ob-res li.sel { background: rgba(var(--ob-rgb),.85); }
+  .ob-res .ic { width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.1); display: grid; place-items: center; flex: none; }
+  .ob-res em { margin-left: auto; font-style: normal; font-size: 11px; opacity: .55; }
+
+  /* Shields: what comes near the hole never comes out, light included. */
+  .ob-shield { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+  .ob-shield .ob-bh { --s: 78px; }
+  .ob-tr { position: absolute; left: 50%; top: 50%; font: 10.5px ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; padding: 2px 7px; border-radius: 999px; background: rgba(255,90,40,.14); color: #ffb79c; border: 1px solid rgba(255,90,40,.3);
+    opacity: 0; animation: ob-sucked var(--d) cubic-bezier(.5,0,.85,.55) var(--delay) infinite; }
+  .ob-ray { position: absolute; left: 50%; top: 50%; width: 46px; height: 2px; margin-top: -1px; border-radius: 2px; background: linear-gradient(90deg, transparent, rgba(255,235,200,.9)); opacity: 0;
+    animation: ob-sucked var(--d) cubic-bezier(.55,0,.9,.6) var(--delay) infinite; }
+  @keyframes ob-sucked { 0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--a)) translateX(var(--r)) rotate(calc(-1 * var(--a))) scale(1); } 12% { opacity: 1; } 80% { opacity: .9; }
+    100% { opacity: 0; transform: translate(-50%, -50%) rotate(calc(var(--a) + 200deg)) translateX(6px) rotate(calc(-1 * var(--a) - 200deg)) scale(.15); } }
+  .ob-count { position: absolute; left: 26px; bottom: 34px; text-align: left; }
+  .ob-count b { display: block; font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .ob-count span { font-size: 11.5px; opacity: .6; }
+  .ob-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .ob-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; font-size: 12.5px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
+  .ob-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #2fd4a0; box-shadow: 0 0 6px #2fd4a0; }
+
+  /* And also: small feature tiles. */
+  .ob-more { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .ob-tile { padding: 13px 14px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); transition: transform .35s cubic-bezier(.3,1.4,.5,1), background .3s, border-color .3s; }
+  .ob-tile:hover { transform: translateY(-3px); background: rgba(255,255,255,.06); border-color: rgba(var(--ob-rgb),.4); }
+  .ob-tile .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: rgba(var(--ob-rgb),.16); color: var(--ob-accent); margin-bottom: 9px; filter: brightness(1.3); }
+  .ob-tile b { display: block; font-size: 13.5px; font-weight: 600; }
+  .ob-tile span { font-size: 12px; opacity: .6; line-height: 1.35; display: block; margin-top: 2px; }
+  .entering .ob-more .ob-tile { animation: ob-up .5s cubic-bezier(.2,.85,.25,1) calc(.15s + var(--i) * 50ms) both; }
+
+  /* Import: the bookmarks fly into the hole. */
+  .ob-imp { position: relative; width: 310px; height: 170px; }
+  .ob-src { position: absolute; left: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; }
+  .ob-mono { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 12px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); flex: none; }
+  .ob-imp .ob-bh { position: absolute; right: 18px; top: 50%; margin-top: -32px; --s: 64px; }
+  .ob-fly { position: absolute; left: 30px; top: 50%; padding: 3px 8px; font-size: 10.5px; border-radius: 6px; background: rgba(255,255,255,.1); white-space: nowrap; opacity: 0; offset-path: path("M 0 0 C 100 -70 180 60 250 0"); offset-rotate: 0deg; }
+  .ob-imp.run .ob-fly { animation: ob-intake 1.1s cubic-bezier(.5,0,.8,.6) var(--delay) infinite; }
+  @keyframes ob-intake { 0% { offset-distance: 0%; opacity: 0; transform: scale(1); } 15% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; transform: scale(.2); } }
+  .ob-srcs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 112px; overflow-y: auto; }
+  .ob-opt { display: flex; align-items: center; gap: 12px; padding: 7px 12px; border-radius: 10px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); cursor: pointer; text-align: left; transition: background .2s, border-color .2s; min-width: 0; }
+  .ob-opt:hover { background: rgba(255,255,255,.06); }
+  .ob-opt[aria-checked="true"] { border-color: rgba(var(--ob-rgb),.7); background: rgba(var(--ob-rgb),.16); }
+  .ob-rad { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.35); flex: none; display: grid; place-items: center; }
+  .ob-opt[aria-checked="true"] .ob-rad { border-color: var(--ob-accent); }
+  .ob-opt[aria-checked="true"] .ob-rad::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ob-accent); }
+  .ob-opt .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ob-opt b { font-weight: 500; font-size: 13.5px; } .ob-opt small { font-size: 12px; opacity: .55; }
+  .ob-what { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .ob-chk { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 8px; background: rgba(255,255,255,.05); border: 0; font-size: 12.5px; cursor: pointer; }
+  .ob-chk i { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid rgba(255,255,255,.35); display: grid; place-items: center; }
+  .ob-chk[aria-checked="true"] i { background: var(--ob-accent); border-color: transparent; }
+  .ob-chk[aria-checked="true"] i::after { content: ""; width: 7px; height: 4px; border: 1.5px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+  .ob-link { border: 0; background: none; padding: 0; color: var(--ob-accent) !important; filter: brightness(1.45); cursor: pointer; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  .ob-status { margin-top: 12px; font-size: 13px; display: flex; align-items: center; gap: 8px; min-height: 20px; }
+  .ob-status.ok { color: #2fd4a0; }
+  .ob-status.bad { color: #ff8f8f; }
+  .ob-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; width: 200px; }
+  .ob-bar i { display: block; height: 100%; width: 40%; background: var(--ob-accent); border-radius: 2px; animation: ob-run 1.1s ease-in-out infinite; }
+  @keyframes ob-run { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+  .ob-dots i { display: inline-block; width: 4px; height: 4px; margin: 0 1px; border-radius: 50%; background: currentColor; animation: ob-pulse 1s infinite; }
+  .ob-dots i:nth-child(2) { animation-delay: .15s; } .ob-dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes ob-pulse { 50% { opacity: .2; } }
+
+  /* Default browser: links leave the apps and fall into the hole; once set, a check pops on it. */
+  .ob-def { position: relative; width: 320px; height: 150px; }
+  .ob-app { position: absolute; left: 0; width: 92px; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 10px; font-size: 11.5px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); animation: ob-emit 1.8s ease-out var(--delay) infinite; }
+  .ob-app .bh-i { opacity: .7; }
+  @keyframes ob-emit { 0%, 100% { border-color: rgba(255,255,255,.1); } 6% { border-color: #9fc4ff; box-shadow: 0 0 12px rgba(159,196,255,.35); } 25% { border-color: rgba(255,255,255,.1); box-shadow: none; } }
+  .ob-lk { position: absolute; left: 96px; display: flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; font-size: 10px; color: #9fc4ff; background: rgba(159,196,255,.12); border: 1px solid rgba(159,196,255,.3);
+    offset-path: var(--path); offset-rotate: 0deg; opacity: 0; animation: ob-hop 1.8s cubic-bezier(.45,0,.8,.6) var(--delay) infinite; }
+  @keyframes ob-hop { 0% { offset-distance: 0%; opacity: 0; transform: scale(1); } 8% { opacity: 1; } 70% { opacity: 1; transform: scale(.75); } 85%, 100% { offset-distance: 100%; opacity: 0; transform: scale(.15); } }
+  .ob-def .ob-bh { position: absolute; right: 10px; top: 45px; --s: 60px; }
+  .ob-def .ob-bh .disc { animation: ob-kick .6s cubic-bezier(.3,1.4,.5,1) .33s infinite; }
+  @keyframes ob-kick { 0%, 100% { transform: scale(1); } 20% { transform: scale(1.14); } }
+  .ob-badge { position: absolute; right: 4px; top: 86px; width: 24px; height: 24px; border-radius: 50%; background: #2fd4a0; color: #062b1f; display: grid; place-items: center;
+    box-shadow: 0 0 0 3px #100f17, 0 0 14px #2fd4a0; transform: scale(0); transition: transform .45s cubic-bezier(.2,1.3,.4,1); }
+  .ob-def.done .ob-badge { transform: scale(1); }
+  .ob-cap { position: absolute; right: 0; top: 118px; width: 80px; text-align: center; font-size: 10.5px; color: #2fd4a0; opacity: 0; transition: opacity .4s .2s; }
+  .ob-def.done .ob-cap { opacity: 1; }
+  .ob-sys { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); font-size: 13px; }
+  .ob-sys .ic { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.08); display: grid; place-items: center; flex: none; }
+  .ob-sys p { opacity: .8; margin: 0; }
+  .ob-sys ol { margin: 6px 0 0; padding-left: 18px; opacity: .75; }
+
+  /* Extensions. */
+  .ob-exts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ob-ext { position: relative; display: grid; grid-template-columns: 38px 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 14px; border-radius: 12px; text-align: left;
+    background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); transition: border-color .3s, background .3s; overflow: hidden; cursor: pointer; }
+  .ob-ext[aria-checked="true"] { border-color: rgba(var(--ob-rgb),.55); background: rgba(var(--ob-rgb),.07); }
+  .ob-ext .lg { grid-row: 1 / 3; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #fff; }
+  .ob-ext b { font-weight: 600; font-size: 13.5px; }
+  .ob-ext .cat { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; opacity: .45; margin-left: 6px; font-weight: 500; }
+  .ob-ext .ds { grid-column: 2; font-size: 11.5px; opacity: .6; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ob-sw { grid-row: 1 / 3; grid-column: 3; width: 34px; height: 20px; border-radius: 999px; background: rgba(255,255,255,.14); position: relative; transition: background .25s; flex: none; }
+  .ob-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+  [aria-checked="true"] > .ob-sw { background: var(--ob-accent); box-shadow: 0 0 10px rgba(var(--ob-rgb),.5); }
+  [aria-checked="true"] > .ob-sw::after { transform: translateX(14px); }
+  .ob-ext .st { grid-row: 1 / 3; grid-column: 3; font-size: 12px; font-weight: 600; color: #2fd4a0; }
+  .ob-ext .st.bad { color: #ff8f8f; }
+  .ob-ext .pr { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--ob-accent); transform-origin: 0 50%; animation: ob-load 2.4s ease-out both; }
+  @keyframes ob-load { from { transform: scaleX(0); } to { transform: scaleX(.9); } }
+  .ob-trust { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: .55; margin-top: 12px; }
+
+  /* Style. */
+  .ob-rows { display: grid; gap: 14px; }
+  .ob-rows h4 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .5; margin: 0 0 8px; }
+  .ob-sw8 { display: flex; gap: 10px; }
+  .ob-sw8 button { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; background: var(--c); cursor: pointer; transition: transform .3s cubic-bezier(.3,1.4,.5,1), box-shadow .3s; }
+  .ob-sw8 button:hover { transform: scale(1.12); }
+  .ob-sw8 button[aria-checked="true"] { box-shadow: 0 0 0 3px #100f17, 0 0 0 5px var(--c), 0 0 16px var(--c); }
+  .ob-seg { display: inline-flex; gap: 8px; }
+  .ob-seg button { width: 150px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.08); cursor: pointer; font-size: 12.5px; text-align: left; transition: border-color .3s, background .3s; }
+  .ob-seg button[aria-checked="true"] { border-color: rgba(var(--ob-rgb),.7); background: rgba(var(--ob-rgb),.16); }
+  .ob-pv { height: 46px; border-radius: 8px; margin-bottom: 8px; background: #0c0b12; position: relative; overflow: hidden; display: block; }
+  .ob-pv i { position: absolute; left: 14px; top: 10px; width: 52px; height: 30px; border-radius: 7px; background: rgba(255,255,255,.08); }
+  .ob-pv i + i { left: 76px; }
+  .ob-pv.d3 i:first-child { box-shadow: 0 8px 18px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.12); transform: translateY(-3px); }
+  .ob-engines { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ob-engines button { padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); font-size: 12.5px; cursor: pointer; }
+  .ob-engines button[aria-checked="true"] { background: var(--ob-accent); border-color: transparent; color: #fff; }
+  .ob-recall { display: flex; gap: 12px; align-items: center; font-size: 13px; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }
+  .ob-recall .ob-sw { grid-row: auto; grid-column: auto; }
+  .ob-recall small { display: block; opacity: .6; font-size: 12px; }
+
+  /* Ready. */
+  .ob-recap { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; max-width: 600px; margin: 0 auto; text-align: left; }
+  .ob-recap div { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 6px 10px; border-radius: 9px; background: rgba(255,255,255,.035); min-width: 0; }
+  .ob-recap div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ob-recap div::before { content: "✓"; color: #2fd4a0; font-weight: 700; }
+  .ob-recap div.later { opacity: .45; } .ob-recap div.later::before { content: "–"; color: inherit; }
+  .ob-tip { margin-top: 12px; font-size: 12.5px; opacity: .65; display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap; }
+
+  body.noanim #ob *, body.noanim #ob *::before, body.noanim #ob *::after { animation-duration: .01s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
+  body.noanim .ob-tr, body.noanim .ob-ray, body.noanim .ob-fly, body.noanim .ob-lk { display: none; }
+</style>
+<div id="ob-veil"></div>
+<div id="ob" role="dialog" aria-modal="true" aria-labelledby="ob-title" hidden>
+  <div class="ob-pane">
+    <div class="ob-stage" id="ob-stage"></div>
+    <div class="ob-foot">
+      <div class="ob-prog" id="ob-prog" aria-hidden="true"></div>
+      <button class="ob-btn ghost" id="ob-skip"></button>
+      <button class="ob-btn" id="ob-back" data-i18n="onboarding.back">Back</button>
+      <button class="ob-btn pri" id="ob-next"></button>
+    </div>
+    <div class="ob-warp" id="ob-warp"><i class="void"></i></div>
+  </div>
+</div>
+<div class="ob-warp all" id="ob-warp-all"><i class="void"></i></div>
+<script>
+(() => {
+const $ = (id) => document.getElementById(id);
+const send = (m) => window.ipc.postMessage(JSON.stringify(m));
+// Elements are built from our own strings and the shell's data through textContent only.
+function h(tag, cls, text, attrs) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  return e;
+}
+const icon = (name, size) => (window.bhIcon ? bhIcon(name, size) : h('span'));
+const T = (k, p) => bhT('onboarding.' + k, p);
+const calm = () => document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const rgb = (hex) => { const n = parseInt((hex || '#7c5cff').slice(1), 16); return `${n >> 16 & 255},${n >> 8 & 255},${n & 255}`; };
+function kbds(spec) { const box = h('span', 'ob-keys'); for (const k of bhKeyParts(spec)) box.append(h('kbd', 'ob-kbd', k)); return box; }
+function logo(size, glow) {
+  const b = h('div', 'ob-bh');
+  b.style.setProperty('--s', size + 'px');
+  if (glow) b.append(h('i', 'glow'));
+  b.append(h('i', 'disc'), h('i', 'ring'));
+  return b;
+}
+// Stars of an illustration: one element and a list of shadows, the same at every opening.
+function stars(n) {
+  let seed = n * 7 + 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const list = [];
+  for (let k = 0; k < n; k++) list.push(`${Math.round(rnd() * 740)}px ${Math.round(rnd() * 250)}px 0 ${rnd() < .2 ? 1 : 0}px rgba(255,255,255,${(.25 + rnd() * .6).toFixed(2)})`);
+  const s = h('i', 'ob-stars'); s.style.boxShadow = list.join(','); return s;
+}
+function orbit(size, t, color) {
+  const o = h('div', 'ob-orbit'); o.style.width = o.style.height = size + 'px'; o.style.setProperty('--t', t + 's');
+  const dot = h('i'); if (color) dot.style.setProperty('--c', color); o.append(dot); return o;
+}
+const box = (...kids) => { const d = h('div'); d.append(...kids); return d; };
+
+// ---- Illustrations -------------------------------------------------------------------------
+function visHello(big) {
+  const v = h('div'); v.style.cssText = 'position:relative;width:100%;height:100%;display:grid;place-items:center';
+  v.append(stars(90), orbit(big ? 230 : 150, big ? 14 : 6), orbit(big ? 320 : 210, big ? 26 : 10, '#ffcd78'));
+  if (!big) v.append(orbit(270, 16, 'var(--ob-accent)'));
+  v.append(logo(big ? 120 : 84, true));
+  return v;
+}
+function visSpaces() {
+  const w = h('div', 'ob-mw'), side = h('div', 'ob-ms'), tint = h('i', 'ob-tint'), lbl = h('div', 'ob-lbl');
+  const words = [T('spaces_personal'), T('spaces_work'), T('spaces_project')];
+  lbl.append(...words.map((t) => h('span', null, t)));
+  const tabs = h('div', 'ob-tabs'), track = h('div', 'ob-track');
+  const cols = [[['#ff5c8a', 55], ['#3aa0ff', 40], ['#ffb020', 60], [null, 35]], [['#2fd4a0', 48], ['#7c5cff', 62], ['#3aa0ff', 30], ['#ff5a28', 50], [null, 40]], [['#ffcd78', 58], ['#20c4c4', 36], [null, 52]]];
+  for (const col of cols) {
+    const c = h('div', 'ob-col');
+    for (const [color, wd] of col) { const i = h('i'); if (color) i.style.setProperty('--c', color); i.style.setProperty('--w', wd + '%'); c.append(i); }
+    track.append(c);
+  }
+  tabs.append(track);
+  const sd = h('div', 'ob-sd'); const COLORS = ['#7c5cff', '#3aa0ff', '#2fd4a0'];
+  for (const c of COLORS) { const i = h('i'); i.style.setProperty('--c', c); sd.append(i); }
+  side.append(tint, lbl, tabs, sd);
+  const page = h('div', 'ob-mp'), u = h('u');
+  page.append(h('b'), h('s'), Object.assign(h('s'), { style: 'width:85%' }), Object.assign(h('s'), { style: 'width:70%' }), u);
+  w.append(side, page);
+  let k = 0;
+  const set = () => {
+    tint.style.backgroundColor = u.style.backgroundColor = COLORS[k];
+    track.style.transform = `translateX(${-k * 33.333}%)`;
+    for (const s of lbl.children) s.style.transform = `translateY(${-k * 14}px)`;
+    [...sd.children].forEach((d, j) => d.classList.toggle('on', j === k));
+  };
+  set();
+  life.push(setInterval(() => { k = (k + 1) % 3; set(); }, 2200));
+  return w;
+}
+function visCommand() {
+  const p = h('div', 'ob-pal'), row = h('div', 'ob-in'), typed = h('span', 'ob-typed');
+  row.append(icon('search'), typed, kbds('mod+l'));
+  const list = h('ul', 'ob-res');
+  const rows = [['sparkle', 'cmd_r1', 'cmd_kind_action'], ['history', 'cmd_r2', 'cmd_kind_history'], ['easel', 'cmd_r3', 'cmd_kind_easel'], ['window', 'cmd_r4', 'cmd_kind_tab']];
+  const query = T('cmd_query');
+  for (const [ic, key, kind] of rows) {
+    const li = h('li'), text = T(key), i = h('span', 'ic'); i.append(icon(ic, 'xs'));
+    const label = h('span'); label.append(h('b', null, text.slice(0, query.length)), document.createTextNode(text.slice(query.length)));
+    li.append(i, label, h('em', null, T(kind)));
+    list.append(li);
+  }
+  p.append(row, list);
+  let t = 0;
+  const step = () => {
+    t = (t + 1) % 16;
+    typed.textContent = query.slice(0, Math.min(t, query.length));
+    [...list.children].forEach((l, j) => { l.classList.toggle('show', t >= 4 + j); l.classList.toggle('sel', t >= 9 && j === 0); });
+  };
+  step();
+  life.push(setInterval(step, 280));
+  return p;
+}
+function visShields() {
+  const v = h('div', 'ob-shield');
+  v.append(stars(50), logo(78));
+  const hosts = ['pixel.adnet.io', 'track.metrics.co', 'cdn.ads-serve.net', 'beacon.social.js', 'fp.collect.io', 'utm_source', 'adsrv.bid', 'retarget.io'];
+  hosts.forEach((t, k) => {
+    const s = h('span', 'ob-tr', t);
+    s.style.cssText = `--a:${k * 45 + 10}deg;--r:${140 + (k % 3) * 22}px;--d:${(2.6 + (k % 4) * .4).toFixed(1)}s;--delay:${(k * .37).toFixed(2)}s`;
+    v.append(s);
+  });
+  // Light that passes too close bends in and never comes back.
+  for (let k = 0; k < 7; k++) {
+    const r = h('i', 'ob-ray');
+    r.style.cssText = `--a:${k * 51 + 30}deg;--r:${190 + (k % 2) * 30}px;--d:${(1.8 + (k % 3) * .35).toFixed(2)}s;--delay:${(k * .29 + .15).toFixed(2)}s`;
+    v.append(r);
+  }
+  const c = h('div', 'ob-count'), n = h('b', null, '0');
+  c.append(n, h('span', null, T('shields_count')));
+  v.append(c);
+  let count = 1180;
+  life.push(setInterval(() => { count += Math.ceil(Math.random() * 3); n.textContent = count.toLocaleString(bhI18n.lang); }, 140));
+  return v;
+}
+function visImport() {
+  const v = h('div', 'ob-imp' + (S.importing ? ' run' : '')), src = h('div', 'ob-src');
+  const names = [...new Set((S.d.sources || []).map((s) => s.browser))].slice(0, 3);
+  for (const n of names.length ? names : ['?']) src.append(h('div', 'ob-mono', n.slice(0, 2)));
+  v.append(src);
+  ['GitHub', 'Wikipedia', 'Figma', 'Notion', 'YouTube', 'MDN'].forEach((t, k) => { const f = h('span', 'ob-fly', t); f.style.setProperty('--delay', (k * .18).toFixed(2) + 's'); v.append(f); });
+  v.append(logo(64));
+  return v;
+}
+function visDefault() {
+  const v = h('div', 'ob-def' + (S.d.defaultBrowser.is ? ' done' : ''));
+  const apps = [['default_app_mail', 'user', 'M 0 0 C 70 -34 140 4 184 47'], ['default_app_chat', 'devices', 'M 0 0 C 60 -40 130 30 184 -1'], ['default_app_doc', 'library', 'M 0 0 C 70 34 140 6 184 -49']];
+  apps.forEach(([key, ic, path], k) => {
+    const a = h('div', 'ob-app'); a.style.cssText = `top:${10 + k * 48}px;--delay:${k * .6}s`; a.append(icon(ic, 'xs'), h('span', null, T(key)));
+    const l = h('span', 'ob-lk'); l.style.cssText = `top:${19 + k * 48}px;--delay:${k * .6}s;--path:path('${path}')`; l.append(icon('link', 'xs'), h('span', null, T('default_link')));
+    v.append(a, l);
+  });
+  const badge = h('span', 'ob-badge'); badge.append(icon('check', 'xs'));
+  v.append(logo(60), badge, h('span', 'ob-cap', T('default_badge')));
+  return v;
+}
+
+// ---- Choices -------------------------------------------------------------------------------
+function bodyHello() {
+  if (S.mode !== 'welcome') return [];
+  const g = h('div', 'ob-lang', null, { role: 'group', 'aria-label': bhT('settings.language') });
+  for (const [code, name] of [['fr', 'Français'], ['en', 'English']]) {
+    const b = h('button', null, name, { 'aria-pressed': String(S.d.language === code) });
+    b.onclick = () => send({ cmd: 'set_language', language: code });
+    g.append(b);
+  }
+  return [g];
+}
+function bodyShields() {
+  const c = h('div', 'ob-chips');
+  for (const k of ['shields_https', 'shields_links', 'shields_learned', 'shields_telemetry']) c.append(h('span', 'ob-chip', T(k)));
+  return [c];
+}
+function bodyMore() {
+  const g = h('div', 'ob-more');
+  [['easel', 'easel'], ['recall', 'sparkle'], ['split', 'split'], ['burner', 'hole'], ['wormhole', 'devices'], ['player', 'play']].forEach(([k, ic], n) => {
+    const t = h('div', 'ob-tile'); t.style.setProperty('--i', n);
+    const i = h('div', 'ic'); i.append(icon(ic));
+    t.append(i, h('b', null, T('more_' + k)), h('span', null, T('more_' + k + '_text')));
+    g.append(t);
+  });
+  return [g];
+}
+function radio(cls, on, onclick, ...kids) {
+  const b = h('button', cls, null, { role: 'radio', 'aria-checked': String(!!on) });
+  b.append(...kids); b.onclick = onclick; return b;
+}
+function bodyImport() {
+  const d = S.d, out = [];
+  if (!d.sources.length) out.push(h('p', 'ob-status', T('import_none')));
+  else {
+    const list = h('div', 'ob-srcs', null, { role: 'radiogroup', 'aria-label': T('import_title') });
+    d.sources.forEach((s) => {
+      const nm = h('span', 'nm'); nm.append(h('b', null, s.browser), document.createTextNode(' '), h('small', null, '· ' + s.profile));
+      list.append(radio('ob-opt', S.src === s.id, () => { S.src = s.id; refresh(); }, h('span', 'ob-rad'), h('span', 'ob-mono', s.browser.slice(0, 2)), nm));
+    });
+    out.push(list);
+  }
+  const what = h('div', 'ob-what');
+  const pwd = h('span', 'ob-chk'); pwd.append(icon('key', 'xs'), document.createTextNode(T('import_passwords') + ' '));
+  const csv = h('button', 'ob-link', T('import_csv')); csv.onclick = () => send({ cmd: 'import_file', kind: 'logins' });
+  pwd.append(csv);
+  what.append(pwd);
+  out.push(what);
+  const st = h('div', 'ob-status', null, { 'aria-live': 'polite' });
+  if (S.importing) { const bar = h('span', 'ob-bar'); bar.append(h('i')); st.append(bar, h('span', null, T('import_running'))); }
+  else if (S.imported) { st.className = 'ob-status ok'; st.textContent = d.importMsg || T('import_done'); }
+  out.push(st);
+  return out;
+}
+function bodyDefault() {
+  const d = S.d.defaultBrowser, out = [], sys = h('div', 'ob-sys'), i = h('div', 'ic'), text = h('div');
+  i.append(icon('link'));
+  if (!d.can) text.append(h('p', null, T(S.d.os === 'windows' ? 'default_cannot_win' : 'default_cannot_mac')));
+  else if (S.d.os === 'macos') text.append(h('p', null, T('default_mac')));
+  else {
+    const p = h('p'), a = h('button', 'ob-link', T('default_win_link'));
+    a.onclick = askDefault;
+    p.append(a, document.createTextNode(T('default_win_then')));
+    const ol = h('ol'); ol.append(h('li', null, T('default_win_1')), h('li', null, T('default_win_2')));
+    text.append(p, ol);
+  }
+  sys.append(i, text);
+  out.push(sys);
+  const st = h('div', 'ob-status', null, { 'aria-live': 'polite' });
+  if (d.is) { st.className = 'ob-status ok'; st.textContent = '✓ ' + T('default_done'); }
+  else if (d.asked) { const dots = h('span', 'ob-dots'); dots.append(h('i'), h('i'), h('i')); st.append(dots, h('span', null, T(S.d.os === 'macos' ? 'default_wait_mac' : 'default_wait_win'))); }
+  out.push(st);
+  return out;
+}
+const LOGOS = { 'dark-reader': ['DR', 'linear-gradient(135deg,#2b2b3a,#111)'], sponsorblock: ['SB', 'linear-gradient(135deg,#1d6b46,#0d3323)'], bitwarden: ['BW', 'linear-gradient(135deg,#1c4fa0,#0e2a57)'], 'ublock-origin-lite': ['uB', 'linear-gradient(135deg,#7a1f1f,#3a0d0d)'] };
+const catLabel = (c) => { const k = 'settings.market_cat_' + c, t = bhT(k); return t === k ? c : t; };
+function bodyExt() {
+  const g = h('div', 'ob-exts');
+  for (const e of S.d.extensions) {
+    const on = S.ext[e.id], card = h('button', 'ob-ext', null, { role: 'switch', 'aria-checked': String(!!on) });
+    const [mono, bg] = LOGOS[e.id] || [e.name.slice(0, 2), 'rgba(255,255,255,.1)'];
+    const lg = h('div', 'lg', mono); lg.style.background = bg;
+    const name = h('b', null, e.name); if (e.category) name.append(h('span', 'cat', catLabel(e.category)));
+    card.append(lg, name, h('span', 'ds', e.description));
+    if (e.installed) card.append(h('span', 'st', T('ext_installed')));
+    else if (e.error) card.append(h('span', 'st bad', T('ext_failed')));
+    else card.append(h('i', 'ob-sw'));
+    if (e.installing) card.append(h('i', 'pr'));
+    card.onclick = () => { if (e.installed || e.installing) return; S.ext[e.id] = !S.ext[e.id]; refresh(); };
+    g.append(card);
+  }
+  const trust = h('div', 'ob-trust'); trust.append(icon('shield', 'xs'), h('span', null, T('ext_trust')));
+  return [g, trust];
+}
+function bodyStyle() {
+  const d = S.d, rows = h('div', 'ob-rows');
+  const colors = h('div', 'ob-sw8', null, { role: 'radiogroup', 'aria-label': T('style_color') });
+  for (const c of d.colors) {
+    const b = h('button', null, null, { role: 'radio', 'aria-checked': String((d.color || '').toLowerCase() === c), 'aria-label': c });
+    b.style.setProperty('--c', c);
+    b.onclick = () => send({ cmd: 'set_space_color', id: d.space, color: c });
+    colors.append(b);
+  }
+  const look = h('div', 'ob-seg', null, { role: 'radiogroup', 'aria-label': T('style_look') });
+  for (const [on, key] of [[true, 'style_3d'], [false, 'style_flat']]) {
+    const pv = h('span', 'ob-pv' + (on ? ' d3' : '')); pv.append(h('i'), h('i'));
+    look.append(radio(null, S.depth === on, () => send({ cmd: 'set_depth', on }), pv, h('span', null, T(key))));
+  }
+  const engines = h('div', 'ob-engines', null, { role: 'radiogroup', 'aria-label': T('style_engine') });
+  for (const e of d.engines) engines.append(radio(null, d.engine === e.id, () => send({ cmd: 'set_engine', id: e.id }), document.createTextNode(e.label)));
+  const recall = h('button', 'ob-recall', null, { role: 'switch', 'aria-checked': String(!!d.recall) });
+  const txt = h('span', null, T('style_recall')); txt.append(h('small', null, T('style_recall_text')));
+  recall.append(h('i', 'ob-sw'), txt);
+  recall.onclick = () => send({ cmd: 'set_recall', on: !d.recall });
+  const sec = (key, el) => box(h('h4', null, T(key)), el);
+  rows.append(sec('style_color', colors), sec('style_look', look), sec('style_engine', engines), recall);
+  return [rows];
+}
+function bodyReady() {
+  const d = S.d, r = h('div', 'ob-recap');
+  const line = (done, text) => { const l = h('div', done ? '' : 'later'); l.append(h('span', null, text)); r.append(l); };
+  if (S.mode === 'welcome') {
+    line(S.imported, S.imported ? T('recap_import_done') : T('recap_import_later'));
+    if (d.os !== 'linux') line(d.defaultBrowser.is, d.defaultBrowser.is ? T('recap_default_done') : T('recap_default_later'));
+    const n = d.extensions.filter((e) => e.installed).length;
+    if (d.extensions.length) line(n > 0, n ? bhTn('onboarding.recap_ext', n) : T('recap_ext_none'));
+    const engine = (d.engines.find((e) => e.id === d.engine) || {}).label || '';
+    line(true, T(S.depth ? 'recap_style_3d' : 'recap_style_flat', { engine }));
+  }
+  const tip = h('div', 'ob-tip');
+  tip.append(h('span', null, T('tip')), kbds('mod+l'), h('span', null, T('tip_find')), kbds('mod+shift+f'), h('span', null, T('tip_recall')));
+  return S.mode === 'welcome' ? [r, tip] : [tip];
+}
+
+// ---- Steps ---------------------------------------------------------------------------------
+// `g` groups the progress dots; `form` folds the illustration away, `slim` keeps a short one.
+const STEPS = {
+  hello: { g: 'hello', vis: () => visHello(true), eye: 'hello_eyebrow', title: 'hello_title', text: () => (S.mode === 'tour' ? 'hello_tour_text' : 'hello_text'), body: bodyHello, next: () => 'start' },
+  spaces: { g: 'tour', vis: visSpaces, eye: 'spaces_eyebrow', title: 'spaces_title', text: 'spaces_text' },
+  command: { g: 'tour', vis: visCommand, eye: 'cmd_eyebrow', title: () => T('cmd_title', { keys: bhKeys('mod+l') }), text: 'cmd_text' },
+  shields: { g: 'tour', vis: visShields, eye: 'shields_eyebrow', title: 'shields_title', text: 'shields_text', body: bodyShields },
+  more: { g: 'tour', form: true, eye: 'more_eyebrow', title: 'more_title', text: 'more_text', body: bodyMore, next: () => (S.mode === 'tour' ? 'finish_tour' : 'next') },
+  import: { g: 'import', form: true, slim: true, vis: visImport, eye: 'import_eyebrow', title: 'import_title', text: 'import_text', body: bodyImport,
+    next: () => (S.imported || !S.src ? 'next' : 'import_go'), skip: 'later', sig: () => [S.d.sources.length, S.d.imports, S.d.importMsg, S.importing, S.src] },
+  default: { g: 'default', form: true, slim: true, vis: visDefault, eye: 'default_eyebrow', title: 'default_title', text: 'default_text', body: bodyDefault,
+    next: () => (S.d.defaultBrowser.is || !S.d.defaultBrowser.can ? 'next' : S.d.os === 'windows' ? 'default_open' : 'default_set'), skip: 'not_now',
+    sig: () => [S.d.defaultBrowser.is, S.d.defaultBrowser.asked, S.d.defaultBrowser.can], visSig: () => S.d.defaultBrowser.is },
+  ext: { g: 'ext', form: true, eye: 'ext_eyebrow', title: 'ext_title', text: 'ext_text', body: bodyExt, skip: 'later',
+    next: () => { const n = wanted().length; return n && !extDone() ? ['ext_install', n] : 'next'; },
+    sig: () => [JSON.stringify(S.d.extensions), JSON.stringify(S.ext)] },
+  style: { g: 'style', form: true, eye: 'style_eyebrow', title: 'style_title', text: 'style_text', body: bodyStyle,
+    sig: () => [S.d.color, S.d.engine, S.d.recall, S.depth] },
+  ready: { g: 'ready', ready: true, vis: () => visHello(false), eye: 'ready_eyebrow', title: 'ready_title', body: bodyReady, next: () => 'go' },
+};
+function order() {
+  const tour = ['hello', 'spaces', 'command', 'shields', 'more'];
+  if (S.mode !== 'welcome') return tour;
+  const list = [...tour, 'import'];
+  if (S.d.os !== 'linux') list.push('default');
+  if (S.d.extensions.length) list.push('ext');
+  return [...list, 'style', 'ready'];
+}
+const wanted = () => S.d.extensions.filter((e) => S.ext[e.id] && !e.installed);
+const extDone = () => S.d.extensions.every((e) => !S.ext[e.id] || e.installed || e.error);
+
+let S = null;
+let life = [];
+const stopLife = () => { life.forEach(clearInterval); life = []; };
+const val = (v) => (typeof v === 'function' ? v() : v);
+
+function build(id) {
+  const st = STEPS[id], el = h('div', 'ob-step' + (st.form ? ' form' : '') + (st.slim ? ' slim' : '') + (st.ready ? ' ready' : ''));
+  const vis = h('div', 'ob-vis'); if (st.vis) vis.append(st.vis());
+  const txt = h('div', 'ob-txt');
+  // `title` is a key, or a function that gives the text itself; `text` a key or a function giving one.
+  const title = typeof st.title === 'function' ? st.title() : T(st.title);
+  txt.append(h('div', 'ob-eye', T(st.eye)), h('h2', null, title, { id: 'ob-title' }));
+  const text = val(st.text); if (text) txt.append(h('p', null, T(text)));
+  const body = h('div', 'ob-body'); if (st.body) body.append(...st.body());
+  el.append(vis, txt, body);
+  return el;
+}
+function chrome() {
+  const ids = order(), id = ids[S.i], st = STEPS[id];
+  const next = val(st.next) || 'next';
+  const label = Array.isArray(next) ? bhTn('onboarding.' + next[0], next[1]) : T(next);
+  $('ob-next').replaceChildren(document.createTextNode(label), h('span', 'k', '↵', { 'aria-hidden': 'true' }));
+  $('ob-back').hidden = S.i === 0;
+  const skip = $('ob-skip');
+  // Skipping: the features (to the choices, or out of the replayed tour), or a choice left for
+  // later; the style and the last step have nothing to skip.
+  const choices = S.mode === 'welcome' && S.i >= ids.indexOf('import');
+  skip.hidden = S.i === ids.length - 1 || (choices && !st.skip);
+  skip.textContent = st.skip ? T(st.skip) : S.mode === 'tour' ? T('close') : T('skip_tour');
+  const prog = $('ob-prog'); prog.replaceChildren();
+  ids.forEach((x, k) => {
+    if (k > 0 && STEPS[x].g !== STEPS[ids[k - 1]].g) prog.append(h('b'));
+    prog.append(h('i', k === S.i ? 'cur' : k < S.i ? 'done' : ''));
+  });
+}
+function mount(i, entering) {
+  stopLife();
+  const stage = $('ob-stage');
+  S.i = i;
+  const el = build(order()[i]);
+  if (entering && !calm()) { el.classList.add('entering'); setTimeout(() => el.classList.remove('entering'), 900); }
+  stage.replaceChildren(el);
+  S.sig = sigOf(); S.visSig = visSigOf();
+  chrome();
+}
+const sigOf = () => { const s = STEPS[order()[S.i]]; return JSON.stringify(s.sig ? s.sig() : null); };
+const visSigOf = () => { const s = STEPS[order()[S.i]]; return JSON.stringify(s.visSig ? s.visSig() : S.importing); };
+// New data from the shell: only the parts of the current step that depend on it are rebuilt
+// (its animations keep running).
+function refresh(force) {
+  const step = $('ob-stage').firstElementChild;
+  if (!step || S.busy) return;
+  const sig = sigOf(), visSig = visSigOf(), st = STEPS[order()[S.i]];
+  if (force || sig !== S.sig) {
+    step.querySelector('.ob-body').replaceChildren(...(st.body ? st.body() : []));
+    S.sig = sig;
+  }
+  if (st.vis && visSig !== S.visSig) {
+    step.querySelector('.ob-vis').replaceChildren(st.vis());
+    S.visSig = visSig;
+  }
+  chrome();
+}
+
+function go(i) {
+  const ids = order();
+  if (!S || S.busy || i === S.i || i < 0 || i >= ids.length) return;
+  if (calm()) { mount(i, false); focusNext(); return; }
+  S.busy = true;
+  const w = $('ob-warp'), old = $('ob-stage').firstElementChild;
+  if (old) old.classList.add('leaving');
+  w.classList.remove('go'); void w.offsetWidth; w.classList.add('go');
+  setTimeout(() => { S.busy = false; mount(i, true); S.busy = true; }, 700);
+  setTimeout(() => { w.classList.remove('go'); S.busy = false; focusNext(); }, 960);
+}
+const focusNext = () => { try { $('ob-next').focus({ preventScroll: true }); } catch (e) {} };
+
+function finish() {
+  if (!S || S.busy) return;
+  S.busy = true; stopLife();
+  const done = () => {
+    $('ob').hidden = true; $('ob').classList.remove('on', 'off');
+    $('ob-veil').classList.remove('on');
+    removeEventListener('keydown', keys, true);
+    S = null;
+    send({ cmd: 'onboarding_done' });
+  };
+  if (calm()) { done(); return; }
+  const w = $('ob-warp-all'), ob = $('ob');
+  w.classList.remove('go'); void w.offsetWidth; w.classList.add('go');
+  ob.classList.remove('on'); ob.classList.add('off');
+  setTimeout(() => {
+    $('ob-veil').style.transition = 'none';
+    done();
+    const main = document.querySelector('main');
+    main.classList.remove('ob-emerge'); void main.offsetWidth; main.classList.add('ob-emerge');
+    requestAnimationFrame(() => { $('ob-veil').style.transition = ''; });
+  }, 700);
+  setTimeout(() => w.classList.remove('go'), 960);
+}
+
+// The primary button acts on the step's choice before moving on.
+function next() {
+  if (!S || S.busy) return;
+  const ids = order(), id = ids[S.i];
+  if (id === 'import' && !S.imported && S.src && !S.importing) {
+    S.importing = true; S.importBase = S.d.imports;
+    send({ cmd: 'import_bookmarks', source: S.src });
+    refresh(true); return;
+  }
+  if (id === 'default' && !S.d.defaultBrowser.is && S.d.defaultBrowser.can && !S.d.defaultBrowser.asked) { askDefault(); return; }
+  if (id === 'ext' && wanted().length && !extDone()) {
+    for (const e of wanted()) if (!e.installing) send({ cmd: 'install_catalog', id: e.id });
+    return;
+  }
+  if (S.i === ids.length - 1) { finish(); return; }
+  go(S.i + 1);
+}
+function askDefault() { send({ cmd: 'set_default_browser' }); }
+function skip() {
+  if (!S || S.busy) return;
+  const ids = order();
+  // The tour of the features ends there; the first launch's goes on to the choices.
+  if (S.mode === 'tour') finish();
+  else if (S.i < ids.indexOf('import')) go(ids.indexOf('import'));
+  else go(S.i + 1);
+}
+function keys(e) {
+  if (!S || $('ob').hidden) return;
+  const onControl = e.target && e.target.closest && e.target.closest('#ob button');
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(); }
+  else if (e.key === 'Enter' && !onControl) { e.preventDefault(); e.stopPropagation(); next(); }
+  else if (e.key === 'ArrowRight' && !onControl) { e.preventDefault(); go(S.i + 1); }
+  else if (e.key === 'ArrowLeft' && !onControl) { e.preventDefault(); go(S.i - 1); }
+  else if (e.key === 'Tab') {
+    // Focus stays in the dialog.
+    const all = [...$('ob').querySelectorAll('button:not([hidden])')].filter((b) => b.offsetParent);
+    if (!all.length) return;
+    const at = all.indexOf(document.activeElement);
+    if (e.shiftKey && at <= 0) { e.preventDefault(); all[all.length - 1].focus(); }
+    else if (!e.shiftKey && at === all.length - 1) { e.preventDefault(); all[0].focus(); }
+  }
+}
+$('ob-next').onclick = next;
+$('ob-back').onclick = () => go(S && S.i - 1);
+$('ob-skip').onclick = skip;
+// Small windows: the dialog shrinks to fit the start page.
+function fit() { $('ob').style.setProperty('--ob-k', Math.min(1, (innerWidth - 32) / 740, (innerHeight - 32) / 580).toFixed(3)); }
+addEventListener('resize', fit);
+addEventListener('bhlang', () => { if (S && !S.busy) mount(S.i, false); });
+
+function open() {
+  if (!S || S.shown) return;
+  S.shown = true;
+  fit(); mount(0, false);
+  const ob = $('ob');
+  ob.hidden = false; ob.classList.remove('off'); ob.classList.add('on');
+  $('ob-veil').classList.add('on');
+  addEventListener('keydown', keys, true);
+  send({ cmd: 'onboarding_open', on: true });
+  setTimeout(focusNext, 50);
+}
+
+// Called by the start page's render with the shell's state (`onboarding`, null once closed).
+window.bhOnboard = {
+  update(d, s) {
+    if (!d) {
+      if (S && S.shown && !S.busy) { stopLife(); $('ob').hidden = true; $('ob').classList.remove('on'); $('ob-veil').classList.remove('on'); removeEventListener('keydown', keys, true); S = null; }
+      return;
+    }
+    const data = Object.assign({ sources: [], extensions: [], engines: [], colors: [], defaultBrowser: {}, os: '' }, d);
+    if (S && S.mode !== d.mode) { stopLife(); S = null; $('ob').hidden = true; }
+    $('ob').style.setProperty('--ob-accent', data.color || '#7c5cff');
+    $('ob').style.setProperty('--ob-rgb', rgb(data.color));
+    if (!S) {
+      S = { mode: d.mode, d: data, i: 0, busy: false, shown: false, ext: {}, src: data.sources.length ? data.sources[0].id : null,
+        importing: false, imported: false, importBase: 0, depth: s.depth !== false };
+      for (const e of data.extensions) S.ext[e.id] = e.on || e.installed;
+      // After the launch splash has landed, or at once.
+      const wait = Math.max(0, (window.bhSplashEnd || 0) - performance.now());
+      setTimeout(open, wait ? wait + 350 : 120);
+      return;
+    }
+    S.d = data;
+    S.depth = s.depth !== false;
+    if (S.importing && data.imports > S.importBase) { S.importing = false; S.imported = true; }
+    if (S.shown) refresh();
+  },
+};
+})();
+</script>
+</body>
+</html>

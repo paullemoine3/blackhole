@@ -15,7 +15,7 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 ![Télémétrie](https://img.shields.io/badge/télémétrie-aucune-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-blue)
 
-[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0822) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
+[**⬇️ Télécharger**](../../releases) · [Nouveautés](#-nouveautés-0823) · [Fonctionnalités](#-fonctionnalités) · [Vie privée](#-vie-privée) · [Extensions](#-extensions) · [Développement](#-développement)
 
 <br>
 
@@ -37,16 +37,18 @@ WebKit sur macOS et Linux, WebView2 sur Windows, WebView sur Android.
 
 ---
 
-## 🆕 Nouveautés 0.8.22
+## 🆕 Nouveautés 0.8.23
 
-- 🪟 **La fenêtre se déplace de nouveau (Windows)** — maintenir le clic gauche dans la barre du haut et glisser déplace la fenêtre ; un simple clic rapide sur la barre ne bloque plus le déplacement pour de bon.
-- 🕶️ **Fenêtres privées plus calmes** — les extensions autorisées en navigation privée n'y ouvrent plus leur page d'accueil comme si elles venaient d'être installées.
-- ⚡ **Nouvelle fenêtre plus rapide** — elle s'ouvre directement sur sa page d'accueil, sans l'animation de lancement, réservée au démarrage de BlackHole.
+- 🕳️ **Un accueil pour bien démarrer** — au premier lancement, une visite présente l'essentiel (espaces, barre de commandes, Shields…), puis propose d'importer vos favoris, de faire de BlackHole votre navigateur par défaut, quelques extensions et la couleur de votre premier espace. Entre chaque étape, le trou noir avale la page.
+- 🔁 **Revoir la présentation** — depuis Réglages › Général, à tout moment.
+- 🪟 **Navigateur par défaut sous Windows** — l'installateur enregistre BlackHole comme navigateur : il se choisit dans Paramètres › Applications par défaut.
 
 Le détail de chaque version s'affiche sur la page d'accueil après une mise à jour.
 
 <details>
 <summary>📜 <b>Versions précédentes</b></summary>
+
+- 🪟 **0.8.22** — la fenêtre se déplace de nouveau sous Windows, fenêtres privées plus calmes, nouvelle fenêtre plus rapide.
 
 - 🐙 **0.8.21** — ajouter une extension depuis son dépôt GitHub, vérifiée contre l'empreinte publiée, marquée « Non vérifiée ».
 
@@ -196,7 +198,7 @@ Sous Linux, installer d'abord `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-de
 <details>
 <summary>🧪 <b>Tests d'interface</b> (feature <code>devtools</code>)</summary>
 
-- **Windows** : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`, `scripts\test-easel.ps1`
+- **Windows** : `scripts\test-ui.ps1`, `scripts\test-ext.ps1`, `scripts\test-easel.ps1`, `scripts\test-onboarding.ps1` (visite d'accueil)
 - **macOS** : `scripts/test-webext.sh`, `scripts/test-easel.sh`, `scripts/test-errors.sh`, `scripts/test-popup.sh`, `scripts/test-settings.sh`, `scripts/test-i18n.sh`, et un script par version (`scripts/test-0814.sh` … `scripts/test-0817.sh`)
 - Les captures de ce README et du site se régénèrent avec `scripts/readme-shots.sh` ; l'image disque macOS avec `scripts/package-macos.sh --dmg`.
 

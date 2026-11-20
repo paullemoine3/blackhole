@@ -49,6 +49,9 @@
   .priv[hidden] { display: none; }
   .win { display: none; flex: none; align-self: stretch; margin-right: -12px; margin-left: 6px; }
   body.windows .win { display: flex; }
+  /* Under the welcome tour's veil (bhDim of theme.js) the window can still be minimised, resized
+     or closed; the veil itself still moves it (mousedown on it starts the drag). */
+  html.bh-dimmed .win { position: relative; z-index: 2147483001; }
   .win button { width: 46px; height: 100%; border-radius: 0; opacity: .8; }
   .win button:hover { background: rgba(255,255,255,.12); opacity: 1; }
   .win button.close:hover { background: #e81123; color: #fff; }

@@ -5,6 +5,9 @@
 //! its help, Ghostery its onboarding, Bitwarden its start page. Those requests come with no tab
 //! behind them, right after the extensions load; a page the person opens has its tab as opener.
 //! While a private window starts, such pages are dropped; nothing else is.
+//!
+//! The welcome tour of the first launch (`onboarding`) installs extensions too: their welcome
+//! pages would open as tabs over it, so they are dropped the same way (`tour_installs`).
 
 use std::time::{Duration, Instant};
 
@@ -26,6 +29,13 @@ impl WelcomePages {
     /// A private window with extensions: drops welcome pages from `now` on.
     pub fn private(now: Instant) -> Self {
         Self { until: Some(now + WELCOME_WINDOW) }
+    }
+
+    /// The welcome tour installs extensions: from `now` on, their welcome pages are dropped like
+    /// in a private window (each load starts the time over).
+    pub fn tour_installs(&mut self, now: Instant) {
+        let end = now + WELCOME_WINDOW;
+        self.until = Some(self.until.map_or(end, |u| u.max(end)));
     }
 
     /// An extension finished loading: its first-install code runs now, so the window starts over.
@@ -80,5 +90,17 @@ mod tests {
         pages.extension_loaded(late);
         assert!(pages.drops(false, now + WELCOME_WINDOW + Duration::from_secs(5)));
         assert!(!pages.drops(false, late + WELCOME_WINDOW));
+    }
+
+    #[test]
+    fn the_welcome_tour_drops_the_pages_of_the_extensions_it_installs() {
+        let now = Instant::now();
+        let mut pages = WelcomePages::off();
+        pages.tour_installs(now);
+        assert!(pages.drops(false, now + Duration::from_secs(3)));
+        assert!(!pages.drops(true, now + Duration::from_secs(3)));
+        pages.extension_loaded(now + Duration::from_secs(10));
+        assert!(pages.drops(false, now + Duration::from_secs(20)));
+        assert!(!pages.watching(now + Duration::from_secs(10) + WELCOME_WINDOW));
     }
 }

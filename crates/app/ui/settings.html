@@ -313,6 +313,7 @@
     <div class="card" id="hwcard" hidden><h2 data-i18n="settings.performance">Performance</h2><div class="rows" id="hw"></div></div>
     <div class="card"><h2 data-i18n="settings.system">System</h2>
       <div class="opt"><span class="grow"><span class="label" data-i18n="settings.default_browser">Default browser</span><span class="sub" id="defnote"></span></span><button class="btn primary" id="default"><span data-i18n="settings.make_default">Make default</span></button></div>
+      <div class="opt"><span class="grow"><span class="label" data-i18n="settings.tour">Tour of BlackHole</span><span class="sub" data-i18n="settings.tour_sub">Play the presentation of the features again.</span></span><button class="btn" id="tour"><i data-icon="sparkle"></i><span data-i18n="settings.tour_play">Replay</span></button></div>
     </div>
     <div class="card"><h2 data-i18n="settings.app_updates">Updates</h2>
       <div class="opt" id="appupd"><span class="grow"><span class="label" id="appupd-name"></span><span class="sub" id="appupd-sub" aria-live="polite"></span></span>
@@ -1222,6 +1223,7 @@ document.querySelectorAll('.mktabs [data-mk]').forEach((b, i, all) => {
 $('mksearch').oninput = () => { mk.query = $('mksearch').value; if (lastState) renderMarket(lastState); };
 
 $('default').onclick = () => send({ cmd: 'action', id: 'default_browser' });
+$('tour').onclick = () => send({ cmd: 'replay_tour' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
 // Learned trackers: the switch, what was learned (allow one) and the user's exceptions (block
 // one again). Forgetting asks for a second click.

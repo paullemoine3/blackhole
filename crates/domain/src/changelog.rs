@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.23",
+        &[
+            "A welcome tour at the first launch: the main features, then importing your bookmarks, the default browser, a few extensions and the look of your first space",
+            "Settings > General can replay the tour of the features at any time",
+            "Windows: the installer registers BlackHole as a browser, so it can be chosen in Settings > Default apps",
+        ],
+    ),
+    (
         "0.8.22",
         &[
             "Windows: the window moves again when you hold the left button in the top bar and drag; one quick click on the bar used to stop it for good",

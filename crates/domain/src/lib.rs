@@ -15,6 +15,7 @@ pub mod market;
 pub mod meetings;
 pub mod notice;
 pub mod omnibox;
+pub mod onboarding;
 pub mod passkeys;
 pub mod passwords;
 pub mod pilot;

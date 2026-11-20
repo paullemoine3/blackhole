@@ -434,7 +434,9 @@ function splash() {
   }
   word.replaceChildren(...[...word.textContent].map((c, i) => { const s = el('span', '', c); s.style.setProperty('--i', i); return s; }));
   document.body.classList.add('splashing');
-  const end = () => { document.body.classList.remove('splashing'); sp.remove(); };
+  // The welcome tour (onboarding.html) opens once the hole has landed.
+  window.bhSplashEnd = performance.now() + 2060;
+  const end = () => { document.body.classList.remove('splashing'); sp.remove(); window.bhSplashEnd = 0; };
   // The hole flies to the logo of the page, which takes over when it has landed.
   setTimeout(() => {
     const to = document.querySelector('.logo').getBoundingClientRect(), from = core.getBoundingClientRect();
@@ -510,6 +512,7 @@ window.bh = {
       });
     }
     if (!focused) { focused = true; if (intro) splash(); }
+    if (window.bhOnboard) bhOnboard.update(s.onboarding, s);
   },
 };
 // Erasing cannot be undone: a second click within 3 s confirms (web views show no confirm()).
@@ -557,5 +560,4 @@ function sky() {
 }
 send({ cmd: 'ready' });
 </script>
-</body>
-</html>
+<!-- The welcome tour (onboarding.html) is appended here at build time, with </body></html>. -->
