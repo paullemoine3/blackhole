@@ -1,6 +1,7 @@
 # 0.8.25 scenarios on Windows, driven by the devtools harness (see crates/app/src/devtools.rs):
 # split view from a quick access tile and no tile size in the menus, "Copy image" on a picture
-# inside a link (the system clipboard holds an image at the end), Ctrl+Shift+C, the loading line
+# inside a link (the system clipboard holds an image at the end), "Save image" (a PNG served under
+# a .php address lands in Downloads as bhsave0825.png, removed at the end), Ctrl+Shift+C, the loading line
 # drawn at the top of the page (on the page left while a slow address waits, then gone), the
 # black hole when the Settings open (mid-transition, and nothing with animations off), the
 # "Add an extension" drop-down (GitHub or a link, a refused address), the "What syncs" card.
@@ -33,6 +34,11 @@ shot c01-image-menu
 eval palette 'cp4:' + (() => { const b = [...document.querySelectorAll('#menu button')].find(b => b.textContent === 'Copy image'); if (!b) return 'missing'; b.click(); return 'clicked'; })()
 wait 2500
 eval chrome 'cp5:' + document.getElementById('toast').textContent
+eval content 'cp6:' + (() => { const img = document.getElementById('im'); const r = img.getBoundingClientRect(); img.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 })); return 'asked'; })()
+wait 1200
+eval palette 'cp7:' + (() => { const b = [...document.querySelectorAll('#menu button')].find(b => b.textContent === 'Save image'); if (!b) return 'missing'; b.click(); return 'clicked'; })()
+wait 2500
+eval chrome 'cp8:' + document.getElementById('toast').textContent
 # ---- the loading line at the top of the page ----
 cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/slow"}
 wait 700
@@ -107,10 +113,10 @@ $server = Start-Job -ArgumentList $port -ScriptBlock {
             $path = (($reader.ReadLine()) -split ' ')[1]
             while ($reader.ReadLine()) {}
             $type = 'text/html; charset=utf-8'; $status = '200 OK'
-            if ($path -like '/img.png*') { $bytes = $png; $type = 'image/png' }
+            if ($path -like '/img.png*' -or $path -like '/bhsave0825*') { $bytes = $png; $type = 'image/png' }
             else {
                 if ($path -like '/favicon*') { $status = '404 Not Found'; $body = 'none' }
-                elseif ($path -like '/pic*') { $body = '<title>bh pic</title><a href="/other"><img id="im" src="/img.png" width="200" height="200" style="image-rendering:pixelated"></a>' }
+                elseif ($path -like '/pic*') { $body = '<title>bh pic</title><a href="/other"><img id="im" src="/bhsave0825.php" width="200" height="200" style="image-rendering:pixelated"></a>' }
                 elseif ($path -like '/slow*') {
                     # The server waits, then the page starts and keeps loading for a while.
                     Start-Sleep -Milliseconds 1500
@@ -134,6 +140,8 @@ $server = Start-Job -ArgumentList $port -ScriptBlock {
 }
 Set-Content -Path (Join-Path $tmp 'bh_script.txt') -Value $script -Encoding ascii
 
+$downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+Remove-Item (Join-Path $downloads 'bhsave0825*') -ErrorAction SilentlyContinue
 $logFile = Join-Path $tmp 'bh_run.log'
 $proc = Start-Process cmd -ArgumentList '/c', "cargo run -q -p blackhole --features devtools > `"$logFile`" 2>&1" -PassThru -WindowStyle Hidden
 if (-not $proc.WaitForExit(540000)) { Stop-Process -Id $proc.Id; Write-Host 'FAIL timeout' }
@@ -144,6 +152,9 @@ function Ev($name) { [string]($all | Where-Object { $_ -match "-> `"${name}:" } 
 $log | Where-Object { $_ -match '\[dev\] (bad|unknown|eval failed|screenshot failed)' } | ForEach-Object { Write-Host $_ }
 Add-Type -AssemblyName System.Windows.Forms
 $clipImage = [Windows.Forms.Clipboard]::ContainsImage()
+$saved = Join-Path $downloads 'bhsave0825.png'
+$savedOk = (Test-Path $saved) -and ((Get-Content $saved -Encoding Byte -TotalCount 4) -join ',') -eq '137,80,78,71'
+Remove-Item (Join-Path $downloads 'bhsave0825*') -ErrorAction SilentlyContinue
 
 $fail = $false
 function Check($ok, $name) {
@@ -154,6 +165,8 @@ Check ((Ev cp1) -match 'cp1:.*Link copied') 'Ctrl+Shift+C copies the address of 
 Check ((Ev cp3) -match 'Copy image' -and (Ev cp3) -match 'Copy link') 'a picture inside a link: the link entries and the picture ones'
 Check ((Ev cp5) -match 'cp5:.*Image copied') 'Copy image: the shell downloads it and puts it on the clipboard'
 Check $clipImage 'the system clipboard holds an image'
+Check ((Ev cp7) -match 'cp7:clicked' -and (Ev cp8) -match 'cp8:.*Image saved in Downloads') 'Save image: offered beside Copy image, then saved'
+Check $savedOk 'the file is in Downloads, named after its address with its real format (.png, not .php)'
 Check ((Ev pg1) -match 'pg1:true\|127.0.0.1:\d+/slow"') 'a typed address waiting for its server: the line under the top bar, the address shown'
 Check ((Ev pg4) -match 'pg4:.+\|true\|/slow"') 'the page started: the loading line runs at the top of the page itself'
 Check ((Ev pg5) -match 'pg5:false"') 'and the top bar line has handed over'

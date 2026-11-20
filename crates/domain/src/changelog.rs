@@ -5,7 +5,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
         &[
             "Paired devices now share their extensions too, beside tabs and history: one switch in Settings > Devices, where a single card says what syncs. Market extensions install by themselves; those added from GitHub or a link are proposed first. Removing an extension never removes it elsewhere",
             "Add an extension from a link, for extensions with no release on GitHub: a .crx, .zip or .xpi package, or its Chrome Web Store or Edge Add-ons page (Settings > Extensions > Add an extension). Like GitHub ones, you see its fingerprint and permissions before installing it",
-            "Copy image in the right-click menu of a picture, thumbnails inside links included. Every Copy of the menus now goes straight to the system clipboard, and Ctrl+Shift+C (Cmd+Shift+C) copies the address of the page",
+            "Copy image and Save image in the right-click menu of a picture, thumbnails inside links included (a saved picture lands in Downloads). Every Copy of the menus now goes straight to the system clipboard, and Ctrl+Shift+C (Cmd+Shift+C) copies the address of the page",
             "YouTube ads: the Shields now take them out of what the player is told to play, also in videos embedded by other sites, and still skip one that plays anyway",
             "The loading line now runs at the top of the page itself",
             "Picture in Picture of a live stream (Twitch) can be paused from its window",

@@ -1,8 +1,10 @@
 //! Copying from the menus (0.8.25): text goes to the system clipboard through the shell
 //! (`arboard`), not through `execCommand('copy')` in the command bar, which fails when its view
 //! is not focused by the system; "Copy image" downloads the picture on a thread and gives the
-//! clipboard its pixels (`blackhole_infrastructure::image_clip`).
+//! clipboard its pixels (`blackhole_infrastructure::image_clip`). "Save image" downloads it the same
+//! way into the Downloads folder, where it gets its card and its line in Library > Downloads.
 
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use blackhole_domain::TabId;
@@ -19,12 +21,16 @@ pub struct Clips {
     rx: Receiver<Result<Pixels, String>>,
     /// A picture is being downloaded (one at a time).
     busy: bool,
+    /// Pictures saved: `(address, file written or why not)`.
+    saved_tx: Sender<(String, Result<PathBuf, String>)>,
+    saved_rx: Receiver<(String, Result<PathBuf, String>)>,
 }
 
 impl Clips {
     pub fn new() -> Self {
         let (tx, rx) = channel();
-        Self { tx, rx, busy: false }
+        let (saved_tx, saved_rx) = channel();
+        Self { tx, rx, busy: false, saved_tx, saved_rx }
     }
 }
 
@@ -55,6 +61,7 @@ impl Running {
                 }
             }
             UiCommand::CopyImage { url, tab } => self.copy_image(TabId(tab), &url),
+            UiCommand::SaveImage { url, tab } => self.save_image(TabId(tab), &url),
             _ => {}
         }
     }
@@ -82,7 +89,18 @@ impl Running {
         }
     }
 
-    /// Downloads the picture with the page's origin as `Referer` (as the page itself asked it).
+    /// The origin of the page shown in `tab`, sent as `Referer` with a picture it shows (as the
+    /// page itself asked it); none from an https page to an http picture.
+    fn image_referer(&self, tab: TabId, url: &Url) -> Option<String> {
+        self.tabs
+            .get(&tab)
+            .and_then(|v| v.url().ok())
+            .and_then(|raw| Url::parse(&raw).ok())
+            .filter(|page| !(page.scheme() == "https" && url.scheme() == "http"))
+            .map(|page| page.origin().ascii_serialization() + "/")
+    }
+
+    /// Downloads the picture for the clipboard.
     fn copy_image(&mut self, tab: TabId, url: &str) {
         let Some(url) = Url::parse(url).ok().filter(|u| matches!(u.scheme(), "http" | "https")) else {
             return;
@@ -90,13 +108,7 @@ impl Running {
         if self.clips.busy {
             return;
         }
-        let referer = self
-            .tabs
-            .get(&tab)
-            .and_then(|v| v.url().ok())
-            .and_then(|raw| Url::parse(&raw).ok())
-            .filter(|page| !(page.scheme() == "https" && url.scheme() == "http"))
-            .map(|page| page.origin().ascii_serialization() + "/");
+        let referer = self.image_referer(tab, &url);
         self.clips.busy = true;
         let tx = self.clips.tx.clone();
         let url = url.to_string();
@@ -105,8 +117,33 @@ impl Running {
         });
     }
 
-    /// Called every turn of the event loop: a picture downloaded goes to the clipboard.
+    /// Downloads the picture into the Downloads folder (several may run at once).
+    fn save_image(&mut self, tab: TabId, url: &str) {
+        let Some(url) = Url::parse(url).ok().filter(|u| matches!(u.scheme(), "http" | "https")) else {
+            return;
+        };
+        let referer = self.image_referer(tab, &url);
+        let tx = self.clips.saved_tx.clone();
+        let url = url.to_string();
+        std::thread::spawn(move || {
+            let dir = blackhole_infrastructure::downloads_dir();
+            let result = image_clip::save(&url, referer.as_deref(), &dir);
+            let _ = tx.send((url, result));
+        });
+    }
+
+    /// Called every turn of the event loop: a picture downloaded goes to the clipboard, a picture
+    /// saved to the downloads.
     pub(crate) fn poll_clipboard(&mut self) {
+        while let Ok((url, result)) = self.clips.saved_rx.try_recv() {
+            match result {
+                Ok(path) => self.download_saved(url, path),
+                Err(why) => {
+                    tracing::warn!("save image: {why}");
+                    self.notify(Notice::Problem, &t("toast.image_save_failed"), serde_json::Value::Null);
+                }
+            }
+        }
         while let Ok(result) = self.clips.rx.try_recv() {
             self.clips.busy = false;
             match result.map(copy_pixels) {

@@ -104,6 +104,7 @@ impl Running {
                     "run": {"cmd": "open_link", "url": image, "target": "front"},
                     "background": {"cmd": "open_link", "url": image, "target": "tab"}}),
                 json!({"icon": "copy", "label": t("menu.copy_image"), "run": {"cmd": "copy_image", "url": image, "tab": tab.0}}),
+                json!({"icon": "download", "label": t("menu.save_image"), "run": {"cmd": "save_image", "url": image, "tab": tab.0}}),
                 json!({"icon": "link", "label": t("menu.copy_image_address"), "copy": image}),
             ]);
         }

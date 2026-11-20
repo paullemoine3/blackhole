@@ -190,7 +190,7 @@ impl Running {
             | UiCommand::ReloadExtensions
             | UiCommand::OpenExtensionsFolder
             | UiCommand::InstallSampleExtension) => self.handle_extensions(command),
-            command @ (UiCommand::CopyText { .. } | UiCommand::CopyImage { .. }) => self.handle_clipboard(command),
+            command @ (UiCommand::CopyText { .. } | UiCommand::CopyImage { .. } | UiCommand::SaveImage { .. }) => self.handle_clipboard(command),
             command @ (UiCommand::ImportScan
             | UiCommand::ImportBookmarks { .. }
             | UiCommand::AddBookmark { .. }

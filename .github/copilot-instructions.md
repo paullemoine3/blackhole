@@ -811,6 +811,10 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   (`infrastructure/image_clip.rs` : http(s), 30 Mo, 64 Mpx ; PNG, JPEG, GIF, WebP, BMP, ICO), pixels RGBA vers le
   presse-papiers (`arboard` `image-data`). `page_guard.js` envoie aussi l'image sous le pointeur quand elle est dans
   un lien. Mod+Maj+C (`shift+c`, page d'abord : Google Docs) copie l'adresse de la page (propre si Shields).
+- « Enregistrer l'image » (`SaveImage`, même fichier) : même téléchargement, écrit dans le dossier Téléchargements par
+  `image_clip::save` (format lu dans les octets, pas l'adresse : `extension_of`, SVG compris ; nom tiré de l'adresse
+  par `domain::downloads::image_file_name`, nettoyé, jamais hors du dossier ; `create_new`, nom libre via
+  `unique_path`). Le fichier devient un téléchargement terminé (`download_saved` : carte, Bibliothèque).
 - Shields YouTube (`shields.js`, aussi dans les cadres : lecteurs intégrés, `youtube-nocookie.com`) : `adPlacements`,
   `playerAds`, `adSlots`, `adBreakHeartbeatParams` retirés de la réponse du lecteur (`JSON.parse`,
   `Response.prototype.json` enveloppés par `Proxy`, `ytInitialPlayerResponse` par un accesseur), sur youtube.com

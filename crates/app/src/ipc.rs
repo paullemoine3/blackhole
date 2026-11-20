@@ -586,6 +586,12 @@ pub enum UiCommand {
         #[serde(default)]
         tab: u64,
     },
+    /// "Save image" of the page menu: the picture at `url` (http(s)) goes to the Downloads folder.
+    SaveImage {
+        url: String,
+        #[serde(default)]
+        tab: u64,
+    },
     CloseSettings,
     SetExtensionEnabled {
         id: String,
