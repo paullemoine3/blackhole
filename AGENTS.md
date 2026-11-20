@@ -1047,6 +1047,8 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   `UrlAssociations\https\UserChoice\ProgId`. Le choix est relu au retour du focus (`WindowEvent::Focused`).
   Build `cargo` ou zip portable : non enregistré, la visite le dit (`default_cannot_win`). Un lien reçu ouvre
   une nouvelle fenêtre (`--open`, registre `peers`), pas un onglet de la fenêtre déjà ouverte. Linux : rien.
+- Style par défaut d'un nouveau profil : plat (`Settings::default().depth = false`, 0.8.23). Un fichier de
+  réglages plus ancien sans `depth` reste en 3D (`default_true` du DTO) : rien ne change pour les profils existants.
 - Harnais : un build `devtools` ne montre pas la visite (profils neufs des scripts) sauf avec `BH_ONBOARDING=1`.
   Test Windows : `scripts\test-onboarding.ps1` (27 contrôles `obN:` : ouverture après le splash, voiles, trou à
   mi-transition, étapes, couleur appliquée, fin sans défilement, levée des voiles, rejeu depuis les Réglages,
