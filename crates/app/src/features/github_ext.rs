@@ -2,7 +2,9 @@
 //! that BlackHole did not review, each one shown to the person before the next. Network work
 //! runs on threads; their answers carry the number of the flow they belong to, so an answer to
 //! a flow the person left (Cancel, another repository) is dropped. Rules and downloads:
-//! `blackhole_infrastructure::github_ext`, `domain::market`.
+//! `blackhole_infrastructure::github_ext`, `domain::market`. Settings > Extensions > Add from a
+//! link (0.8.25) runs the same steps for a package offered by an address (`.crx`, `.zip`,
+//! `.xpi`, or a Chrome Web Store / Edge Add-ons page): no release to choose, no updates.
 
 use std::{
     collections::HashMap,
@@ -21,6 +23,8 @@ pub enum Flow {
     Looking { repo: String },
     Choose { release: Release, in_market: Option<String> },
     Preparing { release: Release, asset: String },
+    /// A package asked from a link is being downloaded and checked.
+    Fetching { url: url::Url },
     Ready { prepared: Box<Prepared>, added: Vec<PermissionLine> },
     Installing { id: String, name: String },
     Done { id: String, name: String },
@@ -32,6 +36,8 @@ enum Msg {
     Prepared(u64, Result<Prepared, String>),
     Installed(u64, Result<(Pinned, PathBuf), String>),
     Update(String, Result<Release, String>),
+    /// An extension offered by a paired device (0.8.25), installed on the person's word.
+    Synced(String, String, Result<(Pinned, PathBuf), String>),
 }
 
 pub struct Sideload {
@@ -102,10 +108,14 @@ impl Running {
             Flow::Preparing { release, asset } => json!({
                 "stage": "preparing", "repo": format!("{}/{}", release.owner, release.repo), "tag": release.tag, "asset": asset,
             }),
+            Flow::Fetching { url } => json!({
+                "stage": "preparing", "direct": true, "repo": url.host_str(), "asset": rules::direct_file_name(url),
+            }),
             Flow::Ready { prepared: p, added } => {
                 let before = g.find(&p.id);
                 json!({
-                    "stage": "ready", "id": p.id, "repo": format!("{}/{}", p.owner, p.repo), "tag": p.tag,
+                    "stage": "ready", "id": p.id, "tag": p.tag, "direct": p.direct, "url": p.url,
+                    "repo": if p.direct { p.owner.clone() } else { format!("{}/{}", p.owner, p.repo) },
                     "name": p.name, "version": p.version, "file": p.asset, "size": p.size, "sha256": p.sha256,
                     "digest": p.digest_checked,
                     "permissions": lines(&rules::permission_lines(&p.permissions)),
@@ -135,6 +145,20 @@ impl Running {
         let tx = self.github.tx.clone();
         std::thread::spawn(move || {
             let _ = tx.send(Msg::Looked(seq, gh::latest_release(&owner, &repo)));
+        });
+        self.ui_state();
+    }
+
+    /// Add from a link: downloads and checks the package at the address typed.
+    pub(crate) fn link_prepare(&mut self, input: &str) {
+        let Some(url) = rules::direct_package_url(input) else {
+            self.github.next(Flow::Failed { why: i18n::message("msg.link_bad_url", &[]) });
+            return self.ui_state();
+        };
+        let seq = self.github.next(Flow::Fetching { url: url.clone() });
+        let tx = self.github.tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Prepared(seq, gh::prepare_direct(&url)));
         });
         self.ui_state();
     }
@@ -196,13 +220,38 @@ impl Running {
         if self.github.checking > 0 {
             return;
         }
-        for p in self.github.pinned.clone() {
+        // Added from a link: nothing to compare with, no updates.
+        for p in self.github.pinned.clone().into_iter().filter(|p| !p.direct) {
             self.github.checking += 1;
             let tx = self.github.tx.clone();
             std::thread::spawn(move || {
                 let _ = tx.send(Msg::Update(p.id.clone(), gh::latest_release(&p.owner, &p.repo)));
             });
         }
+    }
+
+    /// An extension of a paired device that BlackHole did not review (GitHub, link), added here
+    /// after the person said so in the notice of the sync (0.8.25): the latest release's best
+    /// file for this system, or the same link, checked like any other before it is stored.
+    pub(crate) fn sync_install(&mut self, offer: &blackhole_domain::ext_sync::Offer) {
+        use blackhole_domain::ext_sync::Source;
+        if self.webext.is_none() || !self.installing.insert(offer.id.clone()) {
+            return;
+        }
+        let (tx, data, id, name, source) = (self.github.tx.clone(), self.data.clone(), offer.id.clone(), offer.name.clone(), offer.source.clone());
+        std::thread::spawn(move || {
+            let prepared = match source {
+                Source::Github { owner, repo } => gh::latest_release(&owner, &repo).and_then(|release| {
+                    let best = release.for_platform(platform()).first().map(|(a, _)| a.name.clone());
+                    let best = best.ok_or_else(|| i18n::message("msg.github_no_package", &[]))?;
+                    gh::prepare(&release, &best)
+                }),
+                Source::Link { url } => url::Url::parse(&url).map_err(|e| e.to_string()).and_then(|u| gh::prepare_direct(&u)),
+                Source::Market => Err(String::new()),
+            };
+            let result = prepared.and_then(|p| gh::install(&data, &p, now_secs()));
+            let _ = tx.send(Msg::Synced(id, name, result));
+        });
     }
 
     pub(crate) fn github_remove(&mut self, id: &str) {
@@ -265,6 +314,29 @@ impl Running {
                 }
                 Msg::Looked(_, Err(why)) | Msg::Prepared(_, Err(why)) => {
                     self.github.flow = Flow::Failed { why };
+                }
+                Msg::Synced(id, name, result) => {
+                    self.installing.remove(&id);
+                    match result {
+                        Ok((pinned, path)) => {
+                            self.install_errors.remove(&pinned.id);
+                            self.svc.set_enabled_flag(&pinned.id, true);
+                            if let Some(host) = &self.webext {
+                                host.load(&pinned.id, &path);
+                            }
+                            self.github.pinned.retain(|p| p.id != pinned.id);
+                            self.github.pinned.push(pinned);
+                            self.toast(&i18n::tf("toast.ext_synced", &[("name", &name)]));
+                        }
+                        Err(why) => {
+                            tracing::warn!("{id}: {why}");
+                            self.notify(
+                                crate::shell::notices::Notice::Problem,
+                                &i18n::tf("toast.ext_sync_failed", &[("name", &name)]),
+                                Value::Null,
+                            );
+                        }
+                    }
                 }
                 Msg::Update(id, result) => {
                     self.github.checking = self.github.checking.saturating_sub(1);

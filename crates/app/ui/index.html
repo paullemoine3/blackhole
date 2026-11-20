@@ -553,22 +553,15 @@ function openMenu(x, y, items) { send({ cmd: 'menu', origin: 'sidebar', x, y, it
 // Menus share one vocabulary: "quick access" (pinned tiles), "put to sleep" (the tab keeps its
 // place), "close" (it goes to the archive), "delete" (a container and what is inside). Icons are
 // names drawn by the command bar (palette.html); `confirm` asks for a second click.
-// Size of the quick access tiles, in the menu of a tile and of the quick access area.
-const TILE_KEY = { small: 'settings.tile_small', medium: 'settings.tile_medium', large: 'settings.tile_large' };
-function tileSizeItems() {
-  const size = state.tileSize || 'medium';
-  return [{ head: bhT('sidebar.tile_size') }, ...['small', 'medium', 'large'].map(v => (
-    { icon: v === size ? 'check' : 'grid', label: bhT(TILE_KEY[v]), run: { cmd: 'set_quick_access_size', size: v } }))];
-}
+// The size of the quick access tiles is chosen in Settings > General only (0.8.25).
 function tabMenu(t, x, y) {
   const keep = t.pinned || t.folder != null;
   // A black hole tab cannot join quick access: its session does not outlive its page.
   const items = t.burner ? [] : [{ icon: 'pin', label: bhT(t.pinned ? 'menu.quick_remove' : 'menu.quick_add'), run: { cmd: 'pin', id: t.id } }];
   items.push({ icon: 'edit', label: bhT('menu.rename_tab'), run: { cmd: 'edit_tab', id: t.id } });
-  if (!t.pinned) {
-    if (t.split) items.push({ icon: 'split', label: bhT('palette.close_split'), run: { cmd: 'close_split' } });
-    else if (t.id !== state.activeTab) items.push({ icon: 'split', label: bhT('menu.split_open'), run: { cmd: 'split', id: t.id } });
-  }
+  // Split view, quick access tiles included (0.8.25): the tile's page opens beside the one shown.
+  if (t.split) items.push({ icon: 'split', label: bhT('palette.close_split'), run: { cmd: 'close_split' } });
+  else if (t.id !== state.activeTab) items.push({ icon: 'split', label: bhT('menu.split_open'), run: { cmd: 'split', id: t.id } });
   if (t.folder != null) items.push({ icon: 'out', label: bhT('menu.out_of_folder'), run: { cmd: 'move_tab', id: t.id, before: null, folder: null, pinned: false } });
   items.push({ sep: true });
   // A quick access or folder tab that wandered from its own page: back to it, or adopt this one.
@@ -595,7 +588,6 @@ function tabMenu(t, x, y) {
     // Closing a quick access tab never takes it off the list (like Cmd/Ctrl+W): it only stops
     // its page. "Remove from quick access" above is the way to take it off.
     if (!t.asleep) items.push({ icon: 'sleep', label: bhT('menu.sleep'), run: { cmd: 'close_instance', id: t.id } });
-    items.push({ sep: true }, ...tileSizeItems());
   } else {
     // A folder tab: Cmd/Ctrl+W puts it to sleep; closing it for good also takes it out of the
     // folder, and the label says so.
@@ -647,10 +639,9 @@ function folderMenu(f, x, y) {
 }
 
 // Right-click on empty sidebar space: create things, then the Easels to open.
-function createMenu(x, y, onPins) {
+function createMenu(x, y) {
   const easels = state.easels || [];
   openMenu(x, y, [
-    ...(onPins ? [...tileSizeItems(), { sep: true }] : []),
     { icon: 'plus', label: bhT('sidebar.new_tab'), run: { cmd: 'new_tab' } },
     { icon: 'hole', label: bhT('palette.new_burner_tab'), run: { cmd: 'action', id: 'burner_tab' } },
     { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
@@ -661,7 +652,7 @@ function createMenu(x, y, onPins) {
     ...easels.map(e => ({ icon: 'easel', label: e.name, run: { cmd: 'open_easel_tab', id: e.id } })),
   ]);
 }
-document.querySelector('aside').oncontextmenu = (e) => { if (!e.defaultPrevented) { e.preventDefault(); createMenu(e.clientX, e.clientY, !!e.target.closest('#pinned, #pinhead')); } };
+document.querySelector('aside').oncontextmenu = (e) => { if (!e.defaultPrevented) { e.preventDefault(); createMenu(e.clientX, e.clientY); } };
 
 // An easel is a tab of its own: click to open it, right-click for options.
 function easelNode(e) {

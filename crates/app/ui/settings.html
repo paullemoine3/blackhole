@@ -25,6 +25,16 @@
   body.embedded main { position: relative; z-index: 1; }
   #sky { position: fixed; inset: -4vh -2vw; width: 104vw; height: 108vh; z-index: 0; pointer-events: none; opacity: .9; display: none; }
   body.embedded #sky { display: block; }
+  /* Opening (0.8.25): the black hole of the welcome tour (onboarding.html, `ob-swallow`). It is
+     born with a bounce, grows until it covers the page, and the Settings come out of it. */
+  #sx-warp { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; visibility: hidden; }
+  #sx-warp i { width: 64px; height: 64px; border-radius: 50%; background: #000; box-shadow: 0 0 24px 6px rgba(0,0,0,.55); transform: scale(0); }
+  #sx-warp.go { visibility: visible; animation: sx-out .25s ease-out .55s both; }
+  #sx-warp.go i { animation: sx-swallow .55s both; }
+  @keyframes sx-swallow { 0% { transform: scale(0); animation-timing-function: cubic-bezier(.2,1.3,.4,1); } 40% { transform: scale(1); animation-timing-function: cubic-bezier(.6,0,.9,.4); } 100% { transform: scale(var(--dive, 40)); } }
+  @keyframes sx-out { to { opacity: 0; } }
+  body.sx-emerge nav, body.sx-emerge main { animation: sx-emerge .5s cubic-bezier(.2,.85,.25,1) .5s both; }
+  @keyframes sx-emerge { from { opacity: 0; transform: scale(1.08); } }
   /* "Changes applied": a pill that rises at the bottom of the page a moment after a change,
      stays two seconds and fades (aria-live: read once). */
   #applied { position: fixed; right: var(--bh-space-24); bottom: var(--bh-space-20); z-index: 5; display: inline-flex; align-items: center; gap: var(--bh-space-8);
@@ -225,6 +235,20 @@
   .oschip { flex: none; font: var(--bh-text-caption); padding: var(--bh-space-4) var(--bh-space-10); border-radius: var(--bh-radius-pill); background: var(--bh-fill-faint);
     box-shadow: inset 0 0 0 1px var(--bh-border-default); opacity: var(--bh-opacity-secondary); white-space: nowrap; }
   .oschip:empty { display: none; }
+  /* "Add an extension" (0.8.25): a button that drops a short menu: from a GitHub repository, or
+     from a link to a package (.crx, .zip, .xpi, a store page). */
+  .addext { position: relative; flex: none; }
+  .addext .chev { transition: transform .15s ease; }
+  .addext.open .chev { transform: rotate(180deg); }
+  .addmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 290px; padding: 6px; display: grid; gap: 2px;
+    border-radius: var(--bh-radius-menu); background: var(--bh-surface-menu); box-shadow: var(--bh-shadow-menu); }
+  .addmenu[hidden] { display: none; }
+  .addmenu button { display: grid; grid-template-columns: 24px 1fr; align-items: center; column-gap: 8px; text-align: left; padding: 8px 10px;
+    border: 0; border-radius: var(--bh-radius-row); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+  .addmenu button:hover, .addmenu button:focus-visible { background: var(--bh-fill-hover); }
+  .addmenu button .sub { grid-column: 2; }
+  .addext.open .addmenu { animation: addin .16s cubic-bezier(.2,.9,.3,1); }
+  @keyframes addin { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
   .mkcats { display: flex; flex-wrap: wrap; gap: var(--bh-space-6); padding: var(--bh-space-4) var(--bh-space-16) var(--bh-space-10); }
   .mkcats:empty { display: none; }
   .mkcats button { height: 26px; padding: 0 var(--bh-space-10); border: 0; border-radius: var(--bh-radius-pill); background: var(--bh-fill-control); font: var(--bh-text-caption);
@@ -279,6 +303,7 @@
 </head>
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
+<div id="sx-warp" aria-hidden="true"><i></i></div>
 <div id="applied" role="status" aria-live="polite"><span class="ok"></span><span data-i18n="settings.applied">Changes applied</span></div>
 <header id="top">
   <div class="brand"><span class="logo"></span><span data-i18n="settings.title">Settings</span><span class="where" id="where"></span></div>
@@ -396,7 +421,13 @@
         <div class="actions mktools">
           <label class="search"><i data-icon="search"></i><input class="field" id="mksearch" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.market_search_ph" data-i18n-aria="settings.market_search_ph"></label>
           <span class="oschip" id="mkos"></span>
-          <button class="btn" id="mkgh" type="button"><i data-icon="plus"></i><span data-i18n="settings.gh_add">Add from GitHub</span></button>
+          <div class="addext" id="mkadd">
+            <button class="btn" id="mkgh" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mkaddmenu"><i data-icon="plus"></i><span data-i18n="settings.ext_add">Add an extension</span><i data-icon="expand" data-size="xs" class="chev"></i></button>
+            <div class="addmenu" id="mkaddmenu" role="menu" hidden>
+              <button type="button" role="menuitem" data-add="github"><i data-icon="code"></i><span data-i18n="settings.ext_add_github">From a GitHub repository</span><span class="sub" data-i18n="settings.ext_add_github_sub">Its latest release, for this system</span></button>
+              <button type="button" role="menuitem" data-add="link"><i data-icon="link"></i><span data-i18n="settings.ext_add_link">From a link</span><span class="sub" data-i18n="settings.ext_add_link_sub">A .crx, .zip or .xpi package, or a Chrome Web Store page</span></button>
+            </div>
+          </div>
         </div>
         <div class="mkcats" id="mkcats" role="group" data-i18n-aria="settings.market_categories"></div>
         <div class="mkgrid" id="catalog"></div>
@@ -438,7 +469,7 @@
   <section id="devices" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="devices" data-size="md"></i></span><div><h1 data-i18n="settings.devices">Devices</h1><p class="lead"><span data-i18n="settings.devices_lead">Continue a tab on your other computer or phone (right-click the tab, or use the command bar), and keep your tabs in step between them.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.paired_devices">Paired devices</h2><div class="list rows" id="devlist"></div></div>
-    <div class="card" id="histcard"><h2 data-i18n="settings.history_sync">History</h2><div class="rows" id="histsync"></div></div>
+    <div class="card" id="histcard"><h2 data-i18n="settings.sync_what">What syncs</h2><div class="rows" id="histsync"></div></div>
     <div class="card" id="devpair"><h2 data-i18n="settings.pair_device">Pair a device</h2>
       <div id="devcode" hidden><div class="code" id="devcodetext"></div><p class="note"><span data-i18n="settings.code_note">Type this code in BlackHole on the other device (Settings › Devices). It works for 5 minutes, only once.</span></p><div class="actions"><button class="btn" id="devcancel"><span data-i18n="common.cancel">Cancel</span></button></div></div>
       <div class="actions" id="devask"><button class="btn primary" id="devshow"><span data-i18n="settings.show_code">Show a pairing code</span></button></div>
@@ -697,6 +728,7 @@ function renderShortcuts() {
     [T('keys.last_tab'), 'mod+9'],
     [T('keys.reload'), 'mod+r'],
     [T('keys.hard_reload'), 'mod+shift+r'],
+    [T('keys.copy_link'), 'mod+shift+c'],
     [T('keys.back_forward'), 'mod+[ ]'],
     ...(mac ? [] : [[T('keys.reload'), 'F5'], [T('keys.back_forward'), 'alt+left right']]),
     [T('keys.find'), 'mod+f mod+g mod+shift+g'],
@@ -728,6 +760,25 @@ function renderShortcuts() {
 }
 
 let seenSeq = 0;
+// The Settings were opened again (`opened` counts the openings, 0.8.25): the black hole plays,
+// unless the animations are off.
+let seenOpened = null;
+let warpEnd = 0;
+function entrance() {
+  const calm = document.body.classList.contains('noanim') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (calm) return;
+  const w = $('sx-warp');
+  // Large enough to cover the whole page from its middle.
+  w.style.setProperty('--dive', String(Math.ceil(Math.hypot(innerWidth, innerHeight) / 64) + 2));
+  w.classList.remove('go');
+  document.body.classList.remove('sx-emerge');
+  void w.offsetWidth;
+  w.classList.add('go');
+  document.body.classList.add('sx-emerge');
+  clearTimeout(warpEnd);
+  // Classes off at the end: a transform left on <main> would hold its fixed children.
+  warpEnd = setTimeout(() => { w.classList.remove('go'); document.body.classList.remove('sx-emerge'); }, 1100);
+}
 window.bh = {
   render(s) {
     mac = s.os === 'macos';
@@ -745,6 +796,7 @@ window.bh = {
     if (s.embedded && !document.body.classList.contains('embedded')) { document.body.classList.add('embedded'); sky(); }
     document.body.classList.toggle('noanim', s.animations === false);
     document.body.classList.toggle('flat', s.depth === false);
+    if (s.opened !== seenOpened) { seenOpened = s.opened; if (s.opened) entrance(); }
     renderShortcuts();
     // Languages are named in their own words; "System" says which one it gives.
     const own = (code) => (s.languages.find(l => l.id === code) || {}).label || code;
@@ -1014,7 +1066,8 @@ function mkSheet(c, s) {
   copy.onclick = () => {
     const done = () => { copy.lastChild.textContent = bhT('settings.market_copied'); setTimeout(() => { copy.lastChild.textContent = bhT('settings.market_copy'); }, 1500); };
     const select = () => { const r = document.createRange(); r.selectNodeContents(hashDd.firstChild); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); };
-    try { navigator.clipboard.writeText(c.sha256).then(done, select); } catch (_) { select(); }
+    // The shell writes the system clipboard (a shell page has no secure origin for navigator.clipboard).
+    if (c.sha256) { send({ cmd: 'copy_text', text: c.sha256, quiet: true }); done(); } else select();
   };
   hashDd.append(copy);
   if (c.installed && c.installedVersion) row('settings.market_installed', c.installedVersion);
@@ -1039,42 +1092,48 @@ let mkLastOpen = null;
 // Add from GitHub (`s.github.flow`, steps run by the shell): type a repository, pick the file for
 // this system, see its hash and permissions, then install it anyway, or not. `mk.gh`: the first
 // step is open (nothing asked of the shell yet).
+// Add from a link (0.8.25, `mk.ghMode` 'link'): the same steps with an address in place of a
+// repository, and no release to choose.
 function ghClose() { mk.gh = false; mk.ghAsset = null; send({ cmd: 'github_cancel' }); }
 function ghLookup() {
   const v = $('ghrepo') ? $('ghrepo').value.trim() : '';
   if (!v) return;
-  mk.ghInput = v;
   mk.ghAsset = null;
+  if (mk.ghMode === 'link') { mk.linkInput = v; send({ cmd: 'link_prepare', input: v }); return; }
+  mk.ghInput = v;
   send({ cmd: 'github_lookup', input: v });
 }
 function ghPanel(f) {
   const box = [];
   const btn = (cls, label, run, icon) => { const b = icon ? iconBtn(cls, icon, label) : el('button', cls, label); b.type = 'button'; b.onclick = run; return b; };
   const acts = (...b) => { const a = el('div', 'rowactions'); a.style.justifyContent = 'flex-start'; a.append(...b); return a; };
+  if (f && f.stage !== 'error') mk.ghMode = f.direct ? 'link' : 'github';
+  const link = mk.ghMode === 'link';
   const head = el('div', 'head');
   const who = el('div');
-  who.append(el('div', 'title', bhT('settings.gh_title')),
-    el('div', 'by', f && f.repo ? f.repo + (f.tag ? ' · ' + f.tag : '') : bhT('settings.gh_lead')));
+  who.append(el('div', 'title', bhT(link ? 'settings.link_title' : 'settings.gh_title')),
+    el('div', 'by', f && f.repo ? f.repo + (f.tag ? ' · ' + f.tag : '') : bhT(link ? 'settings.link_lead' : 'settings.gh_lead')));
   const ico = el('div', 'ico neutral');
-  ico.append(bhIcon('code'));
+  ico.append(bhIcon(link ? 'link' : 'code'));
   head.append(ico, who);
   box.push(head);
   const stage = f ? f.stage : 'input';
   const busy = (text) => { const p = el('p', 'sub'); p.append(text); box.push(p, acts(btn('btn small', bhT('common.cancel'), ghClose))); };
   if (stage === 'input') {
-    box.push(el('p', 'desc', bhT('settings.gh_warning')));
+    box.push(el('p', 'desc', bhT(link ? 'settings.link_warning' : 'settings.gh_warning')));
     const row = el('div', 'actions');
     row.style.padding = '0';
     const inp = el('input', 'field');
     inp.id = 'ghrepo';
-    inp.type = 'text';
+    inp.type = link ? 'url' : 'text';
     inp.autocomplete = 'off';
     inp.spellcheck = false;
-    inp.placeholder = bhT('settings.gh_repo_ph');
-    inp.setAttribute('aria-label', bhT('settings.gh_repo_ph'));
-    inp.value = mk.ghInput || '';
+    inp.placeholder = bhT(link ? 'settings.link_ph' : 'settings.gh_repo_ph');
+    inp.setAttribute('aria-label', inp.placeholder);
+    inp.value = (link ? mk.linkInput : mk.ghInput) || '';
     inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ghLookup(); } };
-    row.append(inp, btn('btn primary', bhT('settings.gh_lookup'), ghLookup, 'search'), btn('btn', bhT('common.cancel'), ghClose));
+    row.append(inp, link ? btn('btn primary', bhT('settings.gh_download'), ghLookup, 'download') : btn('btn primary', bhT('settings.gh_lookup'), ghLookup, 'search'),
+      btn('btn', bhT('common.cancel'), ghClose));
     box.push(row);
   } else if (stage === 'looking') {
     busy(bhT('settings.gh_looking', { repo: f.repo }));
@@ -1105,7 +1164,7 @@ function ghPanel(f) {
   } else if (stage === 'ready') {
     const warn = el('div', 'panel warn');
     warn.append(el('h3', null, bhT('settings.gh_unverified_title')),
-      el('p', 'sub', bhT(f.update ? 'settings.gh_update_note' : 'settings.gh_unverified_note', { repo: f.repo })));
+      el('p', 'sub', bhT(f.update ? 'settings.gh_update_note' : link ? 'settings.link_unverified_note' : 'settings.gh_unverified_note', { repo: f.repo })));
     box.push(warn);
     if (f.update && f.added.length) {
       const more = el('div', 'panel warn');
@@ -1115,6 +1174,7 @@ function ghPanel(f) {
     const kv = el('dl', 'kv');
     const row = (k, v) => { const dd = el('dd'); dd.append(v); kv.append(el('dt', null, bhT(k)), dd); return dd; };
     row('settings.gh_extension', f.name);
+    if (link && f.url) row('settings.link_address', el('span', 'hash', f.url));
     row('settings.gh_version', f.update ? bhT('settings.gh_version_update', { version: f.version, installed: f.update.version }) : f.version);
     row('settings.market_file', f.file);
     row('settings.market_size', mkSize(f.size));
@@ -1142,12 +1202,31 @@ function ghPanel(f) {
   }
   return box;
 }
-$('mkgh').onclick = () => {
-  mk.gh = true;
-  mk.open = null;
-  if (lastState) renderMarket(lastState);
-  if ($('ghrepo')) $('ghrepo').focus();
+// The drop-down of "Add an extension": GitHub or a link. Escape or a click elsewhere closes it.
+function addMenu(open) {
+  $('mkadd').classList.toggle('open', open);
+  $('mkaddmenu').hidden = !open;
+  $('mkgh').setAttribute('aria-expanded', String(open));
+  if (open) $('mkaddmenu').querySelector('button').focus();
+}
+$('mkgh').onclick = (e) => { e.stopPropagation(); addMenu($('mkaddmenu').hidden); };
+for (const b of document.querySelectorAll('#mkaddmenu [data-add]')) {
+  b.onclick = () => {
+    addMenu(false);
+    mk.ghMode = b.dataset.add;
+    mk.gh = true;
+    mk.open = null;
+    if (lastState) renderMarket(lastState);
+    if ($('ghrepo')) $('ghrepo').focus();
+  };
+}
+$('mkaddmenu').onkeydown = (e) => {
+  const items = [...$('mkaddmenu').querySelectorAll('button')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); addMenu(false); $('mkgh').focus(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
 };
+document.addEventListener('click', (e) => { if (!$('mkaddmenu').hidden && !e.target.closest('#mkadd')) addMenu(false); });
 
 function renderMarket(s) {
   const list = s.catalog || [];
@@ -1180,7 +1259,8 @@ function renderMarket(s) {
   // Adding from GitHub takes the place of the grid and of any sheet while it lasts.
   const g = s.github || {};
   const ghOn = !!g.flow || !!mk.gh;
-  $('mkgh').hidden = !m.platform || ghOn;
+  $('mkadd').hidden = !m.platform || ghOn;
+  if (ghOn && !$('mkaddmenu').hidden) addMenu(false);
   $('mkgithub').hidden = !ghOn;
   put($('mkgithub'), ...(ghOn ? ghPanel(g.flow) : []));
   if (ghOn) {
@@ -1393,16 +1473,30 @@ function renderDevices(d) {
   $('devpair').hidden = !d.available;
   $('devcode').hidden = !d.code;
   $('devask').hidden = !!d.code;
-  // The history: one switch, in the background, and a manual exchange with the online devices.
-  const h = d.history || {};
-  const last = h.last ? bhT('settings.history_last', { name: h.last.name, time: new Date(h.last.at * 1000).toLocaleTimeString(bhI18n.lang, { hour: '2-digit', minute: '2-digit' }) }) : bhT('settings.history_sync_sub');
+  // What syncs (0.8.25), one line each: the tabs (set per device above), the history and the
+  // extensions (one switch each, in the background), then one manual exchange for both.
+  const h = d.history || {}, x = d.extensions || {};
+  const at = (l) => new Date(l.at * 1000).toLocaleTimeString(bhI18n.lang, { hour: '2-digit', minute: '2-digit' });
+  const latest = [h.on && h.last, x.on && x.last].filter(Boolean).sort((a, b) => b.at - a.at)[0];
+  const last = latest ? bhT('settings.history_last', { name: latest.name, time: at(latest) }) : bhT('settings.history_sync_sub');
   const now = iconBtn('btn small', 'reload', bhT('settings.sync_now'));
   now.id = 'histnow';
-  now.disabled = !h.on || !d.list.some(dev => dev.online);
+  now.disabled = !(h.on || (x.on && x.host)) || !d.list.some(dev => dev.online);
   now.onclick = () => send({ cmd: 'history_sync_now' });
   const nowRow = el('div', 'opt');
   nowRow.append(el('span', 'grow sub', last), now);
-  put($('histsync'), option(bhT('settings.history_sync_label'), !!h.on, () => send({ cmd: 'set_history_sync', on: !h.on }), true, bhT('settings.history_sync_note')), nowRow);
+  const tabs = el('div', 'opt');
+  const tabsText = el('span', 'grow');
+  tabsText.append(el('span', 'label', bhT('settings.tab_sync')), el('span', 'sub', bhT('settings.sync_tabs_note')));
+  tabs.append(tabsText);
+  const rows = [
+    tabs,
+    option(bhT('settings.history_sync_label'), !!h.on, () => send({ cmd: 'set_history_sync', on: !h.on }), true, bhT('settings.history_sync_note')),
+  ];
+  // Extensions: only where this system has an extension host (not Linux, not a private window).
+  if (x.host) rows.push(option(bhT('settings.ext_sync_label'), !!x.on, () => send({ cmd: 'set_extension_sync', on: !x.on }), true, bhT('settings.ext_sync_note')));
+  rows.push(nowRow);
+  put($('histsync'), ...rows);
   $('histcard').hidden = !d.available || !d.list.length;
   $('devcodetext').textContent = d.code || '';
   $('devstatus').textContent = d.status || '';

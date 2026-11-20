@@ -8,7 +8,8 @@
   const ZOOM = { '=': 'zoom_in', '+': 'zoom_in', '-': 'zoom_out', _: 'zoom_out', 0: 'zoom_reset' };
   // Find keys go to the page first: apps with their own search (Google Docs draws its text on a
   // canvas, which the find bar cannot read) take them with preventDefault; otherwise the bar opens.
-  const PAGE_FIRST = new Set(['f', 'g', 'shift+g']);
+  // Mod+Shift+C (copy the page's address) too: Google Docs counts words with it.
+  const PAGE_FIRST = new Set(['f', 'g', 'shift+g', 'shift+c']);
   const post = (key) => window.__bhipc.postMessage(JSON.stringify({ cmd: 'shortcut', key }));
 
   // The shortcut a key press stands for, or null.
@@ -44,8 +45,8 @@
     // Shift: Mod+Shift+N is a private window, Mod+Shift+E opens Easel, Mod+Shift+S clips the page,
     // Mod+Shift+L picks an area to capture live, Mod+Shift+G finds the previous match,
     // Mod+Shift+T reopens the tab closed last, Mod+Shift+F searches the pages read (Recall).
-    // Mod+Shift+R reloads past the cache (hard refresh).
-    if (e.shiftKey) return ['n', 'e', 's', 'l', 'g', 't', 'f', 'r'].includes(key) ? 'shift+' + key : null;
+    // Mod+Shift+R reloads past the cache (hard refresh), Mod+Shift+C copies the page's address.
+    if (e.shiftKey) return ['n', 'e', 's', 'l', 'g', 't', 'f', 'r', 'c'].includes(key) ? 'shift+' + key : null;
     // A page may keep Mod+N or Mod+Enter for itself (the command bar: list navigation, keep in
     // the Easel).
     if (!KEYS.includes(key) || (key === 'n' && window.keepCtrlN) || (key === 'enter' && window.keepModEnter)) return null;

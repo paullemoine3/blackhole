@@ -130,6 +130,8 @@ impl Running {
             | UiCommand::DeviceSyncNow { .. }
             | UiCommand::SetHistorySync { .. }
             | UiCommand::HistorySyncNow
+            | UiCommand::SetExtensionSync { .. }
+            | UiCommand::ExtSyncAnswer { .. }
             | UiCommand::SyncAnswer { .. }
             | UiCommand::BeamText { .. }
             | UiCommand::BeamClipboard { .. }
@@ -174,6 +176,7 @@ impl Running {
             command @ (UiCommand::InstallCatalog { .. }
             | UiCommand::GithubLookup { .. }
             | UiCommand::GithubPrepare { .. }
+            | UiCommand::LinkPrepare { .. }
             | UiCommand::GithubInstall
             | UiCommand::GithubCancel
             | UiCommand::CheckCatalogUpdates
@@ -187,6 +190,7 @@ impl Running {
             | UiCommand::ReloadExtensions
             | UiCommand::OpenExtensionsFolder
             | UiCommand::InstallSampleExtension) => self.handle_extensions(command),
+            command @ (UiCommand::CopyText { .. } | UiCommand::CopyImage { .. } | UiCommand::SaveImage { .. }) => self.handle_clipboard(command),
             command @ (UiCommand::ImportScan
             | UiCommand::ImportBookmarks { .. }
             | UiCommand::AddBookmark { .. }
@@ -346,6 +350,8 @@ impl Running {
             "shift+s" => self.handle_ui(UiCommand::CaptureToEasel),
             "shift+l" => self.handle_ui(UiCommand::LivePick),
             "shift+f" => self.open_palette("recall"),
+            // Copy the address of the page shown (clean when the Shields clean links), like Arc.
+            "shift+c" => self.copy_page_link(),
             "\\" => self.toggle_split(),
             "zoom_in" | "zoom_out" | "zoom_reset" => self.zoom_active(key),
             "f" => self.with_active_tab(|v| {

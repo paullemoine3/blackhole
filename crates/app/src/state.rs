@@ -14,6 +14,7 @@ use wry::{WebContext, WebView};
 
 use crate::{ipc, views};
 use crate::features::{
+    clipboard,
     compare,
     github_ext,
     handoff,
@@ -150,6 +151,8 @@ pub(crate) struct Running {
     pub(crate) calendar: meet::Calendar,
     /// Paired devices and "Continue on…" (see handoff.rs).
     pub(crate) nearby: handoff::Nearby,
+    /// Extensions offered by paired devices (0.8.25): last exchange, proposals waiting.
+    pub(crate) ext_sync: crate::features::ext_sync::ExtSync,
     /// Watched areas of pages (see watching.rs).
     pub(crate) watching: watching::Watching,
     /// Recall: the pages read, searchable by what they said (see recall.rs).
@@ -223,6 +226,8 @@ pub(crate) struct Running {
     pub(crate) market: Market,
     /// Extensions added from GitHub (unreviewed, pinned) and the add-from-GitHub steps.
     pub(crate) github: github_ext::Sideload,
+    /// "Copy image": the picture being downloaded for the clipboard.
+    pub(crate) clips: clipboard::Clips,
     /// Self-update of the app: where it stands, the background check and its answers.
     pub(crate) updates: Updates,
     pub(crate) quit: bool,
@@ -235,6 +240,9 @@ pub(crate) struct Running {
     /// page's background; a shell page created when needed and released after `PANEL_KEEP`.
     pub(crate) settings_panel: LazyView,
     pub(crate) settings_shown: bool,
+    /// Counts the openings of the Settings: the page plays its entrance (the black hole of the
+    /// welcome tour) when the count it saw changes (0.8.25).
+    pub(crate) settings_opened: u32,
     pub(crate) settings_wanted: bool,
     pub(crate) easels: Easels,
     pub(crate) easel_store: EaselStore,

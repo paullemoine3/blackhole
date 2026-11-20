@@ -128,6 +128,37 @@
   const video = (e) => (e.target instanceof HTMLVideoElement ? e.target : null);
   document.addEventListener('pause', (e) => { const v = video(e); if (v && v.__bhPip) v.__bhPaused = true; }, true);
   document.addEventListener('play', (e) => { const v = video(e); if (v) v.__bhPaused = false; }, true);
+  // A live stream (Twitch: endless duration) floats without a pause button in Chromium's window
+  // unless the page answers the Media Session's play and pause: they are answered for the time
+  // it floats (0.8.25). A page that already handles them keeps its handlers afterwards only if
+  // it sets them again, so this is limited to live streams.
+  let sessionFor = null;
+  const sessionActions = (v) => {
+    const ms = navigator.mediaSession;
+    if (!ms || !ms.setActionHandler) return;
+    try {
+      ms.setActionHandler('play', v ? () => v.play().catch(() => {}) : null);
+      ms.setActionHandler('pause', v ? () => v.pause() : null);
+      if (v) ms.playbackState = v.paused ? 'paused' : 'playing';
+    } catch (_) {}
+    sessionFor = v;
+  };
+  document.addEventListener(
+    'enterpictureinpicture',
+    (e) => {
+      const v = video(e);
+      // Live: no end (Infinity), a placeholder of days (some live players), or a stream.
+      if (v && !('webkitPresentationMode' in v) && (!isFinite(v.duration) || v.duration > 172800 || v.srcObject)) sessionActions(v);
+    },
+    true
+  );
+  document.addEventListener(
+    'leavepictureinpicture',
+    (e) => {
+      if (sessionFor && video(e) === sessionFor) sessionActions(null);
+    },
+    true
+  );
   document.addEventListener(
     'leavepictureinpicture',
     (e) => {

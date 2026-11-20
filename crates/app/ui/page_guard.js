@@ -194,6 +194,12 @@
     }
     return '';
   };
+  // The web address of the picture under the pointer (an `<img>`), or ''.
+  const imageAt = (e) => {
+    const img = e.composedPath().find((n) => n && n.tagName === 'IMG' && (n.currentSrc || n.src));
+    const src = img ? img.currentSrc || img.src : '';
+    return /^https?:/.test(src) ? src.slice(0, 4000) : '';
+  };
   const editable = (e) =>
     e.composedPath().some((n) => n && (n.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName)));
   // Right click on a link, or on selected text: the browser's own menu (new tab, new window…,
@@ -213,7 +219,9 @@
       if (!link && !text.trim() && !mark) return;
       e.preventDefault();
       e.stopPropagation();
-      post({ cmd: 'link_menu', url: link ? link.href : '', text, mark, x: e.clientX, y: e.clientY });
+      // A picture inside the link (a thumbnail): its entries (open, copy) follow the link's.
+      const src = imageAt(e);
+      post({ cmd: 'link_menu', url: link ? link.href : '', text, mark, image: src, x: e.clientX, y: e.clientY });
     },
     true,
   );
@@ -226,10 +234,8 @@
     if (e.defaultPrevented || e.shiftKey || editable(e)) return;
     const path = e.composedPath();
     if (path.some((n) => n && (/^(EMBED|OBJECT)$/.test(n.tagName) || (/^(VIDEO|AUDIO)$/.test(n.tagName) && n.controls)))) return;
-    const img = path.find((n) => n && n.tagName === 'IMG' && (n.currentSrc || n.src));
-    const src = img ? img.currentSrc || img.src : '';
     e.preventDefault();
-    post({ cmd: 'link_menu', url: '', text: '', mark: 0, image: /^https?:/.test(src) ? src.slice(0, 4000) : '', page: true, x: e.clientX, y: e.clientY });
+    post({ cmd: 'link_menu', url: '', text: '', mark: 0, image: imageAt(e), page: true, x: e.clientX, y: e.clientY });
   });
 
   // Single-page apps change the URL without a navigation; tell the shell to re-read it.

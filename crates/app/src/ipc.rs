@@ -330,8 +330,18 @@ pub enum UiCommand {
     SetHistorySync {
         on: bool,
     },
-    /// Settings > Devices: asks every online device for its history changes now.
+    /// Settings > Devices: asks every online device for its history changes (and its extensions,
+    /// when they sync) now.
     HistorySyncNow,
+    /// Settings > Devices: paired devices offer each other their extensions, or not (0.8.25).
+    SetExtensionSync {
+        on: bool,
+    },
+    /// The notice proposing the extensions of a device (GitHub, link): add them, or not now.
+    ExtSyncAnswer {
+        id: String,
+        accept: bool,
+    },
     /// The proposal to synchronize with a device: `merge` (once), `always` or `later`.
     SyncAnswer {
         id: String,
@@ -563,6 +573,25 @@ pub enum UiCommand {
         tab: Option<String>,
     },
     ClearBlocked,
+    /// A "Copy" entry of a menu: the shell puts the text on the system clipboard (0.8.25).
+    /// `quiet`: the menu already says "Copied", no toast.
+    CopyText {
+        text: String,
+        #[serde(default)]
+        quiet: bool,
+    },
+    /// "Copy image" of the page menu: the picture at `url` (http(s)), shown in `tab`.
+    CopyImage {
+        url: String,
+        #[serde(default)]
+        tab: u64,
+    },
+    /// "Save image" of the page menu: the picture at `url` (http(s)) goes to the Downloads folder.
+    SaveImage {
+        url: String,
+        #[serde(default)]
+        tab: u64,
+    },
     CloseSettings,
     SetExtensionEnabled {
         id: String,
@@ -586,6 +615,11 @@ pub enum UiCommand {
         asset: Option<String>,
         #[serde(default)]
         update: Option<String>,
+    },
+    /// Add from a link (0.8.25): downloads and checks the package at the address typed (`.crx`,
+    /// `.zip`, `.xpi`, or a store page). Nothing is installed yet (`GithubInstall` does it).
+    LinkPrepare {
+        input: String,
     },
     /// The person accepted the package shown (hash, permissions): install and pin it.
     GithubInstall,

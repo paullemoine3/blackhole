@@ -219,6 +219,12 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         changed
     }
 
+    /// Whether paired devices offer each other their extensions (Settings > Devices).
+    pub fn set_extension_sync(&mut self, on: bool) {
+        self.settings.extension_sync = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     /// Whether paired devices exchange the history (Settings > Devices).
     pub fn set_history_sync(&mut self, on: bool) {
         self.settings.history_sync = on;

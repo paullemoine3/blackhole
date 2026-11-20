@@ -330,9 +330,148 @@ pub fn asset_matches(pattern: &str, name: &str) -> bool {
     true
 }
 
+/// Add from a link (0.8.25): an extension package offered by an address, for extensions with no
+/// release on GitHub. HTTPS only, no user name or password in it, 2 KB at most. A store page
+/// (Chrome Web Store, Edge Add-ons) stands for its package (`store_package_url`).
+pub fn direct_package_url(input: &str) -> Option<url::Url> {
+    let s = input.trim();
+    if s.is_empty() || s.len() > 2048 || s.contains(char::is_whitespace) {
+        return None;
+    }
+    let url = url::Url::parse(s).ok()?;
+    let host = url.host_str()?;
+    let ok = url.scheme() == "https" && url.username().is_empty() && url.password().is_none() && host.contains(['.', ':']);
+    ok.then(|| store_package_url(&url).unwrap_or(url))
+}
+
+/// The package behind a store page: `chromewebstore.google.com/detail/<name>/<id>` (and the old
+/// `chrome.google.com/webstore/detail/…`) or `microsoftedge.microsoft.com/addons/detail/…/<id>`,
+/// asked from the store's own download address. `None` for any other address.
+pub fn store_package_url(url: &url::Url) -> Option<url::Url> {
+    let host = url.host_str()?;
+    let id = url.path_segments()?.rfind(|p| !p.is_empty())?;
+    let store_id = id.len() == 32 && id.bytes().all(|b| (b'a'..=b'p').contains(&b));
+    let detail = url.path().contains("/detail/");
+    if !store_id || !detail {
+        return None;
+    }
+    let to = match host {
+        "chromewebstore.google.com" | "chrome.google.com" => format!(
+            "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D{id}%26uc"
+        ),
+        "microsoftedge.microsoft.com" => format!(
+            "https://edge.microsoft.com/extensionwebstorebase/v1/crx?response=redirect&x=id%3D{id}%26installsource%3Dondemand%26uc"
+        ),
+        _ => return None,
+    };
+    url::Url::parse(&to).ok()
+}
+
+/// The id of an extension added from a link: `url-<host>-<hash>` (`valid_id`), stable for the
+/// same address, never a market or GitHub id.
+pub fn direct_id(url: &url::Url) -> String {
+    // FNV-1a: a short, stable fingerprint of the whole address.
+    let hash = url.as_str().bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3));
+    let mut slug = String::new();
+    for c in url.host_str().unwrap_or("web").trim_start_matches("www.").chars() {
+        let c = if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' };
+        if !(c == '-' && (slug.is_empty() || slug.ends_with('-'))) {
+            slug.push(c);
+        }
+    }
+    let slug: String = slug.chars().take(40).collect();
+    format!("url-{}-{:08x}", slug.trim_end_matches('-'), hash as u32)
+}
+
+/// The file name an address gives (its last path part), else its host.
+pub fn direct_file_name(url: &url::Url) -> String {
+    url.path_segments()
+        .and_then(|mut p| p.next_back())
+        .filter(|n| !n.is_empty())
+        .map(|n| n.chars().take(120).collect())
+        .unwrap_or_else(|| url.host_str().unwrap_or("").to_owned())
+}
+
+/// The zip inside a package: a Chromium `.crx` (versions 2 and 3: a `Cr24` header, keys and
+/// signatures, then the zip) loses its header; a `.zip` or Firefox `.xpi` is already one.
+/// `None` when it is neither.
+pub fn crx_payload(bytes: &[u8]) -> Option<&[u8]> {
+    const ZIP: &[u8] = b"PK\x03\x04";
+    if bytes.starts_with(ZIP) {
+        return Some(bytes);
+    }
+    let word = |at: usize| -> Option<usize> {
+        let b = bytes.get(at..at + 4)?;
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    if !bytes.starts_with(b"Cr24") {
+        return None;
+    }
+    let start = match word(4)? {
+        2 => 16usize.checked_add(word(8)?)?.checked_add(word(12)?)?,
+        3 => 12usize.checked_add(word(8)?)?,
+        _ => return None,
+    };
+    bytes.get(start..).filter(|zip| zip.starts_with(ZIP))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn links_to_a_package_are_https_and_store_pages_stand_for_their_package() {
+        let ok = direct_package_url(" https://example.com/ext/dark-1.2.crx ").unwrap();
+        assert_eq!(ok.as_str(), "https://example.com/ext/dark-1.2.crx");
+        for bad in ["http://example.com/a.crx", "https://user:pw@example.com/a.crx", "https://localhost/a.crx", "file:///a.crx", "https://a b/x", "ftp://x.y/a"] {
+            assert!(direct_package_url(bad).is_none(), "{bad}");
+        }
+        let id = "cjpalhdlnbpafiamejdnhcphjbkeiagm";
+        let chrome = direct_package_url(&format!("https://chromewebstore.google.com/detail/ublock-origin/{id}")).unwrap();
+        assert!(chrome.as_str().starts_with("https://clients2.google.com/service/update2/crx?") && chrome.as_str().contains(id));
+        let edge = direct_package_url(&format!("https://microsoftedge.microsoft.com/addons/detail/some/{id}")).unwrap();
+        assert!(edge.as_str().starts_with("https://edge.microsoft.com/extensionwebstorebase/") && edge.as_str().contains(id));
+        // Not a store id (q is out of a–p): the address stays as it is.
+        let other = format!("https://chromewebstore.google.com/detail/x/{}", "q".repeat(32));
+        assert_eq!(direct_package_url(&other).unwrap().as_str(), other);
+    }
+
+    #[test]
+    fn a_link_names_a_stable_safe_id_and_a_file() {
+        let a = url::Url::parse("https://www.Example.com/ext/dark-1.2.crx").unwrap();
+        let b = url::Url::parse("https://example.com/ext/other.crx").unwrap();
+        let id = direct_id(&a);
+        assert!(valid_id(&id) && id.starts_with("url-example-com-"), "{id}");
+        assert_eq!(id, direct_id(&a));
+        assert_ne!(id, direct_id(&b));
+        assert!(valid_id(&direct_id(&url::Url::parse(&format!("https://{}.example.com/a", "x".repeat(60))).unwrap())));
+        assert_eq!(direct_file_name(&a), "dark-1.2.crx");
+        assert_eq!(direct_file_name(&url::Url::parse("https://example.com/").unwrap()), "example.com");
+    }
+
+    #[test]
+    fn a_crx_loses_its_header() {
+        let zip = b"PK\x03\x04rest".to_vec();
+        assert_eq!(crx_payload(&zip), Some(&zip[..]));
+        let mut v3 = b"Cr24".to_vec();
+        v3.extend(3u32.to_le_bytes());
+        v3.extend(5u32.to_le_bytes());
+        v3.extend(b"HEADR");
+        v3.extend(&zip);
+        assert_eq!(crx_payload(&v3), Some(&zip[..]));
+        let mut v2 = b"Cr24".to_vec();
+        v2.extend(2u32.to_le_bytes());
+        v2.extend(2u32.to_le_bytes());
+        v2.extend(1u32.to_le_bytes());
+        v2.extend(b"KKS");
+        v2.extend(&zip);
+        assert_eq!(crx_payload(&v2), Some(&zip[..]));
+        let mut broken = v3.clone();
+        broken[8] = 200;
+        assert_eq!(crx_payload(&broken), None);
+        assert_eq!(crx_payload(b"<html>"), None);
+        assert_eq!(crx_payload(b"Cr24\x03\x00"), None);
+    }
 
     #[test]
     fn platforms_with_an_extension_host() {

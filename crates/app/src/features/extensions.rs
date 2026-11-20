@@ -99,6 +99,7 @@ impl Running {
         self.poll_update();
         self.poll_market();
         self.poll_github();
+        self.poll_clipboard();
         self.poll_downloads();
         self.poll_captures();
         self.poll_passwords();
@@ -232,6 +233,7 @@ impl Running {
                 }
             }
             UiCommand::GithubLookup { input } => self.github_lookup(&input),
+            UiCommand::LinkPrepare { input } => self.link_prepare(&input),
             UiCommand::GithubPrepare { asset, update } => self.github_prepare(asset, update),
             UiCommand::GithubInstall => self.github_install(),
             UiCommand::GithubCancel => self.github_cancel(),

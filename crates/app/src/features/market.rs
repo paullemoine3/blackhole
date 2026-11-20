@@ -137,6 +137,8 @@ impl Running {
             let update = self.github.updates.get(&p.id);
             item["unverified"] = json!(true);
             item["repo"] = json!(p.repo_path());
+            // Added from a link (0.8.25): no repository, no updates.
+            item["direct"] = json!(p.direct);
             item["outdated"] = json!(update.is_some());
             item["offered"] = json!(update.map(|(release, _)| release.tag.as_str()));
             list.push(item);

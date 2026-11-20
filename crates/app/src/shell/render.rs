@@ -155,6 +155,8 @@ impl Running {
                     .is_some_and(|t| self.loading.contains_key(&t.id) || self.splash.contains_key(&t.id)));
         let state = json!({
             "loading": loading,
+            // A typed address waits for its server: the bar's line until the page starts.
+            "serverWait": asked.is_some(),
             "zoom": zoom,
             "canBack": nav(WebView::can_go_back),
             "canForward": nav(WebView::can_go_forward),

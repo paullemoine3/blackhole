@@ -11,9 +11,11 @@ use url::Url;
 
 pub mod app_extensions;
 pub mod catalog;
+pub mod ext_sync;
 pub mod github_ext;
 pub mod handoff;
 pub mod history_sync;
+pub mod image_clip;
 pub mod import;
 pub mod market;
 pub mod peers;
@@ -515,6 +517,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .collect(),
             home_order: dto.home_order.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
             history_sync: dto.history_sync,
+            extension_sync: dto.extension_sync,
             encrypted_dns: dto.encrypted_dns,
             dns_resolver: if blackhole_domain::dns::doh_template(&dto.dns_resolver).is_some() {
                 dto.dns_resolver
@@ -567,6 +570,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
             home_order: settings.home_order.clone(),
             history_sync: settings.history_sync,
+            extension_sync: settings.extension_sync,
             encrypted_dns: settings.encrypted_dns,
             dns_resolver: settings.dns_resolver.clone(),
         };
@@ -747,6 +751,9 @@ struct SettingsDto {
     /// Absent before 0.8.18: on.
     #[serde(default = "default_true")]
     history_sync: bool,
+    /// Absent before 0.8.25: on.
+    #[serde(default = "default_true")]
+    extension_sync: bool,
     /// Absent before 0.8.24: off, with the default resolver.
     #[serde(default)]
     encrypted_dns: bool,
@@ -1012,6 +1019,7 @@ mod tests {
             hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
             home_order: vec!["recent".to_owned(), "now".to_owned()],
             history_sync: false,
+            extension_sync: false,
             encrypted_dns: true,
             dns_resolver: "https://dns.nextdns.io/abc".to_owned(),
         };
@@ -1031,6 +1039,7 @@ mod tests {
         assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
         assert!(old.home_order.is_empty(), "default order in older files");
         assert!(old.history_sync, "history sync on in older files");
+        assert!(old.extension_sync, "extension sync on in older files");
         assert!(!old.encrypted_dns, "encrypted DNS off in older files");
         assert_eq!(old.dns_resolver, "quad9", "the default resolver in older files");
         fs::write(

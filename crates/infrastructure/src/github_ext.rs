@@ -6,6 +6,11 @@
 //! seen the hash and the permissions. The installed package, its hash and its permissions are
 //! then pinned (`extensions-github.json`): an update is a new release found by the same file
 //! pattern, prepared and shown the same way before it replaces anything.
+//!
+//! Add from a link (0.8.25): the same steps for a package offered by an address (`.crx` of
+//! Chromium, `.zip`, `.xpi`), for extensions with no release on GitHub (`direct`): downloaded
+//! over HTTPS, its CRX header dropped (`domain::market::crx_payload`), shown, then pinned in
+//! the same file. Such an extension has no updates to look for.
 
 use crate::{catalog, market, updater};
 use blackhole_domain::{
@@ -68,6 +73,8 @@ pub struct Prepared {
     pub digest_checked: bool,
     pub permissions: Vec<String>,
     pub bytes: Vec<u8>,
+    /// Added from a link, not from a GitHub release.
+    pub direct: bool,
 }
 
 impl std::fmt::Debug for Prepared {
@@ -93,10 +100,16 @@ pub struct Pinned {
     pub size: u64,
     pub permissions: Vec<String>,
     pub installed_at: u64,
+    /// Added from a link (`owner` is the host, no repository, no updates).
+    #[serde(default)]
+    pub direct: bool,
 }
 
 impl Pinned {
     pub fn repo_path(&self) -> String {
+        if self.direct {
+            return self.owner.clone();
+        }
         format!("{}/{}", self.owner, self.repo)
     }
 
@@ -111,8 +124,8 @@ impl Pinned {
             id: self.id.clone(),
             name: self.name.clone(),
             description: Default::default(),
-            homepage: format!("https://github.com/{}", self.repo_path()),
-            category: "github".into(),
+            homepage: if self.direct { self.url.clone() } else { format!("https://github.com/{}", self.repo_path()) },
+            category: if self.direct { "link" } else { "github" }.into(),
             version: self.version.clone(),
             platforms: rules::platform_key(std::env::consts::OS)
                 .map(|k| (k.to_owned(), package))
@@ -199,7 +212,39 @@ pub fn check_package(release: &Release, asset: &Asset, bytes: Vec<u8>) -> Result
         digest_checked: asset.digest.is_some(),
         permissions,
         bytes,
+        direct: false,
     })
+}
+
+/// Checks a package downloaded from a link: a zip (its CRX header dropped) with a manifest.
+pub fn check_direct(url: &url::Url, bytes: &[u8]) -> Result<Prepared, String> {
+    let zip = rules::crx_payload(bytes).ok_or_else(|| message("msg.github_not_extension", &[]))?.to_vec();
+    let (version, permissions) = market::manifest_info(&zip).map_err(|_| message("msg.github_not_extension", &[]))?;
+    let file = rules::direct_file_name(url);
+    let stem = file.rsplit_once('.').map_or(file.as_str(), |(s, _)| s).to_owned();
+    let name = rules::display_name(&market::manifest_name(&zip).unwrap_or_default(), &stem);
+    Ok(Prepared {
+        id: rules::direct_id(url),
+        owner: url.host_str().unwrap_or_default().to_owned(),
+        repo: String::new(),
+        tag: String::new(),
+        name,
+        version: version.trim_start_matches('v').to_owned(),
+        asset: file,
+        url: url.to_string(),
+        size: zip.len() as u64,
+        sha256: market::hex(&Sha256::digest(&zip)),
+        digest_checked: false,
+        permissions,
+        bytes: zip,
+        direct: true,
+    })
+}
+
+/// Blocking: downloads the package at `url` (https) and checks it.
+pub fn prepare_direct(url: &url::Url) -> Result<Prepared, String> {
+    let bytes = catalog::fetch_direct(url.as_str())?;
+    check_direct(url, &bytes)
 }
 
 /// Blocking: downloads `asset_name` of `release` and checks it.
@@ -216,7 +261,7 @@ pub fn prepare(release: &Release, asset_name: &str) -> Result<Prepared, String> 
 /// What an update of `pinned` brings, if its repository has a newer release with the same kind
 /// of file: that release and the file's name.
 pub fn update_of(pinned: &Pinned, release: &Release) -> Option<String> {
-    if release.tag == pinned.tag {
+    if pinned.direct || release.tag == pinned.tag {
         return None;
     }
     release
@@ -245,7 +290,10 @@ pub fn load(data: &Path) -> Vec<Pinned> {
         .and_then(|b| serde_json::from_slice::<Vec<Pinned>>(&b).ok())
         .unwrap_or_default()
         .into_iter()
-        .filter(|p| rules::valid_id(&p.id) && rules::trusted_package_url(&p.url) && rules::valid_sha256(&p.sha256))
+        .filter(|p| {
+            let source = if p.direct { rules::direct_package_url(&p.url).is_some() } else { rules::trusted_package_url(&p.url) };
+            rules::valid_id(&p.id) && source && rules::valid_sha256(&p.sha256)
+        })
         .collect()
 }
 
@@ -269,12 +317,13 @@ pub fn install(data: &Path, prepared: &Prepared, now: u64) -> Result<(Pinned, Pa
         version: prepared.version.clone(),
         tag: prepared.tag.clone(),
         asset: prepared.asset.clone(),
-        pattern: rules::asset_pattern(&prepared.asset, &prepared.tag),
+        pattern: if prepared.direct { String::new() } else { rules::asset_pattern(&prepared.asset, &prepared.tag) },
         url: prepared.url.clone(),
         sha256: prepared.sha256.clone(),
         size: prepared.size,
         permissions: prepared.permissions.clone(),
         installed_at: now,
+        direct: prepared.direct,
     };
     let mut list = load(data);
     list.retain(|p| p.id != pinned.id);
@@ -373,5 +422,27 @@ mod tests {
         assert_eq!(update_of(&pinned, &next), None);
         remove(dir.path(), &pinned.id);
         assert!(load(dir.path()).is_empty() && !catalog::is_installed(dir.path(), &pinned.id));
+    }
+
+    #[test]
+    fn a_package_from_a_link_is_checked_pinned_and_never_updated() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = package(r#"{"name":"Night Owl","version":"2.0.1","permissions":["storage"]}"#);
+        let mut crx = b"Cr24".to_vec();
+        crx.extend(3u32.to_le_bytes());
+        crx.extend(4u32.to_le_bytes());
+        crx.extend(b"head");
+        crx.extend(&zip);
+        let url = url::Url::parse("https://downloads.example.com/night-owl.crx").unwrap();
+        let p = check_direct(&url, &crx).unwrap();
+        assert!(p.direct && p.id.starts_with("url-downloads-example-com-"));
+        assert_eq!((p.name.as_str(), p.version.as_str(), p.asset.as_str()), ("Night Owl", "2.0.1", "night-owl.crx"));
+        assert_eq!(p.bytes, zip);
+        assert!(check_direct(&url, b"<html>login</html>").is_err());
+        let (pinned, path) = install(dir.path(), &p, 9).unwrap();
+        assert!(path.is_file() && pinned.direct && pinned.pattern.is_empty());
+        assert_eq!(load(dir.path()), std::slice::from_ref(&pinned));
+        assert_eq!(pinned.entry().category, "link");
+        assert_eq!(update_of(&pinned, &release()), None);
     }
 }

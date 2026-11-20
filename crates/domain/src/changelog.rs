@@ -1,6 +1,19 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.25",
+        &[
+            "Paired devices now share their extensions too, beside tabs and history: one switch in Settings > Devices, where a single card says what syncs. Market extensions install by themselves; those added from GitHub or a link are proposed first. Removing an extension never removes it elsewhere",
+            "Add an extension from a link, for extensions with no release on GitHub: a .crx, .zip or .xpi package, or its Chrome Web Store or Edge Add-ons page (Settings > Extensions > Add an extension). Like GitHub ones, you see its fingerprint and permissions before installing it",
+            "Copy image and Save image in the right-click menu of a picture, thumbnails inside links included (a saved picture lands in Downloads). Every Copy of the menus now goes straight to the system clipboard, and Ctrl+Shift+C (Cmd+Shift+C) copies the address of the page",
+            "YouTube ads: the Shields now take them out of what the player is told to play, also in videos embedded by other sites, and still skip one that plays anyway",
+            "The loading line now runs at the top of the page itself",
+            "Picture in Picture of a live stream (Twitch) can be paused from its window",
+            "Split view from a quick access tile (right-click). The size of the tiles is now chosen in Settings > General only",
+            "Opening the Settings plays the black hole of the welcome tour",
+        ],
+    ),
+    (
         "0.8.24",
         &[
             "Fingerprinting protection: what sites read to recognise your device (canvas, WebGL, audio, graphics card, core count) differs on every site and every launch. On by default, in Settings > Privacy > Shields",

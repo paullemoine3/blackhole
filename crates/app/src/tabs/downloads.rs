@@ -212,6 +212,34 @@ impl Running {
         self.ui_library();
     }
 
+    /// A file the shell wrote itself ("Save image", 0.8.25): a finished download, with its card
+    /// in the sidebar and its line in Library > Downloads, like one of the engine.
+    pub(crate) fn download_saved(&mut self, url: String, path: PathBuf) {
+        let id = self.downloads.records.iter().map(|d| d.id).max().unwrap_or(0) + 1;
+        let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let size = std::fs::metadata(&path).map_or(0, |m| m.len());
+        self.downloads.records.push(blackhole_infrastructure::store::DownloadRec {
+            id,
+            name: name.clone(),
+            path: path.to_string_lossy().into_owned(),
+            url,
+            at: now_secs(),
+            done: true,
+            ok: true,
+        });
+        self.save_downloads();
+        self.downloads.live.insert(
+            id,
+            DownloadLive { name, path, received: size, total: Some(size.max(1)), finished: Some((true, Instant::now())) },
+        );
+        let list = self.downloads_json();
+        self.ui(format!("window.bh&&bh.downloads({list})"));
+        self.reveal_sidebar(DOWNLOAD_REVEAL);
+        self.sync_bar_notice();
+        self.notify(notices::Notice::Done, &t("toast.image_saved"), serde_json::Value::Null);
+        self.ui_library();
+    }
+
     /// A download ended: its record and card updated, the tab opened for it alone closed.
     pub(crate) fn download_done(&mut self, url: String, path: Option<PathBuf>, ok: bool) {
         if let Some(tab) = self.downloads.only_tabs.remove(&url) {
