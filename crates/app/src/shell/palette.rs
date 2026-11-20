@@ -3,6 +3,7 @@
 use blackhole_domain::{SpaceId, suggest, TabId};
 use blackhole_domain::verbs::Verb;
 use serde_json::json;
+use wry::WebView;
 
 use crate::views;
 use crate::i18n::{t, tf};
@@ -11,6 +12,20 @@ use crate::platform::default_browser_unavailable;
 use crate::shell::layout::palette_rect;
 use crate::shell::render::SPACE_COLORS;
 use crate::state::Running;
+
+/// The command bar overlay and what it shows: its mode, a context menu, the emoji picker.
+#[derive(Default)]
+pub(crate) struct Palette {
+    /// The overlay's page; rebuilt whenever a view is added so it stays on top.
+    pub(crate) view: Option<WebView>,
+    /// Context menu being shown by the overlay (position and items).
+    pub(crate) menu: Option<serde_json::Value>,
+    pub(crate) ready: bool,
+    pub(crate) open: bool,
+    pub(crate) mode: String,
+    /// Space or folder whose emoji the picker is editing.
+    pub(crate) icon_target: Option<(String, u64)>,
+}
 
 impl Running {
     pub(crate) fn open_palette(&mut self, mode: &str) {
@@ -22,38 +37,38 @@ impl Running {
         }
         self.close_peek();
         self.flush_raise(true);
-        self.palette_mode = mode.to_owned();
-        self.palette_open = true;
+        self.palette.mode = mode.to_owned();
+        self.palette.open = true;
         self.apply_slots();
-        if let Some(palette) = &self.palette {
+        if let Some(palette) = &self.palette.view {
             let _ = palette.set_bounds(palette_rect(true, &self.window_size()));
             let _ = palette.set_visible(true);
             let _ = palette.focus();
         }
-        if self.palette_ready {
+        if self.palette.ready {
             self.push_palette();
         }
     }
 
     pub(crate) fn push_palette(&self) {
         let state = self.palette_state();
-        if matches!(self.palette_mode.as_str(), "new" | "url") {
+        if matches!(self.palette.mode.as_str(), "new" | "url") {
             self.suggest_prepare(state["actions"].as_array().map_or(&[][..], Vec::as_slice));
         }
-        if let Some(palette) = &self.palette {
+        if let Some(palette) = &self.palette.view {
             let _ = palette.evaluate_script(&format!("window.bh&&bh.open({state})"));
         }
     }
 
     pub(crate) fn close_palette(&mut self) {
         self.burner_next = false;
-        if !self.palette_open {
+        if !self.palette.open {
             return;
         }
-        self.palette_open = false;
+        self.palette.open = false;
         self.sidebar.hold_for_menu(false);
         self.apply_slots();
-        if let Some(palette) = &self.palette {
+        if let Some(palette) = &self.palette.view {
             let _ = palette.evaluate_script("window.bh&&bh.hide()");
             let _ = palette.set_visible(false);
             let _ = palette.set_bounds(palette_rect(false, &self.window_size()));
@@ -61,7 +76,7 @@ impl Running {
         self.apply_focus();
         // Closing the sign-in prompt any other way (Esc, click outside, another palette)
         // cancels it: the server's own 401 page shows.
-        if self.palette_mode == "auth" {
+        if self.palette.mode == "auth" {
             if let Some(id) = self.auth.shown.take() {
                 self.answer_auth(id, None);
             }
@@ -187,11 +202,11 @@ impl Running {
                 actions.push(json!({"id": "route_clear", "label": tf("palette.route_clear", &[("site", site)]), "hint": "Air Traffic"}));
             }
         }
-        let url = match (self.palette_mode.as_str(), active) {
+        let url = match (self.palette.mode.as_str(), active) {
             ("url", Some(tab)) => tab.url.to_string(),
             _ => String::new(),
         };
-        let target = self.icon_target.as_ref().and_then(|(kind, id)| {
+        let target = self.palette.icon_target.as_ref().and_then(|(kind, id)| {
             let (name, icon) = if kind == "space" {
                 let s = ws.spaces().iter().find(|s| s.id.0 == *id)?;
                 (&s.name, &s.icon)
@@ -203,7 +218,7 @@ impl Running {
         });
         json!({
             "target": target,
-            "mode": self.palette_mode,
+            "mode": self.palette.mode,
             "burner": self.burner_next,
             "recall": self.recall_state(),
             "animations": self.svc.settings().animations,
@@ -211,7 +226,7 @@ impl Running {
             "url": url,
             "engine": self.svc.settings().search_engine.label(),
             "color": space.color,
-            "menu": self.menu,
+            "menu": self.palette.menu,
             "compare": self.comparing.result,
             "auth": self.auth.shown.and_then(|id| self.auth.prompts.get(id)).map(|c| json!({
                 "id": self.auth.shown,
@@ -223,7 +238,7 @@ impl Running {
                 "saved": self.auth.shown.map(|id| self.auth_saved_users(id)).unwrap_or_default(),
             })),
             // The highlights, watched areas, archive and downloads the search also looks in.
-            "found": if matches!(self.palette_mode.as_str(), "new" | "url") { self.found_json() } else { json!(null) },
+            "found": if matches!(self.palette.mode.as_str(), "new" | "url") { self.found_json() } else { json!(null) },
             "boostHost": site,
             "boost": site.as_deref().and_then(|h| self.svc.boost_for(h)),
             // Every row carries its `key` (domain::suggest): the same page met twice is offered once.
@@ -238,12 +253,12 @@ impl Running {
     pub(crate) fn run_action(&mut self, id: &str) {
         let site = self.active_site();
         if id == "boost" {
-            self.palette_mode = "boost".to_owned();
+            self.palette.mode = "boost".to_owned();
             self.push_palette();
             return;
         }
         if id == "recall" {
-            self.palette_mode = "recall".to_owned();
+            self.palette.mode = "recall".to_owned();
             self.push_palette();
             return;
         }

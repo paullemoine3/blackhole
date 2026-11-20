@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::time::Instant;
 
 use blackhole_application::{BrowserService, WorkspaceRepository};
@@ -12,7 +11,6 @@ use blackhole_infrastructure::{
     catalog,
     default_privacy_policy,
     extensions_dir,
-    import,
     JsonWorkspaceRepository,
     load_extensions,
 };
@@ -38,14 +36,16 @@ use crate::features::{
     trackers,
     watching,
 };
-use crate::features::imports::file_bookmarks;
+use crate::features::imports::{file_bookmarks, Imports};
 use crate::features::market::Market;
 use crate::features::updates::Updates;
 use crate::ipc::Mailbox;
 use crate::platform::trace_startup;
 use crate::shell::pane_motion;
+use crate::shell::home::Onboarding;
 use crate::shell::layout::{BAR_HEIGHT, card_rect, chrome_rect};
 use crate::shell::pages::{BAR_HTML, CHROME_HTML, HOME_HTML};
+use crate::shell::palette::Palette;
 use crate::shell::panels::LazyView;
 use crate::shell::sidebar::Sidebar;
 use crate::shell::windows::{
@@ -56,10 +56,12 @@ use crate::shell::windows::{
     window_tasks,
 };
 use crate::state::Running;
-use crate::tabs::{errors, favicons, media};
+use crate::tabs::{errors, favicons};
 use crate::tabs::auth::Auth;
 use crate::tabs::downloads::Downloads;
 use crate::tabs::lifecycle::{ANCHORS_DELAY, SPARES_DELAY};
+use crate::tabs::media::MediaWatch;
+use crate::tabs::pip::Pip;
 
 #[cfg(feature = "devtools")]
 use crate::devtools;
@@ -273,7 +275,6 @@ impl Running {
         trace_startup("interface views");
 
         let (install_tx, install_rx) = std::sync::mpsc::channel();
-        let (import_tx, import_rx) = std::sync::mpsc::channel();
         let (capture_tx, capture_rx) = std::sync::mpsc::channel();
         let market = Market::new(&ext_src_dir);
         let github = github_ext::Sideload::new(&ext_src_dir);
@@ -339,12 +340,7 @@ impl Running {
             // The overlays come once the first views are up (see `flyout`).
             raise_due: Some(Instant::now()),
             shown: None,
-            pip_tab: None,
-            pip_seen: false,
-            pip_faded: None,
-            busy_seen: HashMap::new(),
-            pip_on_blur: None,
-            blur_due: None,
+            pip: Pip::default(),
             card_left: std::cell::Cell::new(f64::NAN),
             bar_left: std::cell::Cell::new(f64::NAN),
             bar_notice: std::cell::Cell::new((true, 0)),
@@ -363,12 +359,8 @@ impl Running {
             received: None,
             #[cfg(target_os = "macos")]
             cards_rounded: Instant::now(),
-            media: Arc::default(),
-            media_due: Instant::now(),
-            media_hint: HashMap::new(),
+            media: MediaWatch::new(),
             crashed: HashMap::new(),
-            media_seen: serde_json::Value::Null,
-            media_hold: media::Linger::new(media::LINGER),
             burner_next: false,
             pilot: None,
             panes: pane_motion::PaneMotion::default(),
@@ -395,23 +387,18 @@ impl Running {
             comparing: compare::Comparing::new(),
             tidied: None,
             tidy_dismissed: false,
-            media_dismissed: HashMap::new(),
-            pip_shell_exits: HashMap::new(),
             svc,
             mailbox,
             sidebar,
             web_context,
             blocked: BlockLog::default(),
             settings_tab: None,
-            bookmark_list: BookmarkStore::new(&data).load(),
-            bookmarks: BookmarkStore::new(&data),
+            imports: Imports::new(&data),
             favicons,
             icons_for_ui: std::cell::Cell::new(true),
             icons_for_home: std::cell::Cell::new(true),
             ui_stale: false,
             last_flush: Instant::now(),
-            import_sources: import::detect(),
-            import_msg: String::new(),
             app_ext,
             bar_exts: json!([]),
             bar_exts_at: Instant::now(),
@@ -419,12 +406,7 @@ impl Running {
             settings_seq: 0,
             home_visible: true,
             splitbar: LazyView::new(),
-            palette: None,
-            menu: None,
-            palette_ready: false,
-            palette_open: false,
-            palette_mode: String::new(),
-            icon_target: None,
+            palette: Palette::default(),
             peek: None,
             passkey_refusals: Default::default(),
             #[cfg(windows)]
@@ -440,11 +422,7 @@ impl Running {
             },
             ext_loaded: 0,
             intro: !is_new_window(),
-            onboarding,
-            onboarding_open: false,
-            dimmed: std::cell::Cell::new(false),
-            onboarding_imports: 0,
-            default_asked: false,
+            onboarding: Onboarding::new(onboarding),
             market,
             github,
             updates: Updates::new(),
@@ -453,8 +431,6 @@ impl Running {
             install_errors: HashMap::new(),
             install_tx,
             install_rx,
-            import_tx,
-            import_rx,
             webext_sig: String::new(),
             downloads: Downloads::new(&data),
             aborted: HashMap::new(),

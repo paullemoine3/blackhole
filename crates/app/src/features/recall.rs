@@ -179,13 +179,13 @@ impl Running {
                 Event::Results { id, hits } => {
                     self.recall.searching = false;
                     // Recall mode, or the "Recall" group of an ordinary search.
-                    if self.palette_open && matches!(self.palette_mode.as_str(), "recall" | "new" | "url") {
+                    if self.palette.open && matches!(self.palette.mode.as_str(), "recall" | "new" | "url") {
                         let list: Vec<Value> = hits
                             .iter()
                             .map(|h| json!({"url": h.url, "title": h.title, "snippet": h.snippet, "at": h.at}))
                             .collect();
                         let answer = json!({"seq": id, "hits": list, "now": now()});
-                        if let Some(palette) = &self.palette {
+                        if let Some(palette) = &self.palette.view {
                             let _ = palette.evaluate_script(&format!(
                                 "window.bh&&bh.recall&&bh.recall({answer})"
                             ));
@@ -265,7 +265,7 @@ impl Running {
                     self.recall.due.clear();
                 }
                 // The command bar's own switch: it shows the search at once.
-                if self.palette_open && self.palette_mode == "recall" {
+                if self.palette.open && self.palette.mode == "recall" {
                     self.push_palette();
                 }
                 self.ui_state();

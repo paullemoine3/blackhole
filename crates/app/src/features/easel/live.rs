@@ -104,7 +104,7 @@ impl Running {
         // The palette and the peek only cover the main window: an Easel window of its own keeps
         // its live views.
         let embedded = self.easel_tab || self.easel_side();
-        let covered = embedded && (self.palette_open || self.peek.is_some());
+        let covered = embedded && (self.palette.open || self.peek.is_some());
         let _ = view.set_visible(slot.visible && !covered && slot.w >= 2.0 && slot.h >= 2.0);
     }
 

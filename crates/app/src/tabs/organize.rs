@@ -66,7 +66,7 @@ impl Running {
                 }
             }
             UiCommand::PickIcon { kind, id } => {
-                self.icon_target = Some((kind, id));
+                self.palette.icon_target = Some((kind, id));
                 self.open_palette("emoji");
             }
             UiCommand::SetSpaceIcon { id, icon } => {

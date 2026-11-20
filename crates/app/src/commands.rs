@@ -1,6 +1,5 @@
 //! Commands sent by the shell's pages (`UiCommand`), routed to the module that handles them.
 
-
 use blackhole_domain::TabId;
 use serde_json::json;
 use url::Url;
@@ -33,8 +32,8 @@ impl Running {
                 }
             }
             UiCommand::PaletteReady => {
-                self.palette_ready = true;
-                if self.palette_open {
+                self.palette.ready = true;
+                if self.palette.open {
                     self.push_palette();
                 }
             }
@@ -60,7 +59,7 @@ impl Running {
                 } else {
                     0.0
                 };
-                self.menu = Some(json!({"x": x + dx, "y": y + BAR_HEIGHT, "items": items}));
+                self.palette.menu = Some(json!({"x": x + dx, "y": y + BAR_HEIGHT, "items": items}));
                 self.open_palette("menu");
                 // A menu of the floating sidebar (the space colour picker above all): the
                 // overlay covers the flyout, which must not slide away behind the menu.
@@ -294,7 +293,7 @@ impl Running {
     pub(crate) fn shortcut(&mut self, key: &str) {
         match key {
             "escape" => {
-                if self.palette_open {
+                if self.palette.open {
                     self.close_palette();
                 } else {
                     self.close_peek();
@@ -304,14 +303,14 @@ impl Running {
             "enter" => {
                 if self.peek.is_some() {
                     self.peek_to_tab();
-                } else if self.palette_open && self.palette_mode == "boost" {
-                    if let Some(palette) = &self.palette {
+                } else if self.palette.open && self.palette.mode == "boost" {
+                    if let Some(palette) = &self.palette.view {
                         let _ = palette.evaluate_script("window.bh&&bh.save&&bh.save()");
                     }
                 }
                 return;
             }
-            _ if self.peek.is_some() || (self.palette_open && !matches!(key, "l" | "t")) => return,
+            _ if self.peek.is_some() || (self.palette.open && !matches!(key, "l" | "t")) => return,
             _ => {}
         }
         match key {

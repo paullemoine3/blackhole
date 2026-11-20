@@ -73,6 +73,34 @@ pub(crate) fn import_file(
     store_bookmarks(bookmarks, import::parse_html(&text), &message("settings.import_from_html", &[]), space)
 }
 
+/// Bookmarks kept by the profile, the browsers found to import from, and imports running.
+pub(crate) struct Imports {
+    pub(crate) store: BookmarkStore,
+    /// The bookmarks imported so far (filed as tabs of their space).
+    pub(crate) list: Vec<import::Bookmark>,
+    /// Browsers and profiles found on this computer.
+    pub(crate) sources: Vec<import::Source>,
+    /// What the last import said (Settings > Import).
+    pub(crate) msg: String,
+    pub(crate) tx: std::sync::mpsc::Sender<ImportDone>,
+    pub(crate) rx: std::sync::mpsc::Receiver<ImportDone>,
+}
+
+impl Imports {
+    pub(crate) fn new(data: &std::path::Path) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let store = BookmarkStore::new(data);
+        Self {
+            list: store.load(),
+            store,
+            sources: import::detect(),
+            msg: String::new(),
+            tx,
+            rx,
+        }
+    }
+}
+
 impl Running {
     /// Imported bookmarks are ordinary tabs (drag & drop, close, folders) filed in folders.
     pub(crate) fn file_bookmarks(&mut self, list: Vec<import::Bookmark>) {
@@ -81,8 +109,8 @@ impl Running {
 
     pub(crate) fn store_dropped(&mut self, list: Vec<import::Bookmark>) -> String {
         let space = self.svc.workspace().active_space().id.0;
-        let (msg, list) = store_bookmarks(&self.bookmarks, list, &message("settings.import_from_drop", &[]), space);
-        self.bookmark_list = self.bookmarks.load();
+        let (msg, list) = store_bookmarks(&self.imports.store, list, &message("settings.import_from_drop", &[]), space);
+        self.imports.list = self.imports.store.load();
         self.file_bookmarks(list);
         self.ui_state();
         self.toast(&msg);
@@ -97,7 +125,7 @@ impl Running {
             + Send
             + 'static,
     ) {
-        let (tx, data) = (self.import_tx.clone(), self.data.clone());
+        let (tx, data) = (self.imports.tx.clone(), self.data.clone());
         std::thread::spawn(move || {
             let (bookmarks, vault) = (BookmarkStore::new(&data), Vault::new(&data));
             let (msg, list) = match job(&bookmarks, &vault) {
@@ -114,12 +142,12 @@ impl Running {
     pub(crate) fn handle_imports(&mut self, command: UiCommand) {
         match command {
             UiCommand::ImportScan => {
-                self.import_sources = import::detect();
+                self.imports.sources = import::detect();
                 self.ui_settings();
                 self.spawn_import(|_, _| None);
             }
             UiCommand::ImportBookmarks { source } => {
-                let found = self.import_sources.iter().find(|s| s.id == source).cloned();
+                let found = self.imports.sources.iter().find(|s| s.id == source).cloned();
                 let space = self.svc.workspace().active_space().id.0;
                 self.spawn_import(move |bookmarks, _| {
                     Some(match found {
@@ -134,7 +162,7 @@ impl Running {
             UiCommand::AddBookmark { title, url, folder } => {
                 let allowed =
                     url::Url::parse(&url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
-                self.import_msg = if allowed {
+                self.imports.msg = if allowed {
                     let title = if title.trim().is_empty() {
                         url.clone()
                     } else {
@@ -152,7 +180,7 @@ impl Running {
             }
             UiCommand::ImportHtml { text } => {
                 let list = import::parse_html(&text);
-                self.import_msg = self.store_dropped(list);
+                self.imports.msg = self.store_dropped(list);
             }
             UiCommand::ImportFile { kind } => {
                 let space = self.svc.workspace().active_space().id.0;

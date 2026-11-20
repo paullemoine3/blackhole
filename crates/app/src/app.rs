@@ -93,7 +93,7 @@ impl ApplicationHandler<Wake> for App {
             }
             app.service_compare();
             app.service_errors();
-            if app.blur_due.is_some() {
+            if app.pip.blur_due.is_some() {
                 app.pip_on_blur();
                 wake = wake.min(BLUR_DELAY);
             }
@@ -192,11 +192,11 @@ impl ApplicationHandler<Wake> for App {
                 app.apply_focus();
                 app.pip_back_on_focus();
                 // Back from the system's dialog or Settings app: the tour reads the choice again.
-                if app.default_asked && app.onboarding.is_some() && app.start_page_front() {
+                if app.onboarding.default_asked && app.onboarding.mode.is_some() && app.start_page_front() {
                     app.ui_home();
                 }
             }
-            WindowEvent::Focused(false) => app.blur_due = Some(Instant::now() + BLUR_DELAY),
+            WindowEvent::Focused(false) => app.pip.blur_due = Some(Instant::now() + BLUR_DELAY),
             _ => {}
         }
     }

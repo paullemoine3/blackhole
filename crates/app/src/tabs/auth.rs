@@ -77,7 +77,7 @@ impl Running {
                 self.auth.replies.remove(&id);
                 if self.auth.shown == Some(id) {
                     self.auth.shown = None;
-                    if self.palette_mode == "auth" {
+                    if self.palette.mode == "auth" {
                         self.close_palette();
                     }
                 }
@@ -98,7 +98,7 @@ impl Running {
     pub(crate) fn answer_auth(&mut self, id: u64, credentials: Option<(String, String)>) {
         if self.auth.shown == Some(id) {
             self.auth.shown = None;
-            if self.palette_mode == "auth" {
+            if self.palette.mode == "auth" {
                 self.close_palette();
             }
         }

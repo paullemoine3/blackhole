@@ -68,9 +68,9 @@ impl Running {
                 })
             }).collect::<Vec<_>>(),
             "import": json!({
-                "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
-                "message": i18n::render(&self.import_msg),
-                "bookmarks": self.bookmarks.load().len(),
+                "sources": self.imports.sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
+                "message": i18n::render(&self.imports.msg),
+                "bookmarks": self.imports.store.load().len(),
                 "logins": self.passwords.count(),
             }),
             "passwords": self.passwords.state_json(settings),

@@ -588,7 +588,7 @@ impl Running {
                     l.password.zeroize();
                 }
                 p.persist();
-                self.import_msg = message;
+                self.imports.msg = message;
             }
         }
     }

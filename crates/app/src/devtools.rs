@@ -111,7 +111,7 @@ impl Running {
                     "flyout" => self.flyout.as_ref().unwrap_or(&self.home),
                     "bar" => &self.bar,
                     "home" => &self.home,
-                    "palette" => self.palette.as_ref().unwrap_or(&self.home),
+                    "palette" => self.palette.view.as_ref().unwrap_or(&self.home),
                     "peek" => self.peek.as_ref().map_or(&self.home, |p| &p.page),
                     // The popup of an extension's button (Windows), when one is open.
                     #[cfg(windows)]
@@ -174,8 +174,8 @@ impl Running {
                 let state = serde_json::json!({
                     "active": ws.active_tab().map(|t| t.url.as_str()),
                     "blocked": self.blocked.total(),
-                    "mediaHints": self.media_hint.len(),
-                    "mediaPlaying": self.media.lock().map_or(0, |m| m.values().filter(|p| p.playing).count()),
+                    "mediaHints": self.media.hints.len(),
+                    "mediaPlaying": self.media.probes.lock().map_or(0, |m| m.values().filter(|p| p.playing).count()),
                     "easelSide": self.easel_side(),
                     "easelTab": self.easel_tab,
                     "easelWindow": self.easel.is_some(),

@@ -87,7 +87,7 @@ impl Running {
                 spaces: Vec::new(),
             });
         }
-        for b in self.bookmarks.load() {
+        for b in self.imports.store.load() {
             let Ok(url) = Url::parse(&b.url) else { continue };
             rows.push(Row {
                 kind: RowKind::Bookmark,
@@ -158,7 +158,7 @@ impl Running {
             json!({"text": c.text, "url": c.url.as_str(), "key": key})
         });
         let answer = json!({"seq": seq, "query": query, "rows": out, "complete": complete});
-        if let Some(palette) = &self.palette {
+        if let Some(palette) = &self.palette.view {
             let _ = palette.evaluate_script(&format!("window.bh&&bh.suggested&&bh.suggested({answer})"));
         }
     }

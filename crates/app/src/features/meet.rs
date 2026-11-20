@@ -307,7 +307,7 @@ impl Running {
 
     /// Whether the last probe of a tab saw its camera or microphone open (a call).
     pub(crate) fn in_call(&self, tab: TabId) -> bool {
-        self.media
+        self.media.probes
             .lock()
             .ok()
             .and_then(|probes| probes.get(&tab.0).copied())

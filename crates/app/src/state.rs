@@ -2,13 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use blackhole_application::BrowserService;
 use blackhole_domain::{BlockLog, Easels, Removed, TabId};
-use blackhole_infrastructure::{import, JsonWorkspaceRepository};
-use blackhole_infrastructure::store::{BookmarkStore, EaselStore};
+use blackhole_infrastructure::JsonWorkspaceRepository;
+use blackhole_infrastructure::store::EaselStore;
 use url::Url;
 use winit::window::Window;
 use wry::{WebContext, WebView};
@@ -29,18 +28,21 @@ use crate::features::{
     watching,
 };
 use crate::features::easel::{Capture, EaselWindow};
-use crate::features::imports::ImportDone;
+use crate::features::imports::Imports;
 use crate::features::market::Market;
 use crate::features::updates::Updates;
 use crate::ipc::Mailbox;
 use crate::shell::pane_motion;
+use crate::shell::home::Onboarding;
+use crate::shell::palette::Palette;
 use crate::shell::panels::LazyView;
 use crate::shell::peek::{Peek, PEEK_TAB};
 use crate::shell::sidebar::Sidebar;
-use crate::tabs::{errors, favicons, media};
+use crate::tabs::{errors, favicons};
 use crate::tabs::auth::Auth;
 use crate::tabs::downloads::Downloads;
-use crate::tabs::media::MediaProbe;
+use crate::tabs::media::MediaWatch;
+use crate::tabs::pip::Pip;
 
 #[cfg(feature = "devtools")]
 use crate::devtools;
@@ -77,21 +79,10 @@ pub(crate) struct Running {
     pub(crate) raise_due: Option<Instant>,
     /// Tab whose page was on screen at the last `sync` (drives automatic Picture in Picture).
     pub(crate) shown: Option<TabId>,
-    /// Tab floated because the user left it for another tab (its "back to tab" button returns).
-    pub(crate) pip_tab: Option<TabId>,
-    /// The probe has seen the floating video of `pip_tab`: its disappearance means it came back.
-    pub(crate) pip_seen: bool,
-    /// `pip_tab` when the probe stopped seeing its floating video, and when. WebKit changes
-    /// the video's mode as soon as the window's "back to tab" button is pressed but only tells
-    /// the page once the window has shrunk back: the page's `pip_left` arrives after the probe
-    /// and must still count as a video the shell floated (`pip::LEFT_EVENT_GRACE`).
-    pub(crate) pip_faded: Option<(TabId, Instant)>,
-    /// Last time a tab was seen in a call or playing media: it keeps its page for a while after.
-    pub(crate) busy_seen: HashMap<TabId, Instant>,
-    /// Tab floated because the window lost focus; it returns when the window gets focus back.
-    pub(crate) pip_on_blur: Option<TabId>,
-    /// When a focus loss of the window becomes a real blur, unless focus came back before.
-    pub(crate) blur_due: Option<Instant>,
+    /// Videos the shell floated in Picture in Picture, and why.
+    pub(crate) pip: Pip,
+    /// What the tabs play: the probes' reports, the sidebar's media card, the tabs kept busy.
+    pub(crate) media: MediaWatch,
     /// Left edge of the page card inside the sidebar page, as last sent to its shadow.
     pub(crate) card_left: std::cell::Cell<f64>,
     pub(crate) bar_left: std::cell::Cell<f64>,
@@ -123,15 +114,8 @@ pub(crate) struct Running {
     pub(crate) received: Option<(String, String, i64)>,
     #[cfg(target_os = "macos")]
     pub(crate) cards_rounded: Instant,
-    pub(crate) media: Arc<Mutex<HashMap<u64, MediaProbe>>>,
-    pub(crate) media_due: Instant,
-    /// When each tab last said its media may have changed (see `PageEvent::Media`).
-    pub(crate) media_hint: HashMap<u64, Instant>,
     /// When the engine process of a tab last died, to reload it once and not in a loop.
     pub(crate) crashed: HashMap<TabId, Instant>,
-    pub(crate) media_seen: serde_json::Value,
-    /// Last report with media per tab: a short gap in the probes keeps the card on screen.
-    pub(crate) media_hold: media::Linger<MediaProbe>,
     /// The next address typed in the command bar opens in a black hole tab.
     pub(crate) burner_next: bool,
     /// Pilot split: the tab whose links open in the other pane (session only).
@@ -184,11 +168,6 @@ pub(crate) struct Running {
     /// The last tidy-up, for its Undo; whether the suggestion was dismissed this session.
     pub(crate) tidied: Option<blackhole_domain::Tidied>,
     pub(crate) tidy_dismissed: bool,
-    /// Tabs whose media card was closed, and when; they come back when the tab plays again.
-    pub(crate) media_dismissed: HashMap<u64, Instant>,
-    /// Tabs whose floating video the shell itself just brought back (their "left PiP" is no
-    /// request from the user).
-    pub(crate) pip_shell_exits: HashMap<u64, Instant>,
     pub(crate) svc: BrowserService<JsonWorkspaceRepository>,
     pub(crate) mailbox: Mailbox,
     pub(crate) sidebar: Sidebar,
@@ -196,10 +175,8 @@ pub(crate) struct Running {
     pub(crate) blocked: BlockLog,
     /// Section requested for the settings window; `settings_seq` changes with each request.
     pub(crate) settings_tab: Option<String>,
-    pub(crate) bookmarks: BookmarkStore,
-    pub(crate) bookmark_list: Vec<import::Bookmark>,
-    pub(crate) import_sources: Vec<import::Source>,
-    pub(crate) import_msg: String,
+    /// Bookmarks kept by the profile, the browsers found to import from, and imports running.
+    pub(crate) imports: Imports,
     pub(crate) app_ext: Vec<blackhole_macos_webext::AppExtension>,
     pub(crate) bar_exts: serde_json::Value,
     pub(crate) bar_exts_at: Instant,
@@ -207,16 +184,10 @@ pub(crate) struct Running {
     pub(crate) home_visible: bool,
     /// "What's new" shown on the start page until dismissed; empty when there is nothing to show.
     pub(crate) release_notes: Vec<serde_json::Value>,
-    /// Command bar overlay; rebuilt whenever a view is added so it stays on top.
+    /// The strip above a split view (each pane's title and close button).
     pub(crate) splitbar: LazyView,
-    pub(crate) palette: Option<WebView>,
-    /// Context menu being shown by the overlay (position and items).
-    pub(crate) menu: Option<serde_json::Value>,
-    pub(crate) palette_ready: bool,
-    pub(crate) palette_open: bool,
-    pub(crate) palette_mode: String,
-    /// Space or folder whose emoji the picker is editing.
-    pub(crate) icon_target: Option<(String, u64)>,
+    /// The command bar overlay and what it shows: its mode, a context menu, the emoji picker.
+    pub(crate) palette: Palette,
     pub(crate) peek: Option<Peek>,
     /// Sites already told that their passkey request was refused (macOS, `domain::passkeys`).
     pub(crate) passkey_refusals: blackhole_domain::passkeys::Refusals,
@@ -245,18 +216,8 @@ pub(crate) struct Running {
     /// The launch splash plays on the start page: only for the first window, never for a new
     /// window opened beside others (`is_new_window`).
     pub(crate) intro: bool,
-    /// Welcome tour over the start page (`domain::onboarding`): at the first launch of the
-    /// profile, or replayed from Settings. `None` once closed.
-    pub(crate) onboarding: Option<blackhole_domain::onboarding::Mode>,
-    /// The page shows the tour's dialog: the sidebar and the top bar are dimmed under it while
-    /// the start page is in front (`sync_dim`). `dimmed` is what they show now.
-    pub(crate) onboarding_open: bool,
-    pub(crate) dimmed: std::cell::Cell<bool>,
-    /// Imports finished while the tour was open: the page tells its own from the ones before.
-    pub(crate) onboarding_imports: u32,
-    /// The tour asked the system to make BlackHole the default browser: the choice is read
-    /// again when the window gets the focus back (from the system's dialog or Settings app).
-    pub(crate) default_asked: bool,
+    /// The welcome tour over the start page (`domain::onboarding`).
+    pub(crate) onboarding: Onboarding,
     pub(crate) ext_loaded: usize,
     /// The extension market: the list in use, its background refresh, the last check.
     pub(crate) market: Market,
@@ -269,8 +230,6 @@ pub(crate) struct Running {
     pub(crate) install_errors: HashMap<String, String>,
     pub(crate) install_tx: std::sync::mpsc::Sender<(String, Result<std::path::PathBuf, String>)>,
     pub(crate) install_rx: std::sync::mpsc::Receiver<(String, Result<std::path::PathBuf, String>)>,
-    pub(crate) import_tx: std::sync::mpsc::Sender<ImportDone>,
-    pub(crate) import_rx: std::sync::mpsc::Receiver<ImportDone>,
     pub(crate) webext_sig: String,
     /// The Settings, shown in the page card like a tab (`settings_shown`), with the start
     /// page's background; a shell page created when needed and released after `PANEL_KEEP`.

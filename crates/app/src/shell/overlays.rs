@@ -22,8 +22,8 @@ impl Running {
         let Some(due) = self.raise_due else {
             return false;
         };
-        if self.palette_open || (!force && Instant::now() < due) {
-            return !self.palette_open;
+        if self.palette.open || (!force && Instant::now() < due) {
+            return !self.palette.open;
         }
         self.raise_due = None;
         self.raise_overlays();
@@ -33,7 +33,7 @@ impl Running {
     fn raise_overlays(&mut self) {
         // Restacking the existing overlays: rebuilding them made the sidebar flash.
         if let (Some(hotzone), Some(flyout), Some(palette)) =
-            (&self.hotzone, &self.flyout, &self.palette)
+            (&self.hotzone, &self.flyout, &self.palette.view)
         {
             if views::raise_views(&[hotzone, flyout, palette]) {
                 self.apply_focus();
@@ -76,9 +76,9 @@ impl Running {
             &self.mailbox,
         ) {
             Ok(view) => {
-                self.palette = Some(view);
-                self.palette_ready = false;
-                self.palette_open = false;
+                self.palette.view = Some(view);
+                self.palette.ready = false;
+                self.palette.open = false;
             }
             Err(error) => tracing::error!("cannot create command bar: {error}"),
         }

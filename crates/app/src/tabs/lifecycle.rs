@@ -192,7 +192,7 @@ impl Running {
         }
         // Spares belong to a space's login store: only the active space's are worth keeping.
         let store = self.store_of_space(self.svc.workspace().active_space().id);
-        if self.palette_open || self.peek.is_some() || self.spares.iter().any(|(s, ..)| *s == store)
+        if self.palette.open || self.peek.is_some() || self.spares.iter().any(|(s, ..)| *s == store)
         {
             self.spares_due = Some(Instant::now() + SPARES_DELAY);
             return;
@@ -268,7 +268,7 @@ impl Running {
         let limit = Duration::from_secs(u64::from(self.svc.settings().tab_sleep_minutes) * 60);
         // A tab in a call or playing media is never freed just because the user browsed elsewhere;
         // a short grace period covers a probe that is late or a stream that is restarting.
-        let now_busy: Vec<TabId> = self.media.lock().map_or_else(
+        let now_busy: Vec<TabId> = self.media.probes.lock().map_or_else(
             |_| Vec::new(),
             |probes| {
                 self.tabs
@@ -283,7 +283,7 @@ impl Running {
             },
         );
         for id in now_busy {
-            self.busy_seen.insert(id, now);
+            self.media.busy_seen.insert(id, now);
         }
         // Releasing the page of a black hole tab would end its session: it stays alive until
         // the tab is closed (their number is capped, see `open_burner`). An anchored tab stays
@@ -297,11 +297,11 @@ impl Running {
             .copied()
             .collect();
         for id in holes {
-            self.busy_seen.insert(id, now);
+            self.media.busy_seen.insert(id, now);
         }
-        self.busy_seen
+        self.media.busy_seen
             .retain(|id, seen| self.tabs.contains_key(id) && now.duration_since(*seen) < BUSY_GRACE);
-        let busy: Vec<TabId> = self.busy_seen.keys().copied().collect();
+        let busy: Vec<TabId> = self.media.busy_seen.keys().copied().collect();
         // The sleep delay only starts once the call or the media has stopped.
         for id in &busy {
             self.last_active.insert(*id, now);
@@ -390,23 +390,23 @@ impl Running {
                 }
                 // A video already floating keeps its "back to tab" button working unless the
                 // tab just left is known to play something that replaces it.
-                let floating = self.pip_seen
+                let floating = self.pip.seen
                     && self
-                        .pip_tab
+                        .pip.tab
                         .is_some_and(|t| t != id && self.tabs.contains_key(&t));
                 if !floating || self.is_playing(id) {
-                    self.pip_tab = Some(id);
-                    self.pip_seen = false;
+                    self.pip.tab = Some(id);
+                    self.pip.seen = false;
                 }
             }
             if let Some(back) = active.and_then(|id| self.tabs.get(&id)) {
                 let _ = back.evaluate_script(views::PIP_EXIT_JS);
                 if let Some(id) = active {
-                    self.pip_shell_exits.insert(id.0, Instant::now());
+                    self.pip.shell_exits.insert(id.0, Instant::now());
                 }
-                if self.pip_tab == active {
-                    self.pip_tab = None;
-                    self.pip_seen = false;
+                if self.pip.tab == active {
+                    self.pip.tab = None;
+                    self.pip.seen = false;
                 }
             }
             self.shown = active;
@@ -465,7 +465,7 @@ impl Running {
     }
 
     pub(crate) fn apply_focus(&self) {
-        let _ = if let (true, Some(palette)) = (self.palette_open, &self.palette) {
+        let _ = if let (true, Some(palette)) = (self.palette.open, &self.palette.view) {
             palette.focus()
         } else if let Some(peek) = &self.peek {
             peek.page.focus()
@@ -493,18 +493,18 @@ impl Running {
         self.svc.go_home(id);
         self.marks_push(id, false);
         self.last_active.remove(&id);
-        if let Ok(mut probes) = self.media.lock() {
+        if let Ok(mut probes) = self.media.probes.lock() {
             probes.remove(&id.0);
         }
-        self.media_hold.forget(id.0);
-        self.media_hint.remove(&id.0);
+        self.media.hold.forget(id.0);
+        self.media.hints.remove(&id.0);
         self.crashed.remove(&id);
-        if self.pip_tab == Some(id) {
-            self.pip_tab = None;
-            self.pip_seen = false;
+        if self.pip.tab == Some(id) {
+            self.pip.tab = None;
+            self.pip.seen = false;
         }
-        if self.pip_on_blur == Some(id) {
-            self.pip_on_blur = None;
+        if self.pip.on_blur == Some(id) {
+            self.pip.on_blur = None;
         }
     }
 

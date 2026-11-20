@@ -178,8 +178,8 @@ impl Running {
             let _ = hotzone.set_bounds(hotzone_rect(&self.sidebar, &size));
             let _ = hotzone.set_visible(!self.sidebar.is_open() && !self.library);
         }
-        if let Some(palette) = &self.palette {
-            let _ = palette.set_bounds(palette_rect(self.palette_open, &size));
+        if let Some(palette) = &self.palette.view {
+            let _ = palette.set_bounds(palette_rect(self.palette.open, &size));
         }
         if let Some(peek) = &self.peek {
             let _ = peek

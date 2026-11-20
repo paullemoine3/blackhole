@@ -12,7 +12,7 @@ use crate::state::Running;
 impl Running {
     /// Shows a menu (drawn by the command bar overlay) at a point of the window.
     pub(crate) fn show_menu(&mut self, (x, y): (f64, f64), items: serde_json::Value) {
-        self.menu = Some(json!({"x": x, "y": y, "items": items}));
+        self.palette.menu = Some(json!({"x": x, "y": y, "items": items}));
         self.open_palette("menu");
     }
 

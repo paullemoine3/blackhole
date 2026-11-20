@@ -102,14 +102,14 @@ impl Running {
         self.poll_downloads();
         self.poll_captures();
         self.poll_passwords();
-        while let Ok((msg, _count, list)) = self.import_rx.try_recv() {
+        while let Ok((msg, _count, list)) = self.imports.rx.try_recv() {
             if let Some(m) = msg.filter(|m| !m.is_empty()) {
-                self.import_msg = m;
-                if self.onboarding.is_some() {
-                    self.onboarding_imports += 1;
+                self.imports.msg = m;
+                if self.onboarding.mode.is_some() {
+                    self.onboarding.imports += 1;
                 }
             }
-            self.bookmark_list = self.bookmarks.load();
+            self.imports.list = self.imports.store.load();
             self.file_bookmarks(list);
             self.ui_state();
         }
@@ -174,7 +174,7 @@ impl Running {
             self.webext_sig = sig;
             self.ui_settings();
             // An extension the welcome tour installs is downloaded, installed or failed.
-            if self.onboarding.is_some() && self.start_page_front() {
+            if self.onboarding.mode.is_some() && self.start_page_front() {
                 self.ui_home();
             }
         }
@@ -227,7 +227,7 @@ impl Running {
             UiCommand::InstallCatalog { id } => {
                 self.install_catalog(&id);
                 // The tour shows the download at once (`installing`).
-                if self.onboarding.is_some() {
+                if self.onboarding.mode.is_some() {
                     self.ui_home();
                 }
             }

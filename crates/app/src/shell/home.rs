@@ -11,6 +11,27 @@ use crate::ipc::UiCommand;
 use crate::platform::default_browser_unavailable;
 use crate::state::Running;
 
+/// The welcome tour over the start page (`domain::onboarding`).
+pub(crate) struct Onboarding {
+    /// At the first launch of the profile, or replayed from Settings. `None` once closed.
+    pub(crate) mode: Option<blackhole_domain::onboarding::Mode>,
+    /// The page shows the tour's dialog: the sidebar and the top bar are dimmed under it while
+    /// the start page is in front (`sync_dim`). `dimmed` is what they show now.
+    pub(crate) open: bool,
+    pub(crate) dimmed: std::cell::Cell<bool>,
+    /// Imports finished while the tour was open: the page tells its own from the ones before.
+    pub(crate) imports: u32,
+    /// The tour asked the system to make BlackHole the default browser: the choice is read
+    /// again when the window gets the focus back (from the system's dialog or Settings app).
+    pub(crate) default_asked: bool,
+}
+
+impl Onboarding {
+    pub(crate) fn new(mode: Option<blackhole_domain::onboarding::Mode>) -> Self {
+        Self { mode, open: false, dimmed: std::cell::Cell::new(false), imports: 0, default_asked: false }
+    }
+}
+
 impl Running {
     pub(crate) fn ui_home(&self) {
         let mut state = json!({
@@ -47,7 +68,7 @@ impl Running {
     /// features only; the first launch also offers its choices, from the shell's own state.
     fn onboarding_json(&self) -> serde_json::Value {
         use blackhole_domain::onboarding::{self, Mode};
-        let Some(mode) = self.onboarding else {
+        let Some(mode) = self.onboarding.mode else {
             return serde_json::Value::Null;
         };
         if mode == Mode::Tour {
@@ -76,13 +97,13 @@ impl Running {
         json!({
             "mode": mode.id(),
             "os": std::env::consts::OS,
-            "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
-            "imports": self.onboarding_imports,
-            "importMsg": i18n::render(&self.import_msg),
+            "sources": self.imports.sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
+            "imports": self.onboarding.imports,
+            "importMsg": i18n::render(&self.imports.msg),
             "defaultBrowser": {
                 "can": blackhole_macos_url::can_be_default_browser(),
                 "is": blackhole_macos_url::is_default_browser(),
-                "asked": self.default_asked,
+                "asked": self.onboarding.default_asked,
             },
             "extensions": extensions,
             "space": space.id.0,
@@ -103,8 +124,8 @@ impl Running {
     /// Dims the sidebar and the top bar under the tour's dialog (`bhDim` of theme.js) while it
     /// is open on the start page in front; a tab or panel brought forward lifts it.
     pub(crate) fn sync_dim(&self) {
-        let on = self.onboarding.is_some() && self.onboarding_open && self.start_page_front();
-        if self.dimmed.replace(on) == on {
+        let on = self.onboarding.mode.is_some() && self.onboarding.open && self.start_page_front();
+        if self.onboarding.dimmed.replace(on) == on {
             return;
         }
         let js = format!("window.bhDim&&bhDim({on})");
@@ -136,27 +157,27 @@ impl Running {
     pub(crate) fn handle_onboarding(&mut self, command: UiCommand) {
         match command {
             UiCommand::OnboardingOpen { on } => {
-                self.onboarding_open = on;
+                self.onboarding.open = on;
                 // The extensions it installs must not open their welcome pages over it.
-                let welcome = on && self.onboarding == Some(blackhole_domain::onboarding::Mode::Welcome);
+                let welcome = on && self.onboarding.mode == Some(blackhole_domain::onboarding::Mode::Welcome);
                 self.welcome.tour_open(welcome, Instant::now());
                 self.sync_dim();
             }
             UiCommand::OnboardingDone => {
-                self.onboarding = None;
-                self.onboarding_open = false;
+                self.onboarding.mode = None;
+                self.onboarding.open = false;
                 self.welcome.tour_open(false, Instant::now());
-                self.default_asked = false;
+                self.onboarding.default_asked = false;
                 self.sync_dim();
                 self.ui_home();
             }
             UiCommand::ReplayTour => {
-                self.onboarding = Some(blackhole_domain::onboarding::Mode::Tour);
+                self.onboarding.mode = Some(blackhole_domain::onboarding::Mode::Tour);
                 self.handle_ui(UiCommand::Home);
             }
             UiCommand::SetDefaultBrowser => {
-                self.default_asked = blackhole_macos_url::set_default_browser();
-                if !self.default_asked {
+                self.onboarding.default_asked = blackhole_macos_url::set_default_browser();
+                if !self.onboarding.default_asked {
                     self.toast(&default_browser_unavailable());
                 }
                 self.ui_home();

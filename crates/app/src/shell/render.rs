@@ -201,7 +201,7 @@ impl Running {
         let mut views: Vec<&WebView> = vec![&self.chrome, &self.bar, &self.home];
         views.extend(self.flyout.as_ref());
         views.extend(self.hotzone.as_ref());
-        views.extend(self.palette.as_ref());
+        views.extend(self.palette.view.as_ref());
         views.extend(self.peek.as_ref().map(|p| &p.scrim));
         views.extend(self.splitbar.view.as_ref());
         views.extend(self.library_panel.view.as_ref());
