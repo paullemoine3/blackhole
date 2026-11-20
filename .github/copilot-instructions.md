@@ -738,8 +738,8 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `UrlAssociations\https\UserChoice\ProgId`. Le choix est relu au retour du focus (`WindowEvent::Focused`).
   Build `cargo` ou zip portable : non enregistré, la visite le dit (`default_cannot_win`). Un lien reçu ouvre
   une nouvelle fenêtre (`--open`, registre `peers`), pas un onglet de la fenêtre déjà ouverte. Linux : rien.
-- Style par défaut d'un nouveau profil : plat (`Settings::default().depth = false`, 0.8.23). Un fichier de
-  réglages plus ancien sans `depth` reste en 3D (`default_true` du DTO) : rien ne change pour les profils existants.
+- Étape Style : « Plat » en premier et appliqué à l'ouverture de l'étape (`set_depth false`, une fois ; un choix
+  ensuite est gardé). Seule la visite du premier lancement le fait : le défaut de l'app (`Settings::default`) reste 3D.
 - Harnais : un build `devtools` ne montre pas la visite (profils neufs des scripts) sauf avec `BH_ONBOARDING=1`.
   Test Windows : `scripts\test-onboarding.ps1` (27 contrôles `obN:` : ouverture après le splash, voiles, trou à
   mi-transition, étapes, couleur appliquée, fin sans défilement, levée des voiles, rejeu depuis les Réglages,

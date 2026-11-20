@@ -9,8 +9,7 @@ pub struct Settings {
     pub sidebar_width: u32,
     /// Plays the black-hole animation when a new tab opens.
     pub animations: bool,
-    /// Style of the interface: 3D (cards lean towards the pointer, panels swing in) or flat (the
-    /// default of a new profile since 0.8.23).
+    /// Style of the interface: 3D (cards lean towards the pointer, panels swing in) or flat.
     pub depth: bool,
     /// GPU rendering and decoding. Takes effect at the next launch; only the Windows engine
     /// (WebView2) can switch it, WebKit always uses the GPU.
@@ -194,8 +193,7 @@ impl Default for Settings {
             search_engine: SearchEngine::default(),
             sidebar_width: Self::DEFAULT_SIDEBAR_WIDTH,
             animations: true,
-            // Flat for a new profile (0.8.23); settings written before keep 3D (infrastructure).
-            depth: false,
+            depth: true,
             hardware_acceleration: true,
             tab_sleep_minutes: Self::DEFAULT_SLEEP_MINUTES,
             max_live_tabs: Self::DEFAULT_LIVE_TABS,

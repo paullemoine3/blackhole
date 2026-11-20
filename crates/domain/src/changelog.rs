@@ -5,7 +5,6 @@ pub const RELEASES: &[(&str, &[&str])] = &[
         &[
             "A welcome tour at the first launch: the main features, then importing your bookmarks, the default browser, a few extensions and the look of your first space",
             "Settings > General can replay the tour of the features at any time",
-            "New profiles start with the flat style; yours is kept, and Settings > General switches to 3D",
             "Windows: the installer registers BlackHole as a browser, so it can be chosen in Settings > Default apps",
         ],
     ),
