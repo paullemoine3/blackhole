@@ -18,9 +18,11 @@ un aperçu depuis 0.8.16 (voir la section 0.8.16).
 - `crates/infrastructure` : persistance, réseau, import, coffre chiffré, market
   d'extensions signé (`market.rs`, liste `market/market.json`) et mises à jour ; implémente
   les traits de l'application. `crates/market-tool` (`bh-market`) tient la liste (CI, jamais embarqué).
-- `crates/app` : binaire `blackhole`, composition, fenêtres, vues et IPC.
-  `src/main.rs` orchestre l'état, `src/views.rs` construit les vues,
-  `src/ipc.rs` définit les commandes et `ui/` contient le HTML/CSS/JS embarqué.
+- `crates/app` : binaire `blackhole`, composition, fenêtres, vues et IPC ; `ui/` contient
+  le HTML/CSS/JS embarqué. Dans `src/` (voir « Organisation de `crates/app/src` ») :
+  `main.rs` ne déclare que les modules et `main()` ; `state.rs` (`Running`), `boot.rs`
+  (`Running::new`), `app.rs` (boucle d'événements), `commands.rs` / `messages.rs`
+  (aiguilleurs), `views.rs` (vues), `ipc.rs` (commandes) ; `shell/`, `tabs/`, `features/`.
 - `crates/macos-url` et `crates/macos-webext` : intégrations natives. Malgré son
   nom, `macos-webext` héberge aussi les extensions Windows et un stub ailleurs.
 - `vendor/wry` : dépendance locale via `[patch.crates-io]`. Préserver le pont
@@ -31,6 +33,40 @@ un aperçu depuis 0.8.16 (voir la section 0.8.16).
 Garder les dépendances orientées vers les couches internes. Placer la logique
 testable dans domain/application/infrastructure plutôt que dans le binaire.
 L'interface est embarquée avec `include_str!` ; la reconstruire après modification.
+
+### Organisation de `crates/app/src`
+
+- Racine : `main.rs` (modules et `main()`, rien d'autre), `state.rs` (struct `Running`, ses
+  petits accesseurs), `boot.rs` (`Running::new`), `app.rs` (`ApplicationHandler`, cadence de
+  la boucle), `commands.rs` (`handle_ui`), `messages.rs` (`handle_msg`), `platform.rs` (trace,
+  horloge, déplacement de fenêtre, arguments de lancement), `views.rs`, `ipc.rs`, `i18n.rs`,
+  `devtools.rs`, `backdrop.rs`.
+- `shell/` : l'interface du navigateur. `pages` (HTML embarqués), `layout` (géométrie des vues,
+  split, mouvement), `overlays`, `panels` (`LazyView`), `render` (`ui_state`, barre du haut),
+  `home` (accueil, visite), `settings`, `library`, `menus`, `palette`, `peek`, `ext_popup`,
+  `notices`, `sidebar`, `pane_motion`, `windows` (autres fenêtres, fenêtre privée).
+- `tabs/` : les vues de pages. `lifecycle` (création, réserves, veille, `sync`), `navigation`,
+  `commands` (`handle_tabs`), `organize` (`handle_organize` : espaces, dossiers), `downloads`,
+  `media`, `pip`, `auth`, `zoom`, `errors`, `favicons`.
+- `features/` : une fonctionnalité par module (`easel/` avec `live`, `extensions`, `market`,
+  `updates`, `imports`, `privacy`, `boosts`, `bridges`, `compare`, `handoff`, `highlights`,
+  `meet`, `passwords`, `pilot`, `recall`, `suggesting`, `trackers`, `trash`, `watching`,
+  `github_ext`, `stats`).
+
+Règles :
+- Chaque module étend `Running` par son propre `impl Running` ; une méthode n'est `pub(crate)`
+  que si un autre module l'appelle.
+- Une commande de l'interface (`UiCommand`) est traitée par le module concerné : `handle_ui`
+  ne garde que les commandes de la fenêtre et route les autres (`handle_tabs`,
+  `handle_settings`, `handle_extensions`, `handle_easel`…). Il reste exhaustif (pas de `_`) :
+  le compilateur signale toute commande oubliée. Une nouvelle commande va dans le
+  gestionnaire de son module et dans la liste de son routage.
+- L'état d'une fonctionnalité est une sous-structure définie dans son module (`Updates`,
+  `Market`, `Downloads`, `Auth`, `Pip`, `MediaWatch`, `Imports`, `Palette`, `Onboarding`) plutôt
+  qu'une suite de champs de `Running`. Les champs qui tiennent des vues gardent leur ordre de
+  déclaration (une vue est libérée avant la fenêtre qui l'héberge).
+- Une règle pure (sans I/O) va dans `domain`, un cas d'usage dans `application`, un accès
+  disque ou réseau dans `infrastructure`, chacun avec son test ; `app` ne garde que le câblage.
 
 ## Invariants d'implémentation
 
@@ -73,7 +109,7 @@ L'interface est embarquée avec `include_str!` ; la reconstruire après modifica
   Pas de bouton son sur les tuiles. La fonction « Lock URL » a été retirée (un ancien champ
   `locked` dans `workspace.json` est ignoré au chargement).
 - PiP : le bouton « retour à l'onglet » de la fenêtre flottante affiche l'onglet de la vidéo
-  (elle sort en lecture ; WebKit ne prévient la page qu'après l'animation, après la sonde : `pip_faded`,
+  (elle sort en lecture ; WebKit ne prévient la page qu'après l'animation, après la sonde : `pip.faded`,
   `pip::LEFT_EVENT_GRACE`) ; fermer la met en pause et ne change rien (`domain/pip.rs`,
   `pip_left`), sur macOS comme sous WebView2 (vérifié avec de vrais clics : la pause arrive
   avant `leavepictureinpicture`). Exception WebView2 : un flux en direct (`srcObject`, champ
@@ -351,7 +387,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   d'un pixel au survol). Boutons du pied détachés et enfoncés à la pression, séparateurs en rainure. Toute règle
   `body:not(.flat) .tab…` doit laisser gagner `.tab.split` (trait d'accent) et `.tab.gliding`.
   Test : `scripts\test-features.ps1` (`dp1`–`dp12`).
-- Mouvement des volets (0.8.11) : `app/src/pane_motion.rs` (pur, testé). Un split qui apparaît
+- Mouvement des volets (0.8.11) : `app/src/shell/pane_motion.rs` (pur, testé). Un split qui apparaît
   (`split_shown`, appelé par `sync` : paire d'onglets nouvelle, pas un simple changement de focus)
   fait glisser le volet droit depuis la droite ; un lien pilote (`pilot_sent`) fait monter le
   volet de destination. Les vues ne sont que déplacées (`shifted` dans `layout`), jamais
@@ -444,7 +480,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 
 ## Ponts entre fonctions (0.8.8)
 
-Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/signals.rs`.
+Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/signals.rs`.
 
 - Registre unique « que peut-on faire de cet objet » : `domain::verbs` (`Target` : page, onglet,
   lien, sélection, surlignage, téléchargement, résultat ; `Context` lu par le shell, jamais par la
@@ -474,7 +510,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 - Accueil : `now` de `ui_home` (`home_now_json`) : prochaine réunion (`calendar.card()`), zones
   changées (`Watches::changed`, quatre), onglet reçu d'un autre appareil (12 h).
 - Authentification HTTP : l'origine exacte du défi (`challenge.url`, `origin_of` : https ou
-  localhost) est gardée par invite (`auth_origins`) ; la palette ne reçoit que les noms
+  localhost) est gardée par invite (`auth.origins`) ; la palette ne reçoit que les noms
   (`auth.saved`), `auth_saved` fait passer le mot de passe du portefeuille au moteur.
 - Test : `scripts\test-features.ps1` (`br*` trou noir, `us*` recherche, `sg*` signaux, `hn1`
   accueil ; étape harnais `beamtext DE|TEXTE` qui simule un texte reçu). Le bouton de veille des
@@ -482,7 +518,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 
 ## Notices (toasts et capsule de la barre du haut)
 
-- Un seul point d'entrée : `Running::notify(kind, message, actions)` (`app/src/notices.rs` ; `notify_action`
+- Un seul point d'entrée : `Running::notify(kind, message, actions)` (`app/src/shell/notices.rs` ; `notify_action`
   pour un bouton, `toast` = `Notice::Info`). Ne plus écrire `bh.toast(…)` depuis Rust.
 - Les types sont déclarés à un seul endroit, `domain/notice.rs` (`Kind` : info, problem, download, done,
   watch, easel, device, password, undo, meeting ; icône de `ui/icons.js`, ton, durée `stay_ms` : 2,2 s,
@@ -636,7 +672,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   Transport : `handoff` `Request::Snapshot` → `Message::Part` (fragments acquittés) → `Event::Snapshot`.
 - Mode par appareil dans `devices.bin` (`ask` par défaut, `auto`, `off`, `Request::SetSync`) ; `ask`
   propose (toast Merge / Always / Later), une réponse à une fusion acceptée s'applique sans question.
-  Desktop : `app/src/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
+  Desktop : `app/src/features/handoff.rs` (`sync_tick`, `on_ledger`), Réglages > Devices ; Android :
   `crates/android/src/devices.rs`. Jamais : fenêtres/onglets privés, dossiers. L'historique a sa propre synchro depuis 0.8.18 (voir la section 0.8.18).
 - Test : `scripts\test-sync.ps1` (Windows devtools ↔ émulateur, ports `BH_HANDOFF_PORT`/`_PEER_PORT`).
 
@@ -684,7 +720,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   `ESSENTIAL`, un site visité soi-même, un hôte déjà listé ou autorisé ; tout borné), fichier
   `trackers.json` (`TrackerStore`, `write_later`). `ui/tracker_watch.js` (cadre principal) ne fait que
   lire les `PerformanceResourceTiming` (aucune fonction de la page remplacée) et envoie
-  `PageEvent::Requests` ; `app/src/trackers.rs` relit l'adresse sur le moteur. `PrivacyPolicy::set_learned`
+  `PageEvent::Requests` ; `app/src/features/trackers.rs` relit l'adresse sur le moteur. `PrivacyPolicy::set_learned`
   (partagé par les clones) : appris bloqués avec l'interrupteur des traqueurs, hôtes autorisés jamais
   bloqués, listes comprises. `active_lists` nomme une liste raccourcie ou apprise d'après son contenu
   (recompilée macOS) ; vues de réserve recréées à chaque changement ; les vues déjà ouvertes gardent
@@ -719,7 +755,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   `show_ext_popup`, rien sur l'accueil) répond par l'onglet de cette page (même adresse, sinon la page
   web vue en dernier, `lastFocusedWindow`/`lastAccessed`). Harnais : cible `eval extpopup` ;
   test `scripts	est-ext.ps1` (popup uBOL sur example.com).
-- Extension d'exemple `cookie-banner-hider` (`app/src/extensions.rs`) : sélecteurs en
+- Extension d'exemple `cookie-banner-hider` (`app/src/features/extensions.rs`) : sélecteurs en
   `:is(…):not(html, body)` (glosbe.com met `cookie-consent` sur `<body>` : page blanche) ;
   `refresh_sample` remplace au lancement une copie installée laissée telle quelle (`OLD_SAMPLE_CSS`).
 - Android : le compteur du bouclier est une capsule à côté de l'icône, dans la hauteur du champ
@@ -810,7 +846,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
 ## 0.8.18 : recherche, rechargement forcé, échecs fantômes, accueil réorganisable, jump list, Réglages en onglet
 
 - Recherche de la barre de commandes : règles pures `domain/suggest.rs`, classement fait par le shell à
-  chaque frappe (`UiCommand::Suggest { query, seq }` → `bh.suggested`, `app/src/suggesting.rs`) : la
+  chaque frappe (`UiCommand::Suggest { query, seq }` → `bh.suggested`, `app/src/features/suggesting.rs`) : la
   palette ne classe plus rien, elle dessine (avant la première lettre : onglets, accès rapide, commandes).
   Candidats construits à l'ouverture (`suggest_prepare`) : onglets de tous les espaces (`OtherTab`, nom de
   l'espace, `Activate` change d'espace), accès rapide, favoris, `pool` de l'historique, commandes.
@@ -912,7 +948,7 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   fil, `poll_market` (dans `poll_webext`) : `FIRST_MARKET_CHECK` 20 s puis `MARKET_CHECK_EVERY` 24 h,
   `MARKET_RETRY` 1 h après un échec ; automatique seulement si `updates_enabled()` (pas en build `cargo`,
   `devtools` ni privé). « Check for updates » (`CheckCatalogUpdates`) télécharge d'abord la liste et compte
-  les mises à jour à l'arrivée (`market_fetching = Some(true)`). État Réglages : `market` (`signed`,
+  les mises à jour à l'arrivée (`market.fetching = Some(true)`). État Réglages : `market` (`signed`,
   `signedAt` = `seq`, `checking`, `error`) ; `settings.html` : `#catsrc` sous la note du catalogue, bouton
   qui tourne pendant la recherche, état vide `settings.market_none` quand l'OS n'a aucune entrée.
 - Outil `crates/market-tool` (binaire `bh-market`, jamais embarqué) : `keygen`, `check`, `review`, `audit [--write]`
@@ -1027,10 +1063,10 @@ Module `app/src/bridges.rs` ; règles pures dans `domain/verbs.rs` et `domain/si
   et SponsorBlock cochées, Bitwarden et uBlock Origin Lite non, avec `installed`, `installing`, `error`),
   `space`, `color`, `colors` (`SPACE_COLORS`), `engine(s)`, `recall`, `language`). Le rendu ne reconstruit que
   ce qui a changé dans l'étape affichée (signature par étape), les animations continuent.
-- Commandes : `onboarding_open {on}` (la page montre ou cache sa fenêtre), `onboarding_done`, `replay_tour`,
+- Commandes : `onboarding.open {on}` (la page montre ou cache sa fenêtre), `onboarding_done`, `replay_tour`,
   `set_default_browser` ; la visite réutilise `import_bookmarks`, `import_file` (`logins`), `install_catalog`,
   `set_space_color`, `set_depth`, `set_engine`, `set_recall`, `set_language`. Une extension installée depuis la
-  visite n'ouvre pas sa page d'accueil par-dessus (`WelcomePages::tour_open`, posé par `onboarding_open` :
+  visite n'ouvre pas sa page d'accueil par-dessus (`WelcomePages::tour_open`, posé par `onboarding.open` :
   tant que la visite est ouverte, quelle que soit la durée du téléchargement, puis `WELCOME_WINDOW` après).
   Import : un import par profil (coché ✓), un autre profil reste importable. Extensions : « Téléchargement… »
   et une barre par carte pendant l'installation, « Installation… » sur le bouton, puis « Installée » ; un
