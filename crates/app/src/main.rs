@@ -73,7 +73,8 @@ use winit::{
 use wry::{WebContext, WebView};
 
 const CHROME_HTML: &str = include_str!("../ui/index.html");
-const HOME_HTML: &str = include_str!("../ui/home.html");
+/// The start page, with the welcome tour appended (onboarding.html closes the document).
+const HOME_HTML: &str = concat!(include_str!("../ui/home.html"), include_str!("../ui/onboarding.html"));
 const BAR_HTML: &str = include_str!("../ui/bar.html");
 const PALETTE_HTML: &str = include_str!("../ui/palette.html");
 const SPLITBAR_HTML: &str = include_str!("../ui/splitbar.html");
@@ -628,6 +629,18 @@ struct Running {
     /// The launch splash plays on the start page: only for the first window, never for a new
     /// window opened beside others (`is_new_window`).
     intro: bool,
+    /// Welcome tour over the start page (`domain::onboarding`): at the first launch of the
+    /// profile, or replayed from Settings. `None` once closed.
+    onboarding: Option<blackhole_domain::onboarding::Mode>,
+    /// The page shows the tour's dialog: the sidebar and the top bar are dimmed under it while
+    /// the start page is in front (`sync_dim`). `dimmed` is what they show now.
+    onboarding_open: bool,
+    dimmed: std::cell::Cell<bool>,
+    /// Imports finished while the tour was open: the page tells its own from the ones before.
+    onboarding_imports: u32,
+    /// The tour asked the system to make BlackHole the default browser: the choice is read
+    /// again when the window gets the focus back (from the system's dialog or Settings app).
+    default_asked: bool,
     ext_loaded: usize,
     /// Extensions offered: the signed market list kept on this device, else the build's own.
     market: market::Index,
@@ -970,6 +983,12 @@ impl Running {
             .into_iter()
             .map(|(version, items)| json!({"version": version, "items": items}))
             .collect();
+        // The UI scripts of the devtools harness start on fresh profiles: the tour stays out of
+        // their way unless a script asks for it (`BH_ONBOARDING=1`).
+        let harness = cfg!(feature = "devtools") && std::env::var_os("BH_ONBOARDING").is_none();
+        let onboarding = (!harness
+            && blackhole_domain::onboarding::offered(svc.first_launch(), private_mode(), is_new_window()))
+        .then_some(blackhole_domain::onboarding::Mode::Welcome);
 
         Self {
             release_notes,
@@ -1092,6 +1111,11 @@ impl Running {
             },
             ext_loaded: 0,
             intro: !is_new_window(),
+            onboarding,
+            onboarding_open: false,
+            dimmed: std::cell::Cell::new(false),
+            onboarding_imports: 0,
+            default_asked: false,
             catalog_checked: None,
             market: market_index,
             github,
@@ -1590,6 +1614,7 @@ impl Running {
         if self.home_shown() {
             self.ui_home();
         }
+        self.sync_dim();
     }
 
     /// Titles and visibility of the strip above the split panes.
@@ -1883,6 +1908,9 @@ impl Running {
         while let Ok((msg, _count, list)) = self.import_rx.try_recv() {
             if let Some(m) = msg.filter(|m| !m.is_empty()) {
                 self.import_msg = m;
+                if self.onboarding.is_some() {
+                    self.onboarding_imports += 1;
+                }
             }
             self.bookmark_list = self.bookmarks.load();
             self.file_bookmarks(list);
@@ -1948,6 +1976,10 @@ impl Running {
         if sig != self.webext_sig {
             self.webext_sig = sig;
             self.ui_settings();
+            // An extension the welcome tour installs is downloaded, installed or failed.
+            if self.onboarding.is_some() && self.start_page_front() {
+                self.ui_home();
+            }
         }
     }
 
@@ -3540,6 +3572,7 @@ impl Running {
             "sections": blackhole_domain::home_order(&self.svc.settings().home_order),
             "watches": self.home_watches_json(),
             "downloads": self.home_downloads_json(),
+            "onboarding": self.onboarding_json(),
         });
         if self.icons_for_home.replace(false) {
             state["favicons"] = json!(self.favicons.all());
@@ -3547,6 +3580,78 @@ impl Running {
         let _ = self
             .home
             .evaluate_script(&format!("window.bh&&bh.render({state})"));
+    }
+
+    /// What the welcome tour needs (`null` when it is closed). The replayed tour shows the
+    /// features only; the first launch also offers its choices, from the shell's own state.
+    fn onboarding_json(&self) -> serde_json::Value {
+        use blackhole_domain::onboarding::{self, Mode};
+        let Some(mode) = self.onboarding else {
+            return serde_json::Value::Null;
+        };
+        if mode == Mode::Tour {
+            return json!({"mode": mode.id()});
+        }
+        let settings = self.svc.settings();
+        let space = self.svc.workspace().active_space();
+        // Only where extensions can run (not Linux, not without an extension host).
+        let available: Vec<&str> = match &self.webext {
+            Some(_) => self.market.for_this_system().map(|e| e.id.as_str()).collect(),
+            None => Vec::new(),
+        };
+        let extensions: Vec<_> = onboarding::starters(available)
+            .into_iter()
+            .filter_map(|(id, on)| {
+                let e = self.market.for_this_system().find(|e| e.id == id)?;
+                Some(json!({
+                    "id": id, "name": e.name, "description": e.description_in(i18n::lang()),
+                    "category": e.category, "on": on,
+                    "installed": catalog::is_installed(&self.data, id),
+                    "installing": self.installing.contains(id),
+                    "error": self.install_errors.get(id),
+                }))
+            })
+            .collect();
+        json!({
+            "mode": mode.id(),
+            "os": std::env::consts::OS,
+            "sources": self.import_sources.iter().map(|s| json!({"id": s.id, "browser": s.browser, "profile": s.profile})).collect::<Vec<_>>(),
+            "imports": self.onboarding_imports,
+            "importMsg": i18n::render(&self.import_msg),
+            "defaultBrowser": {
+                "can": blackhole_macos_url::can_be_default_browser(),
+                "is": blackhole_macos_url::is_default_browser(),
+                "asked": self.default_asked,
+            },
+            "extensions": extensions,
+            "space": space.id.0,
+            "color": space.color,
+            "colors": onboarding::SPACE_COLORS,
+            "engine": settings.search_engine.id(),
+            "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
+            "recall": settings.recall,
+            "language": i18n::lang(),
+        })
+    }
+
+    /// The start page itself is in front (not the Library, Settings or an Easel over it).
+    fn start_page_front(&self) -> bool {
+        self.home_shown() && !self.library && !self.settings_shown && !self.easel_tab
+    }
+
+    /// Dims the sidebar and the top bar under the tour's dialog (`bhDim` of theme.js) while it
+    /// is open on the start page in front; a tab or panel brought forward lifts it.
+    fn sync_dim(&self) {
+        let on = self.onboarding.is_some() && self.onboarding_open && self.start_page_front();
+        if self.dimmed.replace(on) == on {
+            return;
+        }
+        let js = format!("window.bhDim&&bhDim({on})");
+        let _ = self.chrome.evaluate_script(&js);
+        if let Some(flyout) = &self.flyout {
+            let _ = flyout.evaluate_script(&js);
+        }
+        let _ = self.bar.evaluate_script(&js);
     }
 
     /// The interface language changed: every open page of BlackHole gets the new catalog and
@@ -5214,10 +5319,12 @@ impl Running {
                 self.toast(&t("toast.history_cleared"));
             }
             "default_browser" => {
-                let message = if blackhole_macos_url::set_default_browser() {
-                    t("toast.default_browser_confirm")
+                let message = if !blackhole_macos_url::set_default_browser() {
+                    default_browser_unavailable()
+                } else if cfg!(windows) {
+                    t("toast.default_browser_settings")
                 } else {
-                    t("toast.default_browser_bundle")
+                    t("toast.default_browser_confirm")
                 };
                 self.toast(&message);
             }
@@ -6284,7 +6391,39 @@ impl Running {
             | UiCommand::ForgetHistory { .. }
             | UiCommand::LibraryOpenTab { .. }
             | UiCommand::ClearTabs) => self.handle_easel(command),
-            UiCommand::InstallCatalog { id } => self.install_catalog(&id),
+            UiCommand::InstallCatalog { id } => {
+                self.install_catalog(&id);
+                // The tour shows the download at once (`installing`).
+                if self.onboarding.is_some() {
+                    self.ui_home();
+                }
+            }
+            UiCommand::OnboardingOpen { on } => {
+                self.onboarding_open = on;
+                // The extensions it installs must not open their welcome pages over it.
+                let welcome = on && self.onboarding == Some(blackhole_domain::onboarding::Mode::Welcome);
+                self.welcome.tour_open(welcome, Instant::now());
+                self.sync_dim();
+            }
+            UiCommand::OnboardingDone => {
+                self.onboarding = None;
+                self.onboarding_open = false;
+                self.welcome.tour_open(false, Instant::now());
+                self.default_asked = false;
+                self.sync_dim();
+                self.ui_home();
+            }
+            UiCommand::ReplayTour => {
+                self.onboarding = Some(blackhole_domain::onboarding::Mode::Tour);
+                self.handle_ui(UiCommand::Home);
+            }
+            UiCommand::SetDefaultBrowser => {
+                self.default_asked = blackhole_macos_url::set_default_browser();
+                if !self.default_asked {
+                    self.toast(&default_browser_unavailable());
+                }
+                self.ui_home();
+            }
             UiCommand::GithubLookup { input } => self.github_lookup(&input),
             UiCommand::GithubPrepare { asset, update } => self.github_prepare(asset, update),
             UiCommand::GithubInstall => self.github_install(),
@@ -7232,6 +7371,10 @@ impl ApplicationHandler<Wake> for App {
             WindowEvent::Focused(true) => {
                 app.apply_focus();
                 app.pip_back_on_focus();
+                // Back from the system's dialog or Settings app: the tour reads the choice again.
+                if app.default_asked && app.onboarding.is_some() && app.start_page_front() {
+                    app.ui_home();
+                }
             }
             WindowEvent::Focused(false) => app.blur_due = Some(Instant::now() + BLUR_DELAY),
             _ => {}
@@ -7495,6 +7638,17 @@ fn visit_kind(via: Option<&str>) -> blackhole_domain::VisitKind {
     match via {
         Some("bookmark") => blackhole_domain::VisitKind::Bookmark,
         _ => blackhole_domain::VisitKind::Typed,
+    }
+}
+
+/// Why the system cannot be asked to make BlackHole the default browser.
+fn default_browser_unavailable() -> String {
+    if cfg!(windows) {
+        t("toast.default_browser_install")
+    } else if cfg!(target_os = "macos") {
+        t("toast.default_browser_bundle")
+    } else {
+        t("toast.default_browser_unsupported")
     }
 }
 

@@ -607,6 +607,17 @@ pub enum UiCommand {
         id: String,
         on: bool,
     },
+    /// Welcome tour (`domain::onboarding`): its dialog is shown or hidden on the start page
+    /// (the shell dims the sidebar and the top bar under it), then closed for good.
+    OnboardingOpen {
+        on: bool,
+    },
+    OnboardingDone,
+    /// Settings > General: plays the tour of the features again over the start page.
+    ReplayTour,
+    /// Asks the system to make BlackHole the default browser (macOS: its dialog; Windows: the
+    /// Settings app on BlackHole's page). The tour reads the answer back on focus.
+    SetDefaultBrowser,
     /// Refresh the list of browsers whose data can be imported.
     ImportScan,
     /// Import the bookmarks of a detected browser profile.

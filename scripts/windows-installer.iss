@@ -40,6 +40,26 @@ Source: "{#ExePath}"; DestDir: "{app}"; DestName: "BlackHole.exe"; Flags: ignore
 Name: "{group}\BlackHole"; Filename: "{app}\BlackHole.exe"
 Name: "{autodesktop}\BlackHole"; Filename: "{app}\BlackHole.exe"; Tasks: desktopicon
 
+[Registry]
+; BlackHole as a browser of this user (HKA = HKCU for a per-user install): Windows lists it in
+; Settings > Apps > Default apps, where the person makes it the default (the welcome tour and
+; Settings > General open that page: ms-settings:defaultapps?registeredAppUser=BlackHole).
+; Links come in as `BlackHole.exe --open <url>`.
+Root: HKA; Subkey: "Software\Classes\BlackHoleURL"; ValueType: string; ValueName: ""; ValueData: "BlackHole URL"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\BlackHoleURL"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "BlackHole URL"
+Root: HKA; Subkey: "Software\Classes\BlackHoleURL\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\BlackHole.exe,0"
+Root: HKA; Subkey: "Software\Classes\BlackHoleURL\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\BlackHole.exe"" --open ""%1"""
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole"; ValueType: string; ValueName: ""; ValueData: "BlackHole"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\BlackHole.exe,0"
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\BlackHole.exe"""
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "BlackHole"
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\BlackHole.exe,0"
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A fast, elegant browser that respects your privacy."
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities\StartMenu"; ValueType: string; ValueName: "StartMenuInternet"; ValueData: "BlackHole"
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "BlackHoleURL"
+Root: HKA; Subkey: "Software\Clients\StartMenuInternet\BlackHole\Capabilities\URLAssociations"; ValueType: string; ValueName: "https"; ValueData: "BlackHoleURL"
+Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "BlackHole"; ValueData: "Software\Clients\StartMenuInternet\BlackHole\Capabilities"; Flags: uninsdeletevalue
+
 [Run]
 ; Interactive installs offer to launch the app; silent runs (self-update) relaunch it directly.
 Filename: "{app}\BlackHole.exe"; Description: "{cm:LaunchProgram,BlackHole}"; Flags: nowait postinstall skipifsilent

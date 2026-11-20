@@ -693,6 +693,60 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `raise_due` (palette forcée par `open_palette` via `flush_raise(true)`) ; mesures `BH_TRACE=1` en debug
   (`startup N ms: …`). Contenu affiché vers 0,8 s pour une nouvelle fenêtre, 1,2 s en privé.
 
+## 0.8.23 : onboarding d'accueil
+
+- Visite d'accueil (`domain::onboarding`) : proposée **une seule fois**, au premier lancement d'un profil
+  (`BrowserService::first_launch`, aucun réglage encore écrit), jamais en fenêtre privée ni en nouvelle
+  fenêtre (`offered`). Quitter pendant la visite ne la ramène pas. Réglages > Général > Système, « Revoir »
+  (`UiCommand::ReplayTour`) rejoue **les fonctionnalités seules** (`Mode::Tour`) ; la première fois
+  (`Mode::Welcome`) ajoute les choix. Maquettes : `docs/onboarding/maquettes.html` (variante A retenue).
+- Page : `ui/onboarding.html` (style, fenêtre et script, classes `ob-`), concaténée à `home.html` par
+  `HOME_HTML` (`concat!`) : `home.html` s'arrête sans `</body></html>`, c'est `onboarding.html` qui ferme le
+  document. `bh.render` de l'accueil appelle `bhOnboard.update(s.onboarding, s)` ; la fenêtre s'ouvre après
+  l'atterrissage du splash (`window.bhSplashEnd`), voile `#ob-veil` sur l'accueil, carte 740 × 580 réduite
+  aux petites fenêtres (`--ob-k`). Étapes : bienvenue (langue), espaces, barre de commandes, Shields (« Même la
+  lumière n'en ressort pas »), « Et aussi », import, navigateur par défaut (pas sous Linux), extensions (s'il y
+  a un hôte d'extensions), style, fin. « Passer la présentation » saute aux choix ; Échap ferme tout.
+  Entrée / ← / → au clavier, focus gardé dans la fenêtre ; un clic pendant une transition est ignoré.
+- Transition : le trou noir seul, noir pur (`.ob-warp .void`, `ob-swallow`) : naît avec un rebond, grandit
+  jusqu'à couvrir la carte (0,7 s), l'étape est échangée dans le noir et la suivante sort (0,25 s). La fin
+  couvre toute la page d'accueil (`#ob-warp-all`) puis l'accueil ressort (`main.ob-emerge`). Animations coupées
+  ou `prefers-reduced-motion` : simple échange, aucun mouvement.
+- État : `onboarding` de l'état de l'accueil (`onboarding_json` : `null` fermé ; `{mode: "tour"}` ; en
+  `welcome` : `os`, `sources` d'import, `imports` (nombre d'imports terminés pendant la visite) et `importMsg`,
+  `defaultBrowser {can, is, asked}`, `extensions` (`onboarding::starters` du market pour ce système : Dark Reader
+  et SponsorBlock cochées, Bitwarden et uBlock Origin Lite non, avec `installed`, `installing`, `error`),
+  `space`, `color`, `colors` (`SPACE_COLORS`), `engine(s)`, `recall`, `language`). Le rendu ne reconstruit que
+  ce qui a changé dans l'étape affichée (signature par étape), les animations continuent.
+- Commandes : `onboarding_open {on}` (la page montre ou cache sa fenêtre), `onboarding_done`, `replay_tour`,
+  `set_default_browser` ; la visite réutilise `import_bookmarks`, `import_file` (`logins`), `install_catalog`,
+  `set_space_color`, `set_depth`, `set_engine`, `set_recall`, `set_language`. Une extension installée depuis la
+  visite n'ouvre pas sa page d'accueil par-dessus (`WelcomePages::tour_open`, posé par `onboarding_open` :
+  tant que la visite est ouverte, quelle que soit la durée du téléchargement, puis `WELCOME_WINDOW` après).
+  Import : un import par profil (coché ✓), un autre profil reste importable. Extensions : « Téléchargement… »
+  et une barre par carte pendant l'installation, « Installation… » sur le bouton, puis « Installée » ; un
+  échec se relance en recochant (l'état arrive par `poll_webext` → `ui_home`).
+- Voile de la barre latérale et de la barre du haut : `bhDim(on)` de `theme.js` (voile fixe qui avale les clics),
+  envoyé par `sync_dim` à `chrome`, `flyout` et `bar` tant que la fenêtre est ouverte et que l'accueil est devant
+  (`start_page_front`) ; appelé à la fin de `ui_state`. Barre du haut : `html.bh-dimmed .win` garde les boutons
+  de fenêtre Windows au-dessus du voile, et un glisser sur le voile déplace toujours la fenêtre.
+- Navigateur par défaut (`blackhole-macos-url`) : `set_default_browser`, `can_be_default_browser`,
+  `is_default_browser`. macOS : dialogue du système, choix lu par `URLForApplicationToOpenURL` (bundle `.app`
+  seulement). Windows : l'installeur (`scripts/windows-installer.iss`, section `[Registry]`, HKCU) enregistre
+  BlackHole comme navigateur (`RegisteredApplications`, `StartMenuInternet\BlackHole`, ProgId `BlackHoleURL` →
+  `BlackHole.exe --open "%1"`) ; l'app ouvre `ms-settings:defaultapps?registeredAppUser=BlackHole` et lit
+  `UrlAssociations\https\UserChoice\ProgId`. Le choix est relu au retour du focus (`WindowEvent::Focused`).
+  Build `cargo` ou zip portable : non enregistré, la visite le dit (`default_cannot_win`). Un lien reçu ouvre
+  une nouvelle fenêtre (`--open`, registre `peers`), pas un onglet de la fenêtre déjà ouverte. Linux : rien.
+- Style par défaut d'un nouveau profil : plat (`Settings::default().depth = false`, 0.8.23). Un fichier de
+  réglages plus ancien sans `depth` reste en 3D (`default_true` du DTO) : rien ne change pour les profils existants.
+- Harnais : un build `devtools` ne montre pas la visite (profils neufs des scripts) sauf avec `BH_ONBOARDING=1`.
+  Test Windows : `scripts\test-onboarding.ps1` (27 contrôles `obN:` : ouverture après le splash, voiles, trou à
+  mi-transition, étapes, couleur appliquée, fin sans défilement, levée des voiles, rejeu depuis les Réglages,
+  animations coupées, Échap, français ; Dark Reader et SponsorBlock installés : réseau requis). Captures prises à l'écran : la fenêtre
+  doit rester devant. Tests : `onboarding::tests`, `welcome::tests::the_welcome_tour_drops_…`,
+  `release_notes_are_shown_once_after_an_update` (`first_launch`). macOS : compilation croisée seulement.
+
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).
 - Version : `Cargo.toml` (+ `Cargo.lock`). Pour publier : incrémenter, committer, pousser.

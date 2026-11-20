@@ -5,6 +5,10 @@
 //! its help, Ghostery its onboarding, Bitwarden its start page. Those requests come with no tab
 //! behind them, right after the extensions load; a page the person opens has its tab as opener.
 //! While a private window starts, such pages are dropped; nothing else is.
+//!
+//! The welcome tour of the first launch (`onboarding`) installs extensions too: their welcome
+//! pages would open as tabs over it, so they are dropped the same way: for as long as the tour is
+//! open (a download can take longer than the window), then the window after it (`tour_open`).
 
 use std::time::{Duration, Instant};
 
@@ -15,6 +19,8 @@ pub const WELCOME_WINDOW: Duration = Duration::from_secs(15);
 #[derive(Debug, Default)]
 pub struct WelcomePages {
     until: Option<Instant>,
+    /// The welcome tour is open: everything is dropped, whatever the time.
+    tour: bool,
 }
 
 impl WelcomePages {
@@ -25,13 +31,24 @@ impl WelcomePages {
 
     /// A private window with extensions: drops welcome pages from `now` on.
     pub fn private(now: Instant) -> Self {
-        Self { until: Some(now + WELCOME_WINDOW) }
+        Self { until: Some(now + WELCOME_WINDOW), tour: false }
+    }
+
+    /// The welcome tour opens (`true`) or closes at `now`. While it is open the welcome pages of
+    /// the extensions it installs are dropped, however long the downloads take; once closed, an
+    /// extension still loading gets the usual window.
+    pub fn tour_open(&mut self, open: bool, now: Instant) {
+        if self.tour && !open {
+            let end = now + WELCOME_WINDOW;
+            self.until = Some(self.until.map_or(end, |u| u.max(end)));
+        }
+        self.tour = open;
     }
 
     /// An extension finished loading: its first-install code runs now, so the window starts over.
     /// No effect on a window that drops nothing.
     pub fn extension_loaded(&mut self, now: Instant) {
-        if self.until.is_some() {
+        if self.until.is_some() || self.tour {
             self.until = Some(now + WELCOME_WINDOW);
         }
     }
@@ -39,12 +56,12 @@ impl WelcomePages {
     /// Whether a page asked for at `now` is a welcome page to drop. `opener` tells whether a tab
     /// the person sees asked for it (a link, a script of the page).
     pub fn drops(&self, opener: bool, now: Instant) -> bool {
-        !opener && self.until.is_some_and(|until| now < until)
+        !opener && self.watching(now)
     }
 
     /// Whether some page may still be dropped (the shell keeps watching extension loads).
     pub fn watching(&self, now: Instant) -> bool {
-        self.until.is_some_and(|until| now < until)
+        self.tour || self.until.is_some_and(|until| now < until)
     }
 }
 
@@ -80,5 +97,21 @@ mod tests {
         pages.extension_loaded(late);
         assert!(pages.drops(false, now + WELCOME_WINDOW + Duration::from_secs(5)));
         assert!(!pages.drops(false, late + WELCOME_WINDOW));
+    }
+
+    #[test]
+    fn the_welcome_tour_drops_the_pages_of_the_extensions_it_installs() {
+        let now = Instant::now();
+        let mut pages = WelcomePages::off();
+        pages.tour_open(true, now);
+        assert!(pages.drops(false, now + Duration::from_secs(3)));
+        assert!(!pages.drops(true, now + Duration::from_secs(3)));
+        // A slow download: still dropped a minute later, the tour being open.
+        assert!(pages.drops(false, now + Duration::from_secs(60)));
+        // Closed while an extension still loads: the usual window, started at the close.
+        let closed = now + Duration::from_secs(90);
+        pages.tour_open(false, closed);
+        assert!(pages.drops(false, closed + Duration::from_secs(5)));
+        assert!(!pages.watching(closed + WELCOME_WINDOW));
     }
 }
