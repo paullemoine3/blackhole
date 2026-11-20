@@ -2,9 +2,11 @@
 //! menus, window titles) and sent to every BlackHole page (`ui/i18n.js`). Rules and catalogs are
 //! in `blackhole_domain::i18n`.
 
-pub use blackhole_domain::i18n::message;
-use blackhole_domain::i18n::{self, Catalog};
 use std::sync::RwLock;
+
+use blackhole_domain::i18n::{self, Catalog};
+
+pub use blackhole_domain::i18n::message;
 
 static CURRENT: RwLock<&str> = RwLock::new(i18n::DEFAULT);
 
@@ -100,9 +102,15 @@ mod tests {
             concat!(env!("CARGO_MANIFEST_DIR"), "/../infrastructure/src"),
             concat!(env!("CARGO_MANIFEST_DIR"), "/../domain/src"),
         ];
-        for dir in dirs {
+        // The shell's code sits in folders (`shell/`, `tabs/`, `features/`): walk them all.
+        let mut pending: Vec<std::path::PathBuf> = dirs.iter().map(Into::into).collect();
+        while let Some(dir) = pending.pop() {
             for entry in std::fs::read_dir(dir).unwrap() {
                 let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
                 let text = std::fs::read_to_string(&path).unwrap_or_default();
                 if path.ends_with("i18n.rs") || path.ends_with("i18n.js") {
                     continue;

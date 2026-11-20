@@ -6,9 +6,16 @@
 //! `eval chrome|bar|home|palette|peek|settings|easel|live|tabN|content JS`, `shots NAME` (settings window),
 //! `shote NAME` (easel window), `quit`.
 
-use super::*;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use blackhole_domain::TabId;
+use winit::event_loop::ActiveEventLoop;
+use winit::window::Window;
+
+use crate::ipc::UiCommand;
+use crate::state::Running;
 
 pub fn scratch() -> PathBuf {
     if cfg!(target_os = "macos") {
@@ -198,7 +205,7 @@ impl Running {
                     .workspace()
                     .active_tab()
                     .and_then(|t| self.tabs.get(&t.id))
-                    .and_then(crate::web_view_ptr)
+                    .and_then(crate::platform::web_view_ptr)
                 {
                     blackhole_macos_webext::inspector(ptr, rest.trim());
                 }

@@ -1,9 +1,10 @@
 //! Messages flowing from the web views into the shell. Handlers run on the event-loop thread, so
 //! they only enqueue; `Running::pump` drains the queue and mutates state.
 
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+
 use blackhole_domain::TabId;
 use serde::Deserialize;
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 
@@ -545,7 +546,7 @@ pub enum UiCommand {
     HardReload,
     /// Settings › Passwords and the save toast (see `passwords::PasswordAction`).
     Passwords {
-        action: crate::passwords::PasswordAction,
+        action: crate::features::passwords::PasswordAction,
     },
     OpenSettings {
         /// Section to show (`privacy`, `extensions`…).
@@ -903,7 +904,7 @@ pub enum PageEvent {
     LoginSubmitted {
         #[serde(default)]
         username: String,
-        password: crate::passwords::Secret,
+        password: crate::features::passwords::Secret,
     },
     /// The risky button of BlackHole's error page: the shell opens its own menu at (x, y) to
     /// ask. Acted on only while that tab shows the error page; it grants nothing by itself.
@@ -1438,7 +1439,7 @@ mod tests {
 
     #[test]
     fn password_events_parse_and_pages_cannot_drive_the_wallet() {
-        use crate::passwords::PasswordAction;
+        use crate::features::passwords::PasswordAction;
         // Older pages send the query without `fresh`.
         assert!(matches!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"autofill_query"}"#),

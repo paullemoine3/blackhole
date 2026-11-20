@@ -1,16 +1,18 @@
 //! Construction of the native web views (WKWebView on macOS, WebView2 on Windows).
 
-use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
-use blackhole_domain::popup::{self, NewWindow};
-use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
+use blackhole_domain::popup::{self, NewWindow};
 use url::Url;
 use winit::window::Window;
 use wry::{
     dpi::{LogicalPosition, LogicalSize},
     NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder,
 };
+
+use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
 
 const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
@@ -131,7 +133,7 @@ fn block_natively(view: &WebView, policy: &PrivacyPolicy, report: impl Fn(String
             return false;
         }
         let stop = matches!(
-            crate::errors::with_exceptions(policy.evaluate(&target), &target),
+            crate::tabs::errors::with_exceptions(policy.evaluate(&target), &target),
             PrivacyDecision::Block(_)
         );
         if stop {
@@ -622,7 +624,7 @@ fn build_tab(
             false,
         )
         .with_ipc_handler(move |request| {
-            crate::trace(|| {
+            crate::platform::trace(|| {
                 let body: String = request.body().chars().take(400).collect();
                 if body.contains("\"media\"") || body.contains("\"requests\"") || body.contains("login_submitted") || body.contains("autofill") {
                     String::new()
@@ -635,7 +637,7 @@ fn build_tab(
             }
         })
         .with_navigation_handler(move |raw| {
-            crate::trace(|| format!("navigate tab={} main={} {raw}", id(&s_nav).0, wry::navigating_main_frame()));
+            crate::platform::trace(|| format!("navigate tab={} main={} {raw}", id(&s_nav).0, wry::navigating_main_frame()));
             let Ok(target) = Url::parse(&raw) else {
                 return false;
             };
@@ -647,7 +649,7 @@ fn build_tab(
                 return true;
             }
             let host = target.host_str().unwrap_or_default().to_owned();
-            match crate::errors::with_exceptions(policy.evaluate(&target), &target) {
+            match crate::tabs::errors::with_exceptions(policy.evaluate(&target), &target) {
                 PrivacyDecision::Allow => {
                     let tab = id(&s_nav);
                     if tab.0 != 0 && wry::navigating_main_frame() {
@@ -688,7 +690,7 @@ fn build_tab(
             // profile (`Store`, cookies), closed by the page's `window.close()` (wry's
             // `webViewDidClose:` on macOS, WebView2's own popup window on Windows).
             let sized = features.size.is_some() || features.position.is_some();
-            crate::trace(|| format!("new window sized={sized} -> {:?} {raw}", popup::new_window(&raw, sized)));
+            crate::platform::trace(|| format!("new window sized={sized} -> {:?} {raw}", popup::new_window(&raw, sized)));
             match popup::new_window(&raw, sized) {
                 NewWindow::Popup => return NewWindowResponse::Allow,
                 NewWindow::Tab => {
@@ -740,7 +742,7 @@ fn build_tab(
             if let Ok(url) = Url::parse(&raw) {
                 match event {
                     PageLoadEvent::Started => {
-                        crate::trace(|| format!("load start tab={} {raw}", tab.0));
+                        crate::platform::trace(|| format!("load start tab={} {raw}", tab.0));
                         load.push(Msg::LoadStart(tab))
                     }
                     PageLoadEvent::Finished => load.push(Msg::Loaded(tab, url.clone())),
@@ -765,7 +767,7 @@ fn build_tab(
         })
         // A refused certificate goes on only for a host the user chose in the shell's menu.
         .with_server_trust_handler(move |challenge| {
-            let allowed = crate::errors::cert_allowed(&challenge.host);
+            let allowed = crate::tabs::errors::cert_allowed(&challenge.host);
             let tab = id(&s_trust);
             if challenge.error != 0 && tab.0 != 0 {
                 trust.push(Msg::ServerTrust(tab, challenge));
