@@ -434,8 +434,13 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `gtk::init()` et crée la boucle winit en X11 (`with_x11`) ; `about_to_wait` vide la file GTK à chaque tour
   (`gtk::main_iteration_do`) et revient au plus tard après `GTK_PUMP` (8 ms). Trousseau : keyring
   `sync-secret-service` (sans lui, magasin en mémoire et nouvelle clé du coffre à chaque lancement).
-  Pas d'extensions (stub `ExtensionHost`), pas de capture dans le harnais, pas de mise à jour par l'app
-  (`updater::supported` faux ; `wants_asset("linux")` = `BlackHole-linux-x86_64.tar.gz` pour le lien).
+  Pas d'extensions (stub `ExtensionHost`), pas de capture dans le harnais. Mise à jour par l'app (x86_64)
+  selon l'installation (`updater::linux_install`) : paquet Debian (`/usr/bin/blackhole`, clé `linux-deb`
+  → `BlackHole-linux-amd64.deb`, installé après la fermeture par `pkexec apt-get install`, à défaut
+  `pkexec dpkg -i`, puis relancé ; refusé, l'ancienne version se relance ; il faut `pkexec`) ou archive
+  décompressée dans un dossier inscriptible (`blackhole` à côté de `blackhole.desktop`, clé `linux` →
+  `BlackHole-linux-x86_64.tar.gz`, fichiers copiés à côté puis renommés par-dessus, binaire en dernier,
+  puis relance). Un binaire copié ailleurs ne se met pas à jour (`supported` faux, lien vers la version).
   Paquets : `scripts/package-linux.sh VERSION [BINAIRE]` → `dist/BlackHole-linux-amd64.deb` (dépend de
   `libwebkit2gtk-4.1-0`, `libgtk-3-0`, `libxkbcommon-x11-0`, `libdbus-1-3`) et `BlackHole-linux-x86_64.tar.gz`.
   CI : test + Clippy `-D warnings` sur `ubuntu-22.04`, job `linux` (paquets joints à la release).

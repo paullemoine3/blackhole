@@ -5,7 +5,8 @@
 //! the same address — an office network exhausts it), the site has no such quota. The
 //! `SHA256SUMS.txt` published with the release lists its assets; the platform one is downloaded
 //! over HTTPS, checked against it, then handed to the platform installer (Inno Setup on Windows,
-//! an app-bundle swap on macOS).
+//! an app-bundle swap on macOS, on Linux the Debian package through `pkexec` or the unpacked
+//! archive replaced in place).
 
 use crate::catalog;
 use blackhole_domain::i18n::message;
@@ -20,6 +21,8 @@ pub const REPO: &str = "paullemoine3/blackhole";
 const SUMS: &str = "SHA256SUMS.txt";
 const MAX_BYTES: u64 = 400 * 1024 * 1024;
 /// Android APKs of a release (see the `android` job of the release workflow).
+pub const LINUX_ARCHIVE: &str = "BlackHole-linux-x86_64.tar.gz";
+pub const LINUX_DEB: &str = "BlackHole-linux-amd64.deb";
 pub const ANDROID_APK: &str = "BlackHole-android.apk";
 pub const ANDROID_DEBUG_APK: &str = "BlackHole-android-debug.apk";
 
@@ -56,8 +59,9 @@ pub fn wants_asset(os: &str, name: &str) -> bool {
     match os {
         "windows" => name.starts_with("BlackHole-Setup-") && name.ends_with("-x64.exe"),
         "macos" => name == "BlackHole-macos-universal.zip",
-        // Never installed by the app (the package manager owns it): Settings only links to it.
-        "linux" => name == "BlackHole-linux-x86_64.tar.gz",
+        // The archive replaces an unpacked copy; the Debian package an installed one.
+        "linux" => name == LINUX_ARCHIVE,
+        "linux-deb" => name == LINUX_DEB,
         // An APK only replaces one signed with the same key: release key or Gradle's debug key.
         "android" => name == ANDROID_APK,
         "android-debug" => name == ANDROID_DEBUG_APK,
@@ -194,7 +198,7 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
         1 << 20,
     )?;
     let sums = String::from_utf8_lossy(&sums);
-    release_from_sums(&tag, &sums, std::env::consts::OS)
+    release_from_sums(&tag, &sums, &update_os())
         .map(Some)
         .ok_or_else(|| format!("release {tag} has no verified download for this system"))
 }
@@ -239,6 +243,51 @@ fn is_dev_build(exe: &Path) -> bool {
         .any(|p| p.file_name().is_some_and(|n| n == "target"))
 }
 
+/// How a Linux copy was installed, which decides the release asset and how it is replaced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinuxInstall {
+    /// The Debian package: `/usr/bin/blackhole`, owned by dpkg (replaced as root, `pkexec`).
+    Deb,
+    /// The archive unpacked in a folder the user owns (`blackhole` beside `blackhole.desktop`).
+    Archive(PathBuf),
+}
+
+/// How the binary at `exe` was installed; `None` when it cannot replace itself (copied
+/// elsewhere, or a folder the user cannot write to).
+pub fn linux_install(exe: &Path) -> Option<LinuxInstall> {
+    if exe == Path::new("/usr/bin/blackhole") {
+        return Some(LinuxInstall::Deb);
+    }
+    let dir = exe.parent()?;
+    if exe.file_name()? != "blackhole" || !dir.join("blackhole.desktop").is_file() {
+        return None;
+    }
+    let probe = dir.join(".blackhole-write-test");
+    let writable = fs::write(&probe, b"").is_ok();
+    let _ = fs::remove_file(probe);
+    writable.then(|| LinuxInstall::Archive(dir.to_path_buf()))
+}
+
+/// The release asset key of this installation (`wants_asset`): the system's name, or
+/// `linux-deb` for the Debian package.
+pub fn update_os() -> String {
+    let os = std::env::consts::OS;
+    if os == "linux" {
+        let exe = std::env::current_exe().ok().and_then(|e| fs::canonicalize(e).ok());
+        if exe.is_some_and(|e| linux_install(&e) == Some(LinuxInstall::Deb)) {
+            return "linux-deb".into();
+        }
+    }
+    os.into()
+}
+
+/// A program found in `PATH` (`pkexec` asks for the administrator password on the desktop).
+#[cfg(not(any(windows, target_os = "macos")))]
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+}
+
 /// Whether this installation can replace itself.
 pub fn supported() -> bool {
     let Ok(exe) = std::env::current_exe() else {
@@ -250,6 +299,15 @@ pub fn supported() -> bool {
     match std::env::consts::OS {
         "windows" => true,
         "macos" => bundle_path(&exe).is_some(),
+        // Only x86_64 packages are published.
+        #[cfg(not(any(windows, target_os = "macos")))]
+        "linux" if cfg!(target_arch = "x86_64") => {
+            match fs::canonicalize(&exe).ok().and_then(|e| linux_install(&e)) {
+                Some(LinuxInstall::Deb) => on_path("pkexec"),
+                Some(LinuxInstall::Archive(_)) => true,
+                None => false,
+            }
+        }
         _ => false,
     }
 }
@@ -367,9 +425,86 @@ fn apply_impl(zip: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Waits for the old process to exit, installs the package as root (the desktop asks for the
+/// password; refused, the old version stays), then starts BlackHole again either way.
 #[cfg(not(any(windows, target_os = "macos")))]
-fn apply_impl(_: &Path) -> Result<(), String> {
-    Err("self-update is not supported on this platform".into())
+const DEB_SCRIPT: &str = r#"
+while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+if command -v apt-get >/dev/null 2>&1; then
+  pkexec apt-get install -y "$2" || pkexec dpkg -i "$2"
+else
+  pkexec dpkg -i "$2"
+fi
+exec /usr/bin/blackhole
+"#;
+
+/// Waits for the old process to exit, then starts the new binary.
+#[cfg(not(any(windows, target_os = "macos")))]
+const RELAUNCH_SCRIPT: &str = r#"
+while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+exec "$2"
+"#;
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn spawn_script(script: &str, arg: &Path) -> Result<(), String> {
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .arg("sh")
+        .arg(std::process::id().to_string())
+        .arg(arg)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn apply_impl(downloaded: &Path) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .and_then(fs::canonicalize)
+        .map_err(|e| e.to_string())?;
+    match linux_install(&exe).ok_or("this copy of BlackHole cannot replace itself")? {
+        LinuxInstall::Deb => spawn_script(DEB_SCRIPT, downloaded),
+        LinuxInstall::Archive(dir) => {
+            replace_unpacked(downloaded, &dir)?;
+            spawn_script(RELAUNCH_SCRIPT, &dir.join("blackhole"))
+        }
+    }
+}
+
+/// Unpacks the archive beside the download and puts its files in place of those of `dir`.
+/// Each file is copied next to its target then renamed over it (atomic, and allowed while the
+/// old binary runs); the binary goes last, so a failure leaves a working copy.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn replace_unpacked(archive: &Path, dir: &Path) -> Result<(), String> {
+    let stage = archive.with_extension("stage");
+    let _ = fs::remove_dir_all(&stage);
+    fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(archive)
+        .arg("-C")
+        .arg(&stage)
+        .status()
+        .map_err(|e| e.to_string())?;
+    let fresh = stage.join("BlackHole");
+    if !status.success() || !fresh.join("blackhole").is_file() {
+        return Err("could not unpack the update".into());
+    }
+    for name in ["blackhole.png", "blackhole.desktop", "blackhole"] {
+        let from = fresh.join(name);
+        if !from.is_file() {
+            continue;
+        }
+        let next = dir.join(format!(".{name}.new"));
+        fs::copy(&from, &next).map_err(|e| e.to_string())?;
+        fs::rename(&next, dir.join(name)).map_err(|e| e.to_string())?;
+    }
+    let _ = fs::remove_dir_all(&stage);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -502,6 +637,31 @@ mod tests {
         );
         assert!(is_dev_build(Path::new("/repo/target/release/blackhole")));
         assert!(!is_dev_build(exe));
+    }
+
+    #[test]
+    fn a_linux_copy_takes_the_asset_of_its_installation() {
+        assert!(wants_asset("linux", LINUX_ARCHIVE));
+        assert!(!wants_asset("linux", LINUX_DEB));
+        assert!(wants_asset("linux-deb", LINUX_DEB));
+        assert!(!wants_asset("linux-deb", LINUX_ARCHIVE));
+        let sums = format!("{}  {LINUX_ARCHIVE}\n{}  {LINUX_DEB}\n", "a".repeat(64), "b".repeat(64));
+        let deb = release_from_sums("v0.9.0", &sums, "linux-deb").unwrap();
+        assert_eq!(deb.asset, LINUX_DEB);
+        assert_eq!(deb.sha256, "b".repeat(64));
+    }
+
+    #[test]
+    fn tells_the_debian_package_from_an_unpacked_archive() {
+        assert_eq!(linux_install(Path::new("/usr/bin/blackhole")), Some(LinuxInstall::Deb));
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("blackhole");
+        fs::write(&exe, b"").unwrap();
+        // A lone binary copied somewhere is not an installation the app knows how to replace.
+        assert_eq!(linux_install(&exe), None);
+        fs::write(dir.path().join("blackhole.desktop"), b"").unwrap();
+        assert_eq!(linux_install(&exe), Some(LinuxInstall::Archive(dir.path().to_path_buf())));
+        assert_eq!(linux_install(&dir.path().join("other")), None);
     }
 
     #[test]

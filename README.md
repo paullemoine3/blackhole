@@ -179,7 +179,7 @@ Les versions sont publiées dans les [**releases GitHub**](../../releases).
 | 🐧 **Linux** (aperçu, x86_64) | `BlackHole-linux-amd64.deb` ou archive `BlackHole-linux-x86_64.tar.gz` (WebKitGTK 4.1, X11 ou XWayland) |
 | 🤖 **Android** | `BlackHole-android.apk` |
 
-BlackHole se met à jour lui-même (sauf sous Linux, où le paquet est remplacé à la main) : un bouton apparaît dans la barre latérale quand une nouvelle version existe, et chaque téléchargement est vérifié par SHA-256.
+BlackHole se met à jour lui-même, Linux compris (le paquet `.deb` demande le mot de passe administrateur) : un bouton apparaît dans la barre latérale quand une nouvelle version existe, et chaque téléchargement est vérifié par SHA-256.
 
 ---
 
