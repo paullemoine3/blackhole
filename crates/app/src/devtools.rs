@@ -6,9 +6,16 @@
 //! `eval chrome|bar|home|palette|peek|settings|easel|live|tabN|content JS`, `shots NAME` (settings window),
 //! `shote NAME` (easel window), `quit`.
 
-use super::*;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use blackhole_domain::TabId;
+use winit::event_loop::ActiveEventLoop;
+use winit::window::Window;
+
+use crate::ipc::UiCommand;
+use crate::state::Running;
 
 pub fn scratch() -> PathBuf {
     if cfg!(target_os = "macos") {
@@ -104,7 +111,7 @@ impl Running {
                     "flyout" => self.flyout.as_ref().unwrap_or(&self.home),
                     "bar" => &self.bar,
                     "home" => &self.home,
-                    "palette" => self.palette.as_ref().unwrap_or(&self.home),
+                    "palette" => self.palette.view.as_ref().unwrap_or(&self.home),
                     "peek" => self.peek.as_ref().map_or(&self.home, |p| &p.page),
                     // The popup of an extension's button (Windows), when one is open.
                     #[cfg(windows)]
@@ -167,8 +174,8 @@ impl Running {
                 let state = serde_json::json!({
                     "active": ws.active_tab().map(|t| t.url.as_str()),
                     "blocked": self.blocked.total(),
-                    "mediaHints": self.media_hint.len(),
-                    "mediaPlaying": self.media.lock().map_or(0, |m| m.values().filter(|p| p.playing).count()),
+                    "mediaHints": self.media.hints.len(),
+                    "mediaPlaying": self.media.probes.lock().map_or(0, |m| m.values().filter(|p| p.playing).count()),
                     "easelSide": self.easel_side(),
                     "easelTab": self.easel_tab,
                     "easelWindow": self.easel.is_some(),
@@ -198,7 +205,7 @@ impl Running {
                     .workspace()
                     .active_tab()
                     .and_then(|t| self.tabs.get(&t.id))
-                    .and_then(crate::web_view_ptr)
+                    .and_then(crate::platform::web_view_ptr)
                 {
                     blackhole_macos_webext::inspector(ptr, rest.trim());
                 }

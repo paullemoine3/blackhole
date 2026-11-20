@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use url::Url;
 
+pub mod app_extensions;
 pub mod catalog;
 pub mod github_ext;
 pub mod handoff;
@@ -63,6 +64,28 @@ pub fn remote_size(url: &str) -> Option<u64> {
         .parse()
         .ok()
         .filter(|n| *n > 0)
+}
+
+/// Size of the file a download is writing: browsers use a temporary name until it completes.
+pub fn partial_size(path: &std::path::Path) -> u64 {
+    let size = |p: &std::path::Path| fs::metadata(p).map_or(0, |m| m.len());
+    let with = |ext: &str| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(ext);
+        PathBuf::from(name)
+    };
+    size(path)
+        .max(size(&with(".crdownload")))
+        .max(size(&with(".partial")))
+        .max(size(&with(".download")))
+}
+
+/// Writes the macOS DNS profile (`dns::mobileconfig`) in the profile's folder and returns its
+/// path, for the system to open (it then waits in System Settings for the user to install it).
+pub fn write_dns_profile(data: &std::path::Path, contents: &str) -> Result<PathBuf, String> {
+    let path = data.join("dns").join("BlackHole-DNS.mobileconfig");
+    write_atomic_now(&path, contents).map_err(|e| e.0)?;
+    Ok(path)
 }
 
 /// Where downloaded files land.
@@ -454,6 +477,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 video_ads: dto.skip_video_ads,
                 cookie_banners: dto.hide_cookie_banners,
                 clean_links: dto.clean_links,
+                fingerprinting: dto.fingerprinting,
             },
             meeting_reminders: dto.meeting_reminders,
             meeting_card: dto.meeting_card,
@@ -491,6 +515,12 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .collect(),
             home_order: dto.home_order.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
             history_sync: dto.history_sync,
+            encrypted_dns: dto.encrypted_dns,
+            dns_resolver: if blackhole_domain::dns::doh_template(&dto.dns_resolver).is_some() {
+                dto.dns_resolver
+            } else {
+                blackhole_domain::dns::DEFAULT_RESOLVER.to_owned()
+            },
         }))
     }
 
@@ -521,6 +551,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             skip_video_ads: settings.shields.video_ads,
             hide_cookie_banners: settings.shields.cookie_banners,
             clean_links: settings.shields.clean_links,
+            fingerprinting: settings.shields.fingerprinting,
             meeting_reminders: settings.meeting_reminders,
             meeting_card: settings.meeting_card,
             meeting_notes: settings.meeting_notes,
@@ -536,6 +567,8 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
             home_order: settings.home_order.clone(),
             history_sync: settings.history_sync,
+            encrypted_dns: settings.encrypted_dns,
+            dns_resolver: settings.dns_resolver.clone(),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -679,6 +712,9 @@ struct SettingsDto {
     hide_cookie_banners: bool,
     #[serde(default = "default_true")]
     clean_links: bool,
+    /// Absent before 0.8.24: on.
+    #[serde(default = "default_true")]
+    fingerprinting: bool,
     #[serde(default = "default_true")]
     meeting_reminders: bool,
     #[serde(default = "default_true")]
@@ -711,6 +747,11 @@ struct SettingsDto {
     /// Absent before 0.8.18: on.
     #[serde(default = "default_true")]
     history_sync: bool,
+    /// Absent before 0.8.24: off, with the default resolver.
+    #[serde(default)]
+    encrypted_dns: bool,
+    #[serde(default)]
+    dns_resolver: String,
 }
 
 fn default_language() -> String {
@@ -779,6 +820,37 @@ fn write_atomic_now(path: &std::path::Path, contents: &str) -> Result<(), Storag
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_dns_profile_is_written_in_the_profile_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = super::write_dns_profile(dir.path(), "<plist/>").unwrap();
+        assert!(path.starts_with(dir.path()));
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "<plist/>");
+    }
+
+    /// The profile is a property list macOS accepts (checked by Apple's own tool).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_dns_profile_is_a_valid_property_list() {
+        use blackhole_domain::dns;
+        let dir = tempfile::tempdir().unwrap();
+        let template = dns::doh_template("https://dns.nextdns.io/abc?x=1&y=2").unwrap();
+        let path = super::write_dns_profile(dir.path(), &dns::mobileconfig(&template, "BlackHole – DNS")).unwrap();
+        let lint = std::process::Command::new("plutil").arg("-lint").arg(&path).output().unwrap();
+        assert!(lint.status.success(), "{}", String::from_utf8_lossy(&lint.stdout));
+    }
+
+    #[test]
+    fn a_download_in_progress_is_measured_under_its_temporary_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("big.zip");
+        assert_eq!(super::partial_size(&file), 0);
+        std::fs::write(dir.path().join("big.zip.crdownload"), [0u8; 10]).unwrap();
+        assert_eq!(super::partial_size(&file), 10);
+        std::fs::write(&file, [0u8; 25]).unwrap();
+        assert_eq!(super::partial_size(&file), 25);
+    }
+
     #[test]
     fn download_helpers_pick_free_names_and_encode_images() {
         let dir = tempfile::tempdir().unwrap();
@@ -923,6 +995,7 @@ mod tests {
                 video_ads: false,
                 cookie_banners: true,
                 clean_links: false,
+                fingerprinting: false,
             },
             meeting_reminders: false,
             meeting_card: true,
@@ -939,6 +1012,8 @@ mod tests {
             hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
             home_order: vec!["recent".to_owned(), "now".to_owned()],
             history_sync: false,
+            encrypted_dns: true,
+            dns_resolver: "https://dns.nextdns.io/abc".to_owned(),
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -956,6 +1031,8 @@ mod tests {
         assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
         assert!(old.home_order.is_empty(), "default order in older files");
         assert!(old.history_sync, "history sync on in older files");
+        assert!(!old.encrypted_dns, "encrypted DNS off in older files");
+        assert_eq!(old.dns_resolver, "quad9", "the default resolver in older files");
         fs::write(
             dir.path().join("settings.json"),
             r#"{"search_engine":"qwant","quick_access_size":"huge","hidden_home_sections":["now","nope"]}"#,

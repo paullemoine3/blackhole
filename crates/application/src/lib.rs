@@ -25,6 +25,17 @@ pub struct Favorite {
     pub tab: Option<TabId>,
 }
 
+/// A link brought from another browser or a file, to be filed as a tab of its space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedLink {
+    /// Its space; `None` (links saved before each space had its own) means the first space.
+    pub space: Option<SpaceId>,
+    /// Folder path, `/`-separated (empty: the "Imported" folder).
+    pub folder: String,
+    pub title: String,
+    pub url: String,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("storage error: {0}")]
 pub struct StorageError(pub String);
@@ -253,6 +264,23 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     /// Learning new trackers while browsing on or off (what was learned stays blocked).
+    /// Encrypted DNS on or off (applied by the shell: at the next launch on Windows).
+    pub fn set_encrypted_dns(&mut self, on: bool) {
+        self.settings.encrypted_dns = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// The resolver of encrypted DNS: a known resolver's id or an `https://` address; anything
+    /// else is refused (`false`).
+    pub fn set_dns_resolver(&mut self, choice: &str) -> bool {
+        if blackhole_domain::dns::doh_template(choice).is_none() {
+            return false;
+        }
+        self.settings.dns_resolver = choice.trim().to_owned();
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
     pub fn set_tracker_learning(&mut self, on: bool) {
         self.settings.tracker_learning = on;
         let _ = self.repo.save_settings(&self.settings);
@@ -369,6 +397,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             "video_ads" => shields.video_ads = on,
             "cookie_banners" => shields.cookie_banners = on,
             "clean_links" => shields.clean_links = on,
+            "fingerprinting" => shields.fingerprinting = on,
             _ => return false,
         }
         self.policy.set_shields(self.settings.shields);
@@ -626,6 +655,27 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let ok = self.workspace.move_tab(id, before, folder, pinned);
         self.persist();
         ok
+    }
+
+    /// Files imported links as tabs, space by space; only http(s) addresses are kept.
+    /// Returns how many tabs were added.
+    pub fn file_links(&mut self, links: impl IntoIterator<Item = ImportedLink>) -> usize {
+        let first = self.workspace.spaces().first().map_or(0, |s| s.id.0);
+        let mut by_space: std::collections::BTreeMap<u64, Vec<(String, String, Url)>> =
+            std::collections::BTreeMap::new();
+        for link in links {
+            let Ok(url) = Url::parse(&link.url) else {
+                continue;
+            };
+            if matches!(url.scheme(), "http" | "https") {
+                let space = link.space.map_or(first, |s| s.0);
+                by_space.entry(space).or_default().push((link.folder, link.title, url));
+            }
+        }
+        by_space
+            .into_iter()
+            .map(|(space, links)| self.import_tabs(SpaceId(space), links))
+            .sum()
     }
 
     pub fn import_tabs(&mut self, space: SpaceId, links: Vec<(String, String, Url)>) -> usize {
@@ -909,6 +959,46 @@ mod tests {
             *self.2.lock().unwrap() = Some(h.clone());
             Ok(())
         }
+    }
+
+    #[test]
+    fn imported_links_are_filed_in_their_space_and_only_web_addresses_kept() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let first = svc.workspace().spaces()[0].id;
+        let link = |space: Option<SpaceId>, url: &str| ImportedLink {
+            space,
+            folder: "Work/Docs".into(),
+            title: url.into(),
+            url: url.into(),
+        };
+        let added = svc.file_links([
+            link(None, "https://a.example/"),
+            link(Some(first), "http://b.example/"),
+            link(None, "javascript:alert(1)"),
+            link(None, "ftp://c.example/"),
+            link(None, "not a url"),
+            link(Some(SpaceId(999_999)), "https://elsewhere.example/"),
+            link(None, "https://a.example/"),
+        ]);
+        assert_eq!(added, 2);
+        let tabs = &svc.workspace().spaces()[0].tabs;
+        assert!(tabs.iter().any(|t| t.url.as_str() == "https://a.example/"));
+        assert!(tabs.iter().any(|t| t.url.as_str() == "http://b.example/"));
+    }
+
+    #[test]
+    fn only_a_usable_resolver_is_kept() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert!(!svc.settings().encrypted_dns);
+        svc.set_encrypted_dns(true);
+        assert!(svc.set_dns_resolver("mullvad"));
+        assert!(!svc.set_dns_resolver("http://plain.example/dns"));
+        assert!(svc.set_shield("fingerprinting", false));
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(again.settings().encrypted_dns);
+        assert_eq!(again.settings().dns_resolver, "mullvad");
+        assert!(!again.settings().shields.fingerprinting);
     }
 
     #[test]

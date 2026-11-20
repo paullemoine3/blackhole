@@ -1,16 +1,18 @@
 //! Construction of the native web views (WKWebView on macOS, WebView2 on Windows).
 
-use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
-use blackhole_domain::popup::{self, NewWindow};
-use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use blackhole_domain::{PrivacyDecision, PrivacyPolicy, TabId};
+use blackhole_domain::popup::{self, NewWindow};
 use url::Url;
 use winit::window::Window;
 use wry::{
     dpi::{LogicalPosition, LogicalSize},
     NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder,
 };
+
+use crate::ipc::{Mailbox, Msg, PageEvent, UiCommand};
 
 const SHORTCUTS_JS: &str = include_str!("../ui/shortcuts.js");
 const AUTOFILL_JS: &str = include_str!("../ui/autofill.js");
@@ -50,6 +52,7 @@ pub fn send_language(view: &WebView) {
     ));
 }
 const SHIELDS_JS: &str = include_str!("../ui/shields.js");
+const FINGERPRINT_JS: &str = include_str!("../ui/fingerprint.js");
 /// What a page says about the product it shows, for the tab comparator.
 pub const COMPARE_JS: &str = include_str!("../ui/compare.js");
 
@@ -62,6 +65,36 @@ fn shields_script(policy: &PrivacyPolicy) -> String {
     });
     SHIELDS_JS.replace("__SHIELDS__", &config.to_string())
 }
+/// A secret of this run, which the fingerprinting protection mixes with each site: values vary
+/// from one site to another and from one launch to the next (`RandomState` is seeded by the
+/// system's random source).
+fn session_secret() -> &'static str {
+    static SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SECRET.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        let mut out = String::new();
+        for _ in 0..2 {
+            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+            h.write_u64(u64::from(std::process::id()));
+            out.push_str(&format!("{:016x}", h.finish()));
+        }
+        out
+    })
+}
+
+/// The fingerprinting protection of page views, empty when its shield is off (fixed for the
+/// page's lifetime, like the other shields: a change applies to the pages opened afterwards).
+fn fingerprint_script(policy: &PrivacyPolicy) -> String {
+    if !policy.shields().fingerprinting {
+        return String::new();
+    }
+    let config = serde_json::json!({
+        "secret": session_secret(),
+        "exempt": blackhole_domain::fingerprint::EXEMPT_SITES,
+    });
+    FINGERPRINT_JS.replace("__FINGERPRINT__", &config.to_string())
+}
+
 /// The request guard of page views. macOS and Windows block in the engine (`block_natively`),
 /// so the script gets no host there and leaves the page's own functions alone.
 fn guard_script(policy: &PrivacyPolicy) -> String {
@@ -131,7 +164,7 @@ fn block_natively(view: &WebView, policy: &PrivacyPolicy, report: impl Fn(String
             return false;
         }
         let stop = matches!(
-            crate::errors::with_exceptions(policy.evaluate(&target), &target),
+            crate::tabs::errors::with_exceptions(policy.evaluate(&target), &target),
             PrivacyDecision::Block(_)
         );
         if stop {
@@ -168,6 +201,21 @@ pub fn set_hardware_acceleration(on: bool) {
     HARDWARE_ACCELERATION.store(on, Ordering::Relaxed);
 }
 
+/// WebView2's own encrypted DNS (`dns::chromium_switch`), empty when off. Set once at launch,
+/// before the first view: every view of a data folder must share the same engine flags.
+static DNS_AT_LAUNCH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// Must be called before the first view is built (a change applies at the next launch).
+/// macOS and Linux: WebKit uses the system's DNS, nothing to set here.
+pub fn set_encrypted_dns(template: Option<&str>) {
+    let _ = DNS_AT_LAUNCH.set(template.map(str::to_owned));
+}
+
+/// The encrypted DNS address the engine was started with (`None`: the system's DNS).
+pub fn encrypted_dns_at_launch() -> Option<&'static str> {
+    DNS_AT_LAUNCH.get().and_then(Option::as_deref)
+}
+
 /// Every view comes from here so they all share the same engine flags (WebView2 requires it).
 fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     let builder = WebViewBuilder::new_with_web_context(ctx);
@@ -188,6 +236,10 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
         );
         if !HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
             args.push_str(" --disable-gpu");
+        }
+        if let Some(template) = encrypted_dns_at_launch() {
+            args.push(' ');
+            args.push_str(&blackhole_domain::dns::chromium_switch(template));
         }
         builder.with_additional_browser_args(&args)
     };
@@ -298,6 +350,7 @@ pub fn live_view(
     #[cfg(any(target_os = "macos", windows))]
     let native_policy = policy.clone();
     let shields = shields_script(policy);
+    let fingerprint = fingerprint_script(policy);
     let crop = LIVE_CROP_JS.replace(
         "__SELECTOR__",
         &serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned()),
@@ -311,6 +364,7 @@ pub fn live_view(
         .with_background_color(PAGE_BG)
         .with_initialization_script(guard)
         .with_initialization_script(shields)
+        .with_initialization_script(fingerprint)
         .with_initialization_script_for_main_only(crop, true)
         // A hidden or captured view never prompts: the challenge is cancelled (401 page).
         .with_http_auth_handler(|_, responder| drop(responder))
@@ -493,6 +547,7 @@ fn build_tab(
     #[cfg(any(target_os = "macos", windows))]
     let native_policy = policy.clone();
     let shields = shields_script(policy);
+    let fingerprint = fingerprint_script(policy);
     let (events, nav, popups, title, load) = (
         mailbox.clone(),
         mailbox.clone(),
@@ -596,6 +651,7 @@ fn build_tab(
         .with_back_forward_navigation_gestures(true)
         .with_initialization_script(guard)
         .with_initialization_script(shields)
+        .with_initialization_script(fingerprint)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_initialization_script_for_main_only(
             page_script(
@@ -622,7 +678,7 @@ fn build_tab(
             false,
         )
         .with_ipc_handler(move |request| {
-            crate::trace(|| {
+            crate::platform::trace(|| {
                 let body: String = request.body().chars().take(400).collect();
                 if body.contains("\"media\"") || body.contains("\"requests\"") || body.contains("login_submitted") || body.contains("autofill") {
                     String::new()
@@ -635,7 +691,7 @@ fn build_tab(
             }
         })
         .with_navigation_handler(move |raw| {
-            crate::trace(|| format!("navigate tab={} main={} {raw}", id(&s_nav).0, wry::navigating_main_frame()));
+            crate::platform::trace(|| format!("navigate tab={} main={} {raw}", id(&s_nav).0, wry::navigating_main_frame()));
             let Ok(target) = Url::parse(&raw) else {
                 return false;
             };
@@ -647,7 +703,7 @@ fn build_tab(
                 return true;
             }
             let host = target.host_str().unwrap_or_default().to_owned();
-            match crate::errors::with_exceptions(policy.evaluate(&target), &target) {
+            match crate::tabs::errors::with_exceptions(policy.evaluate(&target), &target) {
                 PrivacyDecision::Allow => {
                     let tab = id(&s_nav);
                     if tab.0 != 0 && wry::navigating_main_frame() {
@@ -688,7 +744,7 @@ fn build_tab(
             // profile (`Store`, cookies), closed by the page's `window.close()` (wry's
             // `webViewDidClose:` on macOS, WebView2's own popup window on Windows).
             let sized = features.size.is_some() || features.position.is_some();
-            crate::trace(|| format!("new window sized={sized} -> {:?} {raw}", popup::new_window(&raw, sized)));
+            crate::platform::trace(|| format!("new window sized={sized} -> {:?} {raw}", popup::new_window(&raw, sized)));
             match popup::new_window(&raw, sized) {
                 NewWindow::Popup => return NewWindowResponse::Allow,
                 NewWindow::Tab => {
@@ -740,7 +796,7 @@ fn build_tab(
             if let Ok(url) = Url::parse(&raw) {
                 match event {
                     PageLoadEvent::Started => {
-                        crate::trace(|| format!("load start tab={} {raw}", tab.0));
+                        crate::platform::trace(|| format!("load start tab={} {raw}", tab.0));
                         load.push(Msg::LoadStart(tab))
                     }
                     PageLoadEvent::Finished => load.push(Msg::Loaded(tab, url.clone())),
@@ -765,7 +821,7 @@ fn build_tab(
         })
         // A refused certificate goes on only for a host the user chose in the shell's menu.
         .with_server_trust_handler(move |challenge| {
-            let allowed = crate::errors::cert_allowed(&challenge.host);
+            let allowed = crate::tabs::errors::cert_allowed(&challenge.host);
             let tab = id(&s_trust);
             if challenge.error != 0 && tab.0 != 0 {
                 trust.push(Msg::ServerTrust(tab, challenge));
@@ -965,7 +1021,10 @@ pub const PIP_TOGGLE_JS: &str = "(()=>{const vs=[...document.querySelectorAll('v
 /// A video that buffers still plays (no `readyState` test): the card's ▶/⏸ no longer blinks.
 /// A video the site muted itself counts when it plays, does not loop and fills a quarter of the
 /// window or more (a Twitch stream starts muted); hover previews and small autoplays do not.
-pub const MEDIA_PROBE_JS: &str = "(()=>{const a=innerWidth*innerHeight;const big=v=>!v.paused&&!v.ended&&!v.loop&&(r=>r.width*r.height>=a*.25)(v.getBoundingClientRect());const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm||big(v));const on=m.filter(v=>!v.paused&&!v.ended);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.every(v=>v.muted),watching:[...document.querySelectorAll('video,audio')].some(v=>!v.paused&&!v.ended&&!v.loop&&v.readyState>2&&(!isFinite(v.duration)||v.duration>30)),pip:!!document.pictureInPictureElement||[...document.querySelectorAll('video')].some(v=>v.webkitPresentationMode==='picture-in-picture'),...(window.__bhRtc?window.__bhRtc.state():{})}})()";
+/// One pass over the page's media elements. During a call the muted tiles are not measured
+/// (`getBoundingClientRect` forced a layout of the whole grid of a large meeting every probe):
+/// the call itself says the tab is busy.
+pub const MEDIA_PROBE_JS: &str = "(()=>{const r=window.__bhRtc?window.__bhRtc.state():{};const call=r.call||r.cam||r.mic;const all=[...document.querySelectorAll('video,audio')];const a=innerWidth*innerHeight;const big=v=>!call&&!v.paused&&!v.ended&&!v.loop&&(b=>b.width*b.height>=a*.25)(v.getBoundingClientRect());const m=all.filter(v=>!v.muted||v.dataset.bhm||big(v));const on=m.filter(v=>!v.paused&&!v.ended);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.every(v=>v.muted),watching:all.some(v=>!v.paused&&!v.ended&&!v.loop&&v.readyState>2&&(!isFinite(v.duration)||v.duration>30)),pip:!!document.pictureInPictureElement||all.some(v=>v.webkitPresentationMode==='picture-in-picture'),...r}})()";
 
 /// Pauses what plays, or resumes the media that was being watched.
 pub const MEDIA_TOGGLE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){on.forEach(v=>v.pause());return}const v=m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(v)v.play().catch(()=>{})})()";

@@ -3,9 +3,12 @@
 
 pub mod changelog;
 pub mod clean_link;
+pub mod dns;
+pub mod downloads;
 pub mod easel;
 pub mod error_page;
 pub mod extension;
+pub mod fingerprint;
 pub mod handoff;
 pub mod highlights;
 pub mod history;

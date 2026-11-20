@@ -1,9 +1,10 @@
 //! Messages flowing from the web views into the shell. Handlers run on the event-loop thread, so
 //! they only enqueue; `Running::pump` drains the queue and mutates state.
 
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+
 use blackhole_domain::TabId;
 use serde::Deserialize;
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 
@@ -47,6 +48,15 @@ pub enum UiCommand {
     SetHardwareAcceleration {
         on: bool,
     },
+    /// Encrypted DNS on or off, and its resolver (a known id or an `https://` address); macOS
+    /// installs it as a system profile (`install_dns_profile` offers it again).
+    SetEncryptedDns {
+        on: bool,
+    },
+    SetDnsResolver {
+        resolver: String,
+    },
+    InstallDnsProfile,
     SetExtensionsInPrivate {
         on: bool,
     },
@@ -545,7 +555,7 @@ pub enum UiCommand {
     HardReload,
     /// Settings › Passwords and the save toast (see `passwords::PasswordAction`).
     Passwords {
-        action: crate::passwords::PasswordAction,
+        action: crate::features::passwords::PasswordAction,
     },
     OpenSettings {
         /// Section to show (`privacy`, `extensions`…).
@@ -903,7 +913,7 @@ pub enum PageEvent {
     LoginSubmitted {
         #[serde(default)]
         username: String,
-        password: crate::passwords::Secret,
+        password: crate::features::passwords::Secret,
     },
     /// The risky button of BlackHole's error page: the shell opens its own menu at (x, y) to
     /// ask. Acted on only while that tab shows the error page; it grants nothing by itself.
@@ -1268,6 +1278,19 @@ mod tests {
     }
 
     #[test]
+    fn privacy_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"set_encrypted_dns","on":true}"#,
+            r#"{"cmd":"set_dns_resolver","resolver":"https://dns.nextdns.io/abc"}"#,
+            r#"{"cmd":"install_dns_profile"}"#,
+            r#"{"cmd":"set_shield","name":"fingerprinting","on":false}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
     fn tracker_and_anchor_commands_parse_and_pages_cannot_send_them() {
         for raw in [
             r#"{"cmd":"set_tracker_learning","on":false}"#,
@@ -1438,7 +1461,7 @@ mod tests {
 
     #[test]
     fn password_events_parse_and_pages_cannot_drive_the_wallet() {
-        use crate::passwords::PasswordAction;
+        use crate::features::passwords::PasswordAction;
         // Older pages send the query without `fresh`.
         assert!(matches!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"autofill_query"}"#),

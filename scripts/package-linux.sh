@@ -2,7 +2,8 @@
 # Packages the Linux build (x86_64): dist/BlackHole-linux-x86_64.tar.gz (binary, desktop entry,
 # icon) and dist/BlackHole-linux-amd64.deb (installs to /usr, depends on WebKitGTK 4.1).
 # Usage: scripts/package-linux.sh VERSION [BINARY]   (BINARY: target/release/blackhole)
-# The app never updates itself on Linux: the package manager (or the user) replaces it.
+# The app updates itself from these (crates/infrastructure/src/updater.rs): the .deb through pkexec,
+# the archive in place. Their layout (binary beside blackhole.desktop) is how it tells them apart.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 version=${1:?version}

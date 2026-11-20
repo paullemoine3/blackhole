@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.24",
+        &[
+            "Fingerprinting protection: what sites read to recognise your device (canvas, WebGL, audio, graphics card, core count) differs on every site and every launch. On by default, in Settings > Privacy > Shields",
+            "Encrypted DNS, in Settings > Privacy: the names of the sites you visit go encrypted to Quad9, Mullvad, Cloudflare, AdGuard or the resolver of your choice. Windows: BlackHole's own engine, from the next launch. macOS: a system profile to install in System Settings",
+            "Linux: BlackHole now updates itself from the app, the .deb package (it asks for the administrator password) as well as the archive",
+            "Large video calls are lighter: no Picture in Picture forced on a call you only listen to, a lighter check of what tabs play, a calmer meeting card in the sidebar and, on Windows, a call left in the background keeps its memory",
+        ],
+    ),
+    (
         "0.8.23",
         &[
             "A welcome tour at the first launch: the main features, then importing your bookmarks, the default browser, a few extensions and the look of your first space",

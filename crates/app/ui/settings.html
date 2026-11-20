@@ -329,6 +329,11 @@
     <header class="sh"><span class="badge"><i data-icon="shield" data-size="md"></i></span><div><h1 data-i18n="settings.privacy">Privacy</h1><p class="lead"><span data-i18n="settings.privacy_lead">No telemetry, trackers blocked, history stays on this machine.</span></p></div></header>
     <div class="card"><h2 data-i18n="menu.shields">Shields</h2><div class="rows"><div id="trackers"></div><div class="rows" id="shields"></div></div>
       <p class="note"><span data-i18n="settings.shields_note">Requests to known trackers and ad servers are blocked; the page itself can hide its ad slots, skip video ads and drop cookie banners (no answer is given to them). Clean links drop the tracking parameters of an address and skip the redirect pages of search engines and social networks. The https upgrade stays on. Pages already open keep their behaviour until reloaded.</span></p></div>
+    <div class="card"><h2 data-i18n="settings.dns_title">Encrypted DNS</h2><div class="rows" id="dns"></div>
+      <h3 class="subhead" data-i18n="settings.dns_resolver">Resolver</h3>
+      <div class="rows" id="dnsresolvers" role="radiogroup" data-i18n-aria="settings.dns_resolver"></div>
+      <div class="actions"><input class="field" id="dnscustom" placeholder="https://dns.example/dns-query" spellcheck="false" autocomplete="off" data-i18n-aria="settings.dns_custom"><button class="btn" id="dnsuse"><span data-i18n="settings.dns_use">Use this resolver</span></button><button class="btn primary" id="dnsprofile" hidden><span data-i18n="settings.dns_install_profile">Install the profile</span></button></div>
+      <p class="note"><span data-i18n="settings.dns_note">Your browser’s DNS requests (the names of the sites you visit) are encrypted and sent to the resolver chosen, not to your network’s.</span></p></div>
     <div class="card"><h2 data-i18n="settings.learned_title">Learned trackers</h2><div class="rows" id="learning"></div>
       <div class="list rows" id="learnedlist"></div>
       <h3 class="subhead" data-i18n="settings.allowed_hosts">Allowed hosts</h3>
@@ -770,6 +775,7 @@ window.bh = {
     renderPasswords(s.passwords);
     renderRecall(s.recall);
     renderTrackers(s.trackers);
+    renderDns(s.dns);
     const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
     put($('shields'), 
       shield(bhT('settings.block_ads'), 'ads', s.adBlocking),
@@ -777,6 +783,7 @@ window.bh = {
       shield(bhT('settings.video_ads'), 'video_ads', s.shields.videoAds),
       shield(bhT('settings.cookie_banners'), 'cookie_banners', s.shields.cookieBanners),
       shield(bhT('settings.clean_links'), 'clean_links', s.shields.cleanLinks),
+      option(bhT('settings.fingerprinting'), s.shields.fingerprinting, () => send({ cmd: 'set_shield', name: 'fingerprinting', on: !s.shields.fingerprinting }), true, bhT('settings.fingerprinting_sub')),
     );
     put($('extpriv'), option(bhT('settings.ext_private'), s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
       bhT('settings.ext_private_sub')));
@@ -1227,6 +1234,22 @@ $('tour').onclick = () => send({ cmd: 'replay_tour' });
 $('clearblocked').onclick = () => send({ cmd: 'clear_blocked' });
 // Learned trackers: the switch, what was learned (allow one) and the user's exceptions (block
 // one again). Forgetting asks for a second click.
+// Privacy › Encrypted DNS: the switch (what applies it on this system), the resolvers offered,
+// another one by its address, and on macOS the system profile offered again.
+function renderDns(d) {
+  if (!d) return;
+  const how = { restart: 'settings.dns_sub_restart', profile: 'settings.dns_sub_profile', system: 'settings.dns_sub_system' }[d.applies];
+  put($('dns'), option(bhT('settings.dns_on'), d.on, () => send({ cmd: 'set_encrypted_dns', on: !d.on }), true,
+    bhT(d.restart ? 'settings.dns_restart_needed' : how)));
+  put($('dnsresolvers'), ...d.resolvers.map(r => option(r.name, r.id === d.resolver, () => send({ cmd: 'set_dns_resolver', resolver: r.id }))));
+  const custom = !d.resolvers.some(r => r.id === d.resolver);
+  if (document.activeElement !== $('dnscustom')) $('dnscustom').value = custom ? d.resolver : '';
+  $('dnsprofile').hidden = !(d.applies === 'profile' && d.on);
+}
+$('dnsuse').onclick = () => { const v = $('dnscustom').value.trim(); if (v) send({ cmd: 'set_dns_resolver', resolver: v }); };
+$('dnscustom').onkeydown = (e) => { if (e.key === 'Enter') $('dnsuse').click(); };
+$('dnsprofile').onclick = () => send({ cmd: 'install_dns_profile' });
+
 function renderTrackers(t) {
   if (!t) return;
   put($('learning'), option(bhT('settings.learn_trackers'), t.learning && t.available, () => send({ cmd: 'set_tracker_learning', on: !t.learning }), true,

@@ -24,6 +24,17 @@ pub enum VisitKind {
 }
 
 impl VisitKind {
+    /// How an address the interface sends was asked for: `bookmark` for quick access, a
+    /// favorite or a bookmark; anything else was typed or chosen.
+    pub fn asked_via(via: Option<&str>) -> Self {
+        match via {
+            Some("bookmark") => Self::Bookmark,
+            _ => Self::Typed,
+        }
+    }
+}
+
+impl VisitKind {
     /// Stored form (`history.json`).
     pub fn id(self) -> u8 {
         match self {
@@ -405,6 +416,13 @@ fn merge_entry(mine: &mut HistoryEntry, theirs: &HistoryEntry) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_address_from_quick_access_or_a_bookmark_is_a_bookmark_visit() {
+        assert_eq!(VisitKind::asked_via(Some("bookmark")), VisitKind::Bookmark);
+        assert_eq!(VisitKind::asked_via(Some("typed")), VisitKind::Typed);
+        assert_eq!(VisitKind::asked_via(None), VisitKind::Typed);
+    }
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()

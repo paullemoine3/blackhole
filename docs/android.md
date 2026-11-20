@@ -213,7 +213,7 @@ ChaCha20-Poly1305, appairage par code) : un téléphone s'appaire avec un PC ou 
   appairé ou un appairage en cours, comme sur le bureau. `NativeEvent::Tick` (toutes les 300 ms au
   premier plan) lit ce que le réseau apporte.
 - **Synchro** (`domain/sync.rs`, `infrastructure/sync.rs`, `crates/android/src/devices.rs`, côté bureau
-  `app/src/handoff.rs`) : accès rapide, onglets ouverts et espaces (nom, couleur). Un registre
+  `app/src/features/handoff.rs`) : accès rapide, onglets ouverts et espaces (nom, couleur). Un registre
   (`sync.json`) garde par onglet (espace par nom + adresse) la date de sa dernière modification et
   l'appareil auteur ; une fermeture laisse une pierre tombale (30 jours). La fusion garde la
   modification la plus récente. Mode par appareil (`ask` par défaut, `auto`, `off`, dans `devices.bin`) :
