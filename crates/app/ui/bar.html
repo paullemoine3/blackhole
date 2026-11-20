@@ -28,11 +28,13 @@
   #zoom { position: absolute; right: 8px; top: 3px; width: auto; height: 24px; padding: 0 9px; border-radius: 7px; gap: 6px; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(255,255,255,.14); opacity: 1; display: flex; align-items: center; }
   #zoom[hidden] { display: none; }
   #zoom:hover { background: rgba(255,255,255,.24); }
-  #progress { position: fixed; left: var(--cl, 8px); right: 8px; bottom: 0; height: 3px; pointer-events: none; overflow: hidden; border-radius: 3px 3px 0 0; opacity: 0; transition: opacity .25s ease .15s; }
+  /* While a typed address waits for its server (before the page starts), a line under the bar,
+     right on the page card; once the page starts, the line at the top of the page takes over
+     (ui/progress.js, 0.8.25). */
+  #progress { position: fixed; left: var(--cl, 8px); right: 8px; bottom: 0; height: 2px; pointer-events: none; overflow: hidden; border-radius: 2px 2px 0 0; opacity: 0; transition: opacity .25s ease .15s; }
   #progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ffb020); box-shadow: 0 0 8px var(--accent); }
   #progress.on { opacity: 1; transition: none; }
-  #progress.on i { width: 85%; transition: width 12s cubic-bezier(.1,.7,.2,1); }
-  #progress.done i { width: 100%; transition: width .2s ease-out; }
+  #progress.on i { width: 30%; transition: width 8s cubic-bezier(.1,.7,.2,1); }
   #zoom .x { opacity: .6; }
   body.secure #omni { padding-left: 30px; padding-right: 30px; }
   body.secure .lock { display: block; }
@@ -75,16 +77,13 @@
   #sidebar.ping .dot { animation: notice-ring .7s ease-out; }
   @keyframes notice-ring { from { box-shadow: 0 0 0 0 var(--accent); } to { box-shadow: 0 0 0 9px transparent; } }
   /* Motion: buttons give under the pointer, the address slides in when it changes, the
-     loading bar shimmers and the reload arrow turns. All of it stops with animations off. */
+     reload arrow turns (the loading line is drawn in the page itself: ui/progress.js). All of it stops with animations off. */
   button { transition: background-color .15s ease, opacity .15s ease, transform .16s cubic-bezier(.3,1.5,.5,1); }
   button:active:not(:disabled) { transform: scale(.88); }
   #omni:active { transform: scale(.985); }
   .win button:active:not(:disabled) { transform: none; }
   #omni { transition: background-color .15s ease, border-color .25s ease, box-shadow .25s ease, transform .16s ease; }
   #omni:hover { border-color: rgba(255,255,255,.18); box-shadow: 0 0 0 3px rgba(255,255,255,.04), 0 6px 18px -10px var(--glow); }
-  #progress i { position: relative; overflow: hidden; }
-  #progress.on i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); transform: translateX(-100%); animation: shimmer 1.2s ease-in-out infinite; }
-  @keyframes shimmer { to { transform: translateX(100%); } }
   /* Only the arrow turns, never the button: one eased turn after another while the page
      reloads, stopping on a turn's end (the arrow at rest) once it has loaded. */
   #reload svg { transform-origin: 50% 50%; }
@@ -153,20 +152,19 @@ tooltips();
 let last = null;
 addEventListener('bhlang', () => { tooltips(); if (last) { $('url').textContent = ''; bh.render(last); } });
 
+// Whether the page shown is loading: the reload arrow keeps turning meanwhile. The loading line
+// itself is drawn at the top of the page (0.8.25, ui/progress.js).
 let loadingNow = false;
 function progress(on) {
-  if (on === loadingNow) return;
   loadingNow = on;
+}
+let serverWaitNow = false;
+function waitLine(on) {
+  if (on === serverWaitNow) return;
+  serverWaitNow = on;
   const p = $('progress');
-  if (on) {
-    p.classList.remove('done', 'on');
-    void p.offsetWidth;
-    p.classList.add('on');
-  } else {
-    p.classList.add('done');
-    p.classList.remove('on');
-    setTimeout(() => { if (!loadingNow) p.classList.remove('done'); }, 450);
-  }
+  p.classList.remove('on');
+  if (on) { void p.offsetWidth; p.classList.add('on'); }
 }
 
 // Notices are drawn here only while no sidebar is on screen (`side`: pinned open or floating
@@ -210,6 +208,7 @@ window.bh = {
     document.body.classList.toggle('flat', s.depth === false);
     side(s.side !== false, s.waiting);
     progress(!!s.loading);
+    waitLine(!!s.serverWait);
     const root = document.documentElement.style;
     root.setProperty('--accent', s.color);
     root.setProperty('--glow', rgba(s.color, .5));

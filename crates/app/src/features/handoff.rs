@@ -122,6 +122,15 @@ impl Nearby {
         }
     }
 
+    /// Sends a sync message (history, extensions) to a paired device.
+    pub(crate) fn send_snapshot(&self, device: &str, json: String) {
+        self.request(Request::Snapshot { device: device.to_owned(), json });
+    }
+
+    pub(crate) fn is_paired(&self, device: &str) -> bool {
+        self.devices.iter().any(|d| d.id == device)
+    }
+
     fn request(&self, request: Request) {
         if let Some(handle) = &self.handle {
             handle.request(request);
@@ -315,7 +324,11 @@ impl Running {
                 }
                 Event::Snapshot { device, name, json } => match history_sync::parse(&json) {
                     Some(incoming) => self.on_history(device, name, incoming),
-                    None => self.on_ledger(device, name, &json),
+                    None => {
+                        if !self.on_extensions(&device, &name, &json) {
+                            self.on_ledger(device, name, &json);
+                        }
+                    }
                 },
                 Event::Code(code) => {
                     self.nearby.code = code;
@@ -429,11 +442,13 @@ impl Running {
         let now = Instant::now();
         if now >= self.nearby.history_at {
             self.nearby.history_at = now + HISTORY_EVERY;
-            if self.svc.settings().history_sync {
-                let online: Vec<String> = self.nearby.devices.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
-                for device in online {
+            // The extensions are asked with the history (0.8.25), each by its own switch.
+            let online: Vec<String> = self.nearby.devices.iter().filter(|d| d.online).map(|d| d.id.clone()).collect();
+            for device in online {
+                if self.svc.settings().history_sync {
                     self.ask_history(&device);
                 }
+                self.ask_extensions(&device);
             }
         }
         if now >= self.nearby.observe_at {
@@ -574,6 +589,12 @@ impl Running {
                 "on": self.svc.settings().history_sync,
                 "last": self.nearby.history_last.as_ref().map(|(name, at)| json!({"name": name, "at": at})),
             },
+            // The extensions switch (0.8.25); `host`: this system can install extensions.
+            "extensions": {
+                "on": self.svc.settings().extension_sync,
+                "host": self.webext.is_some(),
+                "last": self.ext_sync.last.as_ref().map(|(name, at)| json!({"name": name, "at": at})),
+            },
         })
     }
 
@@ -589,10 +610,18 @@ impl Running {
                 }
                 self.ui_settings();
             }
-            // "Sync now" of the history: every online device is asked at the next turn.
+            // "Sync now": every online device is asked at the next turn (history, extensions).
             UiCommand::HistorySyncNow => {
                 self.nearby.history_at = Instant::now();
             }
+            UiCommand::SetExtensionSync { on } => {
+                self.svc.set_extension_sync(on);
+                if on {
+                    self.nearby.history_at = Instant::now();
+                }
+                self.ui_settings();
+            }
+            UiCommand::ExtSyncAnswer { id, accept } => self.ext_sync_answer(&id, accept),
             UiCommand::DeviceForget { id } => {
                 self.nearby.status.clear();
                 self.nearby.request(Request::Forget(id));

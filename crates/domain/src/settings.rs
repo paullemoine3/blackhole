@@ -79,6 +79,9 @@ pub struct Settings {
     /// Paired devices exchange the history in the background (with what ranks the command bar),
     /// apart from the tab sync modes. On by default.
     pub history_sync: bool,
+    /// Paired devices offer each other their extensions (0.8.25, `ext_sync`): market ones are
+    /// installed, the others proposed. On by default.
+    pub extension_sync: bool,
     /// Encrypted DNS (DNS over HTTPS) with `dns_resolver`. Off by default: Windows applies it at
     /// the next launch, macOS through a system profile the user installs (`dns`).
     pub encrypted_dns: bool,
@@ -230,6 +233,7 @@ impl Default for Settings {
             hidden_home_sections: BTreeSet::new(),
             home_order: Vec::new(),
             history_sync: true,
+            extension_sync: true,
             encrypted_dns: false,
             dns_resolver: crate::dns::DEFAULT_RESOLVER.to_owned(),
         }

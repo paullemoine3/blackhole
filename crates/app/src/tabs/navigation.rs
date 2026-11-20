@@ -289,3 +289,22 @@ impl Running {
         self.ui_stale = true;
     }
 }
+
+impl Running {
+    /// The loading line at the top of the page (`ui/progress.js`): `tint` when the engine says
+    /// the page started, `done` at the end. Before the page starts (a typed address waiting for
+    /// its server) the top bar draws the line (`waiting`).
+    pub(crate) fn page_progress(&self, tab: TabId, step: &str) {
+        let Some(view) = self.tabs.get(&tab) else {
+            return;
+        };
+        let call = match step {
+            "tint" => {
+                let color = serde_json::to_string(&self.svc.workspace().active_space().color).unwrap_or_default();
+                format!("{step}({color},{})", self.svc.settings().animations)
+            }
+            _ => "done()".to_owned(),
+        };
+        let _ = view.evaluate_script(&format!("window.__bhProgress&&__bhProgress.{call}"));
+    }
+}

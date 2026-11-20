@@ -892,7 +892,7 @@ Check ((Named hm4) -match 'hm4:false\|\|visible') 'launch splash: it lands and t
 Check ((Named hm5) -match 'hm5:noanim\|none\|none') 'start page: no logo animation when animations are off'
 Check ((Named dl3) -match 'dl3:bh-dl-page\|/dlpage') 'download: the page is still there once the hidden sidebar has slid back'
 Check ((Named cm2) -match 'cm2:.*Reload/Hard refresh/Add this page to the Easel/Capture a live area to an Easel[^/]*/Watch an area for changes[^/]*/Copy page link/Find in page/Print[^/]*/Inspect page') 'page menu: a right click on the page shows BlackHole''s menu (Easel, live area, watched area)'
-Check ((Named cm4) -match 'cm4:Open image in new tab/Copy image address') 'page menu: an image adds its own entries'
+Check ((Named cm4) -match 'cm4:Open image in new tab/Copy image"') 'page menu: an image adds its own entries'
 Check ((Named cm6) -notmatch 'menuing') 'page menu: a page with a menu of its own keeps it'
 Check ((Named cm8) -match 'menuing.*\|true') 'page menu: a video the page plays by itself (a preview) gets it too'
 Check ((Named cm10) -notmatch 'menuing') 'page menu: a player with the engine controls keeps the engine menu'

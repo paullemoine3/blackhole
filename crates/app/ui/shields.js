@@ -1,7 +1,7 @@
 // Page clean-up, Brave-style "shields", injected at document start in every frame of a page
 // tab when switched on in Settings > Privacy (the blocked requests are page_guard.js's job):
 // - hide ad slots and the space they leave (generic, well-known ad containers only);
-// - skip video ads (YouTube): jump to their end and press "Skip";
+// - video ads (YouTube): taken out of the player answer, else skipped to their end;
 // - hide cookie consent banners of the common consent platforms and give back the scrolling
 //   they lock.
 // Styles go through a constructed sheet, which page CSPs do not block.
@@ -40,6 +40,57 @@
     } catch (e) {}
   }
 
+  // YouTube video ads (0.8.25: also in the players embedded by other sites, frames included).
+  // First, the ads are taken out of what the player is told to play: the player answer
+  // (`ytInitialPlayerResponse` in the page, then `/youtubei/v1/player` read as JSON) lists them
+  // in `adPlacements`, `playerAds` and `adSlots`; without them the player has no ad to play.
+  // Only on youtube.com: no other site sees these functions replaced. Then, for an ad that still
+  // plays (one the server stitched in), the old way: jump to its end and press "Skip".
+  if (SHIELDS.videoAds && /(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
+    const AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
+    const prune = (o) => {
+      if (!o || typeof o !== 'object') return o;
+      for (const k of AD_KEYS) if (k in o) delete o[k];
+      if (o.playerResponse && typeof o.playerResponse === 'object') prune(o.playerResponse);
+      if (Array.isArray(o)) for (const part of o) if (part && part.playerResponse) prune(part.playerResponse);
+      return o;
+    };
+    // Read as native code, like the engine's own functions (the player checks some of them).
+    const wrap = (owner, name, after) => {
+      const original = owner[name];
+      if (typeof original !== 'function') return;
+      try {
+        Object.defineProperty(owner, name, {
+          value: new Proxy(original, { apply: (fn, self, args) => after(Reflect.apply(fn, self, args)) }),
+          writable: true, configurable: true,
+        });
+      } catch (e) {}
+    };
+    wrap(JSON, 'parse', prune);
+    if (window.Response) wrap(Response.prototype, 'json', (p) => (p && typeof p.then === 'function' ? p.then(prune) : p));
+    try {
+      let initial;
+      Object.defineProperty(window, 'ytInitialPlayerResponse', {
+        configurable: true,
+        get: () => initial,
+        set: (v) => { initial = prune(v); },
+      });
+    } catch (e) {}
+    const SKIP = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button, [id^="skip-button"] button';
+    const skipAd = () => {
+      const player = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
+      if (!player) return;
+      const video = player.querySelector('video');
+      // The ad and the video share this element: jump to the ad's end, never touch the sound.
+      if (video && isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.1) {
+        video.currentTime = video.duration;
+      }
+      const skip = player.querySelector(SKIP);
+      if (skip) skip.click();
+    };
+    setInterval(skipAd, 300);
+  }
+
   if (window.top !== window) return;
 
   // A hidden consent banner often leaves the page unable to scroll: give it back, once one of
@@ -56,18 +107,5 @@
     const timer = setInterval(() => {
       if (freed() || ++tries > 20) clearInterval(timer);
     }, 1000);
-  }
-
-  // YouTube video ads: the player plays them in the same <video>, marked by `.ad-showing`.
-  if (SHIELDS.videoAds && /(^|\.)youtube\.com$/.test(location.hostname)) {
-    setInterval(() => {
-      const player = document.querySelector('.html5-video-player.ad-showing');
-      if (!player) return;
-      const video = player.querySelector('video');
-      // The ad and the video share this element: jump to the ad's end, never touch the sound.
-      if (video && isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
-      const skip = player.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
-      if (skip) skip.click();
-    }, 400);
   }
 })();

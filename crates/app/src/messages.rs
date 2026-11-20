@@ -116,6 +116,7 @@ impl Running {
                 self.awaiting.remove(&tab);
                 self.pending.remove(&tab);
                 self.loading.insert(tab, Instant::now());
+                self.page_progress(tab, "tint");
                 self.ui_bar();
             }
             Msg::Loaded(tab, url) => {
@@ -131,6 +132,7 @@ impl Running {
                 self.errors_loaded(tab, &url);
                 self.auth.prompts.loaded(tab);
                 self.loading.remove(&tab);
+                self.page_progress(tab, "done");
                 self.pending.remove(&tab);
                 if self.splash.remove(&tab).is_some() {
                     self.sync();
@@ -146,6 +148,7 @@ impl Running {
             }
             Msg::Failed(tab, url) => {
                 trace(|| format!("failed tab={} {url}", tab.0));
+                self.page_progress(tab, "done");
                 if self.download_took(tab) {
                     self.ui_bar();
                 } else {

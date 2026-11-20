@@ -12,7 +12,7 @@ $script = @'
 wait 9000
 cmd {"cmd":"open_settings","tab":"extensions"}
 wait 2500
-eval settings (document.getElementById('mkgh').click(), document.getElementById('mkgithub').hidden + '|' + !!document.getElementById('ghrepo'))
+eval settings (document.getElementById('mkgh').click(), document.querySelector('#mkaddmenu [data-add="github"]').click(), document.getElementById('mkgithub').hidden + '|' + !!document.getElementById('ghrepo'))
 eval settings (document.getElementById('ghrepo').value = 'not a repo', ghLookup(), 'asked')
 wait 1500
 eval settings document.querySelector('#mkgithub .fielderr') ? 'error-shown' : 'none'

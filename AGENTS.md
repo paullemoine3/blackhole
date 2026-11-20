@@ -116,7 +116,7 @@ Règles :
   `stream`) n'est pas mis en pause à la fermeture, donc rien ne change d'onglet pour lui.
   Barre latérale masquée : un clic molette (`open_in_background`) la fait sortir `LINK_REVEAL`.
 - Adresse saisie dans un onglet (`navigate`) : `Running::pending` la montre aussitôt dans la barre,
-  avec la ligne de progression, jusqu'au début de la page, à l'échec, à l'invite d'authentification
+  avec la ligne de progression (dans la page une fois qu'elle a commencé, 0.8.25), jusqu'au début de la page, à l'échec, à l'invite d'authentification
   ou au téléchargement (`LOADING_MAX` au plus) ; sans elle un appareil lent du réseau local laissait
   l'ancienne adresse une vingtaine de secondes. Menu du clic droit de la barre latérale
   (`createMenu`) : « New black hole tab » (action `burner_tab`). Test : fin de `test-ui.ps1`
@@ -184,7 +184,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `scripts\test-easel.ps1`, `scripts\test-features.ps1` (liens propres, trou noir, split pilote,
   surlignages, Recall), `scripts\test-0818.ps1` (recherche, rechargement, Réglages en onglet, accueil
   réorganisé, réessai silencieux, jump list), `scripts\test-github-ext.ps1` (ajout depuis GitHub, réseau),
-  `scripts\test-onboarding.ps1` (visite d'accueil, `BH_ONBOARDING=1`).
+  `scripts\test-onboarding.ps1` (visite d'accueil, `BH_ONBOARDING=1`), `scripts\test-0825.ps1` (tuile en vue
+  scindée, copier l'image, ligne de progression dans la page, trou noir des Réglages, ajout par lien, carte de synchro).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -253,7 +254,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   Aucune ligne sélectionnée à l'ouverture (`sel = -1`) : Entrée sur l'adresse intacte recharge la
   page (`submit`) ; la première ligne est sélectionnée dès qu'on tape.
 - Déplacer un onglet d'espace (`move_tab_to_space`) libère sa vue : elle est recréée sur le profil
-  (cookies) du nouvel espace. « Copy link » passe par `execCommand('copy')` dans la palette.
+  (cookies) du nouvel espace. « Copy link » (toute entrée `copy`) passe par le shell (`CopyText`, 0.8.25).
 
 ## Liens, boucliers et capture en direct (0.7.18)
 
@@ -285,7 +286,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
   → `target: "tab"`. Sur un lien, les entrées du lien suivent.
 - Boucliers : `PrivacyPolicy::with_ads` (traqueurs `blocklist.txt` + pubs `adlist.txt`, chacun
   son interrupteur) et `Shields` (masquer les pubs, sauter les pubs YouTube, masquer les bandeaux
-  cookies) appliqués par `ui/shields.js` à la création de la page ; réglages dans `Settings`
+  cookies) appliqués par `ui/shields.js` à la création de la page (pubs YouTube : voir 0.8.25) ; réglages dans `Settings`
   (`ad_blocking`, `shields`), commande `SetShield`. Ne jamais mettre le domaine d'un site dans
   `adlist.txt` ; ne pas couper le son sur YouTube (la pub et la vidéo partagent le `<video>`).
 - Blocage des requêtes dans le moteur, tiers seulement (`domain::is_third_party`), par
@@ -826,7 +827,7 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   image construite quand même avec le lien). Icône du volume si `SetFile` est là.
 - Tuiles d'accès rapide : `Settings::quick_access_size` (`QUICK_ACCESS_SIZES` : small 5 par ligne, medium 4
   et 48 px, large 3), commande `set_quick_access_size`, classes `qa-small` / `qa-large` de `index.html`,
-  menu d'une tuile et de la zone, Réglages > General.
+  Réglages > General seulement (plus dans les menus depuis 0.8.25).
 - Accueil : sections `HOME_SECTIONS` (`now`, `favorites`, `watches`, `downloads`, `recent`) masquables
   (`Settings::hidden_home_sections`, `set_home_section`, bouton « Customize the start page », Réglages >
   General). Zones surveillées (`home_watches_json`, dernière valeur, les plus récemment changées) et
@@ -1127,6 +1128,53 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   l'ancien) écrit par `infrastructure::write_dns_profile`, ouvert puis Réglages Système › Profils ;
   désactiver ouvre ce volet (l'utilisateur supprime le profil). Linux : le résolveur du système
   (systemd-resolved, DNSOverTLS) ; l'interface l'explique. Android : non traité.
+
+## 0.8.25 : synchro des extensions, ajout par lien, copier l'image, progression dans la page
+
+- Synchro des extensions (à côté des onglets et de l'historique) : `Settings::extension_sync` (vrai par défaut,
+  DTO `default_true`, `SetExtensionSync`), demandée avec l'historique (`HISTORY_EVERY`, appareil qui revient,
+  « Sync now » = `HistorySyncNow`). Messages `"v": 2` `extensions_pull` / `extensions` (`infrastructure/ext_sync.rs` :
+  id vérifié contre sa source, 200 au plus) ; règle pure `domain::ext_sync::plan` : extensions du market présentes
+  pour ce système installées sans question (`install_catalog`), GitHub et lien proposés par une notice (« Ajouter »
+  / « Plus tard », `ExtSyncAnswer`, refus gardés pour la session) puis installés par `sync_install` (dernière
+  release, meilleur fichier `asset_rank` ; même lien). Ajouts seulement : rien n'est retiré par une synchro.
+  App : `features/ext_sync.rs` (`ExtSync`), aiguillage dans `handoff.rs` (`on_extensions` avant `on_ledger`).
+  Réglages > Appareils : carte `#histcard` « Ce qui se synchronise » (onglets réglés par appareil, historique,
+  extensions si l'hôte d'extensions existe, un « Sync now »).
+- Ajouter une extension (Réglages > Extensions) : bouton déroulant `#mkadd` (`#mkaddmenu`, flèches, Échap) : depuis
+  GitHub (inchangé) ou depuis un lien (`LinkPrepare`, `mk.ghMode = 'link'`). Règles `domain::market` :
+  `direct_package_url` (https, sans identifiants, hôte avec un point ; page du Chrome Web Store ou d'Edge Add-ons →
+  adresse de téléchargement du store, `store_package_url`), `direct_id` (`url-<hôte>-<FNV>`), `direct_file_name`,
+  `crx_payload` (en-tête CRX2/CRX3 retiré, zip ou xpi tel quel). `catalog::fetch_direct` (https jusqu'à la dernière
+  redirection, 64 Mo), `github_ext::check_direct` / `prepare_direct` ; épinglé dans `extensions-github.json` avec
+  `direct: true` (catégorie `link`, aucune mise à jour cherchée : on réinstalle depuis le même lien).
+- Copier : toute entrée `copy` des menus passe par le shell (`UiCommand::CopyText`, `arboard`), plus par
+  `execCommand('copy')` (échouait quand la palette n'avait pas le focus système). « Copier l'image » (`CopyImage`,
+  `features/clipboard.rs`) : image téléchargée sur un fil avec l'origine de la page en `Referer`
+  (`infrastructure/image_clip.rs` : http(s), 30 Mo, 64 Mpx ; PNG, JPEG, GIF, WebP, BMP, ICO), pixels RGBA vers le
+  presse-papiers (`arboard` `image-data`). `page_guard.js` envoie aussi l'image sous le pointeur quand elle est dans
+  un lien. Mod+Maj+C (`shift+c`, page d'abord : Google Docs) copie l'adresse de la page (propre si Shields).
+- Shields YouTube (`shields.js`, aussi dans les cadres : lecteurs intégrés, `youtube-nocookie.com`) : `adPlacements`,
+  `playerAds`, `adSlots`, `adBreakHeartbeatParams` retirés de la réponse du lecteur (`JSON.parse`,
+  `Response.prototype.json` enveloppés par `Proxy`, `ytInitialPlayerResponse` par un accesseur), sur youtube.com
+  seulement ; une pub insérée côté serveur est encore sautée (`.ad-showing` / `.ad-interrupting`, bouton « Skip »).
+- Barre de progression dans la page : `ui/progress.js` (cadre principal des onglets) dessine la ligne par
+  `html::before` d'une feuille construite (aucun nœud ajouté : pas de souci d'hydratation React). La nouvelle page la
+  lance au début du document ; le shell (`page_progress`) la teinte à `LoadStart` (`tint`, WebView2 : `ContentLoading`,
+  après l'engagement) et la termine à `Loaded` / `Failed` (`done`). Avant (adresse saisie qui attend son serveur,
+  `Running::pending`), la barre du haut garde une ligne fine juste au-dessus de la carte (champ `serverWait`) : un script
+  évalué après `load_url` s'exécute déjà dans le document suivant sous WebView2.
+- PiP d'un direct (Twitch) : `media_devices.js` répond `play` / `pause` de la Media Session tant que la vidéo flotte
+  (durée infinie ou de plus de deux jours, ou `srcObject`), sinon Chromium n'affiche pas de bouton pause.
+- Accès rapide : « Vue scindée » dans le menu d'une tuile ; la taille des tuiles n'est plus que dans Réglages >
+  Général (`tileSizeItems` retiré des menus de tuile et de zone, clé `sidebar.tile_size` supprimée).
+- Réglages : à chaque ouverture (`settings_opened`, champ `opened` de l'état), le trou noir de la visite
+  (`#sx-warp`, `sx-swallow`) avale la page puis les Réglages en sortent (`sx-emerge`) ; rien en animations coupées
+  ni sous `prefers-reduced-motion`.
+- Tests : `ext_sync::tests` (domaine et infrastructure), `market::tests` (`direct_*`, `crx_payload`),
+  `github_ext::tests::a_package_from_a_link_…`, `image_clip::tests`, réglage relu (`extension_sync`). Scénario
+  Windows : `scripts\test-0825.ps1`. macOS : compilation croisée seulement ; synchro entre deux appareils, PiP
+  Twitch et pubs YouTube non vérifiés en réel.
 
 ## Livraison et entretien
 

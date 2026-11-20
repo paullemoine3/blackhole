@@ -548,17 +548,12 @@ function menuIcon(name, color) {
   else ic.textContent = name || '';
   return ic;
 }
-// Shell pages have no secure origin for navigator.clipboard: the copy command still works.
+// Shell pages have no secure origin for navigator.clipboard, and execCommand('copy') fails when
+// the system has not given this view the focus (0.8.25): the shell writes the clipboard.
 function copyText(text) {
-  const area = document.createElement('textarea');
-  area.value = text;
-  area.style.cssText = 'position:fixed;opacity:0';
-  document.body.append(area);
-  area.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch (e) {}
-  area.remove();
-  return ok;
+  if (typeof text !== 'string' || !text) return false;
+  send({ cmd: 'copy_text', text, quiet: true });
+  return true;
 }
 
 // Colour picker (`picker: { color, presets: [[name, hex]…], run }`): `run` gets `color`.

@@ -103,6 +103,7 @@ impl Running {
             .collect::<Vec<_>>());
         state["market"] = self.market_json();
         state["github"] = self.github_json();
+        state["opened"] = json!(self.settings_opened);
         state["systemLanguage"] = json!(blackhole_domain::i18n::resolve(
             blackhole_domain::i18n::SYSTEM,
             &i18n::system_languages()
@@ -126,6 +127,9 @@ impl Running {
             self.easel_tab = false;
         }
         self.library = false;
+        if !self.settings_shown {
+            self.settings_opened = self.settings_opened.wrapping_add(1);
+        }
         self.settings_shown = true;
         self.sync();
         self.ui_settings();

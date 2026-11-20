@@ -22,6 +22,8 @@ const PASSKEYS_JS: &str = include_str!("../ui/passkeys.js");
 const PAGE_GUARD_JS: &str = include_str!("../ui/page_guard.js");
 const FAVICON_JS: &str = include_str!("../ui/favicon.js");
 const MEDIA_DEVICES_JS: &str = include_str!("../ui/media_devices.js");
+/// The loading line drawn at the top of the page itself (0.8.25).
+const PROGRESS_JS: &str = include_str!("../ui/progress.js");
 const FIND_JS: &str = include_str!("../ui/find.js");
 #[cfg(windows)]
 const EXT_TABS_JS: &str = include_str!("../ui/ext_tabs.js");
@@ -662,6 +664,7 @@ fn build_tab(
         )
         .with_initialization_script_for_main_only(FAVICON_JS, true)
         .with_initialization_script_for_main_only(MEDIA_DEVICES_JS, true)
+        .with_initialization_script_for_main_only(PROGRESS_JS, true)
         .with_initialization_script_for_main_only(
             page_script(FIND_JS, &["page.no_match", "palette.find", "page.previous", "page.next", "window.close"]),
             true,

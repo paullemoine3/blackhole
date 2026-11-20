@@ -151,7 +151,7 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
 - Vocabulaire : « quick access » (tuiles épinglées), « put to sleep » (`close_instance`, l'onglet garde sa place ; c'est aussi le bouton « − » d'un onglet de dossier), « close » (`close`, archive), « delete » (conteneur + contenu, avec confirmation). Casse de phrase.
 - Accès rapide : « Close tab » et la commande `close` (gardée côté Rust) ne retirent jamais une tuile, ils la mettent en veille ; seul « Remove from quick access » la retire. Clic molette (`auxclick`) : veille pour un onglet d'accès rapide ou de dossier, `close` sinon. Pas de bouton son sur les tuiles (il masquait l'icône).
 - « Lock URL » a été retiré (domaine, IPC, interface) ; un ancien champ `locked` de `workspace.json` est ignoré au chargement (test dans `infrastructure`).
-- PiP : la page envoie `pip_left { paused }`. Sur macOS (WebKit), fermer la fenêtre flottante met la vidéo en pause (rien ne change) et « retour à l'onglet » la laisse jouer : `pip_left` affiche alors son onglet (`domain::pip::back_to_tab`), seulement pour une vidéo que le shell a mise en PiP (`pip.tab`, `pip_on_blur`, bouton PiP de la carte/palette via `pip_toggled`) et pas pour une sortie que le shell vient de provoquer (`pip.shell_exits`, 1,5 s). WebKit repasse la vidéo en `inline` dès le clic mais n'envoie `webkitpresentationmodechanged` qu'après l'animation de la fenêtre : la sonde (500 ms) le voit d'abord et oublie `pip.tab` ; `pip.faded` garde l'onglet `pip::LEFT_EVENT_GRACE` (3 s) pour que ce `pip_left` tardif compte encore (cas « late » de `test-pip.sh`). Sous WebView2 c'est pareil pour une vidéo fichier ou réseau (vérifié avec de vrais clics : la pause arrive avant `leavepictureinpicture`) ; seul un flux en direct (`srcObject`, champ `stream` de `pip_left`) n'est pas mis en pause à la fermeture, et rien ne change alors d'onglet. Barre latérale masquée : un clic molette (`open_in_background`) la fait sortir `LINK_REVEAL`. Adresse saisie dans un onglet (`navigate`) : `Running::pending` la montre aussitôt dans la barre avec la ligne de progression, jusqu'au début de la page, à l'échec, à l'invite d'authentification ou au téléchargement (`LOADING_MAX` au plus). Menu du clic droit de la barre latérale (`createMenu`) : « New black hole tab » (action `burner_tab`). Test : fin de `test-ui.ps1` (`ad1`, `ad2`, `bm1`, `bm2`). Le ✕ de la carte ferme aussi la fenêtre (`MEDIA_CLOSE_JS`) et la carte reste fermée au moins 2 s (`DISMISS_GRACE`). `paused` est une pause vue pendant le PiP (`__bhPaused` dans `media_devices.js`), pas `video.paused` à la sortie : WebKit met en pause une vidéo muette (tuiles d'un appel Meet) qui revient dans un onglet masqué, et cet événement `pause` n'arrive qu'après `webkitpresentationmodechanged`. Test : `scripts/test-pip.sh` (cible devtools `eval tabN`, page `call.html` = flux muet en direct).
+- PiP : la page envoie `pip_left { paused }`. Sur macOS (WebKit), fermer la fenêtre flottante met la vidéo en pause (rien ne change) et « retour à l'onglet » la laisse jouer : `pip_left` affiche alors son onglet (`domain::pip::back_to_tab`), seulement pour une vidéo que le shell a mise en PiP (`pip.tab`, `pip_on_blur`, bouton PiP de la carte/palette via `pip_toggled`) et pas pour une sortie que le shell vient de provoquer (`pip.shell_exits`, 1,5 s). WebKit repasse la vidéo en `inline` dès le clic mais n'envoie `webkitpresentationmodechanged` qu'après l'animation de la fenêtre : la sonde (500 ms) le voit d'abord et oublie `pip.tab` ; `pip.faded` garde l'onglet `pip::LEFT_EVENT_GRACE` (3 s) pour que ce `pip_left` tardif compte encore (cas « late » de `test-pip.sh`). Sous WebView2 c'est pareil pour une vidéo fichier ou réseau (vérifié avec de vrais clics : la pause arrive avant `leavepictureinpicture`) ; seul un flux en direct (`srcObject`, champ `stream` de `pip_left`) n'est pas mis en pause à la fermeture, et rien ne change alors d'onglet. Barre latérale masquée : un clic molette (`open_in_background`) la fait sortir `LINK_REVEAL`. Adresse saisie dans un onglet (`navigate`) : `Running::pending` la montre aussitôt dans la barre avec la ligne de progression (dans la page une fois qu'elle a commencé, 0.8.25), jusqu'au début de la page, à l'échec, à l'invite d'authentification ou au téléchargement (`LOADING_MAX` au plus). Menu du clic droit de la barre latérale (`createMenu`) : « New black hole tab » (action `burner_tab`). Test : fin de `test-ui.ps1` (`ad1`, `ad2`, `bm1`, `bm2`). Le ✕ de la carte ferme aussi la fenêtre (`MEDIA_CLOSE_JS`) et la carte reste fermée au moins 2 s (`DISMISS_GRACE`). `paused` est une pause vue pendant le PiP (`__bhPaused` dans `media_devices.js`), pas `video.paused` à la sortie : WebKit met en pause une vidéo muette (tuiles d'un appel Meet) qui revient dans un onglet masqué, et cet événement `pause` n'arrive qu'après `webkitpresentationmodechanged`. Test : `scripts/test-pip.sh` (cible devtools `eval tabN`, page `call.html` = flux muet en direct).
 - Fenêtre Easel (Réglages dans la carte de page depuis 0.8.18, `body.embedded` sans barre) : `panel_window_attributes` (Windows : sans bordure + ombre + icône ; macOS : barre de titre transparente, 84 px réservés aux boutons système). La page dessine la barre du haut (38 px, `--tint`/`--glow` de la couleur de l'espace, boutons réduire/agrandir/fermer, glisser = déplacer, double-clic = agrandir) via `UiCommand::PanelWindow { window, action }` ; l'état « agrandi » suit `WindowEvent::Resized`. Dans l'Easel embarqué en onglet, cette barre est masquée.
 - Suppression d'un espace ou d'un dossier : onglets archivés (`archive_tab` cherche dans tous les espaces) puis `drop_view`. Renommer un dossier : `UiCommand::EditFolder` → `bh.editFolderId`.
 - Annuler une suppression : instantané domaine (`snapshot_space` / `snapshot_folder` → `Removed`) gardé 15 s dans `Running::undo`, notice `Undo` avec bouton (`notify`, voir « Notices »), `UiCommand::UndoRemoval` → `undo_removal` (retire aussi les entrées d'archive). Les routes « Air Traffic » d'un espace supprimé ne reviennent pas. « Close other tabs » : `snapshot_tabs` → `Removed::Tabs`, même Annuler (bureau et Android), sans confirmation. Bibliothèque et Easel : `app/trash.rs` (`Trashed` : surlignage `Highlights::take`, veille `Watches::take`, onglet archivé, carte `Easels::take_item`, Easel `Easels::take`), `UiCommand::UndoTrash`, un seul élément gardé `UNDO_FOR`. Éditeur de mot de passe des Réglages : ouvert jusqu'à `bh.passwordSaved` (`null` = enregistré, sinon `{field, text}` affiché sous le champ) ; l'Annuler d'une suppression est aussi dans `#pwstatus` (champ `undo` de l'état).
@@ -484,7 +484,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   image construite quand même avec le lien). Icône du volume si `SetFile` est là.
 - Tuiles d'accès rapide : `Settings::quick_access_size` (`QUICK_ACCESS_SIZES` : small 5 par ligne, medium 4
   et 48 px, large 3), commande `set_quick_access_size`, classes `qa-small` / `qa-large` de `index.html`,
-  menu d'une tuile et de la zone, Réglages > General.
+  Réglages > General seulement (plus dans les menus depuis 0.8.25).
 - Accueil : sections `HOME_SECTIONS` (`now`, `favorites`, `watches`, `downloads`, `recent`) masquables
   (`Settings::hidden_home_sections`, `set_home_section`, bouton « Customize the start page », Réglages >
   General). Zones surveillées (`home_watches_json`, dernière valeur, les plus récemment changées) et
@@ -785,6 +785,53 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   l'ancien) écrit par `infrastructure::write_dns_profile`, ouvert puis Réglages Système › Profils ;
   désactiver ouvre ce volet (l'utilisateur supprime le profil). Linux : le résolveur du système
   (systemd-resolved, DNSOverTLS) ; l'interface l'explique. Android : non traité.
+
+## 0.8.25 : synchro des extensions, ajout par lien, copier l'image, progression dans la page
+
+- Synchro des extensions (à côté des onglets et de l'historique) : `Settings::extension_sync` (vrai par défaut,
+  DTO `default_true`, `SetExtensionSync`), demandée avec l'historique (`HISTORY_EVERY`, appareil qui revient,
+  « Sync now » = `HistorySyncNow`). Messages `"v": 2` `extensions_pull` / `extensions` (`infrastructure/ext_sync.rs` :
+  id vérifié contre sa source, 200 au plus) ; règle pure `domain::ext_sync::plan` : extensions du market présentes
+  pour ce système installées sans question (`install_catalog`), GitHub et lien proposés par une notice (« Ajouter »
+  / « Plus tard », `ExtSyncAnswer`, refus gardés pour la session) puis installés par `sync_install` (dernière
+  release, meilleur fichier `asset_rank` ; même lien). Ajouts seulement : rien n'est retiré par une synchro.
+  App : `features/ext_sync.rs` (`ExtSync`), aiguillage dans `handoff.rs` (`on_extensions` avant `on_ledger`).
+  Réglages > Appareils : carte `#histcard` « Ce qui se synchronise » (onglets réglés par appareil, historique,
+  extensions si l'hôte d'extensions existe, un « Sync now »).
+- Ajouter une extension (Réglages > Extensions) : bouton déroulant `#mkadd` (`#mkaddmenu`, flèches, Échap) : depuis
+  GitHub (inchangé) ou depuis un lien (`LinkPrepare`, `mk.ghMode = 'link'`). Règles `domain::market` :
+  `direct_package_url` (https, sans identifiants, hôte avec un point ; page du Chrome Web Store ou d'Edge Add-ons →
+  adresse de téléchargement du store, `store_package_url`), `direct_id` (`url-<hôte>-<FNV>`), `direct_file_name`,
+  `crx_payload` (en-tête CRX2/CRX3 retiré, zip ou xpi tel quel). `catalog::fetch_direct` (https jusqu'à la dernière
+  redirection, 64 Mo), `github_ext::check_direct` / `prepare_direct` ; épinglé dans `extensions-github.json` avec
+  `direct: true` (catégorie `link`, aucune mise à jour cherchée : on réinstalle depuis le même lien).
+- Copier : toute entrée `copy` des menus passe par le shell (`UiCommand::CopyText`, `arboard`), plus par
+  `execCommand('copy')` (échouait quand la palette n'avait pas le focus système). « Copier l'image » (`CopyImage`,
+  `features/clipboard.rs`) : image téléchargée sur un fil avec l'origine de la page en `Referer`
+  (`infrastructure/image_clip.rs` : http(s), 30 Mo, 64 Mpx ; PNG, JPEG, GIF, WebP, BMP, ICO), pixels RGBA vers le
+  presse-papiers (`arboard` `image-data`). `page_guard.js` envoie aussi l'image sous le pointeur quand elle est dans
+  un lien. Mod+Maj+C (`shift+c`, page d'abord : Google Docs) copie l'adresse de la page (propre si Shields).
+- Shields YouTube (`shields.js`, aussi dans les cadres : lecteurs intégrés, `youtube-nocookie.com`) : `adPlacements`,
+  `playerAds`, `adSlots`, `adBreakHeartbeatParams` retirés de la réponse du lecteur (`JSON.parse`,
+  `Response.prototype.json` enveloppés par `Proxy`, `ytInitialPlayerResponse` par un accesseur), sur youtube.com
+  seulement ; une pub insérée côté serveur est encore sautée (`.ad-showing` / `.ad-interrupting`, bouton « Skip »).
+- Barre de progression dans la page : `ui/progress.js` (cadre principal des onglets) dessine la ligne par
+  `html::before` d'une feuille construite (aucun nœud ajouté : pas de souci d'hydratation React). La nouvelle page la
+  lance au début du document ; le shell (`page_progress`) la teinte à `LoadStart` (`tint`, WebView2 : `ContentLoading`,
+  après l'engagement) et la termine à `Loaded` / `Failed` (`done`). Avant (adresse saisie qui attend son serveur,
+  `Running::pending`), la barre du haut garde une ligne fine juste au-dessus de la carte (champ `serverWait`) : un script
+  évalué après `load_url` s'exécute déjà dans le document suivant sous WebView2.
+- PiP d'un direct (Twitch) : `media_devices.js` répond `play` / `pause` de la Media Session tant que la vidéo flotte
+  (durée infinie ou de plus de deux jours, ou `srcObject`), sinon Chromium n'affiche pas de bouton pause.
+- Accès rapide : « Vue scindée » dans le menu d'une tuile ; la taille des tuiles n'est plus que dans Réglages >
+  Général (`tileSizeItems` retiré des menus de tuile et de zone, clé `sidebar.tile_size` supprimée).
+- Réglages : à chaque ouverture (`settings_opened`, champ `opened` de l'état), le trou noir de la visite
+  (`#sx-warp`, `sx-swallow`) avale la page puis les Réglages en sortent (`sx-emerge`) ; rien en animations coupées
+  ni sous `prefers-reduced-motion`.
+- Tests : `ext_sync::tests` (domaine et infrastructure), `market::tests` (`direct_*`, `crx_payload`),
+  `github_ext::tests::a_package_from_a_link_…`, `image_clip::tests`, réglage relu (`extension_sync`). Scénario
+  Windows : `scripts\test-0825.ps1`. macOS : compilation croisée seulement ; synchro entre deux appareils, PiP
+  Twitch et pubs YouTube non vérifiés en réel.
 
 ## Release, installeur et mise à jour
 - Workflow `.github/workflows/release.yml` : tests (Windows + macOS + Linux), `.deb` et archive Linux (`scripts/package-linux.sh`), installeur Inno Setup + zip portable, binaire macOS universel (`scripts/package-macos.sh`), `SHA256SUMS.txt`. Publie sur push `main` quand `v<version de Cargo.toml>` n'a pas de tag, ou sur tag `vX.Y.Z` (doit correspondre à `Cargo.toml`).

@@ -7,6 +7,7 @@ pub mod dns;
 pub mod downloads;
 pub mod easel;
 pub mod error_page;
+pub mod ext_sync;
 pub mod extension;
 pub mod fingerprint;
 pub mod handoff;

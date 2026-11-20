@@ -157,6 +157,28 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Blocking download of a package added from a link (0.8.25, trusted on first use: the person
+/// sees its hash and permissions before anything is installed): HTTPS from the first address to
+/// the last redirect, 64 MB at most.
+pub fn fetch_direct(url: &str) -> Result<Vec<u8>, String> {
+    if rules::direct_package_url(url).is_none() {
+        return Err("refusing an address that is not https".into());
+    }
+    let resp = crate::updater::agent().get(url).call().map_err(|e| e.to_string())?;
+    if !resp.get_url().starts_with("https://") {
+        return Err("refusing a redirect away from https".into());
+    }
+    let mut bytes = Vec::new();
+    resp.into_reader()
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("package too large".into());
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
