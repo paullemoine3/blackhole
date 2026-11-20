@@ -3,6 +3,7 @@
 pub(crate) mod boosts;
 pub(crate) mod bridges;
 pub(crate) mod compare;
+pub(crate) mod dns;
 pub(crate) mod easel;
 pub(crate) mod extensions;
 pub(crate) mod github_ext;

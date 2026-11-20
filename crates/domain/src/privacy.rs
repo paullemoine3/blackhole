@@ -15,6 +15,9 @@ pub struct Shields {
     pub cookie_banners: bool,
     /// Clean links: drop tracking parameters and skip known redirect pages (`clean_link`).
     pub clean_links: bool,
+    /// Fingerprinting protection: what a page reads back to identify the device (canvas,
+    /// WebGL, audio, core count) varies by site and by session (`fingerprint`).
+    pub fingerprinting: bool,
 }
 
 impl Default for Shields {
@@ -24,6 +27,7 @@ impl Default for Shields {
             video_ads: true,
             cookie_banners: true,
             clean_links: true,
+            fingerprinting: true,
         }
     }
 }
@@ -34,6 +38,7 @@ impl Shields {
             | (u8::from(self.video_ads) << 1)
             | (u8::from(self.cookie_banners) << 2)
             | (u8::from(self.clean_links) << 3)
+            | (u8::from(self.fingerprinting) << 4)
     }
 
     fn from_bits(bits: u8) -> Self {
@@ -42,6 +47,7 @@ impl Shields {
             video_ads: bits & 2 != 0,
             cookie_banners: bits & 4 != 0,
             clean_links: bits & 8 != 0,
+            fingerprinting: bits & 16 != 0,
         }
     }
 }
@@ -619,6 +625,7 @@ mod tests {
             video_ads: true,
             cookie_banners: false,
             clean_links: true,
+            fingerprinting: false,
         };
         p.set_shields(some);
         assert_eq!(clone.shields(), some);

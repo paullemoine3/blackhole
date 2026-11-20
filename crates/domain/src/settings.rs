@@ -79,6 +79,11 @@ pub struct Settings {
     /// Paired devices exchange the history in the background (with what ranks the command bar),
     /// apart from the tab sync modes. On by default.
     pub history_sync: bool,
+    /// Encrypted DNS (DNS over HTTPS) with `dns_resolver`. Off by default: Windows applies it at
+    /// the next launch, macOS through a system profile the user installs (`dns`).
+    pub encrypted_dns: bool,
+    /// A resolver of `dns::RESOLVERS` (its id) or the `https://` address of another one.
+    pub dns_resolver: String,
 }
 
 /// Quick access tile sizes, smallest first (`medium` is the default: four tiles a row).
@@ -225,6 +230,8 @@ impl Default for Settings {
             hidden_home_sections: BTreeSet::new(),
             home_order: Vec::new(),
             history_sync: true,
+            encrypted_dns: false,
+            dns_resolver: crate::dns::DEFAULT_RESOLVER.to_owned(),
         }
     }
 }

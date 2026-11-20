@@ -227,6 +227,13 @@ impl Running {
             );
         }
         views::set_hardware_acceleration(svc.settings().hardware_acceleration);
+        views::set_encrypted_dns(
+            svc.settings()
+                .encrypted_dns
+                .then(|| blackhole_domain::dns::doh_template(&svc.settings().dns_resolver))
+                .flatten()
+                .as_deref(),
+        );
         // Before any page is created: each one receives the catalog of this language.
         i18n::apply(&svc.settings().language);
         window_tasks();

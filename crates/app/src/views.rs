@@ -52,6 +52,7 @@ pub fn send_language(view: &WebView) {
     ));
 }
 const SHIELDS_JS: &str = include_str!("../ui/shields.js");
+const FINGERPRINT_JS: &str = include_str!("../ui/fingerprint.js");
 /// What a page says about the product it shows, for the tab comparator.
 pub const COMPARE_JS: &str = include_str!("../ui/compare.js");
 
@@ -64,6 +65,36 @@ fn shields_script(policy: &PrivacyPolicy) -> String {
     });
     SHIELDS_JS.replace("__SHIELDS__", &config.to_string())
 }
+/// A secret of this run, which the fingerprinting protection mixes with each site: values vary
+/// from one site to another and from one launch to the next (`RandomState` is seeded by the
+/// system's random source).
+fn session_secret() -> &'static str {
+    static SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SECRET.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        let mut out = String::new();
+        for _ in 0..2 {
+            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+            h.write_u64(u64::from(std::process::id()));
+            out.push_str(&format!("{:016x}", h.finish()));
+        }
+        out
+    })
+}
+
+/// The fingerprinting protection of page views, empty when its shield is off (fixed for the
+/// page's lifetime, like the other shields: a change applies to the pages opened afterwards).
+fn fingerprint_script(policy: &PrivacyPolicy) -> String {
+    if !policy.shields().fingerprinting {
+        return String::new();
+    }
+    let config = serde_json::json!({
+        "secret": session_secret(),
+        "exempt": blackhole_domain::fingerprint::EXEMPT_SITES,
+    });
+    FINGERPRINT_JS.replace("__FINGERPRINT__", &config.to_string())
+}
+
 /// The request guard of page views. macOS and Windows block in the engine (`block_natively`),
 /// so the script gets no host there and leaves the page's own functions alone.
 fn guard_script(policy: &PrivacyPolicy) -> String {
@@ -170,6 +201,21 @@ pub fn set_hardware_acceleration(on: bool) {
     HARDWARE_ACCELERATION.store(on, Ordering::Relaxed);
 }
 
+/// WebView2's own encrypted DNS (`dns::chromium_switch`), empty when off. Set once at launch,
+/// before the first view: every view of a data folder must share the same engine flags.
+static DNS_AT_LAUNCH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// Must be called before the first view is built (a change applies at the next launch).
+/// macOS and Linux: WebKit uses the system's DNS, nothing to set here.
+pub fn set_encrypted_dns(template: Option<&str>) {
+    let _ = DNS_AT_LAUNCH.set(template.map(str::to_owned));
+}
+
+/// The encrypted DNS address the engine was started with (`None`: the system's DNS).
+pub fn encrypted_dns_at_launch() -> Option<&'static str> {
+    DNS_AT_LAUNCH.get().and_then(Option::as_deref)
+}
+
 /// Every view comes from here so they all share the same engine flags (WebView2 requires it).
 fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     let builder = WebViewBuilder::new_with_web_context(ctx);
@@ -190,6 +236,10 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
         );
         if !HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
             args.push_str(" --disable-gpu");
+        }
+        if let Some(template) = encrypted_dns_at_launch() {
+            args.push(' ');
+            args.push_str(&blackhole_domain::dns::chromium_switch(template));
         }
         builder.with_additional_browser_args(&args)
     };
@@ -300,6 +350,7 @@ pub fn live_view(
     #[cfg(any(target_os = "macos", windows))]
     let native_policy = policy.clone();
     let shields = shields_script(policy);
+    let fingerprint = fingerprint_script(policy);
     let crop = LIVE_CROP_JS.replace(
         "__SELECTOR__",
         &serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned()),
@@ -313,6 +364,7 @@ pub fn live_view(
         .with_background_color(PAGE_BG)
         .with_initialization_script(guard)
         .with_initialization_script(shields)
+        .with_initialization_script(fingerprint)
         .with_initialization_script_for_main_only(crop, true)
         // A hidden or captured view never prompts: the challenge is cancelled (401 page).
         .with_http_auth_handler(|_, responder| drop(responder))
@@ -495,6 +547,7 @@ fn build_tab(
     #[cfg(any(target_os = "macos", windows))]
     let native_policy = policy.clone();
     let shields = shields_script(policy);
+    let fingerprint = fingerprint_script(policy);
     let (events, nav, popups, title, load) = (
         mailbox.clone(),
         mailbox.clone(),
@@ -598,6 +651,7 @@ fn build_tab(
         .with_back_forward_navigation_gestures(true)
         .with_initialization_script(guard)
         .with_initialization_script(shields)
+        .with_initialization_script(fingerprint)
         .with_initialization_script_for_main_only(SHORTCUTS_JS, true)
         .with_initialization_script_for_main_only(
             page_script(

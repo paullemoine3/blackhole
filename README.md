@@ -147,6 +147,8 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 - 🚫 **Aucune télémétrie.** Moteur de recherche **DuckDuckGo** par défaut ; Brave Search, Startpage, Qwant, Mojeek ou Google au choix.
 - 🛡️ **Shields** : traqueurs, publicités, emplacements pub, pubs YouTube et bannières cookies bloqués par le moteur lui-même, avec un rapport de confidentialité par site.
 - 🔗 **HTTPS automatique** et **liens nettoyés** : paramètres de suivi supprimés, redirections des moteurs et réseaux sociaux contournées.
+- 🫥 **Protection contre l'empreinte numérique** : ce que les sites lisent pour reconnaître votre appareil (canvas, WebGL, audio, carte graphique) change d'un site à l'autre et à chaque lancement ; désactivable dans les Shields.
+- 🔐 **DNS chiffré** (désactivable) : Quad9, Mullvad, Cloudflare, AdGuard ou le résolveur de votre choix ; moteur de BlackHole sous Windows, profil système sous macOS.
 - 🧠 **Traqueurs appris** : un site tiers qui vous suit sur plusieurs sites est bloqué comme les autres.
 - 🔑 **Mots de passe** dans un coffre chiffré (XChaCha20-Poly1305), clé dans le trousseau système, proposés uniquement sur le bon site ; gestionnaire intégré désactivable si vous en utilisez un autre.
 - 🗝️ **Clés d'accès** : sous macOS, Apple réserve celles du trousseau aux navigateurs dotés d'une autorisation spéciale ; passez par l'extension de votre gestionnaire (Bitwarden, ou les extensions Safari de 1Password et Dashlane).

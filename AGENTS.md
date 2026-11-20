@@ -1097,6 +1097,37 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   doit rester devant. Tests : `onboarding::tests`, `welcome::tests::the_welcome_tour_drops_…`,
   `release_notes_are_shown_once_after_an_update` (`first_launch`). macOS : compilation croisée seulement.
 
+
+## 0.8.24 : DNS chiffré, protection contre l'empreinte numérique
+
+- Empreinte numérique : une protection des Shields (`Shields::fingerprinting`, vraie par défaut, bit 4,
+  DTO `fingerprinting`, `set_shield "fingerprinting"`, Réglages › Confidentialité). Script
+  `ui/fingerprint.js` injecté dans toutes les frames des vues de pages et des zones en direct
+  (`views::fingerprint_script`, vide quand la protection est coupée ; comme les autres Shields, fixé à la
+  création de la vue : s'applique aux pages ouvertes ensuite, réserves vidées). Graine = secret de la
+  session (`session_secret`, `RandomState`) + site de l'onglet (`ancestorOrigins`, deux derniers
+  libellés) : stable pendant la visite, différente d'un site à l'autre et à chaque lancement. Relectures
+  canvas (`toDataURL`/`toBlob` sur une copie, `getImageData`) et WebGL `readPixels` (octets seulement) :
+  un bit d'une valeur tous les 199 pixels ; WebGL `UNMASKED_*` génériques (`WebKit`, `WebKit WebGL`) ;
+  audio `getChannelData`/`getFloatFrequencyData` : écart inaudible ; `hardwareConcurrency` arrondi
+  (2/4/8) ; pas de `getBattery`. Fonctions remplacées par des `Proxy` (lues comme du code natif, même
+  nom). Sites laissés tranquilles : `domain::fingerprint::EXEMPT_SITES` (Docs, Meet, Teams, Zoom,
+  Figma…). Limites : pas les Web Workers, ni polices, taille d'écran ou user agent. Test macOS :
+  `scripts/test-fingerprint.sh` (10 contrôles).
+- DNS chiffré : `Settings::encrypted_dns` (faux par défaut) et `dns_resolver` (id de
+  `domain::dns::RESOLVERS` — Quad9 par défaut, Mullvad, Cloudflare, AdGuard — ou adresse `https://`
+  validée par `dns::doh_template`). Commandes `set_encrypted_dns`, `set_dns_resolver`,
+  `install_dns_profile` (`handle_settings`, `features/dns.rs`). Windows : `views::set_encrypted_dns`
+  au lancement → `dns::chromium_switch` (`--enable-features=DnsOverHttps:Fallback/true/Templates/…`,
+  retour au DNS du réseau si le résolveur est injoignable), appliqué au redémarrage (`restart` dans
+  l'état des Réglages). Le réglage n'a pas encore été vérifié dans WebView2 : le contrôler sur Windows
+  (`edge://net-internals` n'existe pas dans WebView2 : comparer une page de test DNS, ex.
+  `https://on.quad9.net`). macOS : WebKit suit le DNS du système → profil `dns::mobileconfig`
+  (`com.apple.dnsSettings.managed`, identifiant fixe `app.blackhole.dns` : un nouveau remplace
+  l'ancien) écrit par `infrastructure::write_dns_profile`, ouvert puis Réglages Système › Profils ;
+  désactiver ouvre ce volet (l'utilisateur supprime le profil). Linux : le résolveur du système
+  (systemd-resolved, DNSOverTLS) ; l'interface l'explique. Android : non traité.
+
 ## Livraison et entretien
 
 - Préserver les changements utilisateur déjà présents ; limiter les modifications

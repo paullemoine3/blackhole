@@ -264,6 +264,23 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     /// Learning new trackers while browsing on or off (what was learned stays blocked).
+    /// Encrypted DNS on or off (applied by the shell: at the next launch on Windows).
+    pub fn set_encrypted_dns(&mut self, on: bool) {
+        self.settings.encrypted_dns = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// The resolver of encrypted DNS: a known resolver's id or an `https://` address; anything
+    /// else is refused (`false`).
+    pub fn set_dns_resolver(&mut self, choice: &str) -> bool {
+        if blackhole_domain::dns::doh_template(choice).is_none() {
+            return false;
+        }
+        self.settings.dns_resolver = choice.trim().to_owned();
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
     pub fn set_tracker_learning(&mut self, on: bool) {
         self.settings.tracker_learning = on;
         let _ = self.repo.save_settings(&self.settings);
@@ -380,6 +397,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
             "video_ads" => shields.video_ads = on,
             "cookie_banners" => shields.cookie_banners = on,
             "clean_links" => shields.clean_links = on,
+            "fingerprinting" => shields.fingerprinting = on,
             _ => return false,
         }
         self.policy.set_shields(self.settings.shields);
@@ -966,6 +984,21 @@ mod tests {
         let tabs = &svc.workspace().spaces()[0].tabs;
         assert!(tabs.iter().any(|t| t.url.as_str() == "https://a.example/"));
         assert!(tabs.iter().any(|t| t.url.as_str() == "http://b.example/"));
+    }
+
+    #[test]
+    fn only_a_usable_resolver_is_kept() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert!(!svc.settings().encrypted_dns);
+        svc.set_encrypted_dns(true);
+        assert!(svc.set_dns_resolver("mullvad"));
+        assert!(!svc.set_dns_resolver("http://plain.example/dns"));
+        assert!(svc.set_shield("fingerprinting", false));
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert!(again.settings().encrypted_dns);
+        assert_eq!(again.settings().dns_resolver, "mullvad");
+        assert!(!again.settings().shields.fingerprinting);
     }
 
     #[test]

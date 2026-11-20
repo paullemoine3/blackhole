@@ -1,5 +1,6 @@
 //! The Settings page, shown in the page card like a tab.
 
+use crate::i18n::t;
 use std::time::Instant;
 
 use blackhole_domain::{SearchEngine, Settings};
@@ -82,6 +83,8 @@ impl Running {
             })).collect::<Vec<_>>(),
         });
         // Apart: the macro above is at serde_json's recursion limit.
+        state["shields"]["fingerprinting"] = json!(settings.shields.fingerprinting);
+        state["dns"] = self.dns_json();
         state["tileSize"] = json!(settings.quick_access_size);
         state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
         state["homeSections"] = blackhole_domain::home_order(&settings.home_order)
@@ -158,6 +161,22 @@ impl Running {
                 self.svc.set_hardware_acceleration(on);
                 self.ui_state();
             }
+            UiCommand::SetEncryptedDns { on } => {
+                self.svc.set_encrypted_dns(on);
+                self.encrypted_dns_changed(on);
+                self.ui_state();
+            }
+            UiCommand::SetDnsResolver { resolver } => {
+                if self.svc.set_dns_resolver(&resolver) {
+                    if self.svc.settings().encrypted_dns {
+                        self.encrypted_dns_changed(true);
+                    }
+                } else {
+                    self.toast(&t("toast.dns_bad_resolver"));
+                }
+                self.ui_state();
+            }
+            UiCommand::InstallDnsProfile => self.encrypted_dns_changed(true),
             UiCommand::SetTrackerBlocking { on } => {
                 self.svc.set_tracker_blocking(on);
                 // Spare views carry the blocklist of their creation time.

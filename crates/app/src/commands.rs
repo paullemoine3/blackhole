@@ -231,6 +231,9 @@ impl Running {
             | UiCommand::SetMaxLiveTabs { .. }
             | UiCommand::SetSpareViews { .. }
             | UiCommand::SetHardwareAcceleration { .. }
+            | UiCommand::SetEncryptedDns { .. }
+            | UiCommand::SetDnsResolver { .. }
+            | UiCommand::InstallDnsProfile
             | UiCommand::SetTrackerBlocking { .. }
             | UiCommand::SetShield { .. }
             | UiCommand::SetSectionCollapsed { .. }

@@ -48,6 +48,15 @@ pub enum UiCommand {
     SetHardwareAcceleration {
         on: bool,
     },
+    /// Encrypted DNS on or off, and its resolver (a known id or an `https://` address); macOS
+    /// installs it as a system profile (`install_dns_profile` offers it again).
+    SetEncryptedDns {
+        on: bool,
+    },
+    SetDnsResolver {
+        resolver: String,
+    },
+    InstallDnsProfile,
     SetExtensionsInPrivate {
         on: bool,
     },
@@ -1262,6 +1271,19 @@ mod tests {
             r#"{"cmd":"recall_exclude","site":"bank.test","on":true}"#,
             r#"{"cmd":"recall_forget","url":"https://a.test/"}"#,
             r#"{"cmd":"recall_clear"}"#,
+        ] {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn privacy_commands_parse_and_pages_cannot_send_them() {
+        for raw in [
+            r#"{"cmd":"set_encrypted_dns","on":true}"#,
+            r#"{"cmd":"set_dns_resolver","resolver":"https://dns.nextdns.io/abc"}"#,
+            r#"{"cmd":"install_dns_profile"}"#,
+            r#"{"cmd":"set_shield","name":"fingerprinting","on":false}"#,
         ] {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
             assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
