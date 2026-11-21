@@ -138,7 +138,8 @@ Onglets (grille, balayer pour fermer, Undo 15 s, glisser la barre pour changer d
 barre d'adresse en bas et palette (recherche avec le moteur choisi, suggestions d'onglets,
 d'accès rapide et d'historique), accès rapide (mis en veille, jamais retiré, par la fermeture),
 historique (recherche, oubli, effacement en deux temps), onglets privés, Shields et rapport de
-confidentialité (note A–E), téléchargements, réglages (moteur, thème Système/Sombre/Clair,
+confidentialité (note A–E), téléchargements, réglages par sections (0.8.26 : Général, Apparence,
+Confidentialité, Appareils, Données, Mises à jour ; moteur, thème Système/Sombre/Clair, style 3D/Plat,
 couleur d'espace, animations, Shields, effacement des données), espaces, pages d'erreur,
 geste retour (ferme la surface ouverte, puis page précédente, puis accueil, puis quitte),
 zones sûres (bord à bord), animations réduites (réglage système « Supprimer les animations »

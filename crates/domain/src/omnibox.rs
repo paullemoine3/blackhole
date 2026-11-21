@@ -128,6 +128,16 @@ pub fn web_address(input: &str) -> Option<Url> {
     Some(url)
 }
 
+/// The address a page reports after changing it without a navigation (`history.pushState`):
+/// kept only when it has the engine's origin (the only change a page can make that way), so a
+/// page cannot show another site's address. `None`: re-read the engine's address instead.
+pub fn same_document_url(engine: &Url, reported: &str) -> Option<Url> {
+    let url = Url::parse(reported).ok()?;
+    let web = matches!(url.scheme(), "http" | "https");
+    (web && url.origin() == engine.origin() && url.username().is_empty() && url.password().is_none())
+        .then_some(url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +206,23 @@ mod tests {
     fn javascript_scheme_is_never_navigated() {
         let url = resolve_input("javascript:alert(1)", Default::default());
         assert_eq!(url.scheme(), "https");
+    }
+
+    #[test]
+    fn a_page_reports_only_an_address_of_its_own_origin() {
+        let engine = Url::parse("https://www.youtube.com/").unwrap();
+        let watch = same_document_url(&engine, "https://www.youtube.com/watch?v=abc").unwrap();
+        assert_eq!(watch.as_str(), "https://www.youtube.com/watch?v=abc");
+        for other in [
+            "https://youtube.com/watch",
+            "http://www.youtube.com/watch",
+            "https://www.youtube.com:8443/",
+            "https://bank.example/",
+            "https://user@www.youtube.com/",
+            "javascript:alert(1)",
+            "not a url",
+        ] {
+            assert!(same_document_url(&engine, other).is_none(), "{other}");
+        }
     }
 }

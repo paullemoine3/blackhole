@@ -865,7 +865,13 @@ pub enum PageEvent {
     Shortcut {
         key: String,
     },
-    Location,
+    /// The page changed its address without a navigation (`pushState`). `url`: its new address,
+    /// kept only on the engine's origin (see `tabs::navigation::same_document_url`): the engine
+    /// learns it a moment later, so re-reading it at once gave the previous address.
+    Location {
+        #[serde(default)]
+        url: String,
+    },
     /// Console errors and failed requests, printed by debug builds only.
     DebugLog {
         #[serde(default)]

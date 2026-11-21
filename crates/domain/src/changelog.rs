@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.26",
+        &[
+            "The play button of the media card starts a paused video again, YouTube included: it now goes through the site's own player. In the floating window of a live stream (Twitch), the play button resumes the stream again instead of pausing it once more",
+            "The address bar follows the pages of sites that change address without loading a new page (a video opened on YouTube), instead of keeping the previous address until a reload",
+            "Split view opens more smoothly: the new pane and its title slide in together, once the page is drawn",
+            "Android: Settings by section (General, Appearance, Privacy, Devices, Data, Updates), the 3D or flat style of the desktop, and a menu in groups with History, Downloads and Settings always at hand",
+        ],
+    ),
+    (
         "0.8.25",
         &[
             "Paired devices now share their extensions too, beside tabs and history: one switch in Settings > Devices, where a single card says what syncs. Market extensions install by themselves; those added from GitHub or a link are proposed first. Removing an extension never removes it elsewhere",
