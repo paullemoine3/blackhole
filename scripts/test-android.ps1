@@ -144,6 +144,8 @@ Run "openSheet(true, true)"
 Wait 900
 Shot '03-palette'
 Eval sheet "document.querySelector('#sheet').classList.contains('on')"
+# The menu in groups (this page, this tab) and the places of the app at its foot (0.8.26).
+Eval menugroups "document.querySelectorAll('#list .lbl').length + ' ' + document.querySelectorAll('#list .foot button').length"
 Eval editurl "document.querySelector('#q').value"
 Run "document.querySelector('#q').value='page'; document.querySelector('#q').dispatchEvent(new Event('input'))"
 Wait 900
@@ -190,6 +192,22 @@ Eval shields "document.querySelector('#toast-t').textContent"
 Run "setOpen('settings', true)"
 Wait 900
 Shot '11-settings'
+# Settings by section (0.8.26): a list of sections, each opens in place; back returns to the list.
+Eval sections "document.querySelectorAll('#settings .opt.go:not([hidden])').length + ' ' + !document.querySelector('#s-root').hidden"
+Run "showSection('appearance')"
+Wait 700
+Shot '13-settings-appearance'
+Eval section "document.querySelector('#s-title').textContent + '|' + document.querySelector('#s-root').hidden + '|' + document.querySelectorAll('#styles button').length"
+Cmd '{"cmd":"set_setting","name":"depth","value":false}'
+Wait 500
+Shot '14-settings-flat'
+Eval flat "document.body.classList.contains('flat') + ' ' + S.settings.depth"
+Cmd '{"cmd":"set_setting","name":"depth","value":true}'
+Wait 500
+Eval relief "document.body.classList.contains('flat') + ' ' + (getComputedStyle(document.querySelector('#settings .grp')).boxShadow !== 'none')"
+Run "closeTop()"
+Wait 500
+Eval sectionback "open.settings + ' ' + !document.querySelector('#s-root').hidden"
 Cmd '{"cmd":"set_setting","name":"theme","value":"dark"}'
 Wait 900
 Shot '12-settings-dark'
@@ -200,12 +218,12 @@ Wait 500
 Eval zoom "S.settings.text_zoom"
 Cmd '{"cmd":"set_setting","name":"text_zoom","value":100}'
 # Updates: the manual check reaches GitHub (network) and comes back with an answer.
-Run "document.querySelector('#updates').scrollIntoView()"
+Run "showSection('updates')"
 Cmd '{"cmd":"check_update","manual":true}'
 Wait 8000
 Shot '20-updates'
 Eval update "S.update.status"
-Run "document.querySelector('#devices').scrollIntoView()"
+Run "showSection('devices')"
 Wait 700
 Shot '16-devices'
 Eval devices "!document.querySelector('#devices').hidden && S.devices.available"
@@ -395,6 +413,11 @@ Check ((V private) -eq 'true') 'private tab'
 Check ((V privgone) -eq '"0 false"') 'private tabs closed'
 Check ((V error) -eq '"not_found"') 'error page for an unknown host'
 Check ((V shields) -match 'Shields') 'typed tracker address refused'
+Check ((V sections) -eq '"6 true"') 'Settings: the list of sections'
+Check ((V section) -match '^"[^|]+\|true\|2"$') 'Settings: a section opens in place of the list, with the 3D / Flat choice'
+Check ((V flat) -eq '"true false"' -and (V relief) -eq '"false true"') 'Settings: the interface style switches between Flat and 3D (relief)'
+Check ((V sectionback) -eq '"true true"') 'Settings: back returns to the list of sections'
+Check ((V menugroups) -eq '"2 3"') 'menu: grouped, History / Downloads / Settings at its foot'
 Check ((V dark) -eq '"dark"') 'dark theme forced in Settings'
 Check ((V zoom) -eq '130') 'text size setting'
 Check ((V update) -match '^"(latest|available)"$') 'manual update check answers (network)'

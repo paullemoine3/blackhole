@@ -409,7 +409,7 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
 name = "blackhole"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "arboard",
  "blackhole-application",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-android"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "blackhole-application",
  "blackhole-domain",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-application"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "blackhole-domain",
  "thiserror 2.0.21",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-domain"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "url",
  "zeroize",
@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-infrastructure"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "argon2",
  "blackhole-application",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-macos-url"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-macos-webext"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
@@ -525,7 +525,7 @@ dependencies = [
 
 [[package]]
 name = "blackhole-market-tool"
-version = "0.8.25"
+version = "0.8.26"
 dependencies = [
  "blackhole-domain",
  "blackhole-infrastructure",

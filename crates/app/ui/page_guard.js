@@ -238,8 +238,9 @@
     post({ cmd: 'link_menu', url: '', text: '', mark: 0, image: imageAt(e), page: true, x: e.clientX, y: e.clientY });
   });
 
-  // Single-page apps change the URL without a navigation; tell the shell to re-read it.
-  const report = () => post({ cmd: 'location' });
+  // Single-page apps change the URL without a navigation; tell the shell, with the new address:
+  // the engine only learns it a moment later (the shell keeps it only on the engine's origin).
+  const report = () => post({ cmd: 'location', url: location.href });
   for (const method of ['pushState', 'replaceState']) {
     const original = history[method];
     history[method] = function () {

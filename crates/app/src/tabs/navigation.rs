@@ -265,12 +265,15 @@ impl Running {
 
     // ---- command bar --------------------------------------------------------------------
 
-    /// Re-reads the address from the engine; page scripts cannot dictate what the bar shows.
-    pub(crate) fn refresh_url(&mut self, tab: TabId) {
-        let current = self.tabs.get(&tab).and_then(|v| v.url().ok());
-        if let Some(url) = current.and_then(|raw| Url::parse(&raw).ok()) {
-            self.page_url(tab, url);
-        }
+    /// The page changed its address without a navigation: the address it reports when it has
+    /// the engine's origin (the engine itself only learns it a moment later), else the engine's.
+    pub(crate) fn page_moved(&mut self, tab: TabId, reported: &str) {
+        let engine = self.tabs.get(&tab).and_then(|v| v.url().ok()).and_then(|raw| Url::parse(&raw).ok());
+        let Some(engine) = engine else {
+            return;
+        };
+        let url = blackhole_domain::omnibox::same_document_url(&engine, reported).unwrap_or(engine);
+        self.page_url(tab, url);
     }
 
     pub(crate) fn page_url(&mut self, tab: TabId, url: Url) {

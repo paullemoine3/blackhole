@@ -2,11 +2,18 @@
 //! final size: a web view resized on every frame lays its page out again and stutters (the same
 //! rule as the sidebar). Two moves: the right pane comes in from the right when a split shows
 //! up, and the pane a pilot link opens in rises into place.
+//!
+//! The opening (0.8.26) runs on the same curve and for the same time as the split bar's
+//! `pane-in` (`splitbar.html`), so the title of the pane and its page arrive together, and it
+//! waits a frame or two first: a view just shown paints its page before it starts moving
+//! (it used to cross the card blank).
 
 use std::time::{Duration, Instant};
 
-/// A split shows up: its right pane slides in.
-const OPEN: Duration = Duration::from_millis(340);
+/// A split shows up: its right pane slides in (`pane-in` of `splitbar.html` lasts as long).
+const OPEN: Duration = Duration::from_millis(420);
+/// How long the right pane of a new split waits, off to the side, for its first paint.
+const PAINT: Duration = Duration::from_millis(32);
 /// A pilot link opens in the other pane: that pane rises.
 const RISE: Duration = Duration::from_millis(380);
 const RISE_BY: f64 = 36.0;
@@ -52,6 +59,36 @@ fn ease_out(t: f64) -> f64 {
     1.0 - (1.0 - t).powi(4)
 }
 
+/// CSS `cubic-bezier(x1, y1, x2, y2)` at time `t` (0–1), as the split bar's animations use it.
+fn bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
+    let at = |a: f64, b: f64, s: f64| {
+        let u = 1.0 - s;
+        3.0 * u * u * s * a + 3.0 * u * s * s * b + s * s * s
+    };
+    // x grows with s (x1 and x2 within 0–1): halve the interval until x(s) is t.
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..40 {
+        let mid = (lo + hi) / 2.0;
+        if at(x1, x2, mid) < t {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    at(y1, y2, (lo + hi) / 2.0)
+}
+
+/// The curve of the split bar's `pane-in`: `cubic-bezier(.2,.85,.25,1)`.
+fn ease_open(t: f64) -> f64 {
+    if t <= 0.0 {
+        0.0
+    } else if t >= 1.0 {
+        1.0
+    } else {
+        bezier(0.2, 0.85, 0.25, 1.0, t)
+    }
+}
+
 impl PaneMotion {
     /// A split shows up: its right pane starts `distance` to the right of its place.
     pub fn open(&mut self, distance: f64) {
@@ -88,17 +125,18 @@ impl PaneMotion {
         let Some((how, started)) = &mut self.run else {
             return false;
         };
-        let length = match how {
-            Move::Open(_) => OPEN,
-            Move::Rise(_) => RISE,
+        let (length, wait) = match how {
+            Move::Open(_) => (OPEN, PAINT),
+            Move::Rise(_) => (RISE, Duration::ZERO),
         };
-        let start = *started.get_or_insert(now);
+        let opening = matches!(how, Move::Open(_));
+        let start = *started.get_or_insert(now + wait);
         let t = now.saturating_duration_since(start).as_secs_f64() / length.as_secs_f64();
         if t >= 1.0 {
             self.stop();
             return false;
         }
-        self.left = 1.0 - ease_out(t);
+        self.left = 1.0 - if opening { ease_open(t) } else { ease_out(t) };
         true
     }
 
@@ -129,6 +167,10 @@ mod tests {
         assert!(m.tick_at(t0));
         assert_eq!(m.shift(Side::Right), Shift { x: 500.0, y: 0.0 });
         assert_eq!(m.shift(Side::Left), Shift::default());
+        // It waits for its first paint before it moves.
+        assert!(m.tick_at(t0 + PAINT / 2));
+        assert_eq!(m.shift(Side::Right), Shift { x: 500.0, y: 0.0 });
+        let t0 = t0 + PAINT;
         // Half way through the time, most of the way is done (ease out), and it only gets closer.
         assert!(m.tick_at(t0 + OPEN / 2));
         let mid = m.shift(Side::Right).x;
@@ -175,6 +217,21 @@ mod tests {
         m.rise(Side::Left);
         m.tick_at(t0 + RISE / 2);
         assert_eq!(m.shift(Side::Left).y, RISE_BY);
+    }
+
+    #[test]
+    fn the_opening_follows_the_curve_of_the_split_bar() {
+        // cubic-bezier(.2,.85,.25,1): its ends, and values read from a browser.
+        assert!(ease_open(0.0).abs() < 1e-6);
+        assert!((ease_open(1.0) - 1.0).abs() < 1e-6);
+        let half = ease_open(0.5);
+        assert!(half > 0.9 && half < 0.97, "{half}");
+        let mut last = 0.0;
+        for i in 1..=20 {
+            let v = ease_open(f64::from(i) / 20.0);
+            assert!(v >= last, "{i}");
+            last = v;
+        }
     }
 
     #[test]

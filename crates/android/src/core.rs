@@ -719,6 +719,8 @@ impl Core {
                 None => return Vec::new(),
             },
             ("animations", Some(on), _) => self.svc.set_animations(on),
+            // The interface style of the desktop: 3D (relief) or flat (0.8.26).
+            ("depth", Some(on), _) => self.svc.set_depth(on),
             ("history_sync", Some(on), _) => self.svc.set_history_sync(on),
             ("trackers", Some(on), _) => self.svc.set_tracker_blocking(on),
             ("ads" | "hide_ads" | "video_ads" | "cookie_banners", Some(on), _) => {
@@ -1437,6 +1439,7 @@ impl Core {
                     "engine": settings.search_engine.id(),
                     "engines": SearchEngine::ALL.iter().map(|e| json!({"id": e.id(), "label": e.label()})).collect::<Vec<_>>(),
                     "animations": settings.animations,
+                    "depth": settings.depth,
                     "history_sync": settings.history_sync,
                     "language": settings.language,
                     "languages": blackhole_domain::i18n::LANGUAGES.iter().map(|(id, label)| json!({"id": id, "label": label})).collect::<Vec<_>>(),

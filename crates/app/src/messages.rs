@@ -68,12 +68,12 @@ impl Running {
             Msg::Page(tab, PageEvent::LoginSubmitted { username, password }) => {
                 self.login_submitted(tab, &username, &password)
             }
-            Msg::Page(tab, PageEvent::Location) => {
+            Msg::Page(tab, PageEvent::Location { url }) => {
                 self.recall_seen(tab);
                 self.marks_push(tab, false);
                 self.pilot_mark(tab);
                 self.media_hinted(tab);
-                self.refresh_url(tab)
+                self.page_moved(tab, &url)
             }
             Msg::Page(tab, PageEvent::Favicon { url }) => {
                 let page = self.tabs.get(&tab).and_then(|v| v.url().ok());

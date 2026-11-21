@@ -15,10 +15,24 @@
     /* Safe areas; --kb: the keyboard's height; --bb: what the bar stands on (the keyboard of a page, else --sb). */
     --st: 0px; --sb: 0px; --sl: 0px; --sr: 0px; --kb: 0px; --bb: 0px; --bar: 64px;
     --ease: cubic-bezier(.2,.8,.2,1); --spring: cubic-bezier(.2,.9,.3,1.15);
+    /* Relief of the 3D style (0.8.26): the desktop's `ui/depth.js` values, kept in step with them.
+       Lit from above, low on purpose (edges of one pixel, short soft shadows); none in Flat. */
+    --relief-face: inset 0 1px 0 #ffffff30, inset 0 -1px 0 #00000026;
+    --relief-key: var(--relief-face), 0 1px 0 #00000052, 0 6px 12px -8px #00000099;
+    --relief-key-down: var(--relief-face), 0 1px 2px #00000073;
+    --relief-raised: inset 0 1px 0 #ffffff14, inset 0 -1px 0 #0000002e, 0 1px 0 #00000038, 0 8px 14px -12px #00000099;
+    --relief-panel: inset 0 1px 0 #ffffff12, inset 0 -1px 0 #00000038, 0 16px 30px -22px #000000a6;
+    --relief-sunk: inset 0 1px 3px #00000061, inset 0 -1px 0 #ffffff0f;
+    --sheen-soft: linear-gradient(180deg, #ffffff0b, #ffffff00 45%, #0000000f);
   }
   :root[data-theme="light"] {
     --bg: #f4f3f8; --panel: #ffffff; --ink: #1a1924; --mute: rgba(26,25,36,.7); /* 4.5:1 at least on --bg */
     --line: rgba(0,0,0,.08); --fill: rgba(0,0,0,.04); --fill2: rgba(0,0,0,.07); --glow: rgba(124,92,255,.22); --ok: #17894c; --on-ok: #fff; --bad: #c8283c;
+    /* On a light page the light comes from the same place, the shadows are only softer. */
+    --relief-raised: inset 0 1px 0 #ffffffb3, inset 0 -1px 0 #0000000f, 0 1px 0 #0000000f, 0 8px 14px -12px #0000004d;
+    --relief-panel: inset 0 1px 0 #ffffffcc, inset 0 -1px 0 #00000012, 0 16px 30px -22px #00000059;
+    --relief-sunk: inset 0 1px 3px #00000026, inset 0 -1px 0 #ffffffb3;
+    --sheen-soft: linear-gradient(180deg, #ffffff66, #ffffff00 45%, #00000008);
   }
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; background: transparent; color: var(--ink);
@@ -232,6 +246,8 @@
   .quick button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 2px; border-radius: 14px; background: var(--fill); font-size: 11.5px; color: var(--mute); }
   .quick button svg { color: var(--ink); }
   .quick button:disabled { opacity: .35; }
+  .quick.foot { grid-template-columns: repeat(3, 1fr); margin: 14px 0 2px; }
+  #list .lbl { margin: 12px 8px 4px; }
   .act .chk { flex: none; color: var(--accent); }
   /* Update card (start page) and Settings > Updates. */
   .upd { display: flex; align-items: center; gap: 12px; }
@@ -291,7 +307,6 @@
   .chips button { position: relative; min-height: 40px; padding: 8px 13px; border-radius: 11px; background: var(--fill2); font-size: 13px; transition: background .2s; }
   .chips button::after { inset: -4px -4px; }
   .chips button.on { background: var(--accent); color: #fff; }
-  #themes { flex-wrap: nowrap; }
   .swatches { display: flex; gap: 14px; margin-left: auto; }
   .swatches button { position: relative; width: 26px; height: 26px; border-radius: 50%; transition: transform .2s var(--spring); }
   .swatches button::after { inset: -9px -7px; }
@@ -321,6 +336,45 @@
   .field:focus { border-color: var(--accent); box-shadow: 0 0 12px var(--glow); }
   .askbtns { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
   #hq { width: 100%; height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--fill2); padding: 0 14px; outline: 0; margin-bottom: 12px; }
+
+  /* Settings by section (0.8.26): the list of sections, then a section in place of it. */
+  .shead { display: flex; align-items: center; gap: 14px; margin: 4px auto 16px; padding: 0 6px; max-width: 640px; }
+  .shead b { display: block; font-size: 16px; font-weight: 600; }
+  .shead small { display: block; font-size: 12.5px; color: var(--mute); }
+  .hole.mini { font-size: 34px; margin: 6px; flex: none; }
+  .grp.nav .opt { gap: 14px; }
+  /* A choice of a few chips goes under its label: beside it, they wrapped in a narrow column. */
+  .opt.stack { flex-wrap: wrap; row-gap: 10px; }
+  .opt.stack > div:first-child { flex-basis: 100%; }
+  .opt.stack :is(.chips, .swatches) { margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .opt.stack .swatches { padding: 4px 2px 2px; }
+  .sic { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: none; color: #fff; background: var(--accent);
+    background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 88%, #fff), color-mix(in srgb, var(--accent) 80%, #000)); }
+  .sic svg.i { width: 19px; height: 19px; }
+  .opt .chev { width: 18px; height: 18px; color: var(--mute); }
+  .opt.go:active { background: var(--fill2); }
+  .sec.fwd { animation: sec-in .34s var(--ease) both; }
+  .sroot.back { animation: sec-back .34s var(--ease) both; }
+  @keyframes sec-in { from { opacity: 0; transform: translateX(28px); } }
+  @keyframes sec-back { from { opacity: 0; transform: translateX(-28px); } }
+  .sec .grp:first-child { animation: rise .45s var(--ease) both; }
+
+  /* 3D style (the desktop's): surfaces stand off the page, controls rise from their panel and
+     sink under the finger, fields are wells. Flat (`body.flat`) keeps none of it. */
+  body:not(.flat) :is(.card, .grp, .tidy, .dl, .pop) { background-image: var(--sheen-soft); box-shadow: var(--relief-panel); }
+  body:not(.flat) .pop { box-shadow: var(--relief-panel), 0 24px 60px rgba(0,0,0,.5); }
+  body:not(.flat) .tile:not(.ico) { box-shadow: var(--relief-key); }
+  body:not(.flat) :is(.fav, .row, .qa button, .act):active .tile { box-shadow: var(--relief-key-down); }
+  body:not(.flat) :is(.qa button, .quick button, .pill, .mini, .chips button, .sp, .tc) { background-image: var(--sheen-soft); box-shadow: var(--relief-raised); }
+  body:not(.flat) :is(.qa button, .quick button, .pill, .mini, .chips button, .sp):active { box-shadow: var(--relief-sunk); }
+  body:not(.flat) :is(.chips button.on, .seg button.on, .btn, .sic) { box-shadow: var(--relief-key); }
+  body:not(.flat) .btn:active { box-shadow: var(--relief-key-down); }
+  body:not(.flat) .sp.on { box-shadow: var(--relief-key), 0 0 14px var(--glow); }
+  body:not(.flat) .tc.cur { box-shadow: 0 0 0 2px var(--accent), 0 0 20px var(--glow); }
+  body:not(.flat) :is(#omni, .seg, .sw, .field, #hq, .pair input, .upbar, .dl .pb) { box-shadow: var(--relief-sunk); }
+  body:not(.flat) .sw.on { box-shadow: var(--relief-sunk), 0 0 12px var(--glow); }
+  body:not(.flat) .sw::after { box-shadow: 0 1px 3px rgba(0,0,0,.35), inset 0 -1px 0 #00000014; }
+  body:not(.flat) .opt.go .sic { box-shadow: var(--relief-key); }
 
   /* Toast */
   #toast { position: fixed; left: 50%; bottom: calc(var(--bar) + max(var(--sb), var(--kb)) + 14px); z-index: 50; transform: translate(-50%, 20px); opacity: 0;
@@ -413,7 +467,7 @@
   <div class="lbl" data-i18n="library">Library</div>
   <button class="trow" data-go="history"><svg class="i"><use href="#i-clock"/></svg><span data-i18n="history">History</span></button>
   <button class="trow" data-go="downloads"><svg class="i"><use href="#i-down"/></svg><span data-i18n="downloads">Downloads</span></button>
-  <button class="trow" data-go="devices"><svg class="i"><use href="#i-share"/></svg><span data-i18n="devices">Devices</span></button>
+  <button class="trow" data-go="devices"><svg class="i"><use href="#i-devices"/></svg><span data-i18n="devices">Devices</span></button>
   <button class="trow" data-go="settings"><svg class="i"><use href="#i-gear"/></svg><span data-i18n="settings">Settings</span></button>
   <div id="dls"></div>
 </aside>
@@ -455,27 +509,50 @@
 <div id="pop" class="pop" hidden></div>
 
 <section class="page" id="settings">
-  <div class="top"><button class="ib" data-close="settings" aria-label="Back" data-i18n-aria="back"><svg class="i"><use href="#i-left"/></svg></button><span data-i18n="settings">Settings</span></div>
+  <div class="top"><button class="ib" id="s-back" aria-label="Back" data-i18n-aria="back"><svg class="i"><use href="#i-left"/></svg></button><span id="s-title">Settings</span></div>
+  <!-- Settings by section, as on the desktop (0.8.26): a list of sections, each opens in place. -->
+  <div class="sroot" id="s-root">
+    <div class="shead"><div class="hole mini"><i class="glow"></i><i class="disc"></i><i class="ring"></i></div><div><b data-i18n="app_name">BlackHole for Android</b><small id="s-version"></small></div></div>
+    <div class="grp nav">
+    <button class="opt go" data-sec="general"><span class="sic"><svg class="i"><use href="#i-gear"/></svg></span><div><span data-i18n="general">General</span><small id="sum-general"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    <button class="opt go" data-sec="appearance"><span class="sic"><svg class="i"><use href="#i-brush"/></svg></span><div><span data-i18n="appearance">Appearance</span><small id="sum-appearance"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    <button class="opt go" data-sec="privacy"><span class="sic"><svg class="i"><use href="#i-shield"/></svg></span><div><span data-i18n="privacy">Privacy</span><small id="sum-privacy"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    <button class="opt go" data-sec="devices"><span class="sic"><svg class="i"><use href="#i-devices"/></svg></span><div><span data-i18n="devices">Devices</span><small id="sum-devices"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    <button class="opt go" data-sec="data"><span class="sic"><svg class="i"><use href="#i-trash"/></svg></span><div><span data-i18n="data">Data</span><small id="sum-data"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    <button class="opt go" data-sec="updates"><span class="sic"><svg class="i"><use href="#i-down"/></svg></span><div><span data-i18n="updates">Updates</span><small id="sum-updates"></small></div><svg class="i chev"><use href="#i-right"/></svg></button>
+    </div>
+  </div>
+  <div class="sec" data-sec="general" hidden>
   <div class="grp"><h3 data-i18n="browsing">Browsing</h3>
     <div class="opt"><div data-i18n="search_engine">Search engine</div></div>
     <div class="opt" style="padding-top:0"><div class="chips" id="engines" style="margin-left:0;justify-content:flex-start"></div></div>
-    <div class="opt"><div><span data-i18n="space_color">Space color</span><small id="spacename"></small></div><div class="swatches" id="swatches"></div></div>
     <button class="opt" data-set="pull_refresh"><div><span data-i18n="pull_refresh">Pull to refresh</span><small data-i18n="pull_refresh_hint">Pull down at the top of a page to reload it</small></div><span class="sw"></span></button>
     <button class="opt" id="defbrowser"><div><span data-i18n="default_browser">Default browser</span><small id="defstate"></small></div><span class="v">›</span></button>
   </div>
+  <div class="grp"><h3 data-i18n="language">Language</h3>
+    <div class="opt" style="padding-top:10px"><div class="chips" id="langs" style="margin-left:0;justify-content:flex-start"></div></div>
+  </div>
+  </div>
+  <div class="sec" data-sec="appearance" hidden>
   <div class="grp"><h3 data-i18n="appearance">Appearance</h3>
-    <div class="opt"><div data-i18n="language">Language</div><div class="chips" id="langs"></div></div>
-    <div class="opt"><div data-i18n="theme">Theme</div><div class="chips" id="themes"></div></div>
-    <div class="opt"><div data-i18n="text_size">Text size</div><div class="chips" id="zooms"></div></div>
+    <div class="opt stack"><div data-i18n="theme">Theme</div><div class="chips" id="themes"></div></div>
+    <div class="opt stack"><div><span data-i18n="style">Interface style</span><small data-i18n="style_sub">In 3D, surfaces have a relief and buttons sink under the finger.</small></div><div class="chips" id="styles"></div></div>
+    <div class="opt stack"><div><span data-i18n="space_color">Space color</span><small id="spacename"></small></div><div class="swatches" id="swatches"></div></div>
+    <div class="opt stack"><div data-i18n="text_size">Text size</div><div class="chips" id="zooms"></div></div>
     <button class="opt" data-set="animations"><div><span data-i18n="animations">Animations</span><small data-i18n="animations_hint">Off as well when the system removes animations</small></div><span class="sw"></span></button>
   </div>
+  </div>
+  <div class="sec" data-sec="privacy" hidden>
   <div class="grp"><h3 data-i18n="shields">Shields</h3>
     <button class="opt" data-set="trackers"><div data-i18n="block_trackers">Block trackers</div><span class="sw"></span></button>
     <button class="opt" data-set="ads"><div data-i18n="block_ads">Block ads</div><span class="sw"></span></button>
     <button class="opt" data-set="hide_ads"><div data-i18n="hide_ads">Hide ad slots</div><span class="sw"></span></button>
     <button class="opt" data-set="video_ads"><div data-i18n="skip_video_ads">Skip video ads</div><span class="sw"></span></button>
     <button class="opt" data-set="cookie_banners"><div data-i18n="hide_cookie_banners">Hide cookie banners</div><span class="sw"></span></button>
+    <p class="note" data-i18n="privacy_lead">No telemetry and no account: what you browse stays on this phone.</p>
   </div>
+  </div>
+  <div class="sec" data-sec="devices" hidden>
   <div class="grp" id="devices"><h3 data-i18n="devices">Devices</h3>
     <div id="devlist"></div>
     <p class="note" id="dev-empty" hidden data-i18n="no_device">No device paired yet.</p>
@@ -488,16 +565,21 @@
     <p class="note" id="devstatus"></p>
     <p class="note" data-i18n="devices_note">Same Wi-Fi network, no server, no account. Continue on sends the address of a tab; tab sync keeps quick access, open tabs and spaces the same on both devices (Ask proposes, Always merges on its own). Private tabs stay here.</p>
   </div>
+  </div>
+  <div class="sec" data-sec="data" hidden>
   <div class="grp"><h3 data-i18n="data">Data</h3>
     <button class="opt danger" id="clear-history"><div data-i18n="clear_history">Clear history</div></button>
     <button class="opt danger" id="clear-data"><div><span data-i18n="clear_site_data">Clear cookies and site data</span><small data-i18n="clear_site_data_hint">Every space; you will be signed out of sites</small></div></button>
     <button class="opt" data-go="downloads"><div><span data-i18n="downloads">Downloads</span><small>Download/BlackHole</small></div><span class="v">›</span></button>
   </div>
+  </div>
+  <div class="sec" data-sec="updates" hidden>
   <div class="grp" id="updates"><h3 data-i18n="updates">Updates</h3>
     <div class="opt"><div><span data-i18n="app_name">BlackHole for Android</span><small id="about"></small></div></div>
     <div class="opt"><div><span id="up-state">Not checked yet</span><small id="up-detail"></small><div class="upbar" id="up-bar" hidden><i></i></div></div>
       <button class="btn" id="up-go">Check now</button></div>
     <button class="opt" data-set="auto_update"><div><span data-i18n="check_auto">Check automatically</span><small data-i18n="check_auto_hint">Once a day, from the GitHub releases</small></div><span class="sw"></span></button>
+  </div>
   </div>
 </section>
 
@@ -546,6 +628,8 @@
   <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="i-brush" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-7.5 7.5-5-5z"/><path d="M7 12l-2.5 2.5c-1.5 1.5-1 3.5-2 5.5 2-1 4-.5 5.5-2L10.5 15"/></symbol>
+  <symbol id="i-devices" viewBox="0 0 24 24"><rect x="2.5" y="5" width="13" height="10" rx="1.5"/><path d="M6 19h6M9 15v4"/><rect x="16.5" y="9" width="5" height="10" rx="1.2"/></symbol>
   <symbol id="i-pinmap" viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></symbol>
 </svg>
 
@@ -691,6 +775,8 @@ function sync(box, items, key, make, update, anim) {
 function applyMotion() {
   const off = env.reduced || (S && S.settings.animations === false) || matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.body.classList.toggle('still', !!off);
+  // The interface style of the desktop (Settings::depth): 3D unless the profile chose Flat.
+  document.body.classList.toggle('flat', !!S && S.settings.depth === false);
 }
 function theme() {
   const t = S ? S.settings.theme : 'system';
@@ -748,6 +834,8 @@ function setOpen(name, on) {
     }
   }
   if (name === 'settings' || name === 'history') $('#' + name).classList.toggle('on', on);
+  // Settings open on their list of sections (`openSettings` picks one).
+  if (name === 'settings' && on) showSection(null, true);
   surface();
 }
 const close = (name) => { if (open[name]) setOpen(name, false); };
@@ -755,6 +843,7 @@ const close = (name) => { if (open[name]) setOpen(name, false); };
 // follows the touch must not close it again.
 let openedAt = 0;
 function closeTop() {
+  if (open.settings && section && !open.pop) { showSection(null); return true; }
   for (const k of ['pop', 'sheet', 'history', 'settings', 'grid', 'drawer']) if (open[k]) { setOpen(k, false); return true; }
   if (finding) { endFind(); return true; }
   return false;
@@ -1202,6 +1291,8 @@ function renderSettings() {
     (id) => send({ cmd: 'set_language', language: id }));
   chips($('#themes'), [['system', T('theme_system')], ['dark', T('theme_dark')], ['light', T('theme_light')]], st.theme,
     (id) => send({ cmd: 'set_setting', name: 'theme', value: id }));
+  chips($('#styles'), [['3d', T('style_3d')], ['flat', T('style_flat')]], st.depth === false ? 'flat' : '3d',
+    (id) => send({ cmd: 'set_setting', name: 'depth', value: id === '3d' }));
   for (const b of document.querySelectorAll('[data-set]')) {
     const on = !!st[b.dataset.set];
     b.querySelector('.sw').classList.toggle('on', on); b.setAttribute('aria-checked', String(on));
@@ -1216,13 +1307,56 @@ function renderSettings() {
   $('#defstate').textContent = env.default_browser ? T('default_yes') : T('default_no');
   renderDevices(S.devices || { available: false, list: [] });
   $('#about').textContent = T('version', { version: S.version }) + (env.profiles ? '' : ' · ' + T('no_profiles'));
+  settingsSummary();
 }
+
+// --- settings sections ---------------------------------------------------------------------
+// The list of sections, or one section in its place (`name`), with the title of what is shown.
+// `quiet`: no slide (the page itself is sliding in).
+let section = null;
+function showSection(name, quiet) {
+  section = name || null;
+  const root = $('#s-root');
+  root.hidden = !!section;
+  let shown = root;
+  for (const sec of document.querySelectorAll('#settings .sec')) {
+    sec.hidden = sec.dataset.sec !== section;
+    if (!sec.hidden) shown = sec;
+  }
+  $('#s-title').textContent = T(section || 'settings');
+  for (const n of [root, ...document.querySelectorAll('#settings .sec')]) n.classList.remove('fwd', 'back');
+  if (!quiet && !stillNow()) { void shown.offsetWidth; shown.classList.add(section ? 'fwd' : 'back'); }
+  $('#settings').scrollTop = 0;
+}
+function openSettings(name) {
+  setOpen('settings', true);
+  if (name) showSection(name, true);
+}
+// One line under each section of the list: what it is set to.
+function settingsSummary() {
+  const st = S.settings;
+  const engine = (st.engines.find((e) => e.id === st.engine) || {}).label || '';
+  const lang = st.language ? ((st.languages || []).find((l) => l.id === st.language) || {}).label || st.language : T('language_system');
+  $('#sum-general').textContent = engine + ' · ' + lang;
+  const themeName = { system: T('theme_system'), dark: T('theme_dark'), light: T('theme_light') }[st.theme] || '';
+  $('#sum-appearance').textContent = themeName + ' · ' + (st.depth === false ? T('style_flat') : T('style_3d'));
+  const shields = ['trackers', 'ads', 'hide_ads', 'video_ads', 'cookie_banners'];
+  $('#sum-privacy').textContent = T('shields_on', { n: shields.filter((k) => st[k]).length, total: shields.length });
+  const devs = (S.devices && S.devices.list) || [];
+  $('#sum-devices').textContent = devs.length ? Tn('devices_paired', devs.length) : T('no_device');
+  $('#sum-data').textContent = T('data_sub');
+  $('#sum-updates').textContent = T('version', { version: S.version });
+  $('#s-version').textContent = T('version', { version: S.version });
+  $('#s-title').textContent = T(section || 'settings');
+}
+for (const b of document.querySelectorAll('#settings .opt.go')) b.onclick = () => showSection(b.dataset.sec);
+$('#s-back').onclick = () => { if (section) showSection(null); else close('settings'); };
 
 // Paired devices (their keys never reach this page).
 function renderDevices(d) {
   $('#devices').hidden = !d.available;
   // Without the Keystore there is nothing to pair: the drawer does not offer it either.
-  for (const go of document.querySelectorAll('[data-go="devices"]')) go.hidden = !d.available;
+  for (const go of document.querySelectorAll('[data-go="devices"], [data-sec="devices"].go')) go.hidden = !d.available;
   if (!d.available) return;
   $('#dev-empty').hidden = !!d.list.length;
   // The history syncs on its own (switch), "now" asks the online devices at once.
@@ -1286,25 +1420,28 @@ function row(label, ic, run, extra) {
 function actions() {
   const l = $('#list'); l.__suggest = false; l.replaceChildren();
   const add = (label, ic, run, extra) => l.append(enter(row(label, ic, run, extra)));
+  // Grouped (0.8.26): what acts on the page, then on the tab; the places of the app stay at the
+  // foot, three buttons always in reach (they came last in one long list).
+  const head = (key) => l.append(enter(el('div', 'lbl', T(key))));
   const p = S && S.private;
   add(p ? T('new_private_tab') : T('new_tab'), 'plus', () => newTab('new'));
   if (!p) add(T('new_private_tab'), 'mask', () => newTab('private'));
   if (S && S.current != null) {
     const cur = list().find((t) => t.id === S.current);
-    if (!p && cur) add(cur.pinned ? T('remove_quick_access') : T('add_quick_access'), 'pin', () => { send({ cmd: 'pin', tab: S.current }); close('sheet'); });
-    if (!p) for (const dev of (S.devices && S.devices.list) || []) {
-      add(T('continue_on', { name: dev.name }), 'share', () => { close('sheet'); send({ cmd: 'continue_on', device: dev.id }); }, { k: dev.online ? T('nearby') : T('away') });
-    }
+    head('menu_page');
     add(T('find_in_page'), 'find', () => { close('sheet'); startFind(); });
     add(T('desktop_site'), 'desktop', () => { close('sheet'); send({ cmd: 'desktop_site', tab: S.current }); }, { check: !!S.desktop });
     add(T('privacy_report'), 'shield', () => send({ cmd: 'privacy_report' }));
     add(T('copy_link'), 'link', () => { send({ cmd: 'copy', text: S.url || '' }); close('sheet'); toast(T('link_copied')); });
     add(T('add_to_home'), 'addhome', () => { close('sheet'); send({ cmd: 'add_to_home' }); });
     add(T('print'), 'printer', () => { close('sheet'); send({ cmd: 'print' }); });
+    head('menu_tab');
+    if (!p && cur) add(cur.pinned ? T('remove_quick_access') : T('add_quick_access'), 'pin', () => { send({ cmd: 'pin', tab: S.current }); close('sheet'); });
+    if (!p) for (const dev of (S.devices && S.devices.list) || []) {
+      add(T('continue_on', { name: dev.name }), 'devices', () => { close('sheet'); send({ cmd: 'continue_on', device: dev.id }); }, { k: dev.online ? T('nearby') : T('away') });
+    }
     add(T('close_tab'), 'x', () => { close('sheet'); send({ cmd: 'close', tab: S.current }); });
   }
-  add(T('history'), 'clock', () => { close('sheet'); openHistory(); });
-  add(T('settings'), 'gear', () => { close('sheet'); setOpen('settings', true); });
   // Last, far from "New private tab", and said for what it is: every private tab closes and
   // its sessions are wiped, so it takes a second tap (as in menus), then a toast says so.
   if (p) {
@@ -1320,6 +1457,12 @@ function actions() {
     }, { cls: 'danger' });
     l.append(enter(b));
   }
+  const foot = el('div', 'quick foot');
+  const place = (label, ic, run) => { const b = el('button'); b.append(icon(ic), el('span', null, label)); b.onclick = () => { close('sheet'); run(); }; foot.append(b); };
+  place(T('history'), 'clock', openHistory);
+  place(T('downloads'), 'down', () => send({ cmd: 'open_downloads' }));
+  place(T('settings'), 'gear', () => openSettings());
+  l.append(enter(foot));
 }
 // 'new' or 'private': what the next address opens (a new tab), until the sheet closes.
 let mode = null;
@@ -1506,7 +1649,7 @@ function report(m) {
     if (!m.hosts.length) p.append(el('div', 'bl', T('nothing_followed')));
     for (const h of m.hosts.slice(0, 10)) { const r = el('div', 'bl'); r.append(el('span', null, h.host), el('em', null, h.ad ? T('host_ad', { n: h.count }) : T('host_tracker', { n: h.count }))); p.append(r); }
   }
-  const set = enter(row(T('shields_settings'), 'gear', () => { close('pop'); setOpen('settings', true); }));
+  const set = enter(row(T('shields_settings'), 'gear', () => { close('pop'); openSettings('privacy'); }));
   set.style.marginTop = '8px'; p.append(set);
   p.hidden = false; p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
   close('sheet'); setOpen('pop', true);
@@ -1610,8 +1753,8 @@ for (const b of document.querySelectorAll('[data-set]')) {
 for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => {
   const go = b.dataset.go; close('drawer');
   if (go === 'history') openHistory();
-  else if (go === 'settings') setOpen('settings', true);
-  else if (go === 'devices') { setOpen('settings', true); setTimeout(() => $('#devices').scrollIntoView({ behavior: stillNow() ? 'auto' : 'smooth' }), 120); }
+  else if (go === 'settings') openSettings();
+  else if (go === 'devices') openSettings('devices');
   else send({ cmd: 'open_downloads' });
 };
 armed($('#clear-history'), () => send({ cmd: 'clear_history' }));
@@ -1789,7 +1932,7 @@ function demo(o) {
       devices: { available: true, list: [{ id: 'd1', name: 'Desk', online: true, sync: 'ask' }], code: null, status: '' },
       settings: { engine: 'duckduckgo', engines: [{ id: 'duckduckgo', label: 'DuckDuckGo' }, { id: 'brave', label: 'Brave' }, { id: 'startpage', label: 'Startpage' }, { id: 'qwant', label: 'Qwant' }, { id: 'mojeek', label: 'Mojeek' }, { id: 'google', label: 'Google' }],
         animations: true, theme: q.get('theme') || 'system', trackers: true, ads: true, hide_ads: true, video_ads: true, cookie_banners: true,
-        text_zoom: 100, text_zooms: [85, 100, 115, 130, 150], pull_refresh: true, auto_update: true },
+        text_zoom: 100, text_zooms: [85, 100, 115, 130, 150], pull_refresh: true, auto_update: true, depth: q.get('style') !== 'flat' },
     };
   }
   const D = window.__demo;
@@ -1808,7 +1951,8 @@ function demoView(v) {
   if (v === 'drawer') setOpen('drawer', true);
   if (v === 'sheet') { openSheet(false); }
   if (v === 'search') { openSheet(true); $('#q').value = 'event hori'; $('#q').dispatchEvent(new Event('input')); }
-  if (v === 'settings') setOpen('settings', true);
+  if (v === 'settings') openSettings();
+  if (v.startsWith('settings-')) openSettings(v.slice(9));
   if (v === 'history') openHistory();
   if (v === 'report') send({ cmd: 'privacy_report' });
   if (v === 'link') receive({ type: 'link_menu', url: 'https://example.org/article', image: 'https://example.org/a.png' });

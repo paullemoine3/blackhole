@@ -1029,8 +1029,13 @@ pub const PIP_TOGGLE_JS: &str = "(()=>{const vs=[...document.querySelectorAll('v
 /// the call itself says the tab is busy.
 pub const MEDIA_PROBE_JS: &str = "(()=>{const r=window.__bhRtc?window.__bhRtc.state():{};const call=r.call||r.cam||r.mic;const all=[...document.querySelectorAll('video,audio')];const a=innerWidth*innerHeight;const big=v=>!call&&!v.paused&&!v.ended&&!v.loop&&(b=>b.width*b.height>=a*.25)(v.getBoundingClientRect());const m=all.filter(v=>!v.muted||v.dataset.bhm||big(v));const on=m.filter(v=>!v.paused&&!v.ended);return {playing:on.length>0,has:on.length>0||m.some(v=>v.currentTime>0&&!v.ended&&v.duration>1),muted:m.length>0&&m.every(v=>v.muted),watching:all.some(v=>!v.paused&&!v.ended&&!v.loop&&v.readyState>2&&(!isFinite(v.duration)||v.duration>30)),pip:!!document.pictureInPictureElement||all.some(v=>v.webkitPresentationMode==='picture-in-picture'),...r}})()";
 
-/// Pauses what plays, or resumes the media that was being watched.
-pub const MEDIA_TOGGLE_JS: &str = "(()=>{const m=[...document.querySelectorAll('video,audio')];const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){on.forEach(v=>v.pause());return}const v=m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(v)v.play().catch(()=>{})})()";
+/// Pauses what plays, or resumes the media that was being watched (the ones it paused first).
+/// The page's own Media Session handlers (`__bhMs`, `media_devices.js`) go first: a player that
+/// thinks it is paused (YouTube) pauses again a video started behind its back; the element is
+/// only started directly when the page has no handler or it did nothing. Same media as the probe
+/// (heard, or a large video): a muted looping clip of the page playing was paused again instead
+/// of the video resuming.
+pub const MEDIA_TOGGLE_JS: &str = "(()=>{const s=window.__bhMs||{};const a=innerWidth*innerHeight;const m=[...document.querySelectorAll('video,audio')].filter(v=>!v.muted||v.dataset.bhm||v.__bhHeld||(!v.loop&&(b=>b.width*b.height>=a*.25)(v.getBoundingClientRect())));const on=m.filter(v=>!v.paused&&!v.ended);if(on.length){m.forEach(v=>{v.__bhHeld=on.includes(v)});try{s.pause&&s.pause({action:'pause'})}catch(e){}on.forEach(v=>v.pause());return}const v=m.find(v=>v.__bhHeld&&!v.ended)||m.find(v=>v.currentTime>0&&!v.ended)||m[0];if(!v)return;let asked=false;try{if(s.play){s.play({action:'play'});asked=true}}catch(e){}setTimeout(()=>{if(v.paused)v.play().catch(()=>{})},asked?400:0)})()";
 
 /// Restores the sound BlackHole muted; else mutes what is audible; else (nothing audible, nothing
 /// muted by us) unmutes what plays: the stream the site started muted.

@@ -10,6 +10,22 @@
     } catch (_) {}
   };
 
+  // The page's own Media Session play and pause (its player's buttons): the sidebar card uses
+  // them before touching the element, since a player that thinks it is paused (YouTube) pauses
+  // again a video started behind its back (0.8.26). Kept out of sight in `__bhMs`.
+  const session = navigator.mediaSession;
+  const setAction = session && session.setActionHandler ? session.setActionHandler.bind(session) : null;
+  const own = {};
+  if (setAction) {
+    try {
+      Object.defineProperty(window, '__bhMs', { value: own });
+      session.setActionHandler = function setActionHandler(action, handler) {
+        if (action === 'play' || action === 'pause') own[action] = typeof handler === 'function' ? handler : null;
+        return setAction(action, handler);
+      };
+    } catch (_) {}
+  }
+
   // The shell only probes the tabs that say something may have changed (and those that play
   // or are in a call): at most one message a second, the shell then looks for a few seconds.
   let hinted = 0;
@@ -130,16 +146,27 @@
   document.addEventListener('play', (e) => { const v = video(e); if (v) v.__bhPaused = false; }, true);
   // A live stream (Twitch: endless duration) floats without a pause button in Chromium's window
   // unless the page answers the Media Session's play and pause: they are answered for the time
-  // it floats (0.8.25). A page that already handles them keeps its handlers afterwards only if
-  // it sets them again, so this is limited to live streams.
+  // it floats (0.8.25), then the page's own handlers are put back (0.8.26).
+  // The window draws play or pause from `playbackState`, which must follow the video: set once,
+  // it stayed "playing" after a pause, and its button paused again instead of resuming (0.8.26).
   let sessionFor = null;
+  let stateBefore = 'none';
+  const follow = (e) => {
+    if (e.target === sessionFor) {
+      try {
+        session.playbackState = sessionFor.paused ? 'paused' : 'playing';
+      } catch (_) {}
+    }
+  };
+  document.addEventListener('play', follow, true);
+  document.addEventListener('pause', follow, true);
   const sessionActions = (v) => {
-    const ms = navigator.mediaSession;
-    if (!ms || !ms.setActionHandler) return;
+    if (!setAction) return;
     try {
-      ms.setActionHandler('play', v ? () => v.play().catch(() => {}) : null);
-      ms.setActionHandler('pause', v ? () => v.pause() : null);
-      if (v) ms.playbackState = v.paused ? 'paused' : 'playing';
+      if (v && !sessionFor) stateBefore = session.playbackState;
+      setAction('play', v ? () => v.play().catch(() => {}) : own.play || null);
+      setAction('pause', v ? () => v.pause() : own.pause || null);
+      session.playbackState = v ? (v.paused ? 'paused' : 'playing') : stateBefore;
     } catch (_) {}
     sessionFor = v;
   };

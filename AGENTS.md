@@ -1180,6 +1180,34 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   Windows : `scripts\test-0825.ps1`. macOS : compilation croisée seulement ; synchro entre deux appareils, PiP
   Twitch et pubs YouTube non vérifiés en réel.
 
+## 0.8.26 : reprise de la carte média, adresse des pages à une page, ouverture du split, Android
+
+- Carte média (lecture / pause, `MEDIA_TOGGLE_JS`) : `media_devices.js` garde les gestionnaires `play` / `pause` de
+  la Media Session que la page déclare (`setActionHandler` enveloppé, `window.__bhMs` non énumérable) ; le bouton les
+  appelle d'abord, puis l'élément (`play()` 400 ms plus tard s'il est encore en pause). Un `play()` venu de dehors était
+  remis en pause par un lecteur qui se croyait arrêté (YouTube). Mêmes médias que la sonde (audibles, ou grande vidéo
+  hors boucle) ; ceux qu'il a mis en pause sont marqués `__bhHeld` et reprennent d'abord. Le PiP d'un direct remet les
+  gestionnaires de la page en partant (`own.play`), au lieu de les effacer. Pendant qu'il flotte, `playbackState` suit
+  la vidéo (`follow`, événements `play` / `pause`) puis reprend sa valeur d'avant : réglé une fois, il restait
+  « playing » après une pause et le bouton de la fenêtre remettait en pause au lieu de relancer (Twitch).
+- Adresse après `pushState` : `page_guard.js` envoie `location` avec `url: location.href` ; `page_moved` la garde si
+  `domain::omnibox::same_document_url` l'accepte (http(s), même origine que l'adresse du moteur, sans identifiants),
+  sinon l'adresse du moteur. Relue aussitôt, celle du moteur était encore l'ancienne (WebView2 et WebKit l'apprennent
+  un peu après) : la barre restait sur youtube.com jusqu'au rechargement.
+- Ouverture du split (`pane_motion`) : `OPEN` = 420 ms sur `cubic-bezier(.2,.85,.25,1)` (`ease_open`, résolu dans
+  `bezier`), comme `pane-in` de `splitbar.html`, qui fait maintenant glisser le titre de toute sa largeur (+ 8 px) ;
+  le volet attend `PAINT` (32 ms) hors de vue avant de bouger (sa page est peinte), la barre a le même délai.
+- Android : Réglages par sections (`#s-root`, `.sec[data-sec]`, `showSection` / `openSettings(nom)`, retour système et
+  flèche : la liste d'abord, puis la page) : Général, Apparence, Confidentialité, Appareils, Données, Mises à jour,
+  chacune avec son résumé (`settingsSummary`). Style 3D / Plat du bureau (`Settings::depth`, `set_setting` `depth`,
+  `body.flat`) ; relief `--relief-*` recopié de `ui/depth.js` (à garder en phase), plus doux en thème clair. Menu ⋮
+  en groupes (`menu_page`, `menu_tab`) et pied `.quick.foot` (Historique, Téléchargements, Réglages). Choix à puces
+  sous leur libellé (`.opt.stack`).
+- Tests : `omnibox::tests::a_page_reports_only_an_address_of_its_own_origin`, `pane_motion::tests` (attente de peinture,
+  courbe), `settings_survive_a_restart` (Android, `depth`). Scénario Android : `sections`, `section`, `flat`, `relief`,
+  `sectionback`, `menugroups` (non lancé ici : pas d'appareil). Reprise vérifiée sur YouTube et Twitch dans Chromium (script de la
+  carte) ; WebView2 réel, macOS (compilation croisée seulement) et animation du split non vérifiés en direct.
+
 ## Livraison et entretien
 
 - Préserver les changements utilisateur déjà présents ; limiter les modifications

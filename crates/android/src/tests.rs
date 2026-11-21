@@ -416,6 +416,8 @@ fn settings_survive_a_restart() {
         c.command(C::SetSetting { name: "theme".into(), value: json!("light") });
         c.command(C::SetSetting { name: "engine".into(), value: json!("brave") });
         c.command(C::SetSetting { name: "cookie_banners".into(), value: json!(false) });
+        c.command(C::SetSetting { name: "depth".into(), value: json!(true) });
+        assert!(c.command(C::SetSetting { name: "depth".into(), value: json!("3d") }).is_empty());
         assert!(c.command(C::SetSetting { name: "theme".into(), value: json!("neon") }).is_empty());
         go(&mut c, "https://kept.example/");
     }
@@ -424,6 +426,7 @@ fn settings_survive_a_restart() {
     assert_eq!(msg["settings"]["theme"], json!("light"));
     assert_eq!(msg["settings"]["engine"], json!("brave"));
     assert_eq!(msg["settings"]["cookie_banners"], json!(false));
+    assert_eq!(msg["settings"]["depth"], json!(true));
     assert_eq!(msg["tabs"][0]["url"], json!("https://kept.example/"));
 }
 
