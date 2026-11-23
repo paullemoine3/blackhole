@@ -29,6 +29,7 @@ pub mod privacy;
 pub mod recall;
 pub mod selection;
 pub mod settings;
+pub mod shields_report;
 pub mod signals;
 pub mod suggest;
 pub mod sync;

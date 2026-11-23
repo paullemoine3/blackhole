@@ -131,6 +131,10 @@ pub(crate) struct Running {
     pub(crate) pilot_sent: (u32, pane_motion::Side),
     /// Links cleaned on the way this session (the privacy report's count).
     pub(crate) links_cleaned: u32,
+    /// Something was blocked since the open Library last heard (its Shields section), and when
+    /// it last did (`service_shields`).
+    pub(crate) shields_dirty: bool,
+    pub(crate) shields_sent: Instant,
     /// The space or folder deleted last, for the toast's Undo.
     pub(crate) undo: Option<(Instant, Removed)>,
     /// What the Library or an Easel deleted last, for its toast's Undo (`trash.rs`).

@@ -160,6 +160,54 @@
   @keyframes bh-pulse { from { opacity: .45; } }
   .row.fresh { animation: bh-fresh 1.4s var(--bh-ease-settle); }
   @keyframes bh-fresh { from { background: color-mix(in srgb, var(--bh-accent) 22%, transparent); } }
+  /* Shields (0.8.28): the sites on the left, the report of the one chosen on the right. */
+  .wrap.wide { max-width: 1180px; }
+  .shg { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: var(--bh-space-28); align-items: start; }
+  .shside { display: flex; flex-direction: column; gap: var(--bh-space-2); position: sticky; top: 0; }
+  .shside .day { padding-top: var(--bh-space-12); }
+  .shside .day:first-child { padding-top: 0; }
+  .shsite { display: flex; align-items: center; gap: var(--bh-space-10); width: 100%; height: 34px; padding: 0 var(--bh-space-10); border: 0; border-radius: var(--bh-radius-row);
+    background: transparent; text-align: left; transition: background-color var(--bh-duration-hover) var(--bh-ease-standard); }
+  .shsite:hover { background: var(--bh-fill-hover); }
+  .shsite.on { background: var(--bh-accent-wash); }
+  .shsite .fav { width: 18px; height: 18px; flex: none; border-radius: 5px; display: grid; place-items: center; font: var(--bh-text-caption); font-weight: 700; color: var(--bh-white); }
+  .shsite .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shsite .n { font-variant-numeric: tabular-nums; opacity: var(--bh-opacity-soft); }
+  .shkv { display: flex; justify-content: space-between; gap: var(--bh-space-8); padding: var(--bh-space-8) var(--bh-space-12); font: var(--bh-text-body-small); }
+  .shkv span { opacity: var(--bh-opacity-soft); }
+  .shkv b { font-variant-numeric: tabular-nums; }
+  .shhead { display: flex; align-items: center; gap: var(--bh-space-18); margin-bottom: var(--bh-space-18); }
+  .ring { --p: 0; width: 84px; height: 84px; flex: none; border-radius: 50%; display: grid; place-items: center;
+    background: conic-gradient(var(--accent) 0 calc(var(--p) * 1%), var(--bh-fill-control) calc(var(--p) * 1%) 100%); box-shadow: 0 0 24px -6px var(--accent); }
+  .ring b { width: 68px; height: 68px; border-radius: 50%; background: var(--bh-bg-shell); display: grid; place-items: center; font-size: 34px; font-weight: 700; line-height: 1; }
+  .shhead .grow h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shtiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--bh-space-12); margin-bottom: var(--bh-space-16); }
+  .shtile { padding: var(--bh-space-14); border-radius: var(--bh-radius-card); background: var(--bh-fill-card); border: 1px solid var(--bh-border-card); min-width: 0; }
+  .shtile b { display: block; font-size: 26px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shtile span { display: block; font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); }
+  .shtile.off b { opacity: var(--bh-opacity-tertiary); }
+  .shcols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--bh-space-16); align-items: start; }
+  .shlist .top { display: flex; align-items: center; gap: var(--bh-space-8); padding: var(--bh-space-10) var(--bh-space-12) var(--bh-space-10) var(--bh-space-16); }
+  .shlist .top b { flex: 1; font-weight: 600; }
+  .shrow { display: flex; align-items: center; gap: var(--bh-space-12); min-height: 46px; padding: var(--bh-space-6) var(--bh-space-12) var(--bh-space-6) var(--bh-space-16); }
+  .shrow .h { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shrow .h.allowed { opacity: var(--bh-opacity-muted); }
+  .shrow .k { font: var(--bh-text-caption); opacity: var(--bh-opacity-muted); white-space: nowrap; }
+  .shrow .n { width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  .shrow .btn { height: 26px; padding: 0 var(--bh-space-10); font: var(--bh-text-caption); }
+  .chip.learn { background: var(--bh-accent-wash); }
+  .chip.allow { background: color-mix(in srgb, var(--bh-success) 22%, transparent); color: var(--bh-success-text); }
+  .shbox { padding: var(--bh-space-16); }
+  .shbox > b { font-weight: 600; }
+  .shbox ul { margin: var(--bh-space-8) 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: var(--bh-space-4); font: var(--bh-text-body-small); opacity: var(--bh-opacity-soft); }
+  .bars { display: flex; flex-direction: column; gap: var(--bh-space-8); margin-top: var(--bh-space-10); font: var(--bh-text-body-small); }
+  .bar { display: flex; align-items: center; gap: var(--bh-space-8); }
+  .bar > span:first-child { width: 96px; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .track { flex: 1; height: 6px; border-radius: 4px; background: var(--bh-fill-control); overflow: hidden; }
+  .bar .track i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .bar .v { width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 1100px) { .shcols { grid-template-columns: minmax(0, 1fr); } .shtiles { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+  @media (max-width: 860px) { .shg { grid-template-columns: minmax(0, 1fr); } .shside { position: static; } }
   #fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9; }
   body.noanim *, body.noanim *::before, body.noanim *::after { animation: none !important; transition: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -174,6 +222,7 @@
   <button class="nav" data-s="highlights"><i data-icon="marker"></i><span class="nm" data-i18n="library.highlights">Highlights</span><span class="count" data-c="highlights"></span></button>
   <button class="nav" data-s="watches"><i data-icon="eye"></i><span class="nm" data-i18n="library.watches">Watched Areas</span><span class="count" data-c="watches"></span></button>
   <button class="nav" data-s="archive"><i data-icon="archive"></i><span class="nm" data-i18n="library.archive">Archived Tabs</span><span class="count" data-c="archive"></span></button>
+  <button class="nav" data-s="shields"><i data-icon="shield"></i><span class="nm" data-i18n="library.shields">Shields</span><span class="count" data-c="shields"></span></button>
   <button class="btn" id="back"><i data-icon="back"></i><span data-i18n="library.back">Back</span></button>
 </nav>
 <main id="m"></main></div>
@@ -266,7 +315,16 @@ const SECTIONS = {
   highlights: { icon: 'marker', title: 'library.highlights' },
   watches: { icon: 'eye', title: 'library.watches' },
   archive: { icon: 'archive', title: 'library.archive' },
+  shields: { icon: 'shield', title: 'library.shields' },
 };
+// Shields: the site chosen and the list's filter (all, trackers, ads).
+let shSite = null, shFilter = 'all';
+const bare = (h) => String(h || '').replace(/^www\./, '');
+// A steady color per site for its letter tile.
+const hue = (t) => { let h = 0; for (const c of String(t)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const GRADE_FILL = { A: 100, B: 80, C: 62, D: 40, E: 20 };
+const KIND = { analytics: 'library.sh_kind_analytics', ads: 'library.sh_kind_ads', social: 'library.sh_kind_social', tracker: 'library.sh_kind_tracker' };
+const secs = (n) => (n < 60 ? n + ' s' : Math.round(n / 60) + ' min');
 function header(lead) {
   const h = el('div', 'sh');
   const b = el('div', 'badge'); b.append(icon(SECTIONS[sec].icon, 'md'));
@@ -473,12 +531,135 @@ const VIEWS = {
       () => send({ cmd: 'reopen_archived', index: a.index }),
       [iconButton('close', bhT('library.remove'), () => send({ cmd: 'delete_archived', index: a.index }))]))];
   },
+  shields() {
+    const R = S.shields || { sites: [] };
+    const sites = R.sites || [];
+    const known = (x) => x && sites.some((s) => s.site === x);
+    if (!known(shSite)) shSite = known(R.current) ? R.current : (sites[0] || {}).site || null;
+    const site = sites.find((s) => s.site === shSite);
+    // Left: the sites of the space shown, then the others that had something blocked; the session.
+    const side = el('div', 'shside');
+    const group = (label, list) => {
+      if (!list.length) return;
+      side.append(el('div', 'day', bhT(label)));
+      for (const s of list) {
+        const b = el('button', 'shsite' + (s.site === shSite ? ' on' : ''));
+        b.type = 'button'; b.title = s.site;
+        b.setAttribute('aria-pressed', String(s.site === shSite));
+        const f = el('span', 'fav', (bare(s.site)[0] || '?').toUpperCase());
+        f.style.background = `hsl(${hue(bare(s.site))} 55% 45%)`;
+        b.append(f, el('span', 'nm', bare(s.site)), el('span', 'n', String(s.total)));
+        b.onclick = () => { shSite = s.site; shFilter = 'all'; render(); };
+        side.append(b);
+      }
+    };
+    group('library.sh_this_space', sites.filter((s) => s.open));
+    group('library.sh_other_sites', sites.filter((s) => !s.open));
+    side.append(el('div', 'day', bhT('library.sh_session')));
+    const ses = el('div', 'card');
+    for (const [k, v] of [['library.sh_trackers', R.trackers || 0], ['library.sh_ads', R.ads || 0], ['library.sh_links', R.links || 0], ['library.sh_saved', '≈ ' + secs(R.saved || 0)]]) {
+      const r = el('div', 'shkv'); r.append(el('span', null, bhT(k)), el('b', null, String(v))); ses.append(r);
+    }
+    side.append(ses);
+    const body = el('div');
+    if (!site) {
+      body.append(header(null), empty('shield', bhT('library.sh_no_site')));
+      const g = el('div', 'shg'); g.append(side, body);
+      return [g];
+    }
+    // Head: the grade in its ring, the site, what it tried, the privacy settings.
+    const head = el('div', 'shhead');
+    const ring = el('div', 'ring');
+    ring.style.setProperty('--p', GRADE_FILL[site.grade] || 0);
+    ring.setAttribute('role', 'img'); ring.setAttribute('aria-label', bhT('library.sh_grade', { grade: site.grade }));
+    ring.append(el('b', null, site.grade));
+    const t = el('div', 'grow');
+    t.append(el('h1', null, bare(site.site)), el('p', 'lead', bhTn('library.sh_lead', site.total, { grade: site.grade, companies: site.companies.length })));
+    const set = el('button', 'btn'); set.type = 'button';
+    set.append(icon('settings'), el('span', null, bhT('menu.privacy_settings')));
+    set.onclick = () => send({ cmd: 'open_settings', tab: 'privacy' });
+    head.append(ring, t, set);
+    // Tiles: what the Shields did here (cookies and fingerprint: switched on or not).
+    const tiles = el('div', 'shtiles');
+    const tileOf = (value, label, off) => { const d = el('div', 'shtile' + (off ? ' off' : '')); d.append(el('b', null, String(value)), el('span', null, bhT(label))); return d; };
+    tiles.append(
+      tileOf(site.trackers, 'library.sh_trackers', !R.blocking),
+      tileOf(site.ads, 'library.sh_ads', !R.adBlocking),
+      tileOf(R.links || 0, 'library.sh_links_session', !R.cleanLinks),
+      tileOf(bhT(R.cookies ? 'library.sh_hidden' : 'library.sh_off'), 'library.sh_cookies', !R.cookies),
+      tileOf(bhT(R.fingerprinting ? 'library.sh_blurred' : 'library.sh_off'), 'library.sh_fingerprint', !R.fingerprinting));
+    // The hosts refused here, most tried first; one that breaks the page can be allowed.
+    const list = el('div', 'card shlist');
+    const top = el('div', 'top');
+    top.append(el('b', null, bhT('library.sh_refused')));
+    const seg = el('div', 'seg'); seg.setAttribute('role', 'radiogroup');
+    for (const [k, label] of [['all', 'library.filter_all'], ['trackers', 'library.sh_trackers'], ['ads', 'library.sh_ads']]) {
+      const b = el('button', k === shFilter ? 'on' : '', bhT(label));
+      b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(k === shFilter));
+      b.onclick = () => { shFilter = k; render(); };
+      seg.append(b);
+    }
+    top.append(seg);
+    list.append(top);
+    const hosts = site.hosts.filter((h) => shFilter === 'all' || (shFilter === 'ads') === h.ad);
+    if (!hosts.length) list.append(empty('check', bhT(site.hosts.length ? 'library.sh_none_filter' : 'library.sh_nothing')));
+    for (const h of hosts) {
+      const r = el('div', 'shrow');
+      const name = el('span', 'h' + (h.allowed ? ' allowed' : ''), h.host);
+      name.title = h.host;
+      if (h.learned) name.append(el('span', 'chip learn', bhT('library.sh_learned')));
+      if (h.allowed) name.append(el('span', 'chip allow', bhT('library.sh_allowed')));
+      const kind = el('span', 'k', [h.company, bhT(KIND[h.kind] || KIND.tracker)].filter(Boolean).join(' · '));
+      const b = el('button', 'btn'); b.type = 'button';
+      b.textContent = bhT(h.allowed ? 'library.sh_block' : 'library.sh_allow');
+      b.onclick = () => send({ cmd: h.allowed ? 'tracker_block' : 'tracker_allow', host: h.host });
+      r.append(name, kind, el('b', 'n', String(h.n)), b);
+      list.append(r);
+    }
+    // Why this grade, and the companies behind the hosts.
+    const why = el('div', 'card shbox');
+    why.append(el('b', null, bhT('library.sh_why', { grade: site.grade })));
+    const ul = el('ul');
+    const reasons = [];
+    if (!site.total) reasons.push(bhT('library.sh_why_none'));
+    if (site.companies.length) reasons.push(bhTn('library.sh_why_companies', site.companies.length));
+    if (site.trackers) reasons.push(bhTn('library.sh_why_trackers', site.trackers));
+    if (site.ads) reasons.push(bhTn('library.sh_why_ads', site.ads));
+    const learned = site.hosts.filter((h) => h.learned).length;
+    if (learned) reasons.push(bhTn('library.sh_why_learned', learned));
+    reasons.push(bhT(R.fingerprinting ? 'library.sh_why_fp_on' : 'library.sh_why_fp_off'));
+    if (site.open) reasons.push(bhT(site.secure ? 'library.sh_why_https' : 'library.sh_why_http'));
+    if (!R.blocking) reasons.push(bhT('library.sh_why_off'));
+    for (const x of reasons) ul.append(el('li', null, x));
+    why.append(ul);
+    const aside = el('div'); aside.append(why);
+    if (site.companies.length) {
+      const co = el('div', 'card shbox');
+      co.append(el('b', null, bhT('library.sh_companies')));
+      const bars = el('div', 'bars');
+      const max = site.companies[0][1] || 1;
+      for (const [name, n] of site.companies.slice(0, 6)) {
+        const r = el('div', 'bar');
+        const tr = el('span', 'track'); const fill = el('i'); fill.style.width = Math.max(4, Math.round(n / max * 100)) + '%'; tr.append(fill);
+        const nm = el('span', null, name); nm.title = name;
+        r.append(nm, tr, el('span', 'v', String(n)));
+        bars.append(r);
+      }
+      co.append(bars);
+      aside.append(co);
+    }
+    const cols = el('div', 'shcols'); cols.append(list, aside);
+    body.append(head, tiles, cols);
+    const g = el('div', 'shg'); g.append(side, body);
+    return [g];
+  },
 };
 
 function counts() {
   const n = { media: S.media.length, downloads: S.downloads.length, easels: S.easels.length,
     watches: (S.watches || []).length, archive: S.archive.length,
-    highlights: ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0) };
+    highlights: ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0),
+    shields: (S.shields || {}).total || 0 };
   const live = S.downloads.filter((d) => !d.done).length, unread = (S.watches || []).filter((w) => w.unread).length;
   document.querySelectorAll('.count').forEach((c) => {
     const k = c.dataset.c;
@@ -496,7 +677,7 @@ function render() {
   counts();
   const m = $('m');
   const had = document.activeElement && document.activeElement.id === 'q';
-  const wrap = el('div', 'wrap');
+  const wrap = el('div', 'wrap' + (sec === 'shields' ? ' wide' : ''));
   wrap.append(...VIEWS[sec]());
   painting = true;
   m.replaceChildren(wrap);
@@ -588,10 +769,17 @@ window.bh = {
     gotAt = Date.now();
     const edit = (s.highlights || {}).edit;
     if (edit && edit[0] > markSeq) { markSeq = edit[0]; if (edit[1]) { markEdit = edit[1]; markDraft = null; } }
-    if (s.jump && s.jump[0] > jumped) { jumped = s.jump[0]; if (s.jump[1] && SECTIONS[s.jump[1]]) { sec = s.jump[1]; q = ''; filter = 'all'; } }
+    if (s.jump && s.jump[0] > jumped) {
+      jumped = s.jump[0];
+      if (s.jump[1] && SECTIONS[s.jump[1]]) { sec = s.jump[1]; q = ''; filter = 'all'; }
+      // The shield's menu opens the report of the site shown.
+      if (s.jump[1] === 'shields') { shSite = (s.shields || {}).current || null; shFilter = 'all'; }
+    }
     render();
   },
   intro,
+  // New requests blocked while the Library is open (at most every 400 ms, `service_shields`).
+  shields: (r) => { if (!S) return; S.shields = r; if (sec === 'shields') render(); else counts(); },
   prep: () => { if (!still()) { const a = $('app'); a.style.transition = 'none'; a.style.opacity = '0'; } },
 };
 bhIcons.hydrate && bhIcons.hydrate(document);

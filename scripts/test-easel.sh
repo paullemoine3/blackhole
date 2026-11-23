@@ -173,7 +173,7 @@ check 24 'before\":\"section secrow\"' "pinned: header sits right above the fold
 check 24 'bms\":false' "imports: no separate bookmark list, they are folders and tabs"
 check 25 'Imp One' "import: bookmarks become tabs filed in a real folder"
 check 25 'Imp Two' "import: every link is a regular tab"
-check 26 'rail\":7' "library: seven sections in the rail"
+check 26 'rail\":8' "library: eight sections in the rail"
 check 26 'archived\":true' "library: cleared tab is archived"
 check 27 'home' "library: closes back to the browser"
 check 28 'card\":true' "media: a card appears for a tab playing in the background"

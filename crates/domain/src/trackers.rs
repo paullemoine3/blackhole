@@ -205,13 +205,23 @@ impl Trackers {
         Some(host)
     }
 
-    /// Takes `host` off the allowed list. `learned_again`: it was a learned tracker (not a
-    /// listed one), blocked again at once. Returns whether it was allowed.
+    /// Takes `host` off the allowed list, or the allowed domain above it (`www.` dropped, as
+    /// `allow` keeps it): the Shields report names the host that was refused, not the entry.
+    /// `learned_again`: it was a learned tracker (not a listed one), blocked again at once.
+    /// Returns whether it was allowed.
     pub fn block_again(&mut self, host: &str, learned_again: bool) -> bool {
-        let host = host.trim().to_ascii_lowercase();
-        if !self.allowed.remove(&host) {
-            return false;
-        }
+        let wanted = host.trim().trim_start_matches("www.").to_ascii_lowercase();
+        let mut candidate = wanted.as_str();
+        let host = loop {
+            if self.allowed.contains(candidate) {
+                break candidate.to_owned();
+            }
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => return false,
+            }
+        };
+        self.allowed.remove(&host);
         if learned_again && self.learned.len() < MAX_LEARNED {
             self.learned.insert(host);
         }
@@ -308,6 +318,13 @@ mod tests {
         assert!(t.block_again("spy.example", true));
         assert!(t.learned().contains("spy.example"));
         assert!(!t.block_again("spy.example", true), "no longer allowed");
+        // From the Shields report: the host refused, under the entry allowed, `www.` or not.
+        t.allow("www.metrics.example");
+        assert!(t.block_again("www.metrics.example", false));
+        t.allow("ads.example");
+        assert!(t.block_again("px.eu.ads.example", false));
+        assert!(t.allowed().is_empty());
+        assert!(!t.block_again("example", false));
         t.forget();
         assert!(t.learned().is_empty() && t.watched().is_empty());
     }

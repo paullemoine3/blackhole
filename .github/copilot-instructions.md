@@ -918,7 +918,7 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   texte ; jamais HTML/SVG/XML) ; `PrivacyPolicy::evaluate` et `resolve_input` acceptent ces `file:` ; Library/accueil
   ouvrent un tel fichier dans un onglet (Windows, Linux ; macOS : l'app du système, WKWebView exige `loadFileURL`).
 - Notices : un clic sur une notice sans bouton la retire partout (`notice_done`) ; `#toast.show` reçoit les clics.
-- Bibliothèque : section Espaces et `LibraryOpenTab` retirés (sept sections).
+- Bibliothèque : section Espaces et `LibraryOpenTab` retirés (sept sections ; huit avec Shields en 0.8.28).
 - Workflow Market : `track` ne touche plus une PR `market/update` qui a déjà la même liste (`cmp`) ; sinon
   `create-pull-request` la rebasait chaque jour sur `main` et son commit neuf relançait les 48 h de `merge`.
 - Test Windows : `scripts\test-0827.ps1` (compteur du bouclier : page, frame du même site, frame d'un autre site, script ;
@@ -926,3 +926,28 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `a_private_window_starts_with_the_extensions_settings_only`, `the_sites_unticked_on_the_card_stay_loose`,
   `the_engine_views_documents_pictures_and_media_never_pages`. macOS : compilation croisée seulement ; Meet et Docs non
   vérifiés en réel (compte requis).
+
+## 0.8.28 : récapitulatif des Shields (Bibliothèque)
+
+- Bibliothèque > Shields (huitième section, `LIBRARY_SECTIONS`, icône `shield`) : à gauche les sites de l'espace
+  affiché puis les autres sites du journal (`BlockLog::sites`), et le total de la session (traqueurs, pubs, liens
+  nettoyés, temps gagné) ; à droite la note dans son anneau, cinq tuiles (traqueurs, pubs, liens nettoyés de la
+  session, bandeaux cookies et empreinte : interrupteurs des Shields), la liste des hôtes refusés (filtre Tous /
+  Traqueurs / Pubs, propriétaire et nature, `appris`, `autorisé`, boutons `tracker_allow` / `tracker_block`), le
+  « Pourquoi » de la note et les entreprises. Données : `Running::shields_json` (`features/privacy.rs`), dans l'état
+  de la Bibliothèque (`shields`).
+- Règles pures : `domain::shields_report` (`owner_of` : table courte domaine → entreprise et nature, sous-domaines
+  compris ; `companies` : regroupement, un hôte inconnu sous son domaine de base ; `time_saved_secs` : estimation de
+  `MS_PER_REQUEST` 50 ms par requête refusée, affichée « ≈ »). Un hôte compte parmi les pubs si la liste des pubs
+  le dit ou si son propriétaire est une régie (`is_ad_host`, partagé avec le menu du bouclier).
+- En direct : `on_blocked` lève `shields_dirty` ; `service_shields` (boucle) envoie `bh.shields(…)` à la Bibliothèque
+  ouverte au plus toutes les `SHIELDS_EVERY` (400 ms) et redemande un réveil tant qu'un envoi attend. Autoriser ou
+  rebloquer un hôte relance `ui_library`.
+- Menu du bouclier : entrée « See the Shields report » → `open_library` `section: "shields"` ; la page choisit alors
+  le site affiché (`jump`).
+- `Trackers::block_again` retrouve l'entrée autorisée comme `allow` la garde (`www.` retiré) ou un domaine
+  au-dessus : le rapport nomme l'hôte refusé, pas l'entrée.
+- Test Windows : `scripts\test-0828.ps1` (section ouverte sur le site affiché, propriétaires, entreprises, tuiles,
+  Autoriser puis Bloquer à nouveau, filtre Pubs, compteur en direct, pas de défilement horizontal). Tests :
+  `shields_report::tests`, `site_tests`, `allowed_hosts_stay_allowed_until_blocked_again`. macOS : compilation
+  croisée seulement.

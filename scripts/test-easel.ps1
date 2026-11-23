@@ -179,7 +179,7 @@ Check ($evals[24] -match 'before.:.section secrow') 'pinned: header sits right a
 Check ($evals[24] -match 'bms.:false') 'imports: no separate bookmark list, they are folders and tabs'
 Check ($evals[25] -match 'Imp One|imp1\.test') 'import: bookmarks become tabs filed in a real folder'
 Check ($evals[25] -match 'Imp Two') 'import: every link is a regular tab'
-Check ($evals[26] -match 'rail":7') 'library: seven sections in the rail (History and Watched Areas included)'
+Check ($evals[26] -match 'rail":8') 'library: eight sections in the rail (History, Watched Areas and Shields included)'
 Check ($evals[26] -match 'archived":true') 'library: cleared tab is archived'
 Check ($evals[27] -match 'home') 'library: closes back to the browser'
 Check ($evals[28] -match 'card.:true') 'media: a card appears for a tab playing in the background'

@@ -391,6 +391,8 @@ impl Running {
             split_opened: 0,
             pilot_sent: (0, pane_motion::Side::Right),
             links_cleaned: 0,
+            shields_dirty: false,
+            shields_sent: Instant::now(),
             undo: None,
             trashed: None,
             library_jump: (0, ""),
