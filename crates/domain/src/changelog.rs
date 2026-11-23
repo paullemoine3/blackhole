@@ -1,6 +1,14 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.28",
+        &[
+            "Library > Shields: a report of each site, with its grade, the trackers and ads refused on it, who is behind them (Google, Meta…) and why it got its grade. A host that breaks a page can be allowed from there, and blocked again",
+            "The report follows the page live while the Library is open, lists the sites of the space shown first, and adds up the session: trackers, ads, links cleaned and the time they did not cost",
+            "The shield's menu opens the report of the site shown",
+        ],
+    ),
+    (
         "0.8.27",
         &[
             "Windows: the Shields now also refuse, and count, the trackers loaded inside frames of other sites (ads, widgets): the shield counter of a page goes up like on macOS",

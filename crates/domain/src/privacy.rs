@@ -465,6 +465,18 @@ impl BlockLog {
         self.total
     }
 
+    /// Every site that had something blocked, with how many requests, most first (the
+    /// Library's Shields report lists them).
+    pub fn sites(&self) -> Vec<(String, u32)> {
+        let mut out: Vec<(String, u32)> = self
+            .by_site
+            .iter()
+            .map(|(site, hosts)| (site.clone(), hosts.iter().map(|(_, n)| n).sum()))
+            .collect();
+        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
     /// Counts a blocked request of a tab of `space` (see `record`).
     pub fn record_in(&mut self, space: u64, host: &str, site: &str) {
         self.record(host, site);
@@ -488,6 +500,21 @@ impl BlockLog {
 
     pub fn clear(&mut self) {
         *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+mod site_tests {
+    #[test]
+    fn the_sites_come_with_their_totals_most_first() {
+        let mut log = super::BlockLog::default();
+        log.record("t.example", "a.test");
+        log.record("u.example", "b.test");
+        log.record("u.example", "b.test");
+        log.record("v.example", "b.test");
+        log.record("t.example", "");
+        assert_eq!(log.sites(), vec![("b.test".to_owned(), 3), ("a.test".to_owned(), 1)]);
+        assert!(super::BlockLog::default().sites().is_empty());
     }
 }
 

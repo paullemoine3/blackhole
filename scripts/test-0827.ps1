@@ -145,7 +145,7 @@ Check ((Ev td2) -match 'td2:true\|0') 'tidy: nothing ticked, nothing to do; the 
 Check ((Ev vw1) -match 'vw1:file:\|bh viewer 0827') 'a text file of the disk opens in a tab'
 Check ((Ev dl1) -match 'dl1:grid\|Show in folder') 'a finished download card: Show in folder'
 Check ((Ev dl2) -match 'dl2:none') 'a failed download card: no folder button'
-Check ((Ev lb1) -match 'lb1:true\|7') 'the Library: no Spaces section, seven sections'
+Check ((Ev lb1) -match 'lb1:true\|8') 'the Library: no Spaces section, eight sections (Shields since 0.8.28)'
 Check ((Ev pv1) -match 'pv1:\d+\|true') 'Settings: the extension settings option under "Run in private windows"'
 Check ((Ev pv2) -match 'pv2:false') 'the option hides when extensions are off in private windows'
 Check ((Ev alive) -ne '' -or ($all -join '') -match 'alive') 'no crash: the app is still running'

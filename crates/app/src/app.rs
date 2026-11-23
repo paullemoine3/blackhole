@@ -82,6 +82,9 @@ impl ApplicationHandler<Wake> for App {
             app.service_peers();
             app.service_media();
             app.service_stats();
+            if let Some(soon) = app.service_shields() {
+                wake = wake.min(soon);
+            }
             app.service_calendar();
             app.service_auth();
             app.service_nearby();

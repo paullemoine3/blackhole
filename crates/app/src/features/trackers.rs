@@ -133,5 +133,7 @@ impl Running {
         }
         self.trackers.flush();
         self.ui_state();
+        // The Library's Shields report shows the host allowed or blocked again.
+        self.ui_library();
     }
 }

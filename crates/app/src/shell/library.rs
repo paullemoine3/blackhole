@@ -1,5 +1,5 @@
-//! The Library: media, downloads, easels, history, highlights, watches, archive (no spaces
-//! since 0.8.27: the sidebar already lists them).
+//! The Library: media, downloads, easels, history, highlights, watches, archive, and the
+//! Shields report (0.8.28; no spaces since 0.8.27: the sidebar already lists them).
 
 use blackhole_domain::TabId;
 use serde_json::json;
@@ -8,8 +8,8 @@ use crate::platform::now_secs;
 use crate::state::Running;
 
 /// The sections of the Library page, in its rail's order.
-const LIBRARY_SECTIONS: [&str; 7] =
-    ["media", "downloads", "easels", "history", "highlights", "watches", "archive"];
+const LIBRARY_SECTIONS: [&str; 8] =
+    ["media", "downloads", "easels", "history", "highlights", "watches", "archive", "shields"];
 
 impl Running {
     /// Everything the Library page shows; it picks the section and filters client-side.
@@ -76,6 +76,7 @@ impl Running {
             // Paired devices: a downloaded file can be sent to one (the Wormhole).
             "devices": self.devices_brief(),
             "highlights": self.marks_json(),
+            "shields": self.shields_json(),
         });
         if let Some(panel) = &self.library_panel.view {
             let _ = panel.evaluate_script(&format!("window.bh&&bh.render({state})"));
