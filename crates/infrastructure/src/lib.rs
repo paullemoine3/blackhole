@@ -471,6 +471,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: dto.hidden_favorites.into_iter().collect(),
             last_seen_version: dto.last_seen_version,
             extensions_in_private: dto.extensions_in_private,
+            private_extension_settings: dto.private_extension_settings,
             sidebar_open: dto.sidebar_open,
             tracker_blocking: dto.tracker_blocking,
             ad_blocking: dto.ad_blocking,
@@ -547,6 +548,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             hidden_favorites: settings.hidden_favorites.iter().cloned().collect(),
             last_seen_version: settings.last_seen_version.clone(),
             extensions_in_private: settings.extensions_in_private,
+            private_extension_settings: settings.private_extension_settings,
             sidebar_open: settings.sidebar_open,
             tracker_blocking: settings.tracker_blocking,
             ad_blocking: settings.ad_blocking,
@@ -703,6 +705,8 @@ struct SettingsDto {
     #[serde(default)]
     extensions_in_private: bool,
     #[serde(default = "default_true")]
+    private_extension_settings: bool,
+    #[serde(default = "default_true")]
     sidebar_open: bool,
     #[serde(default = "default_true")]
     tracker_blocking: bool,
@@ -806,6 +810,63 @@ pub fn remove_burner_profiles(webview: &std::path::Path, keep: &str) -> usize {
         removed
     }
     sweep(webview, keep, 2)
+}
+
+/// What the extensions keep in an engine profile (WebView2: `EBWebView/Default`): their
+/// `storage.local` / `storage.sync`, managed storage, their state and rules. Never cookies,
+/// history or the pages' storage.
+const EXTENSION_STORES: &[&str] = &[
+    "Local Extension Settings",
+    "Sync Extension Settings",
+    "Managed Extension Settings",
+    "Extension State",
+    "Extension Rules",
+    "DNR Extension Rules",
+];
+
+/// A private window starts with a copy of what the extensions keep in the main profile, so they
+/// do not ask their first-run questions again in every private window. `main` and `private` are
+/// the engine folders (`<data>/webview`). Copied before the private engine starts; the private
+/// folder is thrown away with the window, nothing goes back. Best effort: a file the main
+/// window holds locked (LevelDB `LOCK`) is skipped. Returns the number of files copied.
+pub fn seed_private_extensions(main: &std::path::Path, private: &std::path::Path) -> usize {
+    fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> usize {
+        let Ok(entries) = fs::read_dir(from) else {
+            return 0;
+        };
+        if fs::create_dir_all(to).is_err() {
+            return 0;
+        }
+        let mut copied = 0;
+        for entry in entries.flatten() {
+            let (path, name) = (entry.path(), entry.file_name());
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_dir() {
+                copied += copy_tree(&path, &to.join(&name));
+            } else if kind.is_file() && name != "LOCK" && fs::copy(&path, to.join(&name)).is_ok() {
+                copied += 1;
+            }
+        }
+        copied
+    }
+    let (from, to) = (
+        main.join("EBWebView").join("Default"),
+        private.join("EBWebView").join("Default"),
+    );
+    let mut copied = 0;
+    for store in EXTENSION_STORES {
+        copied += copy_tree(&from.join(store), &to.join(store));
+    }
+    // The IndexedDB of the extensions' own pages, not of the web sites.
+    if let Ok(entries) = fs::read_dir(from.join("IndexedDB")) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with("chrome-extension_") {
+                copied += copy_tree(&entry.path(), &to.join("IndexedDB").join(&name));
+            }
+        }
+    }
+    copied
 }
 
 /// Queues the write on the background thread (see `writer`).
@@ -994,6 +1055,7 @@ mod tests {
             hidden_favorites: ["proton.me".to_owned()].into(),
             last_seen_version: "0.3.0".to_owned(),
             extensions_in_private: true,
+            private_extension_settings: false,
             sidebar_open: false,
             tracker_blocking: false,
             ad_blocking: false,
@@ -1125,4 +1187,33 @@ mod tests {
     fn blocklist_loads() {
         assert!(default_privacy_policy().is_blocked_host("stats.doubleclick.net"));
     }
+
+    #[test]
+    fn a_private_window_starts_with_the_extensions_settings_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (main, private) = (tmp.path().join("main"), tmp.path().join("private"));
+        let profile = main.join("EBWebView").join("Default");
+        let put = |rel: &str| {
+            let path = profile.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"x").unwrap();
+        };
+        put("Local Extension Settings/abc/000003.log");
+        put("Local Extension Settings/abc/LOCK");
+        put("Sync Extension Settings/abc/CURRENT");
+        put("IndexedDB/chrome-extension_abc_0.indexeddb.leveldb/MANIFEST-1");
+        put("IndexedDB/https_example.com_0.indexeddb.leveldb/MANIFEST-1");
+        put("Network/Cookies");
+        put("History");
+        assert_eq!(seed_private_extensions(&main, &private), 3);
+        let copy = private.join("EBWebView").join("Default");
+        assert!(copy.join("Local Extension Settings/abc/000003.log").is_file());
+        assert!(!copy.join("Local Extension Settings/abc/LOCK").exists());
+        assert!(copy.join("IndexedDB/chrome-extension_abc_0.indexeddb.leveldb/MANIFEST-1").is_file());
+        assert!(!copy.join("IndexedDB/https_example.com_0.indexeddb.leveldb").exists());
+        assert!(!copy.join("Network").exists() && !copy.join("History").exists());
+        // Nothing to copy from a profile that never ran: nothing happens.
+        assert_eq!(seed_private_extensions(&tmp.path().join("none"), &private), 0);
+    }
+
 }

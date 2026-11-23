@@ -205,10 +205,13 @@
   // Right click on a link, or on selected text: the browser's own menu (new tab, new window…,
   // search the selection). Shift+right click, a text field (paste, spelling) and frames keep
   // the engine's menu.
+  // Document editors (Docs, Sheets, Slides) draw their own menu, whose Cut / Copy / Paste keep
+  // the formatting: theirs always comes first, ours only where they show none (bubble phase).
+  const editor = /^(docs|sheets|slides|drive|script)\.google\.com$/.test(location.hostname);
   addEventListener(
     'contextmenu',
     (e) => {
-      if (e.shiftKey || editable(e)) return;
+      if (editor || e.shiftKey || editable(e)) return;
       const link = linkAt(e);
       const text = selectionAt(e);
       // A highlight under the pointer (highlights.js) has its own entries in the menu.

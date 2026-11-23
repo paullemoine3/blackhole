@@ -838,7 +838,9 @@ window.bh = {
       option(bhT('settings.fingerprinting'), s.shields.fingerprinting, () => send({ cmd: 'set_shield', name: 'fingerprinting', on: !s.shields.fingerprinting }), true, bhT('settings.fingerprinting_sub')),
     );
     put($('extpriv'), option(bhT('settings.ext_private'), s.extensionsInPrivate, () => send({ cmd: 'set_extensions_in_private', on: !s.extensionsInPrivate }), true,
-      bhT('settings.ext_private_sub')));
+      bhT('settings.ext_private_sub')),
+      ...(s.extensionsInPrivate ? [option(bhT('settings.ext_private_settings'), s.privateExtensionSettings,
+        () => send({ cmd: 'set_private_extension_settings', on: !s.privateExtensionSettings }), true, bhT('settings.ext_private_settings_sub'))] : []));
     $('blocked').textContent = s.blocked;
     put($('blocklist'), ...(s.blockedLog.length ? s.blockedLog.map(b => {
       const row = el('div', 'row');

@@ -1,4 +1,5 @@
-//! The Library: media, downloads, easels, spaces, history, highlights, watches, archive.
+//! The Library: media, downloads, easels, history, highlights, watches, archive (no spaces
+//! since 0.8.27: the sidebar already lists them).
 
 use blackhole_domain::TabId;
 use serde_json::json;
@@ -7,8 +8,8 @@ use crate::platform::now_secs;
 use crate::state::Running;
 
 /// The sections of the Library page, in its rail's order.
-const LIBRARY_SECTIONS: [&str; 8] =
-    ["media", "downloads", "easels", "spaces", "history", "highlights", "watches", "archive"];
+const LIBRARY_SECTIONS: [&str; 7] =
+    ["media", "downloads", "easels", "history", "highlights", "watches", "archive"];
 
 impl Running {
     /// Everything the Library page shows; it picks the section and filters client-side.
@@ -57,15 +58,6 @@ impl Running {
             "easels": self.easels.all().iter().filter(|e| self.easel_space(e) == active.id.0).map(|e| json!({
                 "id": e.id, "name": e.name, "count": e.items.len(),
                 "preview": e.items.iter().map(|i| i.text.as_str()).find(|t| !t.is_empty()).unwrap_or(""),
-            })).collect::<Vec<_>>(),
-            "spaces": ws.spaces().iter().map(|sp| json!({
-                "id": sp.id.0, "name": sp.name, "color": sp.color, "icon": sp.icon,
-                "active": sp.id == active.id,
-                "folders": sp.folders.iter().map(|f| json!({"id": f.id.0, "name": f.name})).collect::<Vec<_>>(),
-                "tabs": sp.tabs.iter().map(|t| json!({
-                    "id": t.id.0, "title": t.title, "url": t.url.as_str(),
-                    "folder": t.folder.map(|f| f.0), "pinned": t.pinned,
-                })).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
             "archive": self.archive.iter().enumerate().rev().map(|(i, a)| json!({
                 "index": i, "title": a.title, "url": a.url, "at": a.at,

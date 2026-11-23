@@ -137,7 +137,8 @@ Règles :
 - Confiner `unsafe` aux crates d'intégration `macos-url` et `macos-webext` ;
   conserver `unsafe_code = "forbid"` dans les autres crates du workspace.
 - Préserver les restrictions de navigation : http(s) et schémas d'extensions
-  autorisés pour les onglets ; aucune navigation externe des vues d'interface.
+  autorisés pour les onglets (plus un `file:` local affiché par le moteur, `downloads::viewable_file`,
+  0.8.27) ; aucune navigation externe des vues d'interface.
 - Garder CSP, insertion des données externes par `textContent`, absence de
   télémétrie, téléchargements HTTPS sur hôtes attendus et vérification SHA-256.
   Les paquets du market d'extensions ont des hashes épinglés par plateforme, dans une liste signée
@@ -185,7 +186,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   surlignages, Recall), `scripts\test-0818.ps1` (recherche, rechargement, Réglages en onglet, accueil
   réorganisé, réessai silencieux, jump list), `scripts\test-github-ext.ps1` (ajout depuis GitHub, réseau),
   `scripts\test-onboarding.ps1` (visite d'accueil, `BH_ONBOARDING=1`), `scripts\test-0825.ps1` (tuile en vue
-  scindée, copier l'image, ligne de progression dans la page, trou noir des Réglages, ajout par lien, carte de synchro).
+  scindée, copier l'image, ligne de progression dans la page, trou noir des Réglages, ajout par lien, carte de synchro),
+  `scripts\test-0827.ps1` (compteur du bouclier dans les frames, notice cliquée, « Show in folder », extensions en privé).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -322,7 +324,7 @@ Sous PowerShell : enchaîner avec `;` (pas `&&`), éditer avec les outils d'édi
 - Rapport de confidentialité : `BlockLog::for_site` (décompte borné par site), `privacy_grade`,
   menu `privacy_report` ancré au bouclier ; pubs et traqueurs distingués par `PrivacyPolicy`.
 - Rangement : `Workspace::tidy_suggestion` / `tidy` / `untidy` (`site_of_host`), carte `#tidy`
-  dans la barre latérale (dès `TIDY_FROM` onglets libres), Undo par toast.
+  dans la barre latérale (dès `TIDY_FROM` onglets libres), Undo par toast ; puces cochables et onglets surlignés (0.8.27).
 - Copilote de réunion : `Meeting::notes_template`, `agenda_of` ; Join (`open_meet`) propose par
   toast (`meeting_notes`) l'Easel « Notes · titre · jour », rouvert sans question s'il existe, et
   l'affiche en split à droite de l'onglet Meet (`easel_beside`, `open_easel_side` ; fenêtre Easel
@@ -1207,6 +1209,43 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   courbe), `settings_survive_a_restart` (Android, `depth`). Scénario Android : `sections`, `section`, `flat`, `relief`,
   `sectionback`, `menugroups` (non lancé ici : pas d'appareil). Reprise vérifiée sur YouTube et Twitch dans Chromium (script de la
   carte) ; WebView2 réel, macOS (compilation croisée seulement) et animation du split non vérifiés en direct.
+
+## 0.8.27 : privé / public, Shields dans les frames, Meet et Docs, rangement, téléchargements
+
+- Pas de `--process-per-site` dans les arguments de WebView2 (`views::builder`) : toutes les pages d'un site partageaient
+  un renderer, Meet tournait sur le même fil que Gmail, Agenda et Docs (partage d'écran flou ou pixelisé, Docs lent ;
+  ajouté le 3/11, signalé dès le 4/11). L'argument `--disable-features=…` tient en un seul mot (une espace faisait de
+  `msSmartScreenProtection` un argument à part). `media_devices.js` ne touche plus au partage d'écran (l'enveloppe de
+  `RTCRtpSender.setParameters` forçait 3 Mb/s et la pleine résolution sur chaque couche, contre la régulation de Meet).
+- Docs, Sheets, Slides, Drive, Apps Script : `page_guard.js` ne prend plus le clic droit en phase de capture (menu de
+  l'éditeur, Copier/Coller avec mise en forme) ; le nôtre ne vient que si la page n'en montre aucun (phase bulle).
+- Blocage natif Windows (`win::block_hosts`) : `ICoreWebView2_22::AddWebResourceRequestedFilterWithRequestSourceKinds`
+  (`…_SOURCE_KINDS_ALL`), repli sur l'ancien filtre. Un traqueur dans une frame d'un autre site (processus à part)
+  n'était ni refusé ni compté : le compteur du bouclier restait bas sous Windows.
+- Privé / public : `peers::drop_target` (`Drop::Into` / `Refused` / `Nowhere`) et `Transfer::private` ; un onglet privé
+  lâché sur une fenêtre normale (ou l'inverse) reste où il est (notice `toast.tab_other_privacy`), et `receive` jette un
+  envoi de l'autre sorte. Extensions en privé : `Settings::private_extension_settings` (vrai par défaut, sous
+  `extensions_in_private`, `SetPrivateExtensionSettings`, Réglages > Extensions `#extpriv`) ; avant le moteur,
+  `infrastructure::seed_private_extensions` copie `Local/Sync/Managed Extension Settings`, `Extension State`,
+  `Extension Rules`, `DNR Extension Rules` et l'IndexedDB `chrome-extension_*` du profil principal (jamais cookies,
+  historique ni stockage des sites ; `LOCK` sauté). Rien ne revient. Windows seulement (macOS : stockage déjà gardé).
+- Rangement : chaque groupe de `tidy_json` porte ses `tabs` ; puces cochables (`tidySkip`, `UiCommand::Tidy { skip }`,
+  règle `domain::tidy_kept`), survol de la carte = onglets à ranger surlignés (`.tab.tidy-lit`, `--tg` par site), survol
+  d'une puce = ce site seul.
+- Téléchargements : `RevealDownload { id }` → `downloads::reveal_file` (macOS `open -R`, Windows `explorer /select,"…"`
+  par `raw_arg`, Linux dossier) ; bouton dossier `.cl.fo` de la carte terminée, bouton de la notice « Show in folder »,
+  ligne de la Bibliothèque. Visionneuse : `domain::downloads::viewer_for` / `viewable_file` (PDF, images, vidéo, son,
+  texte ; jamais HTML/SVG/XML) ; `PrivacyPolicy::evaluate` et `resolve_input` acceptent ces `file:` ; Library/accueil
+  ouvrent un tel fichier dans un onglet (Windows, Linux ; macOS : l'app du système, WKWebView exige `loadFileURL`).
+- Notices : un clic sur une notice sans bouton la retire partout (`notice_done`) ; `#toast.show` reçoit les clics.
+- Bibliothèque : section Espaces et `LibraryOpenTab` retirés (sept sections).
+- Workflow Market : `track` ne touche plus une PR `market/update` qui a déjà la même liste (`cmp`) ; sinon
+  `create-pull-request` la rebasait chaque jour sur `main` et son commit neuf relançait les 48 h de `merge`.
+- Test Windows : `scripts\test-0827.ps1` (compteur du bouclier : page, frame du même site, frame d'un autre site, script ;
+  notice cliquée ; bouton dossier ; Bibliothèque ; option des extensions en privé). Tests : `peers::tests`,
+  `a_private_window_starts_with_the_extensions_settings_only`, `the_sites_unticked_on_the_card_stay_loose`,
+  `the_engine_views_documents_pictures_and_media_never_pages`. macOS : compilation croisée seulement ; Meet et Docs non
+  vérifiés en réel (compte requis).
 
 ## Livraison et entretien
 

@@ -1,5 +1,5 @@
 //! Registry of the open BlackHole windows (one process each) and the inbox used to hand a tab
-//! from one window to another, private or not.
+//! from one window to another. A tab never crosses between a private window and a normal one.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,6 +34,20 @@ impl Peer {
 pub struct Transfer {
     pub url: String,
     pub title: String,
+    /// Sent by a private window: a normal window refuses it (and the other way round).
+    #[serde(default)]
+    pub private: bool,
+}
+
+/// Where a tab released outside its window goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Drop {
+    /// Into that window, as private as the one it leaves.
+    Into(u32),
+    /// Over a window of the other kind (private ↔ normal): the tab stays where it was.
+    Refused,
+    /// Over no window: it becomes a window of its own (same privacy).
+    Nowhere,
 }
 
 #[must_use]
@@ -92,6 +106,16 @@ pub fn at(peers: &[Peer], x: f64, y: f64) -> Option<&Peer> {
     peers.iter().find(|p| p.contains(x, y))
 }
 
+/// Where a tab of a `private` window released at a screen point goes.
+#[must_use]
+pub fn drop_target(peers: &[Peer], x: f64, y: f64, private: bool) -> Drop {
+    match at(peers, x, y) {
+        Some(p) if p.private == private => Drop::Into(p.pid),
+        Some(_) => Drop::Refused,
+        None => Drop::Nowhere,
+    }
+}
+
 /// Drops a tab into the inbox of window `pid`.
 pub fn send(dir: &Path, pid: u32, transfer: &Transfer) -> bool {
     let inbox = dir.join("inbox");
@@ -126,9 +150,10 @@ fn inbox_files(dir: &Path, pid: u32) -> Vec<PathBuf> {
     files
 }
 
-/// Takes every transfer waiting for window `pid`.
+/// Takes every transfer waiting for window `pid`, a window as private as `private`: one sent by
+/// a window of the other kind is thrown away.
 #[must_use]
-pub fn receive(dir: &Path, pid: u32) -> Vec<Transfer> {
+pub fn receive(dir: &Path, pid: u32, private: bool) -> Vec<Transfer> {
     inbox_files(dir, pid)
         .into_iter()
         .filter_map(|path| {
@@ -138,6 +163,7 @@ pub fn receive(dir: &Path, pid: u32) -> Vec<Transfer> {
             let _ = std::fs::remove_file(path);
             parsed
         })
+        .filter(|t: &Transfer| t.private == private)
         .collect()
 }
 
@@ -193,10 +219,32 @@ mod tests {
         let t = Transfer {
             url: "https://example.com/".into(),
             title: "Example".into(),
+            private: false,
         };
         assert!(send(tmp.path(), 7, &t));
-        assert!(receive(tmp.path(), 8).is_empty());
-        assert_eq!(receive(tmp.path(), 7), vec![t]);
-        assert!(receive(tmp.path(), 7).is_empty());
+        assert!(receive(tmp.path(), 8, false).is_empty());
+        assert_eq!(receive(tmp.path(), 7, false), vec![t]);
+        assert!(receive(tmp.path(), 7, false).is_empty());
+    }
+
+    #[test]
+    fn a_private_tab_never_lands_in_a_normal_window() {
+        let others = [peer(2, false, 0.0), peer(3, true, 200.0)];
+        assert_eq!(drop_target(&others, 50.0, 50.0, true), Drop::Refused);
+        assert_eq!(drop_target(&others, 250.0, 50.0, true), Drop::Into(3));
+        assert_eq!(drop_target(&others, 250.0, 50.0, false), Drop::Refused);
+        assert_eq!(drop_target(&others, 50.0, 50.0, false), Drop::Into(2));
+        assert_eq!(drop_target(&others, 500.0, 50.0, true), Drop::Nowhere);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let private = Transfer {
+            url: "https://example.com/".into(),
+            title: "Example".into(),
+            private: true,
+        };
+        assert!(send(tmp.path(), 7, &private));
+        assert!(receive(tmp.path(), 7, false).is_empty());
+        assert!(send(tmp.path(), 7, &private));
+        assert_eq!(receive(tmp.path(), 7, true), vec![private]);
     }
 }

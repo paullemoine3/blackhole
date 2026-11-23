@@ -230,11 +230,12 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     #[cfg(windows)]
     let builder = {
         use wry::WebViewBuilderExtWindows;
-        // Replaces wry's defaults, so they are repeated here. `--process-per-site` makes the
-        // shell's own pages (all `about:blank`) and same-site tabs share one renderer instead
-        // of one process per view.
+        // Replaces wry's defaults, so they are repeated here (one argument: no space inside).
+        // Never `--process-per-site` (0.8.27): every page of a site then shares one renderer,
+        // so Meet ran on the same main thread as Gmail, Agenda and Docs (blurry, pixelated
+        // screen shares) and Docs lagged behind every other google.com tab.
         let mut args = String::from(
-            "--disable-features=msWebOOUI,msPdfOOUI,            msSmartScreenProtection --process-per-site",
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
         );
         if !HARDWARE_ACCELERATION.load(Ordering::Relaxed) {
             args.push_str(" --disable-gpu");

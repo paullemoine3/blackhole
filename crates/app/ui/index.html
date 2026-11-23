@@ -114,7 +114,16 @@
   #tidy .td { margin: 2px 4px 6px; padding: var(--bh-space-10); background: var(--bh-fill-card); box-shadow: inset 0 0 0 1px var(--bh-border-card); display: flex; flex-direction: column; gap: var(--bh-space-6); }
   #tidy .q { font-weight: 600; }
   #tidy .gs { display: flex; flex-wrap: wrap; gap: var(--bh-space-4); }
-  #tidy .gs span { padding: 1px 7px; border-radius: var(--bh-radius-chip); background: var(--bh-fill-control); opacity: var(--bh-opacity-soft); font: var(--bh-text-caption); }
+  /* A site of the suggestion: ticked (filed) or not (left loose), its tabs lit in the list while
+     the card or the chip is pointed at, in the chip's colour. */
+  #tidy .gs .g { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border: 0; border-radius: var(--bh-radius-chip); background: var(--bh-fill-control);
+    color: inherit; font: var(--bh-text-caption); font-weight: 400; cursor: pointer; transition: opacity var(--bh-duration-hover) var(--bh-ease-standard), background-color var(--bh-duration-hover) var(--bh-ease-standard); }
+  #tidy .gs .g i { width: 7px; height: 7px; border-radius: 50%; background: var(--tg); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tg) 30%, transparent); }
+  #tidy .gs .g:hover, #tidy .gs .g:focus-visible { background: var(--bh-fill-control-hover); }
+  #tidy .gs .g.off { opacity: .45; text-decoration: line-through; }
+  #tidy .gs .g.off i { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+  #tidy button.go:disabled { opacity: .4; cursor: default; }
+  .tab.tidy-lit { box-shadow: inset 3px 0 0 var(--tg); background: color-mix(in srgb, var(--tg) 16%, transparent); transition: background-color var(--bh-duration-hover) var(--bh-ease-standard); }
   #tidy .bt { display: flex; justify-content: flex-end; gap: var(--bh-space-6); }
   #tidy button, #meet button { border: 0; border-radius: var(--bh-radius-control); padding: 0 var(--bh-space-10); height: 26px; font: var(--bh-text-caption); font-weight: 600; cursor: pointer; color: inherit;
     background: var(--bh-fill-control); transition: background-color var(--bh-duration-hover) var(--bh-ease-standard), transform var(--bh-duration-press) var(--bh-ease-press); }
@@ -203,6 +212,8 @@
   .dl .cl { display: none; flex: none; width: 24px; height: 24px; margin: -4px -6px -4px 0; place-items: center; border: 0; border-radius: var(--bh-radius-chip); background: none; color: inherit; padding: 0; cursor: pointer;
     opacity: var(--bh-opacity-secondary); transition: opacity var(--bh-duration-hover) var(--bh-ease-standard), background-color var(--bh-duration-hover) var(--bh-ease-standard); }
   .dl:is(.ok, .bad) .cl { display: grid; }
+  .dl.bad .cl.fo { display: none; }
+  .dl .cl.fo { margin-right: -2px; }
   .dl .cl:hover { opacity: 1; background: var(--bh-fill-control); }
   .dl.out { pointer-events: none; animation: dl-out var(--bh-duration-spring) var(--bh-ease-standard) forwards; }
   @keyframes dl-out { to { opacity: 0; transform: translateY(8px) scale(.97); } }
@@ -272,7 +283,7 @@
   #toast { position: fixed; bottom: 54px; left: 10px; width: calc(var(--sw, 240px) - 20px); padding: 8px 12px; border-radius: 10px; background: #1b1a26; border: 1px solid rgba(255,255,255,.14); opacity: 0; transition: opacity .25s; pointer-events: none; font-size: 12px; }
   #toast.show { opacity: 1; }
   /* What the toast holds (icon, text, buttons, time line) is the shared notice: ui/notice.js. */
-  #toast.act.show { pointer-events: auto; }
+  #toast.show { pointer-events: auto; }
   /* A notice that asks: the text keeps the first line, its buttons go under it. */
   #toast.act { flex-wrap: wrap; justify-content: flex-end; row-gap: var(--bh-space-6); }
   #toast.act .txt { flex-basis: calc(100% - 24px); }
@@ -1249,7 +1260,11 @@ function renderDownloads(list) {
       x.append(bhIcon('close', 'xs'));
       // Shown on a finished card only: the shell forgets the download, the file stays.
       x.onclick = (e) => { e.stopPropagation(); dlLeave(c, () => send({ cmd: 'dismiss_download', id: d.id })); };
-      c.firstChild.append(el('span', 'nm'), el('span', 'pc'), x);
+      // A finished file: shown in Finder / Explorer.
+      const f = el('button', 'cl fo');
+      f.append(bhIcon('folder', 'xs'));
+      f.onclick = (e) => { e.stopPropagation(); send({ cmd: 'reveal_download', id: d.id }); };
+      c.firstChild.append(el('span', 'nm'), el('span', 'pc'), f, x);
       c.lastChild.append(el('div', 'fill'));
       // A download (finished or not) opens the Library on its Downloads section.
       c.onclick = () => send({ cmd: 'open_library', section: 'downloads' });
@@ -1257,8 +1272,9 @@ function renderDownloads(list) {
     }
     const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk');
     if (c.className !== cls && !c.classList.contains('out')) c.className = cls;
-    const [nm, pc, x] = c.firstChild.children;
+    const [nm, pc, f, x] = c.firstChild.children;
     if (x.title !== bhT('sidebar.dl_dismiss')) { x.title = bhT('sidebar.dl_dismiss'); x.setAttribute('aria-label', x.title); }
+    if (f.title !== bhT('library.show_in_folder')) { f.title = bhT('library.show_in_folder'); f.setAttribute('aria-label', f.title); }
     if (nm.textContent !== d.name) nm.textContent = d.name;
     // Done: a check drawn once (its entrance must not replay on the next refresh).
     if (d.state === 'ok') {
@@ -1276,25 +1292,74 @@ function renderDownloads(list) {
 // shows changes: a state refresh no longer replays its animation or reloads its icon.
 let mediaId = null, mediaSig = '';
 // Tidy-up suggestion: the loose tabs of the busiest sites, filed into one folder per site.
-let tidySig = '';
+// Each site is a chip that can be unticked (its tabs stay loose); pointing at the card lights
+// the tabs it would file, pointing at a chip lights that site's only, each in its colour.
+let tidySig = '', tidyData = null, tidyLit = null;
+const tidySkip = new Set();
+const TIDY_HUES = [262, 330, 160, 38, 205, 12, 290, 95];
+const tidyColor = (i) => `hsl(${TIDY_HUES[i % TIDY_HUES.length]} 85% 66%)`;
+// Lights the tabs of `groups` (a list of indexes) in the list, or none.
+function tidyLight(groups) {
+  tidyLit = groups;
+  document.querySelectorAll('.tab.tidy-lit').forEach((n) => { n.classList.remove('tidy-lit'); n.style.removeProperty('--tg'); });
+  if (!groups || !tidyData) return;
+  for (const i of groups) {
+    const g = tidyData.groups[i];
+    if (!g || tidySkip.has(g.name)) continue;
+    for (const id of g.tabs || []) {
+      const n = document.querySelector(`.tab[data-tab="${id}"]`);
+      if (n) { n.classList.add('tidy-lit'); n.style.setProperty('--tg', tidyColor(i)); }
+    }
+  }
+}
 function renderTidy(t) {
   const sig = t ? JSON.stringify(t) : '';
-  if (sig === tidySig) return;
+  // The list was rebuilt under a lit card: light the new rows again.
+  if (sig === tidySig) { if (tidyLit) tidyLight(tidyLit); return; }
   tidySig = sig;
-  if (!t) { $('tidy').replaceChildren(); return; }
+  tidyData = t;
+  if (!t) { tidySkip.clear(); tidyLight(null); $('tidy').replaceChildren(); return; }
+  for (const name of [...tidySkip]) if (!t.groups.some((g) => g.name === name)) tidySkip.delete(name);
   const card = el('div', 'td');
-  const folders = t.groups.length;
-  card.append(el('div', 'q', bhTn('sidebar.tidy_ask', folders, { tabs: t.tabs })));
+  const q = el('div', 'q');
+  const all = t.groups.map((_, i) => i);
   const gs = el('div', 'gs');
-  gs.append(...t.groups.map(g => el('span', null, `${g.name} · ${g.count}`)));
   const bt = el('div', 'bt');
   const later = el('button', null, bhT('sidebar.not_now'));
-  later.onclick = () => send({ cmd: 'dismiss_tidy' });
+  later.onclick = () => { tidyLight(null); send({ cmd: 'dismiss_tidy' }); };
   const go = el('button', 'go', bhT('sidebar.tidy_up'));
-  go.onclick = () => send({ cmd: 'tidy' });
+  go.onclick = () => { tidyLight(null); send({ cmd: 'tidy', skip: [...tidySkip] }); };
+  // The question counts the ticked sites only; nothing ticked, nothing to do.
+  const count = () => {
+    const kept = t.groups.filter((g) => !tidySkip.has(g.name));
+    q.textContent = bhTn('sidebar.tidy_ask', kept.length, { tabs: kept.reduce((n, g) => n + g.count, 0) });
+    go.disabled = kept.length === 0;
+  };
+  gs.append(...t.groups.map((g, i) => {
+    const c = el('button', 'g' + (tidySkip.has(g.name) ? ' off' : ''));
+    c.style.setProperty('--tg', tidyColor(i));
+    c.append(el('i'), el('span', null, `${g.name} · ${g.count}`));
+    c.title = bhT('sidebar.tidy_toggle');
+    c.setAttribute('aria-pressed', String(!tidySkip.has(g.name)));
+    c.onclick = () => {
+      tidySkip.has(g.name) ? tidySkip.delete(g.name) : tidySkip.add(g.name);
+      c.classList.toggle('off', tidySkip.has(g.name));
+      c.setAttribute('aria-pressed', String(!tidySkip.has(g.name)));
+      count();
+      tidyLight([i]);
+    };
+    c.onmouseenter = c.onfocus = () => tidyLight([i]);
+    c.onmouseleave = () => tidyLight(all);
+    return c;
+  }));
+  card.onmouseenter = () => tidyLight(all);
+  card.onmouseleave = () => tidyLight(null);
+  card.addEventListener('focusout', (e) => { if (!card.contains(e.relatedTarget)) tidyLight(null); });
+  count();
   bt.append(later, go);
-  card.append(gs, bt);
+  card.append(q, gs, bt);
   $('tidy').replaceChildren(card);
+  if (tidyLit) tidyLight(tidyLit);
 }
 // Signals that last: one card per signal, kept in place (only its text changes) and leaving
 // with the download cards' exit. Their text comes from pages and devices: textContent only.

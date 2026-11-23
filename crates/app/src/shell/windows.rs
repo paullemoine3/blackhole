@@ -101,7 +101,7 @@ impl Running {
                 },
             );
         }
-        let incoming = peers::receive(&dir, std::process::id());
+        let incoming = peers::receive(&dir, std::process::id(), private_mode());
         if incoming.is_empty() {
             return;
         }
@@ -121,7 +121,7 @@ impl Running {
         }
         let dir = peers_dir();
         let others = peers::peers(&dir, std::process::id());
-        let target = peers::at(&others, x, y).map(|p| p.pid);
+        let target = peers::drop_target(&others, x, y, private_mode());
         let Some(tab) = self
             .svc
             .workspace()
@@ -135,11 +135,21 @@ impl Running {
         let transfer = peers::Transfer {
             url: tab.url.to_string(),
             title: tab.title.clone(),
+            private: private_mode(),
         };
         let moved = match target {
-            Some(pid) => peers::send(&dir, pid, &transfer),
+            peers::Drop::Into(pid) => peers::send(&dir, pid, &transfer),
+            // A private tab never joins a normal window (nor the other way round): it stays.
+            peers::Drop::Refused => {
+                self.notify(
+                    crate::shell::notices::Notice::Problem,
+                    &t("toast.tab_other_privacy"),
+                    serde_json::Value::Null,
+                );
+                false
+            }
             // Released over nothing: the tab becomes a window of its own (same privacy).
-            None => open_window(private_mode(), Some(&transfer.url)),
+            peers::Drop::Nowhere => open_window(private_mode(), Some(&transfer.url)),
         };
         if moved {
             self.handle_ui(UiCommand::Close { id: id.0 });

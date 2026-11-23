@@ -351,8 +351,31 @@ impl Running {
             UiCommand::OpenLibrary { section } => self.open_library(section.as_deref()),
             UiCommand::CloseLibrary => self.close_library(),
             UiCommand::LibraryOpenFile { id } => {
+                let Some(path) = self
+                    .downloads
+                    .records
+                    .iter()
+                    .find(|d| d.id == id)
+                    .map(|d| std::path::PathBuf::from(&d.path))
+                else {
+                    return;
+                };
+                // A PDF, a picture, a video, a sound or a text: in a tab, like other browsers.
+                // macOS: WKWebView needs read access granted to file pages, so the system opens it.
+                let viewed = !cfg!(target_os = "macos")
+                    && path.is_file()
+                    && url::Url::from_file_path(&path)
+                        .ok()
+                        .filter(blackhole_domain::downloads::viewable_file)
+                        .map(|url| self.open(url.as_str()))
+                        .is_some();
+                if !viewed {
+                    open_download(&path);
+                }
+            }
+            UiCommand::RevealDownload { id } => {
                 if let Some(d) = self.downloads.records.iter().find(|d| d.id == id) {
-                    open_download(std::path::Path::new(&d.path));
+                    crate::tabs::downloads::reveal_file(std::path::Path::new(&d.path));
                 }
             }
             UiCommand::LibraryDeleteDownload { id } => {
@@ -419,15 +442,6 @@ impl Running {
                     self.ui_library();
                     self.trash(&t("toast.archived_removed"), trash::Trashed::Archived(index, rec));
                 }
-            }
-            UiCommand::LibraryOpenTab { space, id } => {
-                self.svc.switch_space(SpaceId(space));
-                self.svc.activate_tab(TabId(id));
-                self.home_visible = false;
-                self.easel_tab = false;
-                self.library = false;
-                self.settings_shown = false;
-                self.sync();
             }
             UiCommand::ClearTabs => {
                 let loose: Vec<TabId> = self

@@ -291,6 +291,10 @@ impl PrivacyPolicy {
         if crate::omnibox::is_extension_page(url) {
             return PrivacyDecision::Allow;
         }
+        // A downloaded document, picture or media file, shown by the engine's own viewer.
+        if crate::downloads::viewable_file(url) {
+            return PrivacyDecision::Allow;
+        }
         match url.scheme() {
             "https" | "http" | "about" | "data" | "blob" => {}
             _ => return PrivacyDecision::Block("unsupported scheme"),

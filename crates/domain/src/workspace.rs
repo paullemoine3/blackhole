@@ -1156,6 +1156,15 @@ impl Tidied {
     }
 }
 
+/// The groups of a suggestion the user kept: the sites unticked on the card (`skip`, by name,
+/// any case) stay loose. Unknown names change nothing.
+pub fn tidy_kept(groups: Vec<TidyGroup>, skip: &[String]) -> Vec<TidyGroup> {
+    groups
+        .into_iter()
+        .filter(|g| !skip.iter().any(|s| s.eq_ignore_ascii_case(&g.name)))
+        .collect()
+}
+
 /// The site of a host, for grouping: `www.` dropped and subdomains folded into the registrable
 /// part (`docs.github.com` → `github.com`, `news.bbc.co.uk` → `bbc.co.uk`).
 pub fn site_of_host(host: &str) -> String {
@@ -1431,6 +1440,15 @@ mod tests {
         assert_eq!(site_of_host("docs.github.com"), "github.com");
         assert_eq!(site_of_host("news.bbc.co.uk"), "bbc.co.uk");
         assert_eq!(site_of_host("localhost"), "localhost");
+    }
+
+    #[test]
+    fn the_sites_unticked_on_the_card_stay_loose() {
+        let group = |name: &str| TidyGroup { name: name.to_owned(), tabs: vec![TabId(1)] };
+        let groups = vec![group("github.com"), group("bbc.co.uk")];
+        let kept = tidy_kept(groups.clone(), &["GitHub.com".to_owned(), "nowhere.org".to_owned()]);
+        assert_eq!(kept, vec![group("bbc.co.uk")]);
+        assert_eq!(tidy_kept(groups.clone(), &[]), groups);
     }
 
     #[test]

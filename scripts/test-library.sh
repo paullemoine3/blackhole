@@ -53,9 +53,7 @@ eval library 'flt:' + !!document.querySelector('main .empty .halo svg') + '|' + 
 eval library (() => { document.querySelector('.seg button').click(); const f = document.getElementById('q'); f.focus(); f.value = 'zzz'; f.dispatchEvent(new Event('input', { bubbles: true })); return 'search'; })()
 wait 300
 eval library 'q:' + document.querySelectorAll('main .row').length + '|' + (document.activeElement && document.activeElement.id)
-eval library (() => { document.querySelector('.nav[data-s="spaces"]').click(); return 'spaces'; })()
-wait 900
-eval library 'spaces:' + document.querySelector('h1').textContent + '|' + document.querySelectorAll('.col').length + '|' + document.querySelectorAll('.col.on').length
+eval library 'nospaces:' + !document.querySelector('.nav[data-s="spaces"]')
 eval library (() => { document.querySelector('.nav[data-s="history"]').click(); return 'history'; })()
 wait 900
 eval library 'hist:' + document.querySelectorAll('.day').length + '|' + document.querySelectorAll('main .row').length
@@ -87,16 +85,15 @@ check 5 'failed' "filter: pick Failed"
 check 6 'flt:true|' "filter: an empty state with its icon"
 check 7 'search' "search: type in the field"
 check 8 'q:0|q' "search: no match, the field keeps the focus"
-check 9 'spaces' "rail: go to Spaces"
-check 10 'spaces:Spaces|1|1' "spaces: one column, the active one lit"
-check 11 'history' "rail: go to History"
-check 12 'hist:1|' "history: grouped by day"
-check 13 'watches' "rail: go to Watched Areas"
-check 14 'watch:true|' "watched areas: empty state with its icon"
-check 15 'html:0' "rows are built with handlers, no inline markup"
-check 16 'noanim:true' "animations off reaches the Library"
-check 17 'dltab:0|false' "the tab opened for the file closes (never \"Site unreachable\")"
-check 18 'alive' "no crash: the app is still running"
+check 9 'nospaces:true' "rail: no Spaces section any more (0.8.27)"
+check 10 'history' "rail: go to History"
+check 11 'hist:1|' "history: grouped by day"
+check 12 'watches' "rail: go to Watched Areas"
+check 13 'watch:true|' "watched areas: empty state with its icon"
+check 14 'html:0' "rows are built with handlers, no inline markup"
+check 15 'noanim:true' "animations off reaches the Library"
+check 16 'dltab:0|false' "the tab opened for the file closes (never \"Site unreachable\")"
+check 17 'alive' "no crash: the app is still running"
 ls "$work/home/Downloads" | grep -q bh-report || { echo "FAIL the file did not land in the scratch Downloads"; fail=1; }
 for s in library-downloads library-history; do
   [[ -f /tmp/bh_shots/$s.png ]] || { echo "FAIL screenshot $s missing"; fail=1; }

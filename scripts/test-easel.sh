@@ -97,7 +97,7 @@ cmd {"cmd":"clear_tabs"}
 wait 600
 cmd {"cmd":"open_library"}
 wait 1000
-eval library JSON.stringify({ rail: document.querySelectorAll('.nav').length, archived: S.archive.length > 0, sp: S.spaces.length })
+eval library JSON.stringify({ rail: document.querySelectorAll('.nav').length, archived: S.archive.length > 0 })
 shot 05-library
 cmd {"cmd":"close_library"}
 wait 500

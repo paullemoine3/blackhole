@@ -170,7 +170,6 @@
   <button class="nav" data-s="media"><i data-icon="image"></i><span class="nm" data-i18n="library.media">Media</span><span class="count" data-c="media"></span></button>
   <button class="nav" data-s="downloads"><i data-icon="download"></i><span class="nm" data-i18n="library.downloads">Downloads</span><span class="count" data-c="downloads"></span></button>
   <button class="nav" data-s="easels"><i data-icon="easel"></i><span class="nm" data-i18n="library.easels">Easels &amp; Notes</span><span class="count" data-c="easels"></span></button>
-  <button class="nav" data-s="spaces"><i data-icon="grid"></i><span class="nm" data-i18n="library.spaces">Spaces</span><span class="count" data-c="spaces"></span></button>
   <button class="nav" data-s="history"><i data-icon="history"></i><span class="nm" data-i18n="library.history">History</span></button>
   <button class="nav" data-s="highlights"><i data-icon="marker"></i><span class="nm" data-i18n="library.highlights">Highlights</span><span class="count" data-c="highlights"></span></button>
   <button class="nav" data-s="watches"><i data-icon="eye"></i><span class="nm" data-i18n="library.watches">Watched Areas</span><span class="count" data-c="watches"></span></button>
@@ -263,7 +262,6 @@ const SECTIONS = {
   media: { icon: 'image', title: 'library.media' },
   downloads: { icon: 'download', title: 'library.downloads' },
   easels: { icon: 'easel', title: 'library.easels' },
-  spaces: { icon: 'grid', title: 'library.spaces' },
   history: { icon: 'history', title: 'library.history' },
   highlights: { icon: 'marker', title: 'library.highlights' },
   watches: { icon: 'eye', title: 'library.watches' },
@@ -356,6 +354,7 @@ const VIEWS = {
       // A file that is there can go to a paired device (the Wormhole), like a text or a link.
       const devices = S.devices || [];
       const acts = [];
+      if (d.done && d.ok) acts.push(iconButton('folder', bhT('library.show_in_folder'), () => send({ cmd: 'reveal_download', id: d.id })));
       if (d.done && d.ok && d.exists && devices.length) {
         const share = iconButton('devices', bhT('library.send_to_device'), () => {
           const r = share.getBoundingClientRect();
@@ -387,25 +386,6 @@ const VIEWS = {
       g.append(c);
     }
     return [...out, g];
-  },
-  spaces() {
-    const out = [header(bhTn('library.items', S.spaces.length))];
-    const cols = el('div', 'cols');
-    for (const s of S.spaces) {
-      const c = el('div', 'col' + (s.active ? ' on' : ''));
-      const h = el('h3');
-      const sw = el('span', 'sw'); sw.style.background = s.color || 'var(--bh-accent)';
-      h.append(sw, el('span', null, (s.icon ? s.icon + ' ' : '') + s.name));
-      c.append(h);
-      const tab = (t) => row(null, t.title || t.url, null, () => send({ cmd: 'library_open_tab', space: s.id, id: t.id }));
-      for (const f of s.folders) {
-        const fl = el('div', 'fl'); fl.append(icon('folder', 'xs'), el('span', null, f.name));
-        c.append(fl, ...s.tabs.filter((t) => t.folder === f.id).map(tab));
-      }
-      c.append(...s.tabs.filter((t) => t.folder == null).map(tab));
-      cols.append(c);
-    }
-    return [...out, cols];
   },
   history() {
     const l = (S.history || []).filter((a) => has(a.title + a.url)).slice(0, 400);
@@ -496,7 +476,7 @@ const VIEWS = {
 };
 
 function counts() {
-  const n = { media: S.media.length, downloads: S.downloads.length, easels: S.easels.length, spaces: S.spaces.length,
+  const n = { media: S.media.length, downloads: S.downloads.length, easels: S.easels.length,
     watches: (S.watches || []).length, archive: S.archive.length,
     highlights: ((S.highlights || {}).pages || []).reduce((n, p) => n + p.marks.length, 0) };
   const live = S.downloads.filter((d) => !d.done).length, unread = (S.watches || []).filter((w) => w.unread).length;

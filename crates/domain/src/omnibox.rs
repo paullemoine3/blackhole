@@ -95,7 +95,7 @@ pub fn is_extension_popout(url: &Url) -> bool {
 pub fn resolve_input(input: &str, engine: SearchEngine) -> Url {
     let input = input.trim();
     if let Ok(url) = Url::parse(input) {
-        if is_extension_page(&url) {
+        if is_extension_page(&url) || crate::downloads::viewable_file(&url) {
             return url;
         }
     }

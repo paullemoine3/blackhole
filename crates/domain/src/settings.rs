@@ -35,6 +35,9 @@ pub struct Settings {
     pub last_seen_version: String,
     /// Installed extensions also run in private windows (off by default: they can see pages).
     pub extensions_in_private: bool,
+    /// A private window starts with a copy of what the extensions keep in the main profile
+    /// (their settings, a finished first run): on by default, only with `extensions_in_private`.
+    pub private_extension_settings: bool,
     /// The sidebar is pinned open (otherwise it slides in on hover). Remembered between launches.
     pub sidebar_open: bool,
     /// Tracker blocklist on (default) or off.
@@ -214,6 +217,7 @@ impl Default for Settings {
             hidden_favorites: BTreeSet::new(),
             last_seen_version: String::new(),
             extensions_in_private: false,
+            private_extension_settings: true,
             sidebar_open: true,
             tracker_blocking: true,
             ad_blocking: true,
