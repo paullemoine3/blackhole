@@ -85,6 +85,7 @@ impl Running {
         // Apart: the macro above is at serde_json's recursion limit.
         state["shields"]["fingerprinting"] = json!(settings.shields.fingerprinting);
         state["dns"] = self.dns_json();
+        state["privateExtensionSettings"] = json!(settings.private_extension_settings);
         state["tileSize"] = json!(settings.quick_access_size);
         state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
         state["homeSections"] = blackhole_domain::home_order(&settings.home_order)
@@ -201,6 +202,10 @@ impl Running {
             }
             UiCommand::SetExtensionsInPrivate { on } => {
                 self.svc.set_extensions_in_private(on);
+                self.ui_state();
+            }
+            UiCommand::SetPrivateExtensionSettings { on } => {
+                self.svc.set_private_extension_settings(on);
                 self.ui_state();
             }
             UiCommand::SetAnimations { on } => {

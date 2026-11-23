@@ -52,6 +52,6 @@ pub use settings::{
 };
 pub use workspace::{
     Home,
-    sanitize_icon, site_of_host, Folder, FolderId, Removed, Space, SpaceId, Tab, TabId, Tidied,
+    sanitize_icon, site_of_host, tidy_kept, Folder, FolderId, Removed, Space, SpaceId, Tab, TabId, Tidied,
     TidyGroup, Workspace,
 };

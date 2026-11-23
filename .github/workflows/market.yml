@@ -52,7 +52,19 @@ jobs:
         run: cargo run --locked -q -p blackhole-market-tool -- update market/market.json --summary "$RUNNER_TEMP/market.md"
       - name: Summary
         run: cat "$RUNNER_TEMP/market.md" >> "$GITHUB_STEP_SUMMARY"
+      # The pull request already carries this exact list: leave it alone. Otherwise
+      # create-pull-request rebases it on main (main moves almost every day) and its new commit
+      # restarts the 48 hours of `merge`: the update was never merged.
+      - name: Same list as the open pull request?
+        id: same
+        run: |
+          if git fetch --no-tags -q origin market/update 2>/dev/null \
+            && git show FETCH_HEAD:market/market.json | cmp -s - market/market.json; then
+            echo "The open pull request already has this list: not touched (its 48 hours go on)."
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: peter-evans/create-pull-request@v7
+        if: steps.same.outputs.same != 'true'
         with:
           branch: market/update
           commit-message: "chore(ext): new upstream releases in the extension market"

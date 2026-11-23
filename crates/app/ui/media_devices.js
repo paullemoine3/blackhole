@@ -51,36 +51,9 @@
       return stream;
     };
   }
-  if (md && md.getDisplayMedia) {
-    const display = md.getDisplayMedia.bind(md);
-    // Screen shares favour sharpness over frame rate unless the page chose otherwise.
-    md.getDisplayMedia = async (constraints) => {
-      const stream = await display(constraints);
-      stream.getVideoTracks().forEach((t) => {
-        if (!t.contentHint) t.contentHint = 'detail';
-      });
-      return stream;
-    };
-  }
-  if (window.RTCRtpSender && RTCRtpSender.prototype.setParameters) {
-    const setParameters = RTCRtpSender.prototype.setParameters;
-    // A screen share keeps its resolution (text stays readable) and may use more bandwidth.
-    RTCRtpSender.prototype.setParameters = function (params) {
-      const track = this.track;
-      if (track && track.kind === 'video' && track.contentHint === 'detail' && params) {
-        try {
-          const tuned = { ...params, degradationPreference: 'maintain-resolution' };
-          tuned.encodings = (params.encodings || []).map((e) => ({
-            ...e,
-            scaleResolutionDownBy: 1,
-            maxBitrate: Math.max(e.maxBitrate || 0, 3000000),
-          }));
-          return setParameters.call(this, tuned).catch(() => setParameters.call(this, params));
-        } catch (_) {}
-      }
-      return setParameters.call(this, params);
-    };
-  }
+  // Screen shares are left to the page and the engine (0.8.27): the old `setParameters`
+  // wrapper forced 3 Mb/s and full resolution on every layer, against the call's own
+  // congestion control (lost packets, a blurry or blocky share on the other side).
   const live = (kind) => {
     for (const t of tracks) if (t.readyState === 'ended') tracks.delete(t);
     return [...tracks].filter((t) => t.kind === kind);

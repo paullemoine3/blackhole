@@ -161,6 +161,22 @@ impl Running {
         } else {
             profile.clone()
         };
+        // A private window with extensions starts from a copy of what they keep in the main
+        // profile (settings, first run done), before its engine opens the folder.
+        #[cfg(windows)]
+        if private_mode() {
+            let shared = JsonWorkspaceRepository::new(profile.clone())
+                .load_settings()
+                .ok()
+                .flatten()
+                .is_some_and(|s| s.extensions_in_private && s.private_extension_settings);
+            if shared {
+                blackhole_infrastructure::seed_private_extensions(
+                    &profile.join("webview"),
+                    &data.join("webview"),
+                );
+            }
+        }
         let mut web_context = WebContext::new(Some(data.join("webview")));
         // Profiles of the black hole tabs of earlier runs (WebView2 keeps a folder per profile).
         #[cfg(windows)]

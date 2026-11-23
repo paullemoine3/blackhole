@@ -262,6 +262,11 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    pub fn set_private_extension_settings(&mut self, on: bool) {
+        self.settings.private_extension_settings = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     /// Switches the tracker blocklist, for existing and future views alike.
     pub fn set_tracker_blocking(&mut self, on: bool) {
         self.settings.tracker_blocking = on;

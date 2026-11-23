@@ -167,11 +167,11 @@ impl Running {
             | UiCommand::CloseLibrary
             | UiCommand::LibraryOpenFile { .. }
             | UiCommand::LibraryDeleteDownload { .. }
+            | UiCommand::RevealDownload { .. }
             | UiCommand::LibraryClear { .. }
             | UiCommand::ReopenArchived { .. }
             | UiCommand::DeleteArchived { .. }
             | UiCommand::ForgetHistory { .. }
-            | UiCommand::LibraryOpenTab { .. }
             | UiCommand::ClearTabs) => self.handle_easel(command),
             command @ (UiCommand::InstallCatalog { .. }
             | UiCommand::GithubLookup { .. }
@@ -242,6 +242,7 @@ impl Running {
             | UiCommand::SetShield { .. }
             | UiCommand::SetSectionCollapsed { .. }
             | UiCommand::SetExtensionsInPrivate { .. }
+            | UiCommand::SetPrivateExtensionSettings { .. }
             | UiCommand::SetAnimations { .. }
             | UiCommand::SetDepth { .. }
             | UiCommand::SetLanguage { .. }
@@ -264,7 +265,7 @@ impl Running {
             | UiCommand::Close { .. }
             | UiCommand::CloseInstance { .. }
             | UiCommand::Split { .. }
-            | UiCommand::Tidy
+            | UiCommand::Tidy { .. }
             | UiCommand::Untidy
             | UiCommand::DismissTidy
             | UiCommand::DismissDownload { .. }

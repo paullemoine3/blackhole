@@ -291,7 +291,7 @@ impl Running {
             "open_easel" => self.handle_ui(UiCommand::OpenEasel { id: None }),
             "open_library" => self.handle_ui(UiCommand::OpenLibrary { section: None }),
             "new_meet" => self.open_meet(None),
-            "tidy" => self.handle_ui(UiCommand::Tidy),
+            "tidy" => self.handle_ui(UiCommand::Tidy { skip: Vec::new() }),
             "pilot" => self.toggle_pilot(None),
             "burner_tab" => {
                 self.new_tab();

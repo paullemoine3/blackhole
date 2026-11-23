@@ -22,7 +22,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 - Toute nouvelle fonctionnalité plateforme : fournir les deux branches (ou un repli explicite documenté) et garder le stub pour les autres cibles.
 - Imports spécifiques : les placer dans le bloc `cfg` correspondant (sinon avertissements `unused_imports`/`dead_code` sur l'autre plateforme).
 - Exemples : `ExtAction` (macOS : popover natif ; Windows : vue popup + scrim `extpopup.html`), fenêtre sans décorations + boutons dans `ui/bar.html` sous Windows (`body.windows`), `backdrop.rs` (softbuffer) contre les bords blancs, icône via `build.rs` (`winresource`).
-- Windows : toutes les vues d'un même dossier de données doivent avoir les mêmes réglages moteur (extensions activées, GPU, arguments) → toujours passer par `views::builder()` (il fixe aussi `--process-per-site`).
+- Windows : toutes les vues d'un même dossier de données doivent avoir les mêmes réglages moteur (extensions activées, GPU, arguments) → toujours passer par `views::builder()` (jamais `--process-per-site` : voir 0.8.27).
 - Mémoire : chaque vue = un renderer. Pages de shell rares (`library_panel`, `easel_panel`, `splitbar`) = `LazyView` créées à la demande (dans `ensure_panels`) et libérées après 60 s masquées ; les overlays (hotzone, flyout, palette, `Option<WebView>`) sont créés juste après les premières vues au lancement puis recréés au-dessus des nouveaux onglets via `raise_palette` (différé, `flush_raise`). Plafond `max_live_tabs` (domain `overflow_to_release`), préchargement des voisins (`preload_next_tab`), cible mémoire WebView2 « Low » sur les onglets masqués (`set_view_background`, rien à faire sur macOS). Vues de réserve (`spares`) : réglage `spare_views` (0, 1 ou 2 ; défaut 2, ~50 Mo chacune).
 - **Parité systématique :** toute modification ou demande réalisable sur les deux OS est appliquée aux deux dans la même passe (logique commune dans domain/pplication/HTML, branches cfg pour le natif). Si un côté est impossible ou non testable, le dire explicitement et laisser un repli, jamais l'ignorer en silence. Ex. : un popout d'extension s'ouvre en popup sur Windows (show_ext_popup) et en popover natif sur macOS (show_native_popup).
 - Pas de build macOS complet sous Windows (pas de SDK Apple), mais une vérification de types est possible : `rustup target add aarch64-apple-darwin`, puis `cargo clippy --workspace --all-targets --target aarch64-apple-darwin` avec `CC_aarch64_apple_darwin`/`AR_aarch64_apple_darwin` pointant vers un faux compilateur qui crée des fichiers vides (seuls les scripts de build C en ont besoin). La faire après toute modification sous `cfg(target_os = "macos")` ; le comportement reste non testé sur macOS, le signaler.
@@ -30,7 +30,7 @@ Mettre la logique testable dans `domain`/`application`/`infrastructure`, pas dan
 
 ## Sécurité et qualité
 - `unsafe_code = "forbid"` dans le workspace, sauf crates `macos-url` et `macos-webext`.
-- Navigation : seuls http(s) sont autorisés dans les onglets (plus les schémas d'extension `webkit-extension`/`safari-web-extension`/`chrome-extension`). Les vues d'UI ne naviguent jamais hors de `about`/`data`.
+- Navigation : seuls http(s) sont autorisés dans les onglets (plus les schémas d'extension `webkit-extension`/`safari-web-extension`/`chrome-extension`, et depuis 0.8.27 un `file:` local que le moteur affiche lui-même : `domain::downloads::viewable_file`, jamais HTML/SVG/XML). Les vues d'UI ne naviguent jamais hors de `about`/`data`.
 - Téléchargements : HTTPS uniquement, hôtes attendus, **SHA-256 épinglé** vérifié (market, mises à jour). Une URL/hash par plateforme : table `platforms` (`macos`, `windows`) de chaque entrée de `market/market.json`, `Entry::package()`.
 - Écritures de fichiers atomiques ; UI avec CSP et `textContent` (pas d'`innerHTML` sur des données externes) ; aucune télémétrie.
 - `cargo clippy --workspace --all-targets` doit être sans avertissement, y compris `cargo clippy -p blackhole --features devtools`.
@@ -889,3 +889,40 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 5. Ne pas commiter sans demande ; si commit, ajouter le trailer `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`.
 6. Résumer en français, avec les limites (non testé sur macOS, etc.).
 7. Tout nouveau texte visible passe par les catalogues (`en.toml` et `fr.toml`).
+
+## 0.8.27 : privé / public, Shields dans les frames, Meet et Docs, rangement, téléchargements
+
+- Pas de `--process-per-site` dans les arguments de WebView2 (`views::builder`) : toutes les pages d'un site partageaient
+  un renderer, Meet tournait sur le même fil que Gmail, Agenda et Docs (partage d'écran flou ou pixelisé, Docs lent ;
+  ajouté le 3/11, signalé dès le 4/11). L'argument `--disable-features=…` tient en un seul mot (une espace faisait de
+  `msSmartScreenProtection` un argument à part). `media_devices.js` ne touche plus au partage d'écran (l'enveloppe de
+  `RTCRtpSender.setParameters` forçait 3 Mb/s et la pleine résolution sur chaque couche, contre la régulation de Meet).
+- Docs, Sheets, Slides, Drive, Apps Script : `page_guard.js` ne prend plus le clic droit en phase de capture (menu de
+  l'éditeur, Copier/Coller avec mise en forme) ; le nôtre ne vient que si la page n'en montre aucun (phase bulle).
+- Blocage natif Windows (`win::block_hosts`) : `ICoreWebView2_22::AddWebResourceRequestedFilterWithRequestSourceKinds`
+  (`…_SOURCE_KINDS_ALL`), repli sur l'ancien filtre. Un traqueur dans une frame d'un autre site (processus à part)
+  n'était ni refusé ni compté : le compteur du bouclier restait bas sous Windows.
+- Privé / public : `peers::drop_target` (`Drop::Into` / `Refused` / `Nowhere`) et `Transfer::private` ; un onglet privé
+  lâché sur une fenêtre normale (ou l'inverse) reste où il est (notice `toast.tab_other_privacy`), et `receive` jette un
+  envoi de l'autre sorte. Extensions en privé : `Settings::private_extension_settings` (vrai par défaut, sous
+  `extensions_in_private`, `SetPrivateExtensionSettings`, Réglages > Extensions `#extpriv`) ; avant le moteur,
+  `infrastructure::seed_private_extensions` copie `Local/Sync/Managed Extension Settings`, `Extension State`,
+  `Extension Rules`, `DNR Extension Rules` et l'IndexedDB `chrome-extension_*` du profil principal (jamais cookies,
+  historique ni stockage des sites ; `LOCK` sauté). Rien ne revient. Windows seulement (macOS : stockage déjà gardé).
+- Rangement : chaque groupe de `tidy_json` porte ses `tabs` ; puces cochables (`tidySkip`, `UiCommand::Tidy { skip }`,
+  règle `domain::tidy_kept`), survol de la carte = onglets à ranger surlignés (`.tab.tidy-lit`, `--tg` par site), survol
+  d'une puce = ce site seul.
+- Téléchargements : `RevealDownload { id }` → `downloads::reveal_file` (macOS `open -R`, Windows `explorer /select,"…"`
+  par `raw_arg`, Linux dossier) ; bouton dossier `.cl.fo` de la carte terminée, bouton de la notice « Show in folder »,
+  ligne de la Bibliothèque. Visionneuse : `domain::downloads::viewer_for` / `viewable_file` (PDF, images, vidéo, son,
+  texte ; jamais HTML/SVG/XML) ; `PrivacyPolicy::evaluate` et `resolve_input` acceptent ces `file:` ; Library/accueil
+  ouvrent un tel fichier dans un onglet (Windows, Linux ; macOS : l'app du système, WKWebView exige `loadFileURL`).
+- Notices : un clic sur une notice sans bouton la retire partout (`notice_done`) ; `#toast.show` reçoit les clics.
+- Bibliothèque : section Espaces et `LibraryOpenTab` retirés (sept sections).
+- Workflow Market : `track` ne touche plus une PR `market/update` qui a déjà la même liste (`cmp`) ; sinon
+  `create-pull-request` la rebasait chaque jour sur `main` et son commit neuf relançait les 48 h de `merge`.
+- Test Windows : `scripts\test-0827.ps1` (compteur du bouclier : page, frame du même site, frame d'un autre site, script ;
+  notice cliquée ; bouton dossier ; Bibliothèque ; option des extensions en privé). Tests : `peers::tests`,
+  `a_private_window_starts_with_the_extensions_settings_only`, `the_sites_unticked_on_the_card_stay_loose`,
+  `the_engine_views_documents_pictures_and_media_never_pages`. macOS : compilation croisée seulement ; Meet et Docs non
+  vérifiés en réel (compte requis).

@@ -42,12 +42,28 @@ pub fn block_hosts(view: &wry::WebView, hosts: &[&str], blocked: impl Fn(&str, &
     // SAFETY: plain COM calls on the thread that owns the view. The handler reads the page's
     // address from its sender rather than holding the view (no reference cycle).
     unsafe {
+        // Every source of requests (0.8.27): the frames of other sites (ads, widgets, in their
+        // own process) and the workers too. The plain filter only saw the documents of the
+        // page's own process: a tracker in a frame of another site was neither refused nor
+        // counted (the shield counter stood still on Windows, not on macOS).
+        let every_source = core.cast::<ICoreWebView2_22>().ok();
         for host in hosts {
             for pattern in [format!("*://{host}/*"), format!("*://*.{host}/*")] {
-                let _ = core.AddWebResourceRequestedFilter(
-                    &HSTRING::from(pattern),
-                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-                );
+                let pattern = HSTRING::from(pattern);
+                let added = every_source.as_ref().is_some_and(|core| {
+                    core.AddWebResourceRequestedFilterWithRequestSourceKinds(
+                        &pattern,
+                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                        COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
+                    )
+                    .is_ok()
+                });
+                if !added {
+                    let _ = core.AddWebResourceRequestedFilter(
+                        &pattern,
+                        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                    );
+                }
             }
         }
         let mut token = Default::default();

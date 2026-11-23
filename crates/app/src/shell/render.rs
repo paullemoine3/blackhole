@@ -246,7 +246,12 @@ impl Running {
         }
         json!({
             "tabs": groups.iter().map(|g| g.tabs.len()).sum::<usize>(),
-            "groups": groups.iter().map(|g| json!({"name": g.name, "count": g.tabs.len()})).collect::<Vec<_>>(),
+            // The tabs of each group: the card lights them in the list while it is pointed at.
+            "groups": groups.iter().map(|g| json!({
+                "name": g.name,
+                "count": g.tabs.len(),
+                "tabs": g.tabs.iter().map(|t| t.0).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
         })
     }
 }

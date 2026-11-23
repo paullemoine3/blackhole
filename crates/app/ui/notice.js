@@ -7,6 +7,7 @@
 //   notice.visible(false)                 → another host shows it: this one steps back, and
 //                                           takes over where the time is if it comes back
 //   notice.done()                         → answered or replaced elsewhere
+// A notice without buttons is taken away by a click on it (the other hosts too).
 // The page places and sizes its host (`.show` while on screen); texts by textContent only.
 (() => {
   if (window.bhNotice) return;
@@ -21,6 +22,8 @@
   .bh-notice button:hover { background: color-mix(in srgb, var(--bh-accent, #7c5cff) 82%, white); opacity: 1; }
   .bh-notice button.alt { background: var(--bh-fill-control, rgba(255,255,255,.12)); color: inherit; font-weight: 500; }
   .bh-notice button.alt:hover { background: var(--bh-fill-control-hover, rgba(255,255,255,.2)); }
+  /* A notice without buttons goes away when clicked. */
+  .bh-notice.show:not(.act) { cursor: pointer; }
   .bh-notice .tbar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--nt); transform-origin: 0 0; transform: scaleX(0); }
   .bh-notice.show .tbar { animation: toast-time var(--t, 2200ms) linear both; }
   /* Under the pointer or the keyboard focus, the time stops: a notice is never taken away
@@ -72,6 +75,14 @@
       clearTimeout(timer);
       timer = setTimeout(hide, left);
     };
+    // A click on a notice that asks nothing takes it away, everywhere (0.8.27).
+    host.addEventListener('click', (e) => {
+      if (!cur || host.classList.contains('act') || !host.classList.contains('show')) return;
+      e.stopPropagation();
+      cur = null;
+      hide();
+      send({ cmd: 'notice_done' });
+    });
     host.addEventListener('mouseenter', hold);
     host.addEventListener('mouseleave', release);
     host.addEventListener('focusin', hold);

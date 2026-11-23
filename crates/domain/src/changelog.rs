@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.27",
+        &[
+            "Windows: the Shields now also refuse, and count, the trackers loaded inside frames of other sites (ads, widgets): the shield counter of a page goes up like on macOS",
+            "Video calls: a screen shared from Meet stays sharp. Each site now has its own engine process again (Meet no longer shares one with Gmail, Calendar and Docs), and BlackHole no longer forces the quality settings of a screen share",
+            "Google Docs, Sheets and Slides keep their own right-click menu, with their Copy and Paste that keep the formatting, and no longer share a process with every other Google tab",
+            "A private tab never lands in a normal window, nor a normal tab in a private one. Private windows can start with the settings of your extensions (Settings > Extensions), so they stop asking their first-run questions",
+            "Tidy up: point at the card to light the tabs it would file, each site in its colour; click a site to leave its tabs where they are",
+            "Downloads: Show in folder, from the finished card, its notice and the Library. PDFs, pictures, videos, sounds and text files open in a BlackHole tab (Windows)",
+            "A notice without buttons goes away when clicked. The Library no longer lists the spaces: the sidebar already does",
+        ],
+    ),
+    (
         "0.8.26",
         &[
             "The play button of the media card starts a paused video again, YouTube included: it now goes through the site's own player. In the floating window of a live stream (Twitch), the play button resumes the stream again instead of pausing it once more",

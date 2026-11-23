@@ -49,16 +49,37 @@ pub(crate) fn open_download(path: &std::path::Path) {
     }
     #[cfg(windows)]
     {
-        let mut cmd = std::process::Command::new("explorer");
         if risky {
-            cmd.arg(format!("/select,{}", path.display()));
+            reveal_file(path);
         } else {
-            cmd.arg(path);
+            let _ = std::process::Command::new("explorer").arg(path).spawn();
         }
-        let _ = cmd.spawn();
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     let _ = (path, risky);
+}
+
+/// Shows a downloaded file selected in Finder / Explorer (Linux: its folder). A file that is
+/// gone shows its folder.
+pub(crate) fn reveal_file(path: &std::path::Path) {
+    let folder = path.parent().unwrap_or(path);
+    if !path.exists() {
+        crate::features::extensions::reveal(folder);
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    // `/select,"…"` must reach Explorer as written: the quoting of `arg` breaks it on a path
+    // with spaces.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn();
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
 }
 
 /// Downloads: their record, the cards of the running ones, and the tabs they came from.
@@ -273,12 +294,25 @@ impl Running {
         self.ui(format!("window.bh&&bh.downloads({list})"));
         self.reveal_sidebar(DOWNLOAD_REVEAL);
         self.sync_bar_notice();
-        let (kind, key) = if ok {
-            (notices::Notice::Done, "toast.download_complete")
-        } else {
-            (notices::Notice::Problem, "toast.download_failed")
-        };
-        self.notify(kind, &t(key), serde_json::Value::Null);
+        let done = self
+            .downloads.records
+            .iter()
+            .rev()
+            .find(|d| d.url == url && d.done)
+            .map(|d| d.id);
+        match done.filter(|_| ok) {
+            Some(id) => self.notify_action(
+                notices::Notice::Done,
+                &t("toast.download_complete"),
+                &t("library.show_in_folder"),
+                serde_json::json!({"cmd": "reveal_download", "id": id}),
+            ),
+            None => self.notify(
+                notices::Notice::Problem,
+                &t("toast.download_failed"),
+                serde_json::Value::Null,
+            ),
+        }
         self.ui_library();
     }
 }

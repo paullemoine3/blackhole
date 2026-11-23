@@ -103,8 +103,11 @@ impl Running {
                 }
                 self.sync();
             }
-            UiCommand::Tidy => {
-                let groups = self.svc.workspace().tidy_suggestion(TIDY_MIN);
+            UiCommand::Tidy { skip } => {
+                let groups = blackhole_domain::tidy_kept(
+                    self.svc.workspace().tidy_suggestion(TIDY_MIN),
+                    &skip,
+                );
                 if groups.is_empty() {
                     self.toast(&t("toast.nothing_to_tidy"));
                     return;

@@ -1,5 +1,40 @@
 //! Rules about downloaded files.
 
+/// How the engine shows a file of the disk in a tab, like other browsers do (0.8.27).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Viewer {
+    Pdf,
+    Image,
+    Video,
+    Audio,
+    Text,
+}
+
+/// The viewer of a file extension, if the engine shows such files itself. Never a format that
+/// runs scripts (HTML, SVG, XHTML, XML): a page of the disk is not opened in a tab.
+pub fn viewer_for(extension: &str) -> Option<Viewer> {
+    Some(match extension.to_ascii_lowercase().as_str() {
+        "pdf" => Viewer::Pdf,
+        "png" | "jpg" | "jpeg" | "jfif" | "gif" | "webp" | "avif" | "bmp" | "ico" => Viewer::Image,
+        "mp4" | "m4v" | "webm" | "ogv" => Viewer::Video,
+        "mp3" | "m4a" | "aac" | "ogg" | "oga" | "opus" | "wav" | "flac" => Viewer::Audio,
+        "txt" | "log" | "md" | "csv" | "tsv" | "json" | "ini" | "toml" | "yaml" | "yml" => Viewer::Text,
+        _ => return None,
+    })
+}
+
+/// A `file:` address a tab may show: a local file (no host) the engine views itself
+/// (`viewer_for`). Any other `file:` address stays refused.
+pub fn viewable_file(url: &url::Url) -> bool {
+    url.scheme() == "file"
+        && url.host_str().unwrap_or_default().is_empty()
+        && url
+            .path_segments()
+            .and_then(|mut s| s.next_back())
+            .and_then(|name| name.rsplit_once('.'))
+            .is_some_and(|(_, ext)| viewer_for(ext).is_some())
+}
+
 /// Whether a file with this extension runs code when opened (a program, a script, an installer
 /// or a disk image): the shell only reveals it in the file manager, never opens it.
 pub fn is_program(extension: &str) -> bool {
@@ -97,4 +132,24 @@ mod tests {
             assert!(!is_program(ext), "{ext}");
         }
     }
+
+    #[test]
+    fn the_engine_views_documents_pictures_and_media_never_pages() {
+        assert_eq!(viewer_for("PDF"), Some(Viewer::Pdf));
+        assert_eq!(viewer_for("webp"), Some(Viewer::Image));
+        assert_eq!(viewer_for("mp4"), Some(Viewer::Video));
+        assert_eq!(viewer_for("flac"), Some(Viewer::Audio));
+        assert_eq!(viewer_for("json"), Some(Viewer::Text));
+        for ext in ["html", "htm", "svg", "xhtml", "xml", "exe", "js", "zip", ""] {
+            assert_eq!(viewer_for(ext), None, "{ext}");
+        }
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        assert!(viewable_file(&url("file:///C:/Users/me/Downloads/report.pdf")));
+        assert!(viewable_file(&url("file:///home/me/Downloads/photo%20one.JPG")));
+        assert!(!viewable_file(&url("file:///C:/Users/me/Downloads/page.html")));
+        assert!(!viewable_file(&url("file:///C:/Users/me/Downloads/")));
+        assert!(!viewable_file(&url("file://server/share/report.pdf")));
+        assert!(!viewable_file(&url("https://example.com/report.pdf")));
+    }
+
 }

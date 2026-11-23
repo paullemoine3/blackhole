@@ -60,6 +60,9 @@ pub enum UiCommand {
     SetExtensionsInPrivate {
         on: bool,
     },
+    SetPrivateExtensionSettings {
+        on: bool,
+    },
     SetTrackerBlocking {
         on: bool,
     },
@@ -259,8 +262,12 @@ pub enum UiCommand {
         id: u64,
     },
     /// Files the loose tabs into folders by site (the sidebar's suggestion); `Untidy` undoes
-    /// it, `DismissTidy` hides the suggestion for this session.
-    Tidy,
+    /// it, `DismissTidy` hides the suggestion for this session. `skip`: the sites unticked on
+    /// the card, left loose.
+    Tidy {
+        #[serde(default)]
+        skip: Vec<String>,
+    },
     Untidy,
     DismissTidy,
     /// The close button of a finished download's card in the sidebar: the card goes, the file
@@ -746,6 +753,10 @@ pub enum UiCommand {
     LibraryDeleteDownload {
         id: u64,
     },
+    /// Shows a downloaded file in Finder / Explorer (sidebar card, notice, Library).
+    RevealDownload {
+        id: u64,
+    },
     /// Empties the download history, the archive or the browsing history.
     LibraryClear {
         kind: String,
@@ -759,10 +770,6 @@ pub enum UiCommand {
     /// Removes one page from the browsing history (Library → History).
     ForgetHistory {
         url: String,
-    },
-    LibraryOpenTab {
-        space: u64,
-        id: u64,
     },
     /// Closes the loose (not pinned, not in a folder) tabs of the active space.
     ClearTabs,
