@@ -143,6 +143,7 @@
   .btn.armed, .btn.armed:hover { background: var(--bh-danger-fill); color: var(--bh-white); }
   .btn.danger { color: var(--bh-danger-text); }
   .actions { display: flex; align-items: center; gap: var(--bh-space-8); flex-wrap: wrap; padding: var(--bh-space-12) var(--bh-space-16); }
+  .actions[hidden] { display: none; }
   .rows + .actions, .list + .actions { border-top: 1px solid var(--bh-border-hairline); }
   .field { flex: 1 1 260px; min-width: 0; height: 32px; padding: 0 var(--bh-space-10); border: 1px solid var(--bh-border-field); border-radius: var(--bh-radius-row);
     background: var(--bh-fill-field); font: var(--bh-text-body-shell); user-select: text; -webkit-user-select: text;
@@ -160,6 +161,7 @@
   .fielderr { font: var(--bh-text-body-small); color: var(--bh-danger-text); padding: 0 var(--bh-space-16) var(--bh-space-6); margin: 0; }
   .status .btn { margin-left: var(--bh-space-8); }
   .status { font: var(--bh-text-body-small); padding: var(--bh-space-10) var(--bh-space-16); background: var(--bh-fill-faint); border-top: 1px solid var(--bh-border-hairline); }
+  .status.bad { color: var(--bh-danger-text); }
   section > .status { border: 1px solid var(--bh-border-card); border-radius: var(--bh-radius-card-sm); margin-bottom: var(--bh-space-16); }
   b, strong { font-weight: 600; }
   code { font: var(--bh-text-kbd); background: var(--bh-fill-control); padding: 1px 6px; border-radius: var(--bh-radius-key); user-select: text; -webkit-user-select: text; }
@@ -180,6 +182,17 @@
   .devrow, .pwrow { flex-wrap: wrap; }
   .devrow .syncline { flex-basis: 100%; display: flex; align-items: center; gap: var(--bh-space-10); padding-left: 20px; }
   .pwrow code { display: inline-block; margin-top: var(--bh-space-4); }
+  .chip.alias { display: inline-block; margin-left: var(--bh-space-6); padding: 0 var(--bh-space-6); border-radius: var(--bh-radius-pill); background: var(--bh-accent-wash); box-shadow: inset 0 0 0 1px var(--bh-accent-border); font: var(--bh-text-caption); }
+  .sub:has(.chip.alias) { opacity: 1; }
+  .alrow.off .name, .alrow.off .sub { opacity: var(--bh-opacity-tertiary); }
+  .alrow .sub { overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  .alrow .opt { width: auto; min-height: 0; padding: var(--bh-space-4); }
+  .alrow .opt .grow { display: none; }
+  .alprov { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--bh-space-8); padding: var(--bh-space-4) var(--bh-space-16) var(--bh-space-12); }
+  .alprov button { padding: var(--bh-space-10) var(--bh-space-12); border: 0; border-radius: var(--bh-radius-card-sm); background: var(--bh-fill-faint); box-shadow: inset 0 0 0 1px var(--bh-border-hairline); text-align: left; }
+  .alprov button:hover { background: var(--bh-fill-hover); }
+  .alprov button[aria-checked="true"] { background: var(--bh-accent-wash); box-shadow: inset 0 0 0 1px var(--bh-accent-border); }
+  #aloptscard[hidden], #alconnect[hidden], #alon[hidden] { display: none; }
   /* Empty state: an icon in a soft circle and one sentence. */
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--bh-space-10); padding: var(--bh-space-24) var(--bh-space-16); text-align: center;
     font: var(--bh-text-body-small); color: var(--bh-text-secondary); }
@@ -318,6 +331,7 @@
   <button role="tab" data-tab="general" class="on"><i data-icon="gear"></i><span data-i18n="settings.general">General</span></button>
   <button role="tab" data-tab="privacy"><i data-icon="shield"></i><span data-i18n="settings.privacy">Privacy</span></button>
   <button role="tab" data-tab="passwords"><i data-icon="key"></i><span data-i18n="settings.passwords">Passwords</span></button>
+  <button role="tab" data-tab="aliases"><i data-icon="mail"></i><span data-i18n="settings.aliases">Email aliases</span></button>
   <button role="tab" data-tab="extensions"><i data-icon="puzzle"></i><span data-i18n="settings.extensions">Extensions</span></button>
   <div class="group" data-i18n="settings.group_connected">Connected</div>
   <button role="tab" data-tab="calendar"><i data-icon="calendar"></i><span data-i18n="settings.calendar">Calendar</span></button>
@@ -409,6 +423,27 @@
     </div>
   </section>
 
+  <section id="aliases" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="mail" data-size="md"></i></span><div><h1 data-i18n="settings.aliases">Email aliases</h1><p class="lead"><span data-i18n="settings.aliases_lead">A different address for each site, made by a service you already have. Nothing is sent until you connect one.</span></p></div></header>
+    <p class="status" id="alstatus" aria-live="polite"></p>
+    <div class="card" id="allocked" hidden><div class="empty"><span class="halo"><i data-icon="lock" data-size="lg"></i></span><span data-i18n="settings.alias_locked">Aliases are kept with your passwords: unlock them first.</span><button class="btn" id="alunlock"><span data-i18n="settings.alias_open_passwords">Open Passwords</span></button></div></div>
+    <div id="alopen" hidden>
+      <div class="card"><h2 data-i18n="settings.alias_service">Service</h2>
+        <div class="alprov" id="alprov" role="radiogroup" data-i18n-aria="settings.alias_service"></div>
+        <div id="alconnect">
+          <div class="actions" id="alserverrow"><input class="field" id="alserver" autocomplete="off" spellcheck="false" data-i18n-aria="settings.alias_server"></div>
+          <div class="actions"><input class="field" id="alkey" type="password" data-i18n-placeholder="settings.alias_key" autocomplete="off" spellcheck="false" data-i18n-aria="settings.alias_key"><button class="btn" id="alkeypage"><span data-i18n="settings.alias_key_page">Find my key</span></button><button class="btn primary" id="alsave"></button></div>
+          <p class="note"><span data-i18n="settings.alias_key_note">The key is encrypted with your passwords and only ever sent to this service.</span></p>
+        </div>
+        <div id="alon"><div class="rows" id="alaccount"></div><div class="actions"><button class="btn" id="altest"></button><button class="btn danger" id="aldisconnect"><span data-i18n="settings.alias_disconnect">Disconnect</span></button></div></div>
+      </div>
+      <div class="card" id="aloptscard"><h2 data-i18n="settings.alias_options">Options</h2><div class="rows" id="alopts"></div></div>
+      <div class="card"><h2 data-i18n="settings.alias_mine">My aliases</h2>
+        <div class="actions" id="alsearch"><label class="search"><i data-icon="search"></i><input class="field" id="alq" data-i18n-placeholder="settings.alias_search" autocomplete="off" spellcheck="false" data-i18n-aria="settings.alias_search"></label></div>
+        <div class="list rows" id="allist"></div>
+      </div>
+    </div>
+  </section>
   <section id="extensions" role="tabpanel">
     <header class="sh"><span class="badge"><i data-icon="puzzle" data-size="md"></i></span><div><h1 data-i18n="settings.extensions">Extensions</h1><p class="lead"><span data-i18n="settings.extensions_lead">Real WebExtensions run on the system’s native extension host, plus simple content-script extensions.</span></p></div></header>
     <div class="card" id="market"><h2 data-i18n="settings.market">Market</h2>
@@ -825,6 +860,7 @@ window.bh = {
     renderCalendar(s.calendar);
     renderDevices(s.devices);
     renderPasswords(s.passwords);
+    renderAliases(s.passwords && s.passwords.aliases);
     renderRecall(s.recall);
     renderTrackers(s.trackers);
     renderDns(s.dns);
@@ -1585,13 +1621,18 @@ function renderPasswords(p) {
   put($('pwlockafter'), ...(p.master ? [choice(bhT('settings.lock_after'), bhT('settings.lock_after_sub'), p.lockChoices || [], p.lockMinutes, label, (m) => pwSend({ op: 'lock_after', minutes: m }))] : []));
   drawPasswords();
 }
+function pwUser(e) {
+  const sub = el('div', 'sub', e.username || bhT('settings.no_username'));
+  if (e.alias) sub.append(el('span', 'chip alias', bhT('settings.alias_chip')));
+  return sub;
+}
 function drawPasswords() {
   const q = $('pwq').value.trim().toLowerCase();
   const list = (PW.entries || []).filter((e) => !q || e.host.toLowerCase().includes(q) || e.username.toLowerCase().includes(q));
   put($('pwlist'), ...(list.length ? list.map((e) => {
     const row = el('div', 'row pwrow');
     const text = el('div', 'grow');
-    text.append(el('div', 'name', e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), el('div', 'sub', e.username || bhT('settings.no_username')));
+    text.append(el('div', 'name', e.host + (e.realm != null ? ` · ${e.realm || 'HTTP'}` : '')), pwUser(e));
     const shown = pwShown.get(e.id);
     if (shown) text.append(el('code', null, shown.password));
     const acts = el('div', 'rowactions');
@@ -1616,6 +1657,97 @@ function drawPasswords() {
     return row;
   }) : [empty(q ? 'search' : 'key', bhT(q ? 'settings.pw_no_match' : 'settings.pw_none'))]));
 }
+// Email aliases: the key typed is sent once, then forgotten here.
+const alSend = (action) => { send({ cmd: 'aliases', action }); if (action.op === 'suggest' || action.op === 'share_site') applied(); };
+let AL = { list: [], providers: [] };
+let alPick = null; // the service chosen while none is connected
+let alSent = false; // a key sent, being checked
+function renderAliases(a) {
+  if (!a) return;
+  AL = a;
+  $('alopen').hidden = !a.open;
+  $('allocked').hidden = a.open;
+  $('alstatus').textContent = a.status || '';
+  $('alstatus').classList.toggle('bad', !!a.failed);
+  const ro = !!(PW && PW.readOnly);
+  const on = a.connected;
+  if (on || (alSent && !a.checking)) { if (on) { $('alkey').value = ''; $('alserver').value = ''; } alSent = false; }
+  const picked = on ? on.id : (alPick || a.providers[0].id);
+  put($('alprov'), ...a.providers.map((p) => {
+    const b = el('button');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(p.id === picked));
+    b.disabled = ro || (!!on && p.id !== on.id);
+    b.append(el('span', 'label', p.name), el('span', 'sub', bhT(on && on.id === p.id ? 'settings.alias_on' : 'settings.alias_key')));
+    b.onclick = () => { if (on) return; alPick = p.id; renderAliases(AL); };
+    return b;
+  }));
+  const p = a.providers.find((x) => x.id === picked);
+  $('alconnect').hidden = !!on || ro;
+  $('alon').hidden = !on;
+  $('alserverrow').hidden = !p.selfHosted;
+  $('alserver').placeholder = bhT('settings.alias_server_ph', { server: p.server.replace('https://', '') });
+  for (const [id, key] of [['alsave', 'settings.alias_connect'], ['altest', 'settings.alias_test']]) {
+    $(id).textContent = bhT(a.checking ? 'settings.alias_checking' : key);
+    $(id).disabled = a.checking;
+  }
+  $('aldisconnect').hidden = ro;
+  if (on) {
+    const row = el('div', 'opt'), text = el('span', 'grow');
+    text.append(el('span', 'label', on.name), el('span', 'sub', on.server.replace('https://', '')));
+    row.append(el('span', 'dot on'), text);
+    put($('alaccount'), row);
+  }
+  $('aloptscard').hidden = !on;
+  put($('alopts'),
+    option(bhT('settings.alias_suggest'), a.suggest, () => alSend({ op: 'suggest', on: !AL.suggest }), true, bhT('settings.alias_suggest_sub')),
+    option(bhT('settings.alias_share'), a.shareSite, () => alSend({ op: 'share_site', on: !AL.shareSite }), true, bhT('settings.alias_share_sub')));
+  drawAliases();
+}
+function drawAliases() {
+  const q = $('alq').value.trim().toLowerCase();
+  const all = AL.list || [];
+  const ro = !!(PW && PW.readOnly);
+  const list = all.filter((x) => !q || x.host.toLowerCase().includes(q) || x.email.toLowerCase().includes(q));
+  $('alsearch').hidden = !all.length;
+  // Rebuilt: a row's buttons are armed and act on their own alias.
+  $('allist').replaceChildren(...(list.length ? list.map((x) => {
+    const row = el('div', 'row alrow pwrow' + (x.enabled ? '' : ' off'));
+    const text = el('div', 'grow');
+    text.append(el('div', 'name', x.host), el('div', 'sub', x.email + (x.enabled ? '' : ' · ' + bhT('settings.alias_off')) + (x.reachable ? '' : ' · ' + x.service)));
+    const acts = el('div', 'rowactions');
+    const copy = el('button', 'btn small', bhT('settings.alias_copy'));
+    copy.onclick = () => alSend({ op: 'copy', id: x.id });
+    acts.append(copy);
+    if (!ro) {
+      const del = el('button', 'btn small danger', bhT(x.reachable ? 'easel.delete' : 'settings.alias_forget'));
+      del.disabled = x.busy;
+      confirmClick(del, 'easel.delete_confirm', () => alSend({ op: x.reachable ? 'delete' : 'forget', id: x.id }));
+      acts.append(del);
+    }
+    row.append(tile(x.host), text, acts);
+    if (!ro && x.reachable) {
+      const sw = option('', x.enabled, () => alSend({ op: 'enable', id: x.id, on: !x.enabled }), true);
+      sw.setAttribute('aria-label', bhT('settings.alias_receive', { email: x.email }));
+      sw.title = bhT('settings.alias_receive', { email: x.email });
+      sw.disabled = x.busy;
+      row.append(sw);
+    }
+    return row;
+  }) : [empty(q ? 'search' : 'mail', bhT(q ? 'settings.alias_no_match' : 'settings.alias_none'))]));
+}
+$('alq').addEventListener('input', drawAliases);
+$('alunlock').onclick = () => send({ cmd: 'open_settings', tab: 'passwords' });
+$('alkeypage').onclick = () => alSend({ op: 'key_page', provider: alPick || AL.providers[0].id });
+$('alsave').onclick = () => {
+  if (AL.checking) return;
+  alSent = true;
+  alSend({ op: 'connect', provider: alPick || AL.providers[0].id, server: $('alserver').value, key: $('alkey').value });
+};
+for (const id of ['alkey', 'alserver']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('alsave').click(); });
+$('altest').onclick = () => alSend({ op: 'test' });
+confirmClick($('aldisconnect'), 'settings.alias_disconnect_confirm', () => alSend({ op: 'disconnect' }));
 bh.passwordSecret = (s) => {
   if (pwWantEdit === s.id) {
     pwWantEdit = null;

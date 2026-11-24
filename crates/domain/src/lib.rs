@@ -1,6 +1,7 @@
 //! Pure business rules. No I/O, no framework: only `url` for URL parsing and
 //! `zeroize` to wipe secrets.
 
+pub mod aliases;
 pub mod changelog;
 pub mod clean_link;
 pub mod dns;

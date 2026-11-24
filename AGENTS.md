@@ -188,7 +188,8 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `scripts\test-onboarding.ps1` (visite d'accueil, `BH_ONBOARDING=1`), `scripts\test-0825.ps1` (tuile en vue
   scindée, copier l'image, ligne de progression dans la page, trou noir des Réglages, ajout par lien, carte de synchro),
   `scripts\test-0827.ps1` (compteur du bouclier dans les frames, notice cliquée, « Show in folder », extensions en privé),
-  `scripts\test-0828.ps1` (récapitulatif des Shields de la Bibliothèque).
+  `scripts\test-0828.ps1` (récapitulatif des Shields de la Bibliothèque),
+  `scripts\test-0830.ps1` (alias email, faux service local).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -1300,6 +1301,29 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   d'autre d'une fenêtre étroite (demi-écran) ; `fit()` le borne (`--room`) entre eux. Le texte est coupé dans le champ.
 - Test macOS : `bash scripts/test-0829.sh` (étape harnais `press z|Z|a`). Tests : `safari::tests`,
   `a_private_window_only_opens_private_ones_and_keeps_outside_links_out`.
+
+## 0.8.30 : alias email
+
+- Réglages > Email aliases (section entre Passwords et Extensions) : service (SimpleLogin, Addy.io, Firefox Relay), clé,
+  serveur (auto-hébergé possible sauf Relay), options, liste des alias (copier, couper, supprimer). Pastille « alias » dans
+  la liste des mots de passe (`Aliases::is_alias`). BlackHole ne relaie rien : rien ne part avant la connexion d'un service,
+  puis seulement sur un clic.
+- Règles `domain/aliases.rs` (`Provider::server` : https ou machine locale seulement ; `reaches` : seul le compte qui a fait
+  un alias agit dessus ; `valid_email` / `valid_remote` : réponses du service contrôlées). API `infrastructure/aliases.rs`
+  (bloquant, hors du thread UI, `redirects(0)` : la clé ne suit jamais une redirection). SimpleLogin n'a qu'une bascule :
+  rebasculée si l'état rendu n'est pas celui voulu.
+- Clé et alias dans `passwords.bin` (`Passwords::aliases`), jamais dans `Settings` ni dans une page. Une version plus ancienne
+  qui réécrit le portefeuille les perd (champs inconnus). `Settings` : `alias_provider` (indice seulement), `alias_suggest`,
+  `alias_share_site` (nom du site donné au service : faux par défaut).
+- Page : `autofill.js` `isAliasField` (email d'inscription ou de newsletter ; pas avec `current-password`, ni un champ
+  `username` seul), `autofill_query { login, email }`, `autofill_alias { index?, token }` sous le même jeton à usage unique.
+  Un alias par site : s'il en existe un actif il est proposé, sinon « Create ». `alias(token, email)` écrit dans le champ
+  demandé même si le focus a bougé ; `aliasGone` vide ce champ si l'alias est supprimé (Undo de la notice).
+- App `features/aliases.rs` (`Aliases`, `AliasAction`, `{"cmd":"aliases","action":{"op":…}}`). Portefeuille verrouillé pendant
+  la création : `unsaved`, écrit à l'ouverture. Fenêtre privée : lecture seule. Linux : pas de portefeuille, donc pas d'alias.
+- Test Windows : `scripts\test-0830.ps1` (faux SimpleLogin local ; vraies frappes par le port DevTools du moteur).
+  Tests : `aliases::tests` (domain, infrastructure), `the_alias_account_and_the_aliases_are_sealed_with_the_rest`. Non
+  vérifié avec de vrais comptes (Relay : API non documentée pour des tiers). macOS : non lancé. Android : sans alias.
 
 ## Livraison et entretien
 

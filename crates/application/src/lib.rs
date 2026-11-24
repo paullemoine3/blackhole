@@ -387,6 +387,22 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         let _ = self.repo.save_settings(&self.settings);
     }
 
+    /// The email alias service connected (empty: none).
+    pub fn set_alias_provider(&mut self, id: &str) {
+        self.settings.alias_provider = id.to_owned();
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    pub fn set_alias_suggest(&mut self, on: bool) {
+        self.settings.alias_suggest = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    pub fn set_alias_share_site(&mut self, on: bool) {
+        self.settings.alias_share_site = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
     pub fn set_password_lock(&mut self, minutes: u32) {
         if Settings::LOCK_CHOICES.contains(&minutes) {
             self.settings.password_lock_minutes = minutes;

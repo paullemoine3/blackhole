@@ -56,6 +56,20 @@
     return !!pw && usernameFor(pw, scope) === el;
   };
 
+  // An email field an alias suits: sign-ups, newsletters. Not a sign-in, where the address is
+  // already known (`current-password` in the form, or a `username` field of its own).
+  const isAliasField = (el) => {
+    if (!(el instanceof HTMLInputElement) || el.readOnly || el.disabled || !/^(text|email|)$/.test(el.type)) return false;
+    const auto = el.autocomplete || '';
+    const hint = /e-?mail|courriel/i;
+    if (el.type !== 'email' && !/\bemail\b/.test(auto) && !hint.test(`${el.name} ${el.id} ${el.placeholder}`)) return false;
+    const scope = scopeOf(el);
+    const passwords = scope.querySelectorAll ? [...scope.querySelectorAll('input[type=password]')].filter(visible) : [];
+    if (passwords.some((i) => /current-password/.test(i.autocomplete || ''))) return false;
+    const fresh = passwords.length > 1 || passwords.some((i) => /new-password/.test(i.autocomplete || ''));
+    return fresh || !/\busername\b/.test(auto);
+  };
+
   const host = document.createElement('div');
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;top:0;left:0;';
   const root = host.attachShadow({ mode: 'closed' });
@@ -81,6 +95,9 @@
   menu.setAttribute('role', 'listbox');
   root.appendChild(menu);
   let target = null;
+  // The field an alias was asked for, and the token of its menu: focus may move meanwhile.
+  let aliasFor = null;
+  let written = null;
   // The entries on screen, with what each one sends; `active` is the one the arrow keys reached
   // (-1: none, so Enter still belongs to the page's form).
   let rows = [];
@@ -118,31 +135,49 @@
       'click',
       (e) => {
         if (!e.isTrusted) return;
-        post(message);
-        hide();
+        pick(message);
       },
     ]);
     menu.append(row);
+  };
+  const head = (text) => {
+    const h = document.createElement('div');
+    h.className = 'h';
+    h.textContent = text;
+    h.setAttribute('role', 'presentation');
+    menu.append(h);
+  };
+  const pick = (message) => {
+    post(message);
+    if (message.cmd !== 'autofill_alias') return hide();
+    aliasFor = { field: target, token: message.token };
+    if ('index' in message) return hide();
+    // The service takes a moment: the menu says so until the alias is written.
+    rows = [];
+    active = -1;
+    menu.replaceChildren();
+    head(T('page.alias_making'));
   };
   // `m`: { names: usernames saved for this origin, locked, generate, token }.
   const show = (m) => {
     const list = (m && m.names) || [];
     const token = (m && m.token) || '';
-    if (!target || (!list.length && !m.locked && !m.generate)) return hide();
+    if (!target || (!list.length && !m.locked && !m.generate && !m.alias && !(m.aliases || []).length)) return hide();
     menu.replaceChildren();
     rows = [];
     active = -1;
-    const h = document.createElement('div');
-    h.className = 'h';
-    h.textContent = T('page.saved_passwords');
-    h.setAttribute('role', 'presentation');
-    menu.setAttribute('aria-label', T('page.saved_passwords'));
-    menu.append(h);
+    const saved = list.length || m.locked || m.generate;
+    menu.setAttribute('aria-label', T(saved ? 'page.saved_passwords' : 'page.alias_head'));
+    if (saved) head(T('page.saved_passwords'));
     for (let index = 0; index < list.length; index++) {
       item(list[index] || T('settings.no_username'), { cmd: 'autofill_fill', index, token });
     }
     if (m.locked) item(T('page.unlock_passwords'), { cmd: 'autofill_unlock', token });
     if (m.generate) item(T('page.strong_password'), { cmd: 'autofill_generate', token });
+    const aliases = m.aliases || [];
+    if (aliases.length || m.alias) head(m.alias ? `${T('page.alias_head')} · ${m.alias}` : T('page.alias_head'));
+    for (let index = 0; index < aliases.length; index++) item(aliases[index], { cmd: 'autofill_alias', index, token });
+    if (m.alias) item(T('page.alias_create'), { cmd: 'autofill_alias', token });
     menu.style.display = 'block';
     shown = true;
     if (!host.isConnected) document.documentElement.append(host);
@@ -165,6 +200,19 @@
       (i) => visible(i) && /new-password/.test(i.autocomplete || ''),
     );
     (fresh.length ? fresh : [target]).forEach((i) => setValue(i, pass));
+  };
+  // The alias asked for (empty: it could not be made).
+  const alias = (token, email) => {
+    if (!aliasFor || aliasFor.token !== token) return;
+    const field = aliasFor.field;
+    aliasFor = null;
+    hide();
+    if (!field || !field.isConnected || !email) return;
+    setValue(field, email);
+    written = field;
+  };
+  const aliasGone = (email) => {
+    if (written && written.isConnected && written.value === email) setValue(written, '');
   };
   const isFresh = (el) => el.type === 'password' && /new-password/.test(el.autocomplete || '');
 
@@ -208,9 +256,11 @@
   document.addEventListener(
     'focusin',
     (e) => {
-      if (!isLoginField(e.target)) return hide();
+      const login = isLoginField(e.target);
+      const email = isAliasField(e.target);
+      if (!login && !email) return hide();
       target = e.target;
-      post({ cmd: 'autofill_query', fresh: isFresh(target) });
+      post({ cmd: 'autofill_query', fresh: isFresh(target), login, email });
     },
     true,
   );
@@ -226,8 +276,7 @@
         const n = rows.length;
         mark(e.key === 'ArrowDown' ? (active + 1) % n : (active <= 0 ? n : active) - 1);
       } else if (e.key === 'Enter' && active >= 0) {
-        post(rows[active].message);
-        hide();
+        pick(rows[active].message);
       } else return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -238,7 +287,7 @@
   addEventListener('resize', place);
 
   Object.defineProperty(window, '__bhAutofill', {
-    value: Object.freeze({ show, fill, fillNew }),
+    value: Object.freeze({ show, fill, fillNew, alias, aliasGone }),
     enumerable: false,
   });
 })();

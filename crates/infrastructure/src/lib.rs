@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use url::Url;
 
+pub mod aliases;
 pub mod app_extensions;
 pub mod catalog;
 pub mod ext_sync;
@@ -506,6 +507,13 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
                 .map(|(site, z)| (blackhole_domain::site_key(&site), z))
                 .collect(),
             password_manager: dto.password_manager,
+            alias_provider: if blackhole_domain::aliases::Provider::from_id(&dto.alias_provider).is_some() {
+                dto.alias_provider
+            } else {
+                String::new()
+            },
+            alias_suggest: dto.alias_suggest,
+            alias_share_site: dto.alias_share_site,
             tracker_learning: dto.tracker_learning,
             quick_access_size: if blackhole_domain::is_quick_access_size(&dto.quick_access_size) {
                 dto.quick_access_size
@@ -568,6 +576,9 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             recall_exclude: settings.recall_exclude.iter().cloned().collect(),
             site_zoom: settings.site_zoom.clone(),
             password_manager: settings.password_manager,
+            alias_provider: settings.alias_provider.clone(),
+            alias_suggest: settings.alias_suggest,
+            alias_share_site: settings.alias_share_site,
             tracker_learning: settings.tracker_learning,
             quick_access_size: settings.quick_access_size.clone(),
             hidden_home_sections: settings.hidden_home_sections.iter().cloned().collect(),
@@ -744,6 +755,12 @@ struct SettingsDto {
     site_zoom: std::collections::BTreeMap<String, u32>,
     #[serde(default = "default_true")]
     password_manager: bool,
+    #[serde(default)]
+    alias_provider: String,
+    #[serde(default = "default_true")]
+    alias_suggest: bool,
+    #[serde(default)]
+    alias_share_site: bool,
     #[serde(default = "default_true")]
     tracker_learning: bool,
     #[serde(default)]
@@ -1077,6 +1094,9 @@ mod tests {
             recall_exclude: ["bank.test".to_owned()].into(),
             site_zoom: [("example.com".to_owned(), 125)].into(),
             password_manager: false,
+            alias_provider: "addy".to_owned(),
+            alias_suggest: false,
+            alias_share_site: true,
             tracker_learning: false,
             quick_access_size: "large".to_owned(),
             hidden_home_sections: ["recent".to_owned(), "downloads".to_owned()].into(),
@@ -1098,6 +1118,7 @@ mod tests {
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration && old.depth);
         assert!(old.password_manager && old.tracker_learning, "on in older files");
+        assert!(old.alias_provider.is_empty() && old.alias_suggest && !old.alias_share_site);
         assert_eq!(old.quick_access_size, "medium");
         assert!(old.hidden_home_sections.is_empty(), "every section shown in older files");
         assert!(old.home_order.is_empty(), "default order in older files");

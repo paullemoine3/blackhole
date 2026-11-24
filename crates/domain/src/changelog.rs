@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.30",
+        &[
+            "Email aliases: connect SimpleLogin, Addy.io or Firefox Relay in Settings > Email aliases, and the email field of a sign-up form offers to create an address for that site alone. Nothing is sent before a service is connected, nor without your click",
+            "Aliases are kept with their site, encrypted with your passwords: switch one off or delete it when spam arrives. The password list marks the logins that use one",
+            "The name of the site is not given to the alias service unless you ask for it. SimpleLogin and Addy.io can run on your own server",
+            "Settings > Passwords: Lock now and Remove master password only show when there is a master password, and setting one only when there is none",
+        ],
+    ),
+    (
         "0.8.29",
         &[
             "Private windows stay private: new tabs, links and windows opened from one are always private, a link clicked in another application goes to a normal window, and live areas no longer use your normal session (macOS). The tabs of a private window now share one session (macOS)",

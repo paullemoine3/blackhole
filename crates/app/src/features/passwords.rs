@@ -13,6 +13,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use blackhole_domain::{Settings, TabId};
+use blackhole_domain::aliases::Aliases;
 use blackhole_domain::passwords::{
     display_host,
     Draft,
@@ -136,6 +137,9 @@ struct Offered {
     locked: bool,
     /// One-time proof that a message answers this menu (see `autofill.js`).
     token: String,
+    /// The aliases of the site, and whether a new one was offered.
+    emails: Vec<String>,
+    alias: bool,
 }
 
 struct Pending {
@@ -163,7 +167,7 @@ pub struct Passwords {
     clipboard: Option<(Instant, Zeroizing<String>)>,
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
@@ -217,6 +221,23 @@ impl Passwords {
         tx
     }
 
+    /// The alias account and the aliases, while the wallet is open.
+    pub(crate) fn aliases(&self) -> Option<&Aliases> {
+        self.open.as_ref().map(|u| &u.data.aliases)
+    }
+
+    /// Changes them and writes the wallet; false when it is closed or only read.
+    pub(crate) fn edit_aliases(&mut self, change: impl FnOnce(&mut Aliases)) -> bool {
+        let (Some(u), false) = (self.open.as_mut(), self.read_only) else { return false };
+        change(&mut u.data.aliases);
+        self.persist();
+        true
+    }
+
+    pub(crate) fn read_only(&self) -> bool {
+        self.read_only
+    }
+
     fn lock(&mut self) {
         self.open = None;
         self.offered.clear();
@@ -236,7 +257,7 @@ impl Passwords {
         }
     }
 
-    fn touch(&mut self) {
+    pub(crate) fn touch(&mut self) {
         self.used = Instant::now();
     }
 
@@ -262,6 +283,7 @@ impl Passwords {
                         json!({
                             "id": e.id, "origin": e.origin, "host": display_host(&e.origin),
                             "username": e.username,
+                            "alias": u.data.aliases.is_alias(&e.username),
                             "realm": match &e.kind { Kind::Web => None, Kind::HttpAuth { realm } => Some(realm) },
                         })
                     })
@@ -309,7 +331,7 @@ impl Passwords {
 }
 
 #[cfg(windows)]
-fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
+pub(crate) fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
     use arboard::SetExtWindows;
     let mut clipboard = arboard::Clipboard::new()?;
     let set = clipboard.set();
@@ -321,7 +343,7 @@ fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
 }
 
 #[cfg(target_os = "macos")]
-fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
+pub(crate) fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
     use arboard::SetExtApple;
     let mut clipboard = arboard::Clipboard::new()?;
     let set = clipboard.set();
@@ -333,7 +355,7 @@ fn copy_text(text: &str, secret: bool) -> Result<(), arboard::Error> {
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-fn copy_text(text: &str, _secret: bool) -> Result<(), arboard::Error> {
+pub(crate) fn copy_text(text: &str, _secret: bool) -> Result<(), arboard::Error> {
     arboard::Clipboard::new()?.set_text(text)
 }
 
@@ -352,7 +374,7 @@ fn clear_clipboard(text: &str) {
 
 impl Running {
     /// The exact origin of what the tab shows, read from the engine (never from the page).
-    fn page_origin(&self, tab: TabId) -> Option<String> {
+    pub(crate) fn page_origin(&self, tab: TabId) -> Option<String> {
         let raw = self.tabs.get(&tab)?.url().ok()?;
         origin_of(&Url::parse(&raw).ok()?)
     }
@@ -363,10 +385,14 @@ impl Running {
     }
 
     /// A login field got focus: offer the usernames saved for exactly this origin. `fresh`: a
-    /// new-password field, where a generated password is offered too.
-    pub(crate) fn autofill_query(&mut self, tab: TabId, fresh: bool) {
+    /// new-password field, where a generated password is offered too. `login`: the field signs
+    /// in; `email`: an alias suits it (once a service is connected).
+    pub(crate) fn autofill_query(&mut self, tab: TabId, fresh: bool, login: bool, email: bool) {
+        let settings = self.svc.settings();
         // Switched off: the login fields are the page's alone.
-        if !self.foreground(tab) || !self.svc.settings().password_manager {
+        let login = login && settings.password_manager;
+        let email = email && settings.alias_suggest && !settings.alias_provider.is_empty();
+        if !self.foreground(tab) || !(login || email) {
             return;
         }
         // A loaded password-manager extension owns the login fields: two menus would collide.
@@ -380,6 +406,7 @@ impl Running {
         let p = &mut self.passwords;
         let (names, ids, locked) = match (&origin, &p.open) {
             (None, _) => (Vec::new(), Vec::new(), false),
+            (Some(_), Some(_)) if !login => (Vec::new(), Vec::new(), false),
             (Some(o), Some(u)) => {
                 let list = u.data.for_origin(o);
                 (
@@ -390,17 +417,27 @@ impl Running {
             }
             (Some(_), None) => (Vec::new(), Vec::new(), p.protection == Some(Protection::Password) && !p.busy),
         };
-        let generate = fresh && origin.is_some() && p.open.is_some() && !p.read_only;
+        let generate = fresh && login && origin.is_some() && p.open.is_some() && !p.read_only;
+        let emails: Vec<String> = match (&origin, p.aliases()) {
+            (Some(o), Some(a)) if email => a.for_origin(o).iter().map(|a| a.email.clone()).collect(),
+            _ => Vec::new(),
+        };
+        // One alias per site: a new one is offered while the site has none.
+        let alias = p
+            .aliases()
+            .filter(|_| email && origin.is_some() && !p.read_only && emails.is_empty())
+            .and_then(|a| a.account.as_ref())
+            .map(|a| a.provider.name());
         let token = wallet::new_id();
         if let Some(view) = self.tabs.get(&tab) {
             views::autofill_show(
                 view,
-                &json!({"names": names, "locked": locked, "generate": generate, "token": token}),
+                &json!({"names": names, "locked": locked, "generate": generate, "token": token, "aliases": emails, "alias": alias}),
             );
         }
         match origin {
             Some(origin) => {
-                let offered = Offered { origin, ids, fresh: generate, locked, token };
+                let offered = Offered { origin, ids, fresh: generate, locked, token, emails, alias: alias.is_some() };
                 p.offered.insert(tab, offered);
             }
             None => {
@@ -429,6 +466,21 @@ impl Running {
         if let (Some(e), Some(view)) = (entry, self.tabs.get(&tab)) {
             views::autofill_fill(view, &e.username, &e.password);
             p.used = Instant::now();
+        }
+    }
+
+    /// An alias of the menu was picked: an older one is written in the field, a new one is made.
+    pub(crate) fn autofill_alias(&mut self, tab: TabId, index: Option<usize>, token: &str) {
+        let Some(offered) = self.take_offer(tab, token) else { return };
+        match index {
+            Some(i) => {
+                if let (Some(email), Some(view)) = (offered.emails.get(i), self.tabs.get(&tab)) {
+                    views::autofill_alias(view, token, email);
+                    self.passwords.touch();
+                }
+            }
+            None if offered.alias => self.make_alias(tab, offered.origin, token.to_owned()),
+            None => {}
         }
     }
 

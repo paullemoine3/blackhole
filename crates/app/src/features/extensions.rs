@@ -103,6 +103,7 @@ impl Running {
         self.poll_downloads();
         self.poll_captures();
         self.poll_passwords();
+        self.poll_aliases();
         while let Ok((msg, _count, list)) = self.imports.rx.try_recv() {
             if let Some(m) = msg.filter(|m| !m.is_empty()) {
                 self.imports.msg = m;

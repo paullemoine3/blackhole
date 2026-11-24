@@ -132,6 +132,8 @@ pub struct Passwords {
     pub entries: Vec<Entry>,
     /// Origins the user said "Never" for.
     pub never: Vec<String>,
+    /// The email alias account and the aliases made (kept in the same encrypted file).
+    pub aliases: crate::aliases::Aliases,
 }
 
 /// The fields of a new or edited entry.
