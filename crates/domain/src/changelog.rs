@@ -3,9 +3,10 @@ pub const RELEASES: &[(&str, &[&str])] = &[
     (
         "0.8.30",
         &[
-            "Email aliases: connect SimpleLogin, Addy.io or Firefox Relay in Settings > Email aliases, and the email field of a sign-up form offers to create an address for that site alone. Nothing is sent before a service is connected, nor without your click",
+            "Email aliases: connect SimpleLogin, Addy.io, Firefox Relay, Fastmail or Forward Email in Settings > Email aliases, and the email field of a sign-up form offers to create an address for that site alone. Nothing is sent before a service is connected, nor without your click",
             "Aliases are kept with their site, encrypted with your passwords: switch one off or delete it when spam arrives. The password list marks the logins that use one",
-            "The name of the site is not given to the alias service unless you ask for it. SimpleLogin and Addy.io can run on your own server",
+            "The name of the site is not given to the alias service unless you ask for it. SimpleLogin, Addy.io and Forward Email can run on your own server",
+            "Ads: the empty boxes and \"Advertisement\" labels they left on news sites are gone, the sponsored results of search engines (Google, Bing, DuckDuckGo, Yahoo) and shops are hidden, more ad networks are blocked, and a page that replaces its styles no longer brings its ads back",
             "Settings > Passwords: Lock now and Remove master password only show when there is a master password, and setting one only when there is none",
         ],
     ),

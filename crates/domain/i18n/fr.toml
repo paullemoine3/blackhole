@@ -632,6 +632,7 @@ private_tabs_closed.other = "{n} onglets privés fermés"
 
 [msg]
 alias_bad_answer = "Le service d’alias a donné une réponse inattendue"
+alias_no_domain = "Ce compte n’a pas encore de domaine où créer des alias"
 alias_key_refused = "Le service d’alias a refusé la clé d’API"
 alias_refused = "Le service d’alias a refusé : {why}"
 alias_too_many = "Trop de demandes au service d’alias : réessayez dans un moment"

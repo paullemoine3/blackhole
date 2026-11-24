@@ -329,7 +329,7 @@ impl Running {
                 let Some((account, alias)) = self.alias_target(&id) else { return };
                 let tx = self.aliases.tx.clone();
                 std::thread::spawn(move || {
-                    let result = api::set_enabled(&account, &alias.remote, on);
+                    let result = api::set_enabled(&account, &alias.remote, &alias.email, on);
                     let _ = tx.send(Done::Enabled(id, on, result));
                 });
             }
@@ -337,7 +337,7 @@ impl Running {
                 let Some((account, alias)) = self.alias_target(&id) else { return };
                 let tx = self.aliases.tx.clone();
                 std::thread::spawn(move || {
-                    let result = api::delete(&account, &alias.remote);
+                    let result = api::delete(&account, &alias.remote, &alias.email);
                     let _ = tx.send(Done::Deleted(id, result));
                 });
             }

@@ -1304,8 +1304,8 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
 
 ## 0.8.30 : alias email
 
-- Réglages > Email aliases (section entre Passwords et Extensions) : service (SimpleLogin, Addy.io, Firefox Relay), clé,
-  serveur (auto-hébergé possible sauf Relay), options, liste des alias (copier, couper, supprimer). Pastille « alias » dans
+- Réglages > Email aliases (section entre Passwords et Extensions) : service (SimpleLogin, Addy.io, Firefox Relay, Fastmail, Forward Email), clé,
+  serveur (auto-hébergé possible sauf Relay et Fastmail), options, liste des alias (copier, couper, supprimer). Pastille « alias » dans
   la liste des mots de passe (`Aliases::is_alias`). BlackHole ne relaie rien : rien ne part avant la connexion d'un service,
   puis seulement sur un clic.
 - Règles `domain/aliases.rs` (`Provider::server` : https ou machine locale seulement ; `reaches` : seul le compte qui a fait
@@ -1321,6 +1321,14 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   demandé même si le focus a bougé ; `aliasGone` vide ce champ si l'alias est supprimé (Undo de la notice).
 - App `features/aliases.rs` (`Aliases`, `AliasAction`, `{"cmd":"aliases","action":{"op":…}}`). Portefeuille verrouillé pendant
   la création : `unsaved`, écrit à l'ouverture. Fenêtre privée : lecture seule. Linux : pas de portefeuille, donc pas d'alias.
+- Fastmail : JMAP `MaskedEmail/set` (supprimer = état `deleted`), toujours sur le serveur du compte, jamais l'`apiUrl` de la
+  session. Forward Email : premier domaine du compte, `PUT` garde le nom. Écarté : DuckDuckGo (pas de clé officielle,
+  jeton de session à copier, ni coupure ni suppression).
+- Pubs (`shields.js`) : une règle CSS par sélecteur (un sélecteur inconnu du moteur annulait toute la liste), feuille remise
+  quand la page remplace `adoptedStyleSheets`, `SITE_ADS` (par site : résultats sponsorisés…). `collapse` (cadre principal)
+  retire ce qu'un emplacement laisse (boîte à hauteur fixe, étiquette « Publicité » seule) : seulement si la boîte ne
+  contient que des pubs, jamais la structure (`KEEP`), et la rend si du contenu y arrive. Jamais de nom générique que des
+  petites annonces utilisent (`.ad`, `.ad-card`, `.advert`). `adlist.txt` : hôtes de diffusion seulement.
 - Test Windows : `scripts\test-0830.ps1` (faux SimpleLogin local ; vraies frappes par le port DevTools du moteur).
   Tests : `aliases::tests` (domain, infrastructure), `the_alias_account_and_the_aliases_are_sealed_with_the_rest`. Non
   vérifié avec de vrais comptes (Relay : API non documentée pour des tiers). macOS : non lancé. Android : sans alias.

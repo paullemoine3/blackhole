@@ -10,10 +10,13 @@ pub enum Provider {
     SimpleLogin,
     Addy,
     FirefoxRelay,
+    Fastmail,
+    ForwardEmail,
 }
 
 impl Provider {
-    pub const ALL: [Self; 3] = [Self::SimpleLogin, Self::Addy, Self::FirefoxRelay];
+    pub const ALL: [Self; 5] =
+        [Self::SimpleLogin, Self::Addy, Self::FirefoxRelay, Self::Fastmail, Self::ForwardEmail];
 
     #[must_use]
     pub fn id(self) -> &'static str {
@@ -21,6 +24,8 @@ impl Provider {
             Self::SimpleLogin => "simplelogin",
             Self::Addy => "addy",
             Self::FirefoxRelay => "relay",
+            Self::Fastmail => "fastmail",
+            Self::ForwardEmail => "forwardemail",
         }
     }
 
@@ -36,6 +41,8 @@ impl Provider {
             Self::SimpleLogin => "SimpleLogin",
             Self::Addy => "Addy.io",
             Self::FirefoxRelay => "Firefox Relay",
+            Self::Fastmail => "Fastmail",
+            Self::ForwardEmail => "Forward Email",
         }
     }
 
@@ -45,6 +52,8 @@ impl Provider {
             Self::SimpleLogin => "https://app.simplelogin.io",
             Self::Addy => "https://app.addy.io",
             Self::FirefoxRelay => "https://relay.firefox.com",
+            Self::Fastmail => "https://api.fastmail.com",
+            Self::ForwardEmail => "https://api.forwardemail.net",
         }
     }
 
@@ -55,13 +64,15 @@ impl Provider {
             Self::SimpleLogin => "https://app.simplelogin.io/dashboard/api_key",
             Self::Addy => "https://app.addy.io/settings/api",
             Self::FirefoxRelay => "https://relay.firefox.com/accounts/settings/",
+            Self::Fastmail => "https://app.fastmail.com/settings/security/tokens",
+            Self::ForwardEmail => "https://forwardemail.net/my-account/security",
         }
     }
 
     /// The service can run on the user's own server.
     #[must_use]
     pub fn self_hosted(self) -> bool {
-        self != Self::FirefoxRelay
+        !matches!(self, Self::FirefoxRelay | Self::Fastmail)
     }
 
     /// The server the key is sent to: the service's own when `typed` is empty, else the origin
@@ -200,16 +211,16 @@ pub fn valid_email(s: &str) -> bool {
     };
     !local.is_empty()
         && host.contains('.')
-        && !host.contains('@')
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
         && s.len() <= 254
         && s.chars()
             .all(|c| c.is_ascii_graphic() && !"<>\"'`\\,;()".contains(c))
 }
 
-/// A service id put in an address path: letters, digits and dashes only.
+/// A service id put in an address path: letters, digits, dashes and underscores only.
 #[must_use]
 pub fn valid_remote(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 #[cfg(test)]
@@ -290,7 +301,7 @@ mod tests {
     #[test]
     fn answers_of_a_service_are_checked() {
         assert!(valid_email("a.b-1@alias.example"));
-        for bad in ["", "a", "a@b", "@a.b", "a@b@c.d", "a b@c.d", "a\"@c.d", "<a>@c.d"] {
+        for bad in ["", "a", "a@b", "@a.b", "a@b@c.d", "a b@c.d", "a@c/../d.e", "a@c.d?x", "a\"@c.d", "<a>@c.d"] {
             assert!(!valid_email(bad), "{bad}");
         }
         assert!(valid_remote("12") && valid_remote("50c9-ab"));

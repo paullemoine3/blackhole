@@ -85,6 +85,14 @@ cmd {"cmd":"set_language","language":"fr"}
 cmd {"cmd":"open_settings","tab":"aliases"}
 wait 1200
 shot a07-aliases-fr
+# ---- ads: the slots, the place they leave, and nothing else ----
+cmd {"cmd":"open","input":"http://127.0.0.1:__PORT__/ads"}
+wait 4000
+eval content 'ad1:' + ['s1', 'w1', 'w2', 'w3', 'w4', 'f', 'c'].map(i => document.getElementById(i).getClientRects().length ? 1 : 0).join('')
+wait 5000
+eval content 'ad2:' + (document.getElementById('w4').getClientRects().length ? 1 : 0)
+cmd {"cmd":"open_settings","tab":"aliases"}
+wait 1500
 # ---- the button that opens the page of the key (last: the only step that needs the network) ----
 eval settings 'kp1:' + (document.getElementById('alkeypage').click(), 'open')
 wait 3000
@@ -126,6 +134,15 @@ $server = Start-Job -ArgumentList $port, $key, $apiLog -ScriptBlock {
                 else { $body = '{"deleted":true}' }
             }
             elseif ($path -like '/favicon*') { $status = '404 Not Found'; $body = 'none' }
+            elseif ($path -like '/ads*') {
+                $body = '<title>bh ads</title><main><div id="w1" style="height:250px"><span>Advertisement</span><div data-ad-slot="true" id="s1" style="height:250px">x</div></div>' +
+                    '<div id="w2" style="height:250px"><div class="ad-slot">x</div><p>A real paragraph of the article, kept.</p></div>' +
+                    '<div id="w3" style="height:250px;width:600px"><span>Publicit&eacute;</span></div>' +
+                    '<div id="w4" style="height:250px"><div class="ad-slot">x</div></div>' +
+                    '<ul><li><span>Advertisement</span></li></ul><footer><span id="f">Advertisement</span></footer>' +
+                    '<div class="ad-card" id="c">A classified ad</div></main>' +
+                    '<script>document.adoptedStyleSheets=[];setTimeout(()=>{const i=document.createElement("button");i.textContent="Late";w4.append(i)},5000)</script>'
+            }
             else {
                 $body = '<title>bh signup</title><h1>Sign up</h1><form onsubmit="return false">' +
                     '<p><input id="e" type="email" name="email" style="width:300px;height:30px"></p>' +
@@ -198,7 +215,7 @@ function Check($ok, $name) {
     if ($ok) { Write-Host "ok   $name" } else { Write-Host "FAIL $name"; $script:fail = $true }
 }
 $created = @($api | Where-Object { $_ -match 'random/new' })
-Check ((Ev al1) -match 'al1:aliases\|false\|SimpleLogin,Addy\.io,Firefox Relay\|true') 'the section lists the services, no option while none is connected'
+Check ((Ev al1) -match 'al1:aliases\|false\|SimpleLogin,Addy\.io,Firefox Relay,Fastmail,Forward Email\|true') 'the section lists the services, no option while none is connected'
 Check ($api.Count -gt 0 -and $api[0] -match 'GET /api/user_info') 'nothing was sent before the service was connected'
 Check ((Ev al2) -match 'al2:The alias service refused the API key\|true') 'a wrong key is refused and not kept'
 Check ((Ev al3) -match 'al3:Enter the https address') 'the key is never sent over plain http'
@@ -215,6 +232,8 @@ Check ((Ev al17) -match 'al17:0') 'the form is not left with the deleted address
 Check ((Ev al18) -match 'al18:true') 'no sideways scrolling'
 Check ((Ev al20) -match 'al20:true') 'disconnected'
 Check ((Ev mp1) -match 'mp1:none\|flex') 'no master password: only setting one is offered'
+Check ((Ev ad1) -match 'ad1:0010011') 'ads: slots, wrappers and lone labels hidden (the page replaced its styles); text, footer and classifieds kept'
+Check ((Ev ad2) -match 'ad2:1') 'ads: a wrapper comes back when real content arrives in it'
 Check ((Ev kp2) -match 'kp2:app\.simplelogin\.io') 'Find my key opens the page of the service'
 Check ((Ev alive) -match 'alive:1') 'no crash: the app is still running'
 if ($fail) { exit 1 }

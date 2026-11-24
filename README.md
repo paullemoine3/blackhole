@@ -153,7 +153,7 @@ Le détail de chaque version s'affiche sur la page d'accueil après une mise à 
 - 🔐 **DNS chiffré** (désactivable) : Quad9, Mullvad, Cloudflare, AdGuard ou le résolveur de votre choix ; moteur de BlackHole sous Windows, profil système sous macOS.
 - 🧠 **Traqueurs appris** : un site tiers qui vous suit sur plusieurs sites est bloqué comme les autres.
 - 🔑 **Mots de passe** dans un coffre chiffré (XChaCha20-Poly1305), clé dans le trousseau système, proposés uniquement sur le bon site ; gestionnaire intégré désactivable si vous en utilisez un autre.
-- ✉️ **Alias email** : une adresse par site en un clic depuis un champ d'inscription, avec votre compte SimpleLogin, Addy.io ou Firefox Relay ; rien n'est envoyé tant qu'aucun service n'est relié.
+- ✉️ **Alias email** : une adresse par site en un clic depuis un champ d'inscription, avec votre compte SimpleLogin, Addy.io, Firefox Relay, Fastmail ou Forward Email ; rien n'est envoyé tant qu'aucun service n'est relié.
 - 🗝️ **Clés d'accès** : sous macOS, Apple réserve celles du trousseau aux navigateurs dotés d'une autorisation spéciale ; passez par l'extension de votre gestionnaire (Bitwarden, ou les extensions Safari de 1Password et Dashlane).
 - 📥 **Import** depuis Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox et dérivés, profils listés sous leur vrai nom (favoris, mots de passe via export CSV).
 
