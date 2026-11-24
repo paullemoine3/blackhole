@@ -17,10 +17,6 @@ use objc2_web_kit::WKWebView;
 
 use crate::{HttpAuthChallenge, HttpAuthResponder, LoadFailure, PageLoadEvent, ServerTrustChallenge};
 
-#[cfg(target_os = "macos")]
-pub static USER_AGENT_RESOLVER: std::sync::OnceLock<fn(&str) -> Option<String>> =
-  std::sync::OnceLock::new();
-
 use super::class::wry_navigation_delegate::WryNavigationDelegate;
 
 pub(crate) fn did_commit_navigation(
@@ -72,23 +68,11 @@ pub(crate) fn did_finish_navigation(
 // Navigation handler
 pub(crate) fn navigation_policy(
   this: &WryNavigationDelegate,
-  webview: &WKWebView,
+  _webview: &WKWebView,
   action: &WKNavigationAction,
   handler: &block2::Block<dyn Fn(WKNavigationActionPolicy)>,
 ) {
   unsafe {
-    #[cfg(target_os = "macos")]
-    if let Some(resolve) = USER_AGENT_RESOLVER.get() {
-      // No target frame = a new window: it opens in another view, which picks its own agent;
-      // the opener keeps its one.
-      let main_frame = action.targetFrame().is_some_and(|f| f.isMainFrame());
-      if main_frame {
-        if let Some(url) = action.request().URL().and_then(|u| u.absoluteString()) {
-          let ua = resolve(&url.to_string());
-          webview.setCustomUserAgent(ua.as_deref().map(NSString::from_str).as_deref());
-        }
-      }
-    }
     // <https://developer.apple.com/documentation/webkit/wknavigationaction/shouldperformdownload>
     // Available: macOS 11.3+, iOS 14.5+
     let can_download = action.respondsToSelector(objc2::sel!(shouldPerformDownload));

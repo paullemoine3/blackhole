@@ -116,6 +116,22 @@ pub fn drop_target(peers: &[Peer], x: f64, y: f64, private: bool) -> Drop {
     }
 }
 
+/// Whether a window opened from here is private: always, from a private window.
+#[must_use]
+pub fn opens_private(from_private: bool, asked: bool) -> bool {
+    from_private || asked
+}
+
+/// The normal window refreshed last, if any.
+#[must_use]
+pub fn normal_window(peers: &[Peer]) -> Option<u32> {
+    peers
+        .iter()
+        .filter(|p| !p.private)
+        .max_by_key(|p| p.updated)
+        .map(|p| p.pid)
+}
+
 /// Drops a tab into the inbox of window `pid`.
 pub fn send(dir: &Path, pid: u32, transfer: &Transfer) -> bool {
     let inbox = dir.join("inbox");
@@ -225,6 +241,16 @@ mod tests {
         assert!(receive(tmp.path(), 8, false).is_empty());
         assert_eq!(receive(tmp.path(), 7, false), vec![t]);
         assert!(receive(tmp.path(), 7, false).is_empty());
+    }
+
+    #[test]
+    fn a_private_window_only_opens_private_ones_and_keeps_outside_links_out() {
+        assert!(opens_private(true, false));
+        assert!(opens_private(true, true));
+        assert!(opens_private(false, true));
+        assert!(!opens_private(false, false));
+        assert_eq!(normal_window(&[peer(3, true, 0.0)]), None);
+        assert_eq!(normal_window(&[peer(3, true, 0.0), peer(4, false, 0.0)]), Some(4));
     }
 
     #[test]

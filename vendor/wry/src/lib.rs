@@ -387,9 +387,8 @@ pub(crate) mod wkwebview;
 use wkwebview::*;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use wkwebview::{PrintMargin, PrintOptions, WryWebView};
-/// macOS: picks the user agent of each main-frame navigation (`None` = WebKit's default).
 #[cfg(target_os = "macos")]
-pub use wkwebview::navigation::USER_AGENT_RESOLVER;
+pub use wkwebview::APPLICATION_NAME;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod webview2;

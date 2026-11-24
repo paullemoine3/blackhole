@@ -11,6 +11,7 @@ use crate::ipc::UiCommand;
 use crate::platform::default_browser_unavailable;
 use crate::shell::layout::palette_rect;
 use crate::shell::render::SPACE_COLORS;
+use crate::shell::windows::private_mode;
 use crate::state::Running;
 
 /// The command bar overlay and what it shows: its mode, a context menu, the emoji picker.
@@ -124,6 +125,10 @@ impl Running {
             json!({"id": "key:shift+n", "label": t("palette.new_private_window"), "keys": "mod+shift+n"}),
             json!({"id": "burner_tab", "label": t("palette.new_burner_tab"), "hint": t("palette.hint_burner")}),
         ];
+        // From a private window Mod+N opens a private one too: one entry is enough.
+        if private_mode() {
+            actions.retain(|a| a["id"] != "key:n");
+        }
         actions.extend(easel_actions);
         actions.extend(self.meeting_actions());
         actions.extend(self.continue_actions());

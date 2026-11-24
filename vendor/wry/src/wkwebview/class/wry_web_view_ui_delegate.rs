@@ -102,6 +102,26 @@ define_class!(
 
   unsafe impl NSObjectProtocol for WryWebViewUIDelegate {}
 
+  /// BlackHole: private delegate method. Without it WebKit answers 0 to `outerWidth`,
+  /// `outerHeight`, `screenX` and `screenY`, and pages that derive their zoom from
+  /// `outerWidth / innerWidth` under Safari (Google Docs, Meet) draw at the wrong scale.
+  /// The page is given its own card as its window: the ratio is then exactly its zoom.
+  #[cfg(target_os = "macos")]
+  impl WryWebViewUIDelegate {
+    #[unsafe(method(_webView:getWindowFrameWithCompletionHandler:))]
+    fn get_window_frame(
+      &self,
+      webview: &objc2_web_kit::WKWebView,
+      handler: &Block<dyn Fn(objc2_foundation::NSRect)>,
+    ) {
+      let frame = webview.window().map_or(
+        objc2_foundation::NSRect::ZERO,
+        |window| window.convertRectToScreen(webview.convertRect_toView(webview.bounds(), None)),
+      );
+      (*handler).call((frame,));
+    }
+  }
+
   unsafe impl WKUIDelegate for WryWebViewUIDelegate {
     #[cfg(target_os = "macos")]
     #[unsafe(method(webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:))]

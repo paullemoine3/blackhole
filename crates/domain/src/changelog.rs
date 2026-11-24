@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.29",
+        &[
+            "Private windows stay private: new tabs, links and windows opened from one are always private, a link clicked in another application goes to a normal window, and live areas no longer use your normal session (macOS). The tabs of a private window now share one session (macOS)",
+            "Nothing of a private window stays on disk: site icons no longer go through your normal session, cookies and cache (macOS, black hole tabs included), and what a crash left behind is erased at the next launch. Private windows now follow your settings: Shields, search engine, encrypted DNS, language",
+            "Google Docs, Sheets, Slides and Meet no longer say the browser is not supported (macOS): BlackHole announces the Safari version of the engine it runs on",
+            "Pages now know the size and place of their window (macOS), which sites like Google's read to draw at the right scale",
+            "Video calls (macOS): a page in a call keeps running at speed while its tab is hidden or its window covered, instead of being slowed down by the engine, which made the video drop to a picture a second",
+            "Undo, redo and select all (Cmd+Z, Cmd+Shift+Z, Cmd+A) reach the page first, so they work in Google Docs (macOS)",
+            "A long site name wraps inside the Shields menu. A long address stays inside its field, and the field no longer covers the buttons of a narrow window",
+        ],
+    ),
+    (
         "0.8.28",
         &[
             "Library > Shields: a report of each site, with its grade, the trackers and ads refused on it, who is behind them (Google, Meta…) and why it got its grade. A host that breaks a page can be allowed from there, and blocked again",

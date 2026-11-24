@@ -35,12 +35,17 @@ pub struct ExtensionHost {
 
 impl ExtensionHost {
     /// `None` off the main thread or on a macOS that predates the public extension API.
-    pub fn new() -> Option<Self> {
+    /// `ephemeral`: what extensions store is gone with the process (a private window).
+    pub fn new(ephemeral: bool) -> Option<Self> {
         let mtm = MainThreadMarker::new()?;
         AnyClass::get(c"WKWebExtensionController")?;
         // Safety: plain Objective-C object construction on the main thread.
         let controller = unsafe {
-            let config = WKWebExtensionControllerConfiguration::defaultConfiguration(mtm);
+            let config = if ephemeral {
+                WKWebExtensionControllerConfiguration::nonPersistentConfiguration(mtm)
+            } else {
+                WKWebExtensionControllerConfiguration::defaultConfiguration(mtm)
+            };
             // Background pages and popups sniff the user agent; WebKit's default has no browser name and Bitwarden then crashes. The Firefox name matches the MV2 Firefox build in the catalog (a Safari one makes it wait for a native app).
             let web = WKWebViewConfiguration::new(mtm);
             web.setApplicationNameForUserAgent(Some(&NSString::from_str("Firefox/128.0")));
@@ -86,6 +91,7 @@ impl ExtensionHost {
                 DataStore::Identified(id) => config.setWebsiteDataStore(
                     &WKWebsiteDataStore::dataStoreForIdentifier(&NSUUID::from_bytes(id), self.mtm),
                 ),
+                DataStore::Session => config.setWebsiteDataStore(&super::session_store(self.mtm)),
                 DataStore::Ephemeral => config
                     .setWebsiteDataStore(&WKWebsiteDataStore::nonPersistentDataStore(self.mtm)),
             }

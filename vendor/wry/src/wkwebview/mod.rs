@@ -173,6 +173,10 @@ pub struct PrintOptions {
   pub margins: PrintMargin,
 }
 
+/// BlackHole: what follows WebKit's own user agent (`Version/x Safari/y`), for every web view.
+#[cfg(target_os = "macos")]
+pub static APPLICATION_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 pub(crate) struct InnerWebView {
   id: String,
   mtm: MainThreadMarker,
@@ -294,6 +298,13 @@ impl InnerWebView {
         config.setWebsiteDataStore(&data_store);
         data_store
       };
+
+      // BlackHole: on the configuration rather than the view, so that the windows a page opens
+      // (they inherit it) and workers announce the same browser.
+      #[cfg(target_os = "macos")]
+      if let Some(name) = APPLICATION_NAME.get() {
+        config.setApplicationNameForUserAgent(Some(&NSString::from_str(name)));
+      }
 
       // Register Custom Protocols
       let mut protocol_ptrs = Vec::new();
@@ -728,6 +739,10 @@ impl InnerWebView {
           r#"(function(){var o=Object.freeze({ postMessage: function(s) { window.webkit.messageHandlers.ipc.postMessage(s) } });Object.defineProperty(window, '__bhipc', { value: o });Object.defineProperty(window, 'ipc', { value: o, writable: true, configurable: true });})();"#,
           true,
         );
+      }
+      #[cfg(target_os = "macos")]
+      if is_child && !shares_controller {
+        w.init(include_str!("page_first_keys.js"), false);
       }
       if !shares_controller {
         for init_script in attributes.initialization_scripts {

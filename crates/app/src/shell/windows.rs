@@ -48,12 +48,38 @@ pub(crate) fn peers_dir() -> PathBuf {
 }
 
 pub(crate) fn private_data_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("BlackHole-private-{}", std::process::id()))
+    blackhole_infrastructure::private::dir(&std::env::temp_dir(), std::process::id())
+}
+
+/// Nothing is left of a private window: called when the loop ends, the system's Quit included
+/// (macOS then ends the process without returning to `main`).
+pub(crate) fn erase_private() {
+    if private_mode() {
+        blackhole_infrastructure::flush_writes();
+        let _ = std::fs::remove_dir_all(private_data_dir());
+    }
+}
+
+/// Removes what private windows that crashed or were killed left behind.
+pub(crate) fn sweep_private() {
+    std::thread::spawn(|| {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let mut system = System::new();
+        system.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+        blackhole_infrastructure::private::sweep(&std::env::temp_dir(), |pid| {
+            system.process(Pid::from_u32(pid)).is_some()
+        });
+    });
 }
 
 /// Each window is its own process: a private one gets `--private` and a temporary profile.
-/// A window given a page opens it right away (`--open <url>`).
+/// A window given a page opens it right away (`--open <url>`). Nothing leaves a private window:
+/// whatever it opens is private too (`peers::opens_private`).
 pub(crate) fn open_window(private: bool, url: Option<&str>) -> bool {
+    spawn_window(peers::opens_private(private_mode(), private), url)
+}
+
+fn spawn_window(private: bool, url: Option<&str>) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
@@ -75,6 +101,18 @@ pub(crate) fn window_tasks() {
         (t("palette.new_window"), String::new()),
         (t("palette.new_private_window"), "--private".to_owned()),
     ]);
+}
+
+/// A link of another application never enters a private window (macOS hands it to any of the
+/// app's processes): it goes to a normal window, opened if there is none.
+pub(crate) fn hand_external(url: &url::Url) {
+    let dir = peers_dir();
+    let others = peers::peers(&dir, std::process::id());
+    let transfer = peers::Transfer { url: url.to_string(), title: String::new(), private: false };
+    let sent = peers::normal_window(&others).is_some_and(|pid| peers::send(&dir, pid, &transfer));
+    if !sent {
+        spawn_window(false, Some(url.as_str()));
+    }
 }
 
 impl Running {

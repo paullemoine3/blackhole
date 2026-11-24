@@ -588,9 +588,10 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   ni journalisés ; fermer la palette annule (page 401 du serveur). Peek et vues cachées annulent.
   Test : fin de `test-ui.ps1` (serveur local 401, `scripts/fixtures/http-auth.json`, `eval` « authN: »
   hors indices). Comportement macOS non testé.
-- User-Agent macOS : `views::user_agent_for` choisit l'UA à chaque navigation principale
-  via `wry::USER_AGENT_RESOLVER` (UA Safari forcé pour Meet, UA WebKit par défaut pour
-  `docs.google.com` : le token Safari rend Docs flou). Windows non concerné.
+- User-Agent macOS (0.8.29) : `domain::safari` (version de Safari = celle du moteur : macOS ≥ 26, sinon build de
+  `WebKit.framework`, plancher 18.5), posée par `views::announce_browser` dans `wry::APPLICATION_NAME`
+  (`applicationNameForUserAgent` de chaque configuration : fenêtres ouvertes par les pages comprises). Jamais de version
+  figée ni d'UA sans nom : Google les dit « non pris en charge ». Plus d'exception pour `docs.google.com`. Windows non concerné.
 
 ## Mots de passe (0.7.19)
 
@@ -1272,6 +1273,33 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   Autoriser puis Bloquer à nouveau, filtre Pubs, compteur en direct, pas de défilement horizontal). Tests :
   `shields_report::tests`, `site_tests`, `allowed_hosts_stay_allowed_until_blocked_again`. macOS : compilation
   croisée seulement.
+
+## 0.8.29 : privé étanche, Google sur macOS, ⌘Z, adresse longue
+
+- Rien de public ne sort d'une fenêtre privée : `open_window` passe par `peers::opens_private` (⌘N, « nouvelle fenêtre »,
+  onglet lâché) ; palette et menu de lien n'offrent plus de fenêtre normale, libellés « onglet privé »
+  (`state.private`). Un lien venu d'une autre app (`Msg::External`, macOS le donne à n'importe quel processus) part vers
+  une fenêtre normale (`hand_external`, `peers::normal_window`). `live_view(private)` : session privée, plus le profil.
+- macOS : `DataStore::Session` (un magasin en mémoire par processus) pour `Store::Private` ; avant, chaque onglet privé
+  avait le sien. Trou noir : toujours un magasin par onglet.
+- Traces du privé : les pages du shell (`shell_builder`) tournent sur la session en mémoire (macOS) : elles chargent les
+  icônes des sites, qui finissaient dans le cache et avec les cookies du profil. `infrastructure/private.rs` : dossier
+  jetable 0700, `prepare` (copie de `settings.json` seulement), `sweep` (dossiers des processus morts, à chaque
+  lancement) ; `erase_private` dans `exiting` (⌘Q ne revient pas dans `main`). `ExtensionHost::new(ephemeral)`. Choix assumé :
+  les extensions que l’utilisateur a autorisées en privé y gardent leurs réglages (macOS : même stockage).
+- `outerWidth` / `outerHeight` / `screenX` / `screenY` valaient 0 (macOS) : `_webView:getWindowFrameWithCompletionHandler:`
+  (délégué UI de wry) rend le cadre de la vue. Flou de Meet : le flux WebRTC en boucle locale est identique à une
+  WKWebView nue (mêmes résolution, débit, QP) ; en mode économie d'énergie WebKit plafonne `requestAnimationFrame` à 30/s.
+  Non vérifié dans un vrai appel.
+- Appel masqué (macOS) : WebKit ralentit les scripts d'une page cachée (1 image/s envoyée pour une vidéo produite par
+  script). `service_calls` (`tabs/media.rs`) appelle `run_while_hidden` pour les onglets en appel seulement (préférences
+  privées, testées avant usage) et remet les valeurs de WebKit à la fin. 19 à 28 images/s mesurées. Chromium le fait seul.
+- ⌘Z, ⇧⌘Z, ⌘A (macOS) : `performKeyEquivalent:` (vues enfants) les donne d'abord à la page ; si elle ne les prend pas,
+  `page_first_keys.js` (toutes les frames) lance `undo` / `redo` / `selectAll`. WebKit ne renvoie pas l'événement au menu.
+- Champ d'adresse (`bar.html`) : centré sur la fenêtre avec une largeur fixe, il recouvrait les boutons de part et
+  d'autre d'une fenêtre étroite (demi-écran) ; `fit()` le borne (`--room`) entre eux. Le texte est coupé dans le champ.
+- Test macOS : `bash scripts/test-0829.sh` (étape harnais `press z|Z|a`). Tests : `safari::tests`,
+  `a_private_window_only_opens_private_ones_and_keeps_outside_links_out`.
 
 ## Livraison et entretien
 
