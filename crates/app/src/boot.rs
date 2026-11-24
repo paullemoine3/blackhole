@@ -23,6 +23,7 @@ use wry::WebContext;
 
 use crate::{i18n, views};
 use crate::features::{
+    aliases,
     compare,
     extensions,
     github_ext,
@@ -439,6 +440,7 @@ impl Running {
             bar_exts: json!([]),
             bar_exts_at: Instant::now(),
             passwords: passwords::Passwords::new(&profile, private_mode()),
+            aliases: aliases::Aliases::new(),
             settings_seq: 0,
             home_visible: true,
             splitbar: LazyView::new(),

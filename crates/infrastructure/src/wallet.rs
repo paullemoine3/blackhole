@@ -8,6 +8,7 @@
 //! device, KDF parameters, wrapped key) is authenticated with the content, so it cannot be
 //! swapped. The file is JSON text: it goes through `write_later` like the other user data.
 
+use blackhole_domain::aliases::{Account, Alias, Aliases, Provider};
 use blackhole_domain::i18n::message;
 use blackhole_domain::passwords::{generate, Entry, Kind, Passwords, Recipe};
 use chacha20poly1305::{
@@ -122,6 +123,76 @@ struct BodyDto {
     entries: Vec<EntryDto>,
     #[serde(default)]
     never: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    alias_account: Option<AccountDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    aliases: Vec<AliasDto>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AccountDto {
+    provider: String,
+    server: String,
+    key: String,
+}
+
+impl Drop for AccountDto {
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct AliasDto {
+    id: String,
+    provider: String,
+    server: String,
+    remote: String,
+    email: String,
+    origin: String,
+    enabled: bool,
+    created: i64,
+}
+
+fn alias_dto(a: &Alias) -> AliasDto {
+    AliasDto {
+        id: a.id.clone(),
+        provider: a.provider.id().to_owned(),
+        server: a.server.clone(),
+        remote: a.remote.clone(),
+        email: a.email.clone(),
+        origin: a.origin.clone(),
+        enabled: a.enabled,
+        created: a.created,
+    }
+}
+
+/// The aliases of the file; one of a service this version does not know is left out.
+fn aliases_from(account: Option<AccountDto>, list: Vec<AliasDto>) -> Aliases {
+    Aliases {
+        account: account.and_then(|mut a| {
+            Some(Account {
+                provider: Provider::from_id(&a.provider)?,
+                server: std::mem::take(&mut a.server),
+                key: std::mem::take(&mut a.key),
+            })
+        }),
+        list: list
+            .into_iter()
+            .filter_map(|a| {
+                Some(Alias {
+                    provider: Provider::from_id(&a.provider)?,
+                    id: a.id,
+                    server: a.server,
+                    remote: a.remote,
+                    email: a.email,
+                    origin: a.origin,
+                    enabled: a.enabled,
+                    created: a.created,
+                })
+            })
+            .collect(),
+    }
 }
 
 fn to_dto(e: &Entry) -> EntryDto {
@@ -315,6 +386,12 @@ impl Unlocked {
         let body = BodyDto {
             entries: self.data.entries.iter().map(to_dto).collect(),
             never: self.data.never.clone(),
+            alias_account: self.data.aliases.account.as_ref().map(|a| AccountDto {
+                provider: a.provider.id().to_owned(),
+                server: a.server.clone(),
+                key: a.key.clone(),
+            }),
+            aliases: self.data.aliases.list.iter().map(alias_dto).collect(),
         };
         let plain = Zeroizing::new(serde_json::to_vec(&body).map_err(|e| e.to_string())?);
         let aad = serde_json::to_vec(&self.header).map_err(|e| e.to_string())?;
@@ -474,6 +551,7 @@ impl Wallet {
             data: Passwords {
                 entries,
                 never: std::mem::take(&mut body.never),
+                aliases: aliases_from(body.alias_account.take(), std::mem::take(&mut body.aliases)),
             },
         })
     }
@@ -533,6 +611,32 @@ mod tests {
             notes: "note-test",
             kind: Kind::Web,
         }
+    }
+
+    #[test]
+    fn the_alias_account_and_the_aliases_are_sealed_with_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Wallet::with_keychain_key(dir.path(), [7; 32]);
+        let mut u = w.create().unwrap();
+        u.data.aliases.account = Some(Account {
+            provider: Provider::Addy,
+            server: "https://app.addy.io".into(),
+            key: "alias-key-test".into(),
+        });
+        u.data.aliases.add(Alias {
+            id: "1".into(),
+            provider: Provider::Addy,
+            server: "https://app.addy.io".into(),
+            remote: "r".into(),
+            email: "a@b.test".into(),
+            origin: "https://shop.test".into(),
+            enabled: false,
+            created: 4,
+        });
+        let text = u.seal().unwrap();
+        assert!(!text.contains("alias-key-test") && !text.contains("shop.test"));
+        write_atomic(w.path(), &text).unwrap();
+        assert_eq!(w.open(None).unwrap().data, u.data);
     }
 
     fn filled(w: &Wallet) -> Unlocked {

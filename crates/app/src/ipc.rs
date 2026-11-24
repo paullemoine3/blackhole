@@ -574,6 +574,10 @@ pub enum UiCommand {
     Passwords {
         action: crate::features::passwords::PasswordAction,
     },
+    /// Settings › Email aliases and the notice of a new alias (see `aliases::AliasAction`).
+    Aliases {
+        action: crate::features::aliases::AliasAction,
+    },
     OpenSettings {
         /// Section to show (`privacy`, `extensions`…).
         #[serde(default)]
@@ -934,9 +938,21 @@ pub enum PageEvent {
     },
     /// A login field got focus: ask for the saved usernames of this origin (re-read from the
     /// engine). `fresh`: a new-password field (sign-up, change of password).
+    /// `login`: the field of a sign-in form. `email`: an email field an alias suits.
     AutofillQuery {
         #[serde(default)]
         fresh: bool,
+        #[serde(default = "yes")]
+        login: bool,
+        #[serde(default)]
+        email: bool,
+    },
+    /// An alias entry of the menu: the `index`-th alias of the site, or none to make a new one.
+    AutofillAlias {
+        #[serde(default)]
+        index: Option<usize>,
+        #[serde(default)]
+        token: String,
     },
     /// The user picked the `index`-th suggestion from the last `AutofillQuery`. `token`: the
     /// one-time value the shell put in that menu (a page script posting this itself lacks it).
@@ -1085,6 +1101,10 @@ impl Mailbox {
     pub fn pop(&self) -> Option<Msg> {
         self.queue.borrow_mut().pop_front()
     }
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -1348,6 +1368,8 @@ mod tests {
             r#"{"cmd":"set_quick_access_size","size":"large"}"#,
             r#"{"cmd":"set_home_section","section":"downloads","shown":false}"#,
             r#"{"cmd":"passwords","action":{"op":"enabled","on":false}}"#,
+            r#"{"cmd":"aliases","action":{"op":"connect","provider":"addy","key":"k"}}"#,
+            r#"{"cmd":"aliases","action":{"op":"delete","id":"a"}}"#,
         ] {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
             assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
@@ -1512,7 +1534,7 @@ mod tests {
         // Older pages send the query without `fresh`.
         assert!(matches!(
             serde_json::from_str::<PageEvent>(r#"{"cmd":"autofill_query"}"#),
-            Ok(PageEvent::AutofillQuery { fresh: false })
+            Ok(PageEvent::AutofillQuery { fresh: false, login: true, email: false })
         ));
         let submitted = r#"{"cmd":"login_submitted","username":"u","password":"pw-test"}"#;
         assert!(matches!(

@@ -57,7 +57,12 @@ impl Running {
                 }
             }
             Msg::Page(tab, PageEvent::PipLeft { paused, stream }) => self.pip_left(tab, paused, stream),
-            Msg::Page(tab, PageEvent::AutofillQuery { fresh }) => self.autofill_query(tab, fresh),
+            Msg::Page(tab, PageEvent::AutofillQuery { fresh, login, email }) => {
+                self.autofill_query(tab, fresh, login, email)
+            }
+            Msg::Page(tab, PageEvent::AutofillAlias { index, token }) => {
+                self.autofill_alias(tab, index, &token)
+            }
             Msg::Page(tab, PageEvent::AutofillFill { index, token }) => {
                 self.autofill_fill(tab, index, &token)
             }

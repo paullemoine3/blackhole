@@ -451,6 +451,24 @@ pub fn autofill_fill(view: &WebView, username: &str, password: &str) {
     let _ = view.evaluate_script(&script);
 }
 
+/// Writes the alias `email` into the email field its menu (`token`) was opened on; empty: it
+/// could not be made.
+pub fn autofill_alias(view: &WebView, token: &str, email: &str) {
+    let _ = view.evaluate_script(&format!(
+        "window.__bhAutofill&&window.__bhAutofill.alias({},{})",
+        serde_json::json!(token),
+        serde_json::json!(email)
+    ));
+}
+
+/// The alias `email` was deleted: a field it was just written in is emptied.
+pub fn autofill_alias_gone(view: &WebView, email: &str) {
+    let _ = view.evaluate_script(&format!(
+        "window.__bhAutofill&&window.__bhAutofill.aliasGone({})",
+        serde_json::json!(email)
+    ));
+}
+
 /// Writes a generated password into the new-password fields of the focused form.
 pub fn autofill_generated(view: &WebView, password: &str) {
     let p = zeroize::Zeroizing::new(serde_json::to_string(password).unwrap_or_default());
@@ -689,7 +707,7 @@ fn build_tab(
         .with_initialization_script_for_main_only(
             page_script(
                 AUTOFILL_JS,
-                &["page.saved_passwords", "page.unlock_passwords", "page.strong_password", "settings.no_username"],
+                &["page.saved_passwords", "page.unlock_passwords", "page.strong_password", "settings.no_username", "page.alias_create", "page.alias_making", "page.alias_head"],
             ),
             true,
         )

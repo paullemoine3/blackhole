@@ -14,6 +14,7 @@ use wry::{WebContext, WebView};
 
 use crate::{ipc, views};
 use crate::features::{
+    aliases,
     clipboard,
     compare,
     github_ext,
@@ -70,6 +71,8 @@ pub(crate) struct Running {
     pub(crate) anchors_due: Option<Instant>,
     /// The password wallet: autofill, save offers, Settings › Passwords.
     pub(crate) passwords: passwords::Passwords,
+    /// Email aliases: the service's answers, Settings › Email aliases.
+    pub(crate) aliases: aliases::Aliases,
     pub(crate) last_active: HashMap<TabId, Instant>,
     /// Page zoom per site of black hole tabs (percent), for the session only: other tabs use
     /// `Settings::site_zoom`, remembered between launches.

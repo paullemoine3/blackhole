@@ -1,5 +1,6 @@
 //! Features built on the tabs and the shell, one module each.
 
+pub(crate) mod aliases;
 pub(crate) mod boosts;
 pub(crate) mod bridges;
 pub(crate) mod clipboard;

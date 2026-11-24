@@ -69,6 +69,13 @@ pub struct Settings {
     /// The built-in password manager offers saved logins on login fields and offers to save
     /// new ones. Off: it stays out of the pages (the saved passwords are kept). On by default.
     pub password_manager: bool,
+    /// The email alias service connected (`aliases::Provider::id`), empty while there is none.
+    /// Its key is in the wallet, never here: this only says what a locked wallet would offer.
+    pub alias_provider: String,
+    /// Offer an alias on the email fields of sign-up forms (once a service is connected).
+    pub alias_suggest: bool,
+    /// Write the site's name beside the alias on the service. Off by default.
+    pub alias_share_site: bool,
     /// Third-party hosts that track the user across sites are learned while browsing and
     /// blocked like the listed trackers (see `trackers`). On by default.
     pub tracker_learning: bool,
@@ -232,6 +239,9 @@ impl Default for Settings {
             recall_exclude: BTreeSet::new(),
             site_zoom: BTreeMap::new(),
             password_manager: true,
+            alias_provider: String::new(),
+            alias_suggest: true,
+            alias_share_site: false,
             tracker_learning: true,
             quick_access_size: "medium".to_owned(),
             hidden_home_sections: BTreeSet::new(),

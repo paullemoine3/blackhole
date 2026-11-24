@@ -981,3 +981,34 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   d'autre d'une fenêtre étroite (demi-écran) ; `fit()` le borne (`--room`) entre eux. Le texte est coupé dans le champ.
 - Test macOS : `bash scripts/test-0829.sh` (étape harnais `press z|Z|a`). Tests : `safari::tests`,
   `a_private_window_only_opens_private_ones_and_keeps_outside_links_out`.
+
+## 0.8.30 : alias email
+
+- Réglages > Email aliases (section entre Passwords et Extensions) : service (SimpleLogin, Addy.io, Firefox Relay, Fastmail, Forward Email), clé,
+  serveur (auto-hébergé possible sauf Relay et Fastmail), options, liste des alias (copier, couper, supprimer). Pastille « alias » dans
+  la liste des mots de passe (`Aliases::is_alias`). BlackHole ne relaie rien : rien ne part avant la connexion d'un service,
+  puis seulement sur un clic.
+- Règles `domain/aliases.rs` (`Provider::server` : https ou machine locale seulement ; `reaches` : seul le compte qui a fait
+  un alias agit dessus ; `valid_email` / `valid_remote` : réponses du service contrôlées). API `infrastructure/aliases.rs`
+  (bloquant, hors du thread UI, `redirects(0)` : la clé ne suit jamais une redirection). SimpleLogin n'a qu'une bascule :
+  rebasculée si l'état rendu n'est pas celui voulu.
+- Clé et alias dans `passwords.bin` (`Passwords::aliases`), jamais dans `Settings` ni dans une page. Une version plus ancienne
+  qui réécrit le portefeuille les perd (champs inconnus). `Settings` : `alias_provider` (indice seulement), `alias_suggest`,
+  `alias_share_site` (nom du site donné au service : faux par défaut).
+- Page : `autofill.js` `isAliasField` (email d'inscription ou de newsletter ; pas avec `current-password`, ni un champ
+  `username` seul), `autofill_query { login, email }`, `autofill_alias { index?, token }` sous le même jeton à usage unique.
+  Un alias par site : s'il en existe un actif il est proposé, sinon « Create ». `alias(token, email)` écrit dans le champ
+  demandé même si le focus a bougé ; `aliasGone` vide ce champ si l'alias est supprimé (Undo de la notice).
+- App `features/aliases.rs` (`Aliases`, `AliasAction`, `{"cmd":"aliases","action":{"op":…}}`). Portefeuille verrouillé pendant
+  la création : `unsaved`, écrit à l'ouverture. Fenêtre privée : lecture seule. Linux : pas de portefeuille, donc pas d'alias.
+- Fastmail : JMAP `MaskedEmail/set` (supprimer = état `deleted`), toujours sur le serveur du compte, jamais l'`apiUrl` de la
+  session. Forward Email : premier domaine du compte, `PUT` garde le nom. Écarté : DuckDuckGo (pas de clé officielle,
+  jeton de session à copier, ni coupure ni suppression).
+- Pubs (`shields.js`) : une règle CSS par sélecteur (un sélecteur inconnu du moteur annulait toute la liste), feuille remise
+  quand la page remplace `adoptedStyleSheets`, `SITE_ADS` (par site : résultats sponsorisés…). `collapse` (cadre principal)
+  retire ce qu'un emplacement laisse (boîte à hauteur fixe, étiquette « Publicité » seule) : seulement si la boîte ne
+  contient que des pubs, jamais la structure (`KEEP`), et la rend si du contenu y arrive. Jamais de nom générique que des
+  petites annonces utilisent (`.ad`, `.ad-card`, `.advert`). `adlist.txt` : hôtes de diffusion seulement.
+- Test Windows : `scripts\test-0830.ps1` (faux SimpleLogin local ; vraies frappes par le port DevTools du moteur).
+  Tests : `aliases::tests` (domain, infrastructure), `the_alias_account_and_the_aliases_are_sealed_with_the_rest`. Non
+  vérifié avec de vrais comptes (Relay : API non documentée pour des tiers). macOS : non lancé. Android : sans alias.

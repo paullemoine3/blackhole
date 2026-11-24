@@ -74,7 +74,7 @@ impl Running {
                 "bookmarks": self.imports.store.load().len(),
                 "logins": self.passwords.count(),
             }),
-            "passwords": self.passwords.state_json(settings),
+            "passwords": self.passwords_json(settings),
             "extensionsDir": extensions_dir(&self.data).display().to_string(),
             "extensions": self.svc.extensions().iter().map(|e| json!({
                 "id": e.id, "name": e.name, "version": e.version, "description": e.description,

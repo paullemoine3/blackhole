@@ -105,6 +105,7 @@ impl Running {
             }
             UiCommand::Shortcut { key } => self.shortcut(&key),
             UiCommand::Passwords { action } => self.password_action(action),
+            UiCommand::Aliases { action } => self.alias_action(action),
             // Everything else belongs to a module: each one handles its own commands.
             command @ (UiCommand::SignalAct { .. }
             | UiCommand::SignalDismiss { .. }
