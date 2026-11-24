@@ -121,6 +121,9 @@ pub(crate) struct MediaWatch {
     pub(crate) dismissed: HashMap<u64, Instant>,
     /// Last time a tab was seen in a call or playing media: it keeps its page for a while after.
     pub(crate) busy_seen: HashMap<TabId, Instant>,
+    /// Tabs in a call whose page runs at full speed while hidden (macOS, `service_calls`).
+    #[cfg(target_os = "macos")]
+    pub(crate) awake: std::collections::HashSet<u64>,
 }
 
 impl MediaWatch {
@@ -134,6 +137,8 @@ impl MediaWatch {
             hold: Linger::new(LINGER),
             dismissed: HashMap::new(),
             busy_seen: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            awake: Default::default(),
         }
     }
 }
@@ -208,6 +213,7 @@ impl Running {
                 });
             }
         }
+        self.service_calls();
         let now = Instant::now();
         if let Ok(probes) = self.media.probes.lock() {
             // A probe sent before the card was closed still says "playing": only a later one
@@ -238,6 +244,33 @@ impl Running {
         if now != self.media.seen {
             self.media.seen = now;
             self.ui_state();
+        }
+    }
+
+    /// WebKit slows the scripts of a hidden page down to a crawl: in a call, what the page draws
+    /// and sends (a blurred background, effects) falls with it. Chromium leaves such a page alone
+    /// (WebView2 needs nothing); here the page in a call is told to run, and only for that time.
+    fn service_calls(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let calls: std::collections::HashSet<u64> = self.media.probes.lock().map_or_else(
+                |_| Default::default(),
+                |probes| probes.iter().filter(|(_, p)| p.in_call()).map(|(id, _)| *id).collect(),
+            );
+            // A tab gone from `tabs` and back has a new view: it is told again.
+            self.media.awake.retain(|id| self.tabs.contains_key(&TabId(*id)));
+            let changed: Vec<u64> = calls.symmetric_difference(&self.media.awake).copied().collect();
+            for id in changed {
+                let on = calls.contains(&id);
+                if let Some(ptr) = self.tabs.get(&TabId(id)).and_then(crate::platform::web_view_ptr) {
+                    blackhole_macos_webext::run_while_hidden(ptr, on);
+                }
+                if on {
+                    self.media.awake.insert(id);
+                } else {
+                    self.media.awake.remove(&id);
+                }
+            }
         }
     }
 

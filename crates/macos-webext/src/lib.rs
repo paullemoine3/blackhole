@@ -11,6 +11,124 @@ pub enum DataStore {
     Identified([u8; 16]),
     /// Nothing is kept once the view is gone.
     Ephemeral,
+    /// The session of this process (a private window): shared by its views, never written down.
+    Session,
+}
+
+/// Whether a page keeps running at full speed while it is hidden or covered (a call). Private
+/// preferences, each checked first; off puts WebKit's own values back.
+#[cfg(target_os = "macos")]
+pub fn run_while_hidden(view: std::ptr::NonNull<std::ffi::c_void>, on: bool) {
+    use objc2::{msg_send, rc::Retained, runtime::AnyObject, sel};
+    // Safety: `view` is a live WKWebView on the main thread; the setters take a BOOL, except the
+    // public `inactiveSchedulingPolicy` (macOS 14+: 0 suspend, the default; 2 none).
+    unsafe {
+        let view: &AnyObject = view.cast::<AnyObject>().as_ref();
+        let config: Retained<AnyObject> = msg_send![view, configuration];
+        let prefs: Retained<AnyObject> = msg_send![&*config, preferences];
+        let has = |s| -> bool { msg_send![&*prefs, respondsToSelector: s] };
+        if has(sel!(_setHiddenPageDOMTimerThrottlingEnabled:)) {
+            let _: () = msg_send![&*prefs, _setHiddenPageDOMTimerThrottlingEnabled: !on];
+        }
+        if has(sel!(_setDOMTimersThrottlingEnabled:)) {
+            let _: () = msg_send![&*prefs, _setDOMTimersThrottlingEnabled: !on];
+        }
+        if has(sel!(_setPageVisibilityBasedProcessSuppressionEnabled:)) {
+            let _: () = msg_send![&*prefs, _setPageVisibilityBasedProcessSuppressionEnabled: !on];
+        }
+        if has(sel!(setInactiveSchedulingPolicy:)) {
+            let _: () = msg_send![&*prefs, setInactiveSchedulingPolicy: if on { 2isize } else { 0 }];
+        }
+    }
+}
+
+/// The in-memory store of `DataStore::Session`, one per process.
+#[cfg(target_os = "macos")]
+fn session_store(
+    mtm: objc2::MainThreadMarker,
+) -> objc2::rc::Retained<objc2_web_kit::WKWebsiteDataStore> {
+    use objc2::rc::Retained;
+    use objc2_web_kit::WKWebsiteDataStore;
+    thread_local! {
+        static STORE: std::cell::OnceCell<Retained<WKWebsiteDataStore>> =
+            const { std::cell::OnceCell::new() };
+    }
+    // Safety: object construction on the main thread (the only one holding a marker).
+    STORE.with(|s| s.get_or_init(|| unsafe { WKWebsiteDataStore::nonPersistentDataStore(mtm) }).clone())
+}
+
+/// A configuration on the session store, for the views that run no extension.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn session_configuration() -> Option<objc2::rc::Retained<objc2_web_kit::WKWebViewConfiguration>>
+{
+    let mtm = objc2::MainThreadMarker::new()?;
+    // Safety: setting a property on an object we just created.
+    unsafe {
+        let config = objc2_web_kit::WKWebViewConfiguration::new(mtm);
+        config.setWebsiteDataStore(&session_store(mtm));
+        Some(config)
+    }
+}
+
+/// The version of macOS and the build of the WebKit framework pages run on.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn engine_version() -> ((u32, u32), String) {
+    use objc2::{class, msg_send, rc::Retained, runtime::AnyObject};
+    use objc2_foundation::{NSProcessInfo, NSString};
+    let os = NSProcessInfo::processInfo().operatingSystemVersion();
+    let part = |n: isize| u32::try_from(n).unwrap_or(0);
+    // Safety: plain getters; the value is checked to be a string before it is read as one.
+    let build = unsafe {
+        let id = NSString::from_str("com.apple.WebKit");
+        let key = NSString::from_str("CFBundleVersion");
+        let bundle: Option<Retained<AnyObject>> =
+            msg_send![class!(NSBundle), bundleWithIdentifier: &*id];
+        bundle
+            .and_then(|b| -> Option<Retained<AnyObject>> {
+                msg_send![&*b, objectForInfoDictionaryKey: &*key]
+            })
+            .and_then(|v| v.downcast::<NSString>().ok())
+    };
+    (
+        (part(os.majorVersion), part(os.minorVersion)),
+        build.map(|b| b.to_string()).unwrap_or_default(),
+    )
+}
+
+/// Types Cmd+`key` (with Shift when upper case) in the key window, through the application's own
+/// event queue (devtools harness).
+#[cfg(target_os = "macos")]
+pub fn press_command(key: char) {
+    use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType};
+    use objc2_foundation::{NSPoint, NSProcessInfo, NSString};
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    #[allow(deprecated)]
+    app.activateIgnoringOtherApps(true);
+    let window = app.keyWindow().map_or(0, |w| w.windowNumber());
+    let mut flags = NSEventModifierFlags::Command;
+    if key.is_uppercase() {
+        flags |= NSEventModifierFlags::Shift;
+    }
+    let chars = NSString::from_str(&key.to_string());
+    // Virtual key codes of an ANSI keyboard.
+    let code = match key.to_ascii_lowercase() {
+        'a' => 0,
+        'z' => 6,
+        _ => 2,
+    };
+    for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
+        let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+            kind, NSPoint::ZERO, flags, NSProcessInfo::processInfo().systemUptime(), window, None, &chars, &chars, false, code,
+        );
+        if let Some(event) = event {
+            app.postEvent_atStart(&event, false);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,7 +463,7 @@ mod stub {
     pub struct ExtensionHost;
 
     impl ExtensionHost {
-        pub fn new() -> Option<Self> {
+        pub fn new(_ephemeral: bool) -> Option<Self> {
             None
         }
         pub fn load(&self, _id: &str, _path: &Path) {}

@@ -249,14 +249,15 @@ fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
     builder
 }
 
-#[cfg(target_os = "macos")]
-const MACOS_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
-
-/// Per-navigation user agent: `None` keeps WebKit's default (see `page_view`).
-#[cfg(target_os = "macos")]
-fn user_agent_for(url: &str) -> Option<String> {
-    let host = Url::parse(url).ok()?.host_str()?.to_owned();
-    (host != "docs.google.com").then(|| MACOS_USER_AGENT.to_owned())
+/// macOS: every view announces the Safari of its engine (`domain::safari`). WebKit's bare user
+/// agent has no browser name, so Google Meet, Docs and others call it unsupported. Before any view.
+pub fn announce_browser() {
+    #[cfg(target_os = "macos")]
+    {
+        let (os, build) = blackhole_macos_webext::engine_version();
+        let version = blackhole_domain::safari::version(os, &build);
+        let _ = wry::APPLICATION_NAME.set(blackhole_domain::safari::application_name(version));
+    }
 }
 
 /// Shell colour, visible before a page paints.
@@ -273,6 +274,22 @@ pub fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
     }
 }
 
+/// The builder of BlackHole's own pages. They show the icons of the sites visited, black hole
+/// tabs and other spaces included: never with the cookies of the profile, nor in its cache
+/// (macOS; on Windows a private window's engine has a folder of its own).
+fn shell_builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
+    let builder = builder(ctx);
+    #[cfg(target_os = "macos")]
+    let builder = match blackhole_macos_webext::session_configuration() {
+        Some(config) => {
+            use wry::WebViewBuilderExtMacos;
+            builder.with_webview_configuration(config)
+        }
+        None => builder.with_incognito(true),
+    };
+    builder
+}
+
 /// One of BlackHole's own pages. It may talk to the shell and never navigates away.
 /// `overlay` pages are transparent so they can float above the content.
 pub fn ui_view(
@@ -285,7 +302,7 @@ pub fn ui_view(
     mailbox: &Mailbox,
 ) -> wry::Result<WebView> {
     let mailbox = mailbox.clone();
-    builder(ctx)
+    shell_builder(ctx)
         .with_html(html)
         .with_bounds(bounds)
         .with_visible(visible)
@@ -320,7 +337,7 @@ pub fn panel_view(
 ) -> wry::Result<WebView> {
     let mailbox = mailbox.clone();
     let size = window.inner_size().to_logical::<f64>(window.scale_factor());
-    builder(ctx)
+    shell_builder(ctx)
         .with_html(html)
         .with_bounds(rect(0.0, 0.0, size.width, size.height))
         .with_background_color(SHELL_BG)
@@ -340,7 +357,8 @@ pub fn panel_view(
 }
 
 /// The live view of an Easel card: the page of a live capture, cropped to its region. It shares
-/// the profile (logins work), blocks trackers like a tab and has no channel to the shell.
+/// the profile (logins work; `private`: the session of the private window, never the profile),
+/// blocks trackers like a tab and has no channel to the shell.
 pub fn live_view(
     window: &Window,
     ctx: &mut WebContext,
@@ -348,6 +366,7 @@ pub fn live_view(
     selector: &str,
     policy: &PrivacyPolicy,
     mailbox: &Mailbox,
+    private: bool,
 ) -> wry::Result<WebView> {
     let guard = guard_script(policy);
     #[cfg(any(target_os = "macos", windows))]
@@ -360,7 +379,19 @@ pub fn live_view(
     );
     let (nav, popups) = (mailbox.clone(), mailbox.clone());
     let policy = policy.clone();
-    let view = builder(ctx)
+    let builder = builder(ctx);
+    // Elsewhere a private window's engine already runs on its own throwaway folder.
+    #[cfg(target_os = "macos")]
+    let builder = match private.then(blackhole_macos_webext::session_configuration).flatten() {
+        Some(config) => {
+            use wry::WebViewBuilderExtMacos;
+            builder.with_webview_configuration(config)
+        }
+        None => builder.with_incognito(private),
+    };
+    #[cfg(not(target_os = "macos"))]
+    let _ = private;
+    let view = builder
         .with_url(url.as_str())
         .with_bounds(rect(0.0, 0.0, 1.0, 1.0))
         .with_visible(false)
@@ -569,22 +600,21 @@ fn build_tab(
         let data = match store {
             Store::Main => DataStore::Default,
             Store::Space(space) => DataStore::Identified(Store::identifier(space)),
+            // One session for the whole private window, gone with it.
+            Store::Private => DataStore::Session,
             // Each ephemeral store is a new one: two black hole tabs share nothing.
-            Store::Private | Store::Burner(_) => DataStore::Ephemeral,
+            Store::Burner(_) => DataStore::Ephemeral,
         };
         match (host, data) {
             (Some(host), data) => builder.with_webview_configuration(host.view_configuration(data)),
             (None, DataStore::Identified(id)) => builder.with_data_store_identifier(id),
             (None, DataStore::Ephemeral) => builder.with_incognito(true),
+            (None, DataStore::Session) => match blackhole_macos_webext::session_configuration() {
+                Some(config) => builder.with_webview_configuration(config),
+                None => builder.with_incognito(true),
+            },
             (None, DataStore::Default) => builder,
         }
-    };
-    // The bare WKWebView user agent lacks the Safari token, so Google Meet and others reject it.
-    // Google Docs renders its canvas blurry when it sees that token, so it keeps WebKit's own.
-    #[cfg(target_os = "macos")]
-    let builder = {
-        let _ = wry::USER_AGENT_RESOLVER.set(user_agent_for);
-        builder.with_user_agent(MACOS_USER_AGENT)
     };
     // WebKit kills the process of a page that uses too much memory (heavy documents, long
     // calls): without this the tab would stay blank until the user reloads it.
@@ -1054,22 +1084,6 @@ pub const CALL_HANG_UP_JS: &str = "window.__bhRtc&&window.__bhRtc.hangUp()";
 /// Closes the player of the sidebar card: pauses everything and brings a floating video back
 /// into its page.
 pub const MEDIA_CLOSE_JS: &str = "(()=>{for(const v of document.querySelectorAll('video,audio')){v.pause();if(v.webkitPresentationMode==='picture-in-picture')v.webkitSetPresentationMode('inline')}if(document.pictureInPictureElement)document.exitPictureInPicture().catch(()=>{})})()";
-
-#[cfg(all(test, target_os = "macos"))]
-mod user_agent_tests {
-    use super::{user_agent_for, MACOS_USER_AGENT};
-
-    #[test]
-    fn google_docs_keeps_the_webkit_agent_and_the_rest_gets_safari() {
-        assert_eq!(user_agent_for("https://docs.google.com/document/d/x/edit"), None);
-        assert_eq!(user_agent_for("https://docs.google.com/spreadsheets/d/x"), None);
-        let safari = Some(MACOS_USER_AGENT.to_owned());
-        assert_eq!(user_agent_for("https://meet.google.com/abc-defg-hij"), safari);
-        assert_eq!(user_agent_for("https://x.atlassian.net/jira/software/projects/A/boards/1"), safari);
-        // Unparsable or host-less URLs keep the default rather than guessing.
-        assert_eq!(user_agent_for("about:blank"), None);
-    }
-}
 
 #[cfg(test)]
 mod unreachable_tests {

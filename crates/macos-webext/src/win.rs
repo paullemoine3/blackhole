@@ -332,7 +332,7 @@ struct Inner {
 pub struct ExtensionHost(Rc<RefCell<Inner>>);
 
 impl ExtensionHost {
-    pub fn new() -> Option<Self> {
+    pub fn new(_ephemeral: bool) -> Option<Self> {
         Some(Self(Rc::default()))
     }
 

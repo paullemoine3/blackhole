@@ -7,6 +7,7 @@ use url::Url;
 use wry::WebView;
 
 use crate::i18n::{t, tf};
+use crate::shell::windows::private_mode;
 use crate::state::Running;
 
 impl Running {
@@ -71,9 +72,14 @@ impl Running {
             if !items.is_empty() {
                 items.push(json!({"sep": true}));
             }
+            // From a private window every window is private: no "new window" beside it.
+            let private = private_mode();
+            let new_tab = if private { "menu.link_new_private_tab" } else { "menu.link_new_tab" };
+            items.push(json!({"icon": "plus", "label": t(new_tab), "run": {"cmd": "open_link", "url": link, "target": "tab"}}));
+            if !private {
+                items.push(json!({"icon": "window", "label": t("menu.link_new_window"), "run": {"cmd": "open_link", "url": link, "target": "window"}}));
+            }
             items.extend([
-                json!({"icon": "plus", "label": t("menu.link_new_tab"), "run": {"cmd": "open_link", "url": link, "target": "tab"}}),
-                json!({"icon": "window", "label": t("menu.link_new_window"), "run": {"cmd": "open_link", "url": link, "target": "window"}}),
                 json!({"icon": "sleep", "label": t("menu.link_private_window"), "run": {"cmd": "open_link", "url": link, "target": "private"}}),
                 json!({"icon": "hole", "label": t("menu.link_burner"), "run": {"cmd": "open_link", "url": link, "target": "burner"}}),
                 json!({"sep": true}),

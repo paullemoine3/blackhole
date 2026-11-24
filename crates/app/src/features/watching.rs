@@ -194,6 +194,7 @@ impl Running {
                     &w.selector,
                     self.svc.policy(),
                     &self.mailbox,
+                    crate::shell::windows::private_mode(),
                 ) {
                     Ok(view) => {
                         self.watching.probe = Some((w.id, view, Instant::now(), false, false));

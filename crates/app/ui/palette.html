@@ -87,7 +87,8 @@
   kbd { font: inherit; padding: 0 5px; border-radius: 5px; background: rgba(255,255,255,.12); }
 
   /* Context menu (anchored at the click, clamped inside the window) */
-  #menu { display: none; position: absolute; min-width: 190px; max-width: 280px; padding: 5px; border-radius: 13px; transform-origin: var(--ox, 0) var(--oy, 0);
+  /* A long host name (menu heads and entries) wraps instead of running past the edge. */
+#menu { overflow-wrap: anywhere; display: none; position: absolute; min-width: 190px; max-width: 280px; padding: 5px; border-radius: 13px; transform-origin: var(--ox, 0) var(--oy, 0);
     background: rgba(30,29,42,.97); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.35); }
   body.menuing #menu { display: block; animation: menuin .22s cubic-bezier(.2,1.2,.35,1) both; }
   body.menuing #panel { display: none; }
@@ -662,12 +663,14 @@ function showMenu(m) {
   document.body.classList.remove('leaving');
   box.replaceChildren(...m.items.map(it => {
     if (it.sep) return Object.assign(document.createElement('div'), { className: 'msep' });
-    if (it.head) return Object.assign(document.createElement('div'), { className: 'mhead', textContent: it.head });
+    // A host name breaks after a dot when it needs to.
+    const dots = (el, text) => { el.replaceChildren(...text.split(/(?<=\.)(?=\S)/).flatMap((part, n) => n ? [document.createElement('wbr'), part] : [part])); return el; };
+    if (it.head) return dots(Object.assign(document.createElement('div'), { className: 'mhead' }), it.head);
     if (it.picker) return colorPicker(it.picker);
     const b = document.createElement('button');
     if (it.danger) b.className = 'danger';
     const label = document.createElement('span');
-    label.textContent = it.label;
+    dots(label, it.label || '');
     b.append(menuIcon(it.icon, it.color), label);
     // `confirm`: the first click only arms the item and says what will be lost.
     // `background`: what Ctrl/Cmd+click or a middle click runs instead (a tab behind, like a link).

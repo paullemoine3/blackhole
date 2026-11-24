@@ -33,6 +33,10 @@ impl ApplicationHandler<Wake> for App {
         }
     }
 
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        crate::shell::windows::erase_private();
+    }
+
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
         let mut wake = PEERS_EVERY;

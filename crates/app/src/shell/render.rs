@@ -30,6 +30,7 @@ impl Running {
         let space = ws.active_space();
         let mut state = json!({
             "os": std::env::consts::OS,
+            "private": private_mode(),
             "sidebarWidth": self.sidebar.full(),
             "sidebarOpen": self.sidebar.is_open(),
             "tileSize": self.svc.settings().quick_access_size,

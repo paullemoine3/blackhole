@@ -19,6 +19,7 @@ pub mod image_clip;
 pub mod import;
 pub mod market;
 pub mod peers;
+pub mod private;
 pub mod recall;
 pub mod store;
 pub mod sync;

@@ -210,6 +210,15 @@ impl Running {
                     blackhole_macos_webext::inspector(ptr, rest.trim());
                 }
             }
+            // `press z|Z|a`: Cmd+key (Shift in upper case) typed in the key window (macOS).
+            "press" => {
+                self.window.focus_window();
+                self.apply_focus();
+                #[cfg(target_os = "macos")]
+                if let Some(key) = rest.trim().chars().next() {
+                    blackhole_macos_webext::press_command(key);
+                }
+            }
             "quit" => event_loop.exit(),
             _ => eprintln!("[dev] unknown step: {line}"),
         }

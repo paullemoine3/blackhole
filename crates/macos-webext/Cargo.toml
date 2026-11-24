@@ -7,8 +7,8 @@ description = "Hosts real WebExtensions (uBlock Origin Lite…) in WKWebView thr
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSGeometry", "NSValue", "NSString", "NSURL", "NSError", "NSSet", "NSArray", "NSEnumerator", "NSObject", "NSUUID"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPopover", "NSView", "NSResponder", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSGeometry", "NSValue", "NSString", "NSURL", "NSError", "NSSet", "NSArray", "NSEnumerator", "NSObject", "NSUUID", "NSProcessInfo"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSGraphicsContext", "NSWindow", "NSPopover", "NSView", "NSResponder", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "std", "block2",
     "WKWebViewConfiguration", "WKWebsiteDataStore", "WKContentRuleList", "WKContentRuleListStore", "WKUserScript", "WKUserContentController", "WKWebExtension", "WKWebExtensionContext", "WKWebExtensionController",

@@ -399,7 +399,7 @@
   <div class="section secrow"><span class="fold" id="foldfold" data-i18n-title="sidebar.toggle_folders"></span><button class="mini" id="newfolder" data-i18n-title="palette.new_folder"><i data-icon="plus" data-size="xs"></i><span data-i18n="sidebar.folder">Folder</span></button></div>
   <div id="folders"></div>
   <div id="foldsep"></div>
-  <div class="newrow"><button class="new" id="new"><i data-icon="plus"></i><span class="full-only" data-i18n="sidebar.new_tab">New tab</span></button></div>
+  <div class="newrow"><button class="new" id="new"><i data-icon="plus"></i><span class="full-only">New tab</span></button></div>
   <div id="tidy"></div>
   <div id="tabs"></div>
 </div>
@@ -653,7 +653,7 @@ function folderMenu(f, x, y) {
 function createMenu(x, y) {
   const easels = state.easels || [];
   openMenu(x, y, [
-    { icon: 'plus', label: bhT('sidebar.new_tab'), run: { cmd: 'new_tab' } },
+    { icon: 'plus', label: bhT(state.private ? 'sidebar.new_private_tab' : 'sidebar.new_tab'), run: { cmd: 'new_tab' } },
     { icon: 'hole', label: bhT('palette.new_burner_tab'), run: { cmd: 'action', id: 'burner_tab' } },
     { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
     { icon: 'space', label: bhT('palette.new_space'), run: { cmd: 'action', id: 'new_space' } },
@@ -1130,6 +1130,7 @@ window.bh = {
     // The rows as they are on screen now, to animate them to their new places.
     const before = dirty && !switched && prev && prev.tabs && prev.tabs.length && s.animations !== false ? motion.snapshot() : null;
     state = s;
+    newTabLabel();
     if (switched) {
       const a = document.querySelector('aside');
       const at = (id) => s.spaces.findIndex(sp => sp.id === id);
@@ -1507,9 +1508,15 @@ function launchShip(from) {
 // The privacy report of the site shown opens above the shield.
 $('shield').onclick = () => { const r = $('shield').getBoundingClientRect(); send({ cmd: 'privacy_report', x: r.left, y: r.top - 8 }); };
 $('new').onclick = () => send({ cmd: 'new_tab' });
+// In a private window every tab is private, and says so.
+function newTabLabel() {
+  const key = state && state.private ? 'sidebar.new_private_tab' : 'sidebar.new_tab';
+  $('new').querySelector('.full-only').textContent = bhT(key);
+  $('new').title = bhT(key + '_keys', { keys: bhKeys('mod+t') });
+}
 function tooltips() {
   $('shield').title = bhT('sidebar.privacy_report');
-  $('new').title = bhT('sidebar.new_tab_keys', { keys: bhKeys('mod+t') });
+  newTabLabel();
   $('gear').title = bhT('sidebar.settings_keys', { keys: bhKeys('mod+,') });
 }
 tooltips();

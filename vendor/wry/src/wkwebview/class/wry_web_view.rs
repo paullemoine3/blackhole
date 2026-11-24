@@ -34,6 +34,26 @@ pub struct WryWebViewIvars {
   pub(crate) custom_protocol_task_ids: Mutex<HashMap<usize, Retained<NSUUID>>>,
 }
 
+/// BlackHole: Cmd+Z, Cmd+Shift+Z, Cmd+A, with no other modifier.
+#[cfg(target_os = "macos")]
+fn page_first(event: &NSEvent) -> bool {
+  use objc2_app_kit::NSEventModifierFlags as Flags;
+  let flags = event.modifierFlags();
+  if event.r#type() != objc2_app_kit::NSEventType::KeyDown {
+    return false;
+  }
+  if !flags.contains(Flags::Command) || flags.intersects(Flags::Control | Flags::Option) {
+    return false;
+  }
+  event
+    .charactersIgnoringModifiers()
+    .is_some_and(|key| match key.to_string().to_lowercase().as_str() {
+      "z" => true,
+      "a" => !flags.contains(Flags::Shift),
+      _ => false,
+    })
+}
+
 define_class!(
   #[unsafe(super(WKWebView))]
   #[ivars = WryWebViewIvars]
@@ -48,6 +68,19 @@ define_class!(
       // and stop propagating the event to the window, hence the menu shortcut won't be
       // triggered. However, overriding this method also means the cmd+key event won't be
       // handled in webview, which means the key cannot be listened by JavaScript.
+      // BlackHole: the undo and select-all keys are the page's first (Google Docs undoes by itself),
+      // as in Safari; the menu's own items took them before the page saw them. A key the page left
+      // alone does its usual work from `page_first_keys.js`: should WebKit send the event again,
+      // there is nothing left to do with it.
+      #[cfg(target_os = "macos")]
+      if self.ivars().is_child && page_first(event) && self.has_focus() {
+        // Known by its time: AppKit reuses the event objects.
+        thread_local!(static SENT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) });
+        if SENT.replace(event.timestamp()) != event.timestamp() {
+          let _: () = unsafe { objc2::msg_send![self, keyDown: event] };
+        }
+        return Bool::YES;
+      }
       if self.ivars().is_child {
         Bool::NO
       } else {
@@ -120,6 +153,19 @@ define_class!(
     }
   }
 );
+
+#[cfg(target_os = "macos")]
+impl WryWebView {
+  /// BlackHole: whether the keys typed go to this view (the window asks every view in turn).
+  fn has_focus(&self) -> bool {
+    self
+      .window()
+      .and_then(|window| window.firstResponder())
+      .is_some_and(|first| {
+        Retained::as_ptr(&first).cast::<()>() == (self as *const Self).cast::<()>()
+      })
+  }
+}
 
 // Custom Protocol Task Checker
 impl WryWebView {

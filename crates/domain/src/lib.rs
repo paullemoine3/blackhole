@@ -27,6 +27,7 @@ pub mod pip;
 pub mod popup;
 pub mod privacy;
 pub mod recall;
+pub mod safari;
 pub mod selection;
 pub mod settings;
 pub mod shields_report;

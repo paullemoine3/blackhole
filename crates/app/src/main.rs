@@ -19,7 +19,7 @@ use winit::event_loop::EventLoop;
 use crate::app::App;
 use crate::ipc::{Mailbox, Msg};
 use crate::platform::LAUNCHED;
-use crate::shell::windows::{peers_dir, private_data_dir, private_mode};
+use crate::shell::windows::{erase_private, peers_dir};
 
 mod app;
 #[cfg(windows)]
@@ -67,7 +67,5 @@ fn main() {
     drop(app);
     blackhole_infrastructure::flush_writes();
     peers::withdraw(&peers_dir(), std::process::id());
-    if private_mode() {
-        let _ = std::fs::remove_dir_all(private_data_dir());
-    }
+    erase_private();
 }

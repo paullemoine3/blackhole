@@ -221,6 +221,9 @@ impl Running {
                 self.open(url.as_str());
                 self.referrer_next = None;
             }
+            Msg::External(url) if crate::shell::windows::private_mode() => {
+                crate::shell::windows::hand_external(&url);
+            }
             Msg::External(url) => {
                 self.window.set_minimized(false);
                 self.window.focus_window();

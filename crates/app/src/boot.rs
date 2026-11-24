@@ -161,6 +161,10 @@ impl Running {
         } else {
             profile.clone()
         };
+        crate::shell::windows::sweep_private();
+        if private_mode() {
+            blackhole_infrastructure::private::prepare(&profile, &data);
+        }
         // A private window with extensions starts from a copy of what they keep in the main
         // profile (settings, first run done), before its engine opens the folder.
         #[cfg(windows)]
@@ -215,6 +219,7 @@ impl Running {
             learning.data.learned().iter().cloned(),
             learning.data.allowed().iter().cloned(),
         );
+        views::announce_browser();
         views::prepare_blocking(svc.policy());
         trace_startup("blocking lists ready");
         // A private window has no extensions unless the main profile's settings allow them.
@@ -303,7 +308,12 @@ impl Running {
         let github = github_ext::Sideload::new(&ext_src_dir);
         let easel_store = EaselStore::new(&data);
         let easels = easel_store.load();
-        let webext = blackhole_macos_webext::ExtensionHost::new();
+        let webext = blackhole_macos_webext::ExtensionHost::new(
+            // Extensions write nothing down from a private window, unless the user lets them use
+            // the settings they keep in normal windows (macOS; Windows copies those instead).
+            private_mode()
+                && !(svc.settings().extensions_in_private && svc.settings().private_extension_settings),
+        );
         let app_ext = blackhole_macos_webext::discover_app_extensions();
         #[cfg(windows)]
         if let Some(host) = &webext {
