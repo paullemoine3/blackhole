@@ -1013,14 +1013,16 @@ impl InnerWebView {
       .webview
       .context()
       .and_then(|context| context.website_data_manager());
+    // The binding wants a `Send` closure; GTK calls it back on this thread.
+    let done = gtk::glib::thread_guard::ThreadGuard::new(done);
     match manager {
       Some(manager) => manager.clear(
         types,
         gtk::glib::TimeSpan::from_seconds(span as i64),
         None::<&Cancellable>,
-        move |_| done(),
+        move |_| (done.into_inner())(),
       ),
-      None => done(),
+      None => (done.into_inner())(),
     }
     Ok(())
   }
