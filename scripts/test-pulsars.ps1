@@ -31,6 +31,18 @@ eval chrome 'pu6:' + (document.querySelector('.pl').click(), 'open')
 wait 2000
 eval content 'pu7:' + location.pathname
 eval chrome 'pu8:' + document.querySelector('.pn').textContent + '|' + [...document.querySelectorAll('.pl .title')].map(n => n.textContent).join(',')
+# ---- its tab stays in the Pulsar: shown, left, gone elsewhere, dropped back on it ----
+eval chrome 'st1:' + document.querySelectorAll('.pb .tab.active').length + '|' + document.querySelectorAll('#tabs > .tab').length
+cmd {"cmd":"navigate","input":"http://127.0.0.1:__PORT__/post99"}
+wait 1500
+eval chrome 'st2:' + document.querySelector('.pb .tab').classList.contains('active') + '|' + document.querySelector('.pb .tab .title').textContent
+eval chrome 'st3:' + (document.querySelector('#tabs > .tab').click(), 'other')
+wait 1200
+eval chrome 'st4:' + document.querySelectorAll('.pb .tab').length
+eval chrome 'st5:' + (() => { const at = (n) => { const r = n.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; }; const ev = (n, t, [x, y]) => n.dispatchEvent(new MouseEvent(t, {button: 0, clientX: x, clientY: y, bubbles: true, cancelable: true})); window.dragTo = (a, b) => { ev(a, 'mousedown', at(a)); ev(document, 'mousemove', [at(a)[0] + 9, at(a)[1]]); ev(document, 'mousemove', at(b)); ev(document, 'mouseup', at(b)); return a.dataset.tab; }; return dragTo(document.querySelector('.pb .tab'), document.querySelector('.ph')); })()
+wait 600
+eval chrome 'st6:' + document.querySelectorAll('.pb .tab').length
+shot u02b-kept
 # ---- something new ----
 cmd {"cmd":"pulsar_refresh","id":1}
 wait 2500
@@ -48,11 +60,18 @@ eval chrome 'pu13:' + document.querySelectorAll('#folders .pulsar').length + '|'
 shot u04-pinned
 cmd {"cmd":"pulsar_toggle","id":1}
 wait 500
-eval chrome 'pu14:' + getComputedStyle(document.querySelector('.pb')).display
+eval chrome 'pu14:' + getComputedStyle(document.querySelector('.pl')).display + '|' + (document.querySelector('.pb .tab').offsetHeight > 0)
 cmd {"cmd":"pulsar_toggle","id":1}
 cmd {"cmd":"pulsar_pin","id":1,"pinned":false}
 wait 500
 eval chrome 'pu15:' + document.querySelectorAll('#tabs .pulsar').length
+# ---- dragged out among the open tabs: it left ----
+eval chrome 'st7:' + dragTo(document.querySelector('.pb .tab'), document.querySelector('#tabs > .tab'))
+wait 700
+eval chrome 'st8:' + document.querySelectorAll('.pb .tab').length + '|' + document.querySelectorAll('#tabs > .tab').length
+eval chrome 'st9:' + (document.querySelector('.pl').click(), 'again')
+wait 1500
+eval chrome 'st10:' + document.querySelectorAll('.pb .tab').length
 # ---- another space has its own ----
 cmd {"cmd":"new_space","name":"Second","color":"#ff5c8a"}
 wait 1200
@@ -79,10 +98,10 @@ eval chrome 'pu21:' + document.querySelectorAll('.pulsar').length + '|' + [...do
 shot u06-fr
 cmd {"cmd":"pulsar_read_all","id":1}
 wait 500
-eval chrome 'pu22:' + document.querySelector('.pulsar').classList.contains('lit') + '|' + document.querySelector('.pl').textContent
+eval chrome 'pu22:' + document.querySelector('.pulsar').classList.contains('lit') + '|' + document.querySelectorAll('.pl').length
 cmd {"cmd":"pulsar_remove","id":1}
 wait 500
-eval chrome 'pu23:' + document.querySelectorAll('.pulsar').length
+eval chrome 'pu23:' + document.querySelectorAll('.pulsar').length + '|' + document.querySelectorAll('#tabs > .tab').length
 cmd {"cmd":"set_language","language":"en"}
 # ---- GitHub: a wrong token, the right one, a search ----
 cmd {"cmd":"open_settings","tab":"pulsars"}
@@ -93,7 +112,7 @@ eval settings 'gh2:' + document.getElementById('ghstatus').textContent + '|' + d
 eval settings 'gh3:' + (document.getElementById('ghtoken').value = '__TOKEN__', document.getElementById('ghsave').click(), 'connect')
 wait 2500
 eval settings 'gh4:' + document.getElementById('ghaccount').textContent + '|' + document.getElementById('ghoff').hidden + '|' + document.documentElement.outerHTML.includes('__TOKEN__')
-eval settings 'gh5:' + (document.getElementById('ghrepo').value = 'not a repo', document.getElementById('ghadd').click(), 'bad')
+eval settings 'gh5:' + (document.getElementById('pulrepo').value = 'not a repo', document.getElementById('ghadd').click(), 'bad')
 wait 700
 eval settings 'gh6:' + document.getElementById('ghstatus').textContent
 eval settings 'gh7:' + (document.getElementById('ghadd').click(), 'add')
@@ -104,7 +123,7 @@ eval settings 'gh9:' + (() => { const m = document.querySelector('main'); return
 cmd {"cmd":"close_settings"}
 eval chrome 'gh10:' + (document.querySelector('.pl').click(), 'open')
 wait 2000
-eval chrome 'gh11:' + document.querySelector('.pn').textContent + '|' + document.querySelectorAll('.pl').length + '|' + document.querySelector('.pl').classList.contains('seen')
+eval chrome 'gh11:' + document.querySelector('.pn').textContent + '|' + document.querySelectorAll('.pl').length + '|' + document.querySelectorAll('.pb .tab.active').length
 shot u08-github
 # ---- merged there: gone here ----
 cmd {"cmd":"pulsar_refresh","id":1}
@@ -116,6 +135,14 @@ eval chrome 'gh13:' + document.querySelectorAll('.pulsar').length
 eval settings 'gh17:' + (() => { const s = document.querySelector('#pullist select'); s.value = was; s.dispatchEvent(new Event('change', {bubbles: true})); return 'back'; })()
 wait 800
 eval chrome 'gh18:' + document.querySelectorAll('.pulsar').length
+# ---- an organization with a sign-on: said, with a button; gone with its Pulsar ----
+cmd {"cmd":"pulsar_github_new","kind":"mine","repo":"corp/secret"}
+wait 2500
+eval settings 'so1:' + document.getElementById('ghstatus').textContent + '|' + document.getElementById('ghsso').hidden + '|' + [...document.querySelectorAll('#pullist .sub')].pop().textContent
+shot u08b-sso
+cmd {"cmd":"pulsar_remove","id":2}
+wait 700
+eval settings 'so2:' + document.getElementById('ghstatus').textContent + '|' + document.getElementById('ghsso').hidden
 cmd {"cmd":"set_pulsar_lines","lines":20}
 cmd {"cmd":"set_pulsar_every","minutes":60}
 cmd {"cmd":"set_pulsar_every","minutes":1}
@@ -170,6 +197,10 @@ $server = Start-Job -ArgumentList $port, $token -ScriptBlock {
                 "api $path $($auth -eq "Bearer $token")"
                 if ($auth -ne "Bearer $token") { $status = '401 Unauthorized'; $body = '{}' }
                 elseif ($path -eq '/api/user') { $body = '{"login":"octo"}' }
+                elseif ($path -match 'corp') {
+                    $status = '422 Unprocessable Entity'; $body = '{}'
+                    if ($path -like '/api/repos/*') { $status = '403 Forbidden'; $extra = "X-GitHub-SSO: required; url=https://github.com/orgs/corp/sso?authorization_request=A`r`n" }
+                }
                 else {
                     $searches++
                     $list = @('{"html_url":"http://127.0.0.1:PORT/post2","title":"Second PR","number":7,"updated_at":"2026-06-30T08:00:00Z","repository_url":"https://api.github.com/repos/o/wry"}')
@@ -217,16 +248,22 @@ Check ((Ev pu9) -match 'pu9:5\|Fresh & new\|null\|undefined') 'a new entry comes
 Check ((Ev pu10) -match 'pu10:My blog') 'renamed'
 Check ((Ev pu11) -match 'pu11:Move to the folders,Refresh now,Mark everything as read,Rename the Pulsar,New Pulsar,Pulsar settings,Delete the Pulsar') 'its menu'
 Check ((Ev pu13) -match 'pu13:1\|0') 'moved to the folders from its menu'
-Check ((Ev pu14) -match 'pu14:none') 'folded'
+Check ((Ev pu14) -match 'pu14:none\|true') 'folded, the page open under it stays'
 Check ((Ev pu15) -match 'pu15:1') 'back with the open tabs'
 Check ((Ev pu16) -match 'pu16:0') 'each space has its own'
-Check ((Ev pu17) -match 'pu17:MMy blog.*5.*\|true') 'Settings list it'
+Check ((Ev pu17) -match 'pu17:MMy blog.*4.*\|true') 'Settings list it'
 Check ((Ev pu19) -match 'pu19:0') 'switched off, it leaves the sidebar'
 Check ($served.Count -eq 2) 'and its feed is not asked any more'
 Check (@($served | Where-Object { $_ -match 'True' }).Count -eq 0) 'the feed is asked without the cookies of the site'
 Check ((Ev pu21) -match 'pu21:1\|true') 'switched on, it is back'
-Check ((Ev pu22) -match 'pu22:false\|Rien de nouveau') 'everything read: quiet'
-Check ((Ev pu23) -match 'pu23:0') 'deleted'
+Check ((Ev pu22) -match 'pu22:false\|0') 'everything read: only its open tab is left'
+Check ((Ev pu23) -match 'pu23:0\|3') 'deleted, its tab joins the open ones'
+Check ((Ev st1) -match 'st1:1\|1') 'the tab opened from a line is in the Pulsar'
+Check ((Ev st2) -match 'st2:true\|bh /post99') 'it stays there when it goes elsewhere'
+Check ((Ev st4) -match 'st4:1') 'and when another tab is shown'
+Check ((Ev st6) -match 'st6:1') 'dropped on its own Pulsar, it stays'
+Check ((Ev st8) -match 'st8:0\|2') 'dragged out, it is an open tab'
+Check ((Ev st10) -match 'st10:1') 'the next line has its tab there'
 $apiCalls | ForEach-Object { Write-Host "  $_" }
 Check ((Ev gh1) -match 'gh1:true\|0') 'no account: the token field, emptied once sent'
 Check ((Ev gh2) -match 'gh2:GitHub refused the token\|true') 'a wrong token is refused'
@@ -234,10 +271,12 @@ Check ((Ev gh4) -match 'gh4:Connected as octo.*\|true\|false') 'connected, the t
 Check ((Ev gh6) -match 'gh6:Type the repository as owner/name') 'a bad repository is refused'
 Check ((Ev gh8) -match 'gh8:To review\|2\|First PRwry #12,Second PRwry #7') 'the Pulsar lists what GitHub found'
 Check ((Ev gh9) -match 'gh9:true\|1\|GitHub . To review') 'Settings list it, with a space to choose'
-Check ((Ev gh11) -match 'gh11:1\|2\|true') 'opened, a line steps back and stays'
+Check ((Ev gh11) -match 'gh11:1\|1\|1') 'opened, a line becomes its tab'
 Check ((Ev gh12) -match 'gh12:Second PR"') 'dealt with on GitHub, it leaves'
 Check ((Ev gh13) -match 'gh13:0') 'moved to another space'
 Check ((Ev gh18) -match 'gh18:1') 'and back'
+Check ((Ev so1) -match 'so1:The organization corp asks for its sign-on.*\|false\|The organization corp') 'an organization with a sign-on says so, with its button'
+Check ((Ev so2) -match 'so2:\|true') 'removed, nothing is left of it'
 Check ((Ev gh14) -match 'gh14:1 h,20') 'the options are kept, a wrong delay refused'
 Check ((Ev gh15) -match 'gh15:true\|Connect GitHub in Settings') 'disconnected, the Pulsar says so'
 Check (@($apiCalls | Where-Object { $_ -match 'search/issues\?.*review-requested' }).Count -eq 2) 'one search per reading'

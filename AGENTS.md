@@ -190,7 +190,7 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `scripts\test-0827.ps1` (compteur du bouclier dans les frames, notice cliquée, « Show in folder », extensions en privé),
   `scripts\test-0828.ps1` (récapitulatif des Shields de la Bibliothèque),
   `scripts\test-0830.ps1` (alias email, faux service local),
-  `scripts\test-0831.ps1` (permissions, effacement, mots-clés, pause des téléchargements), `scripts\test-pulsars.ps1`.
+  `scripts\test-0831.ps1` (permissions, effacement, mots-clés, pause des téléchargements), `scripts\test-pulsars.ps1`, `scripts/test-0832.ps1` (compteur avec uBlock, réseau).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -1369,6 +1369,21 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   Visite d’accueil (première fois et Réglages › Général › Revoir) : étape `pulsars` de `onboarding.html` (`visPulsars`, figée remplie sans animations).
   Un espace créé oublie les Pulsars de son identifiant. Test Windows : `scripts\test-pulsars.ps1`.
 - Test Windows : `scripts\test-0831.ps1`. macOS : compilation croisée seulement. Linux : code `webkitgtk` non compilé ici.
+
+## 0.8.32 : onglets des Pulsars, compteur des Shields avec une extension
+
+- `Tab::pulsar` (`workspace.json`) : posé par `pulsar_open` sur un onglet créé (jamais un onglet déjà ouvert, gardé, trou noir ou
+  envoyé dans un autre espace) ; effacé par `move_tab`, `settle` (tuile, dossier) et `move_tab_to_space`. `keep_pulsars` rend libres les onglets
+  d’un Pulsar supprimé ou déplacé. Non rangé par `tidy`. Barre latérale : dans `.pb`, la ligne de la même adresse est cachée ; plié, les pages
+  éveillées restent ; déposer sur son propre Pulsar ne fait rien (`stay`). Pulsars coupés : onglets avec les autres.
+- Compteur : seuls les hôtes des listes des Shields et les appris, quel que soit qui arrête la requête. macOS : WebKit signale aussi les listes
+  des extensions, `with_content_blocked_handler` donne l’identifiant, filtre `RULE_LIST_PREFIX` ; un hôte n’est que dans une liste (`active_lists`).
+  Windows : l’extension agit avant `WebResourceRequested` ; `count_stopped_before` compte ce que `tracker_watch.js` rapporte (dont `kind: tag` :
+  balises remplacées par un leurre, hors apprentissage), `EngineRefusals` évite le doublon par onglet et par page. Cadre principal seulement.
+  WebView2 ne dit pas ce qu’une extension refuse : ne pas prétendre le compter.
+- GitHub des Pulsars : la recherche ne répond que 422 pour un dépôt invisible ; `hidden` relit `/repos/<dépôt>` pour dire pourquoi (SSO par l’en-tête
+  `X-GitHub-SSO`, adresse vérifiée, `pulsar_github_sso` ; permission ; propriétaire du jeton). `#pulrepo` (Pulsars) ≠ `#ghrepo` (extension depuis GitHub).
+- Tests Windows : `scripts\test-0832.ps1` (réseau), `scripts\test-pulsars.ps1`. macOS : compilation croisée seulement, comptage non vérifié.
 
 ## Livraison et entretien
 

@@ -217,7 +217,11 @@ impl PrivacyPolicy {
             Err(_) => (&empty, &empty),
         };
         let sorted = |name: &str, set: &HashSet<String>, always_named: bool| {
-            let mut list: Vec<String> = set.iter().filter(|h| !Self::under(allowed, h)).cloned().collect();
+            // A host is in one list only: WebKit tells of every list that refuses a request, which
+            // would count twice.
+            let twice = |h: &str| name != "trackers" && self.is_blocking() && Self::under(&self.blocked_domains, h);
+            let mut list: Vec<String> =
+                set.iter().filter(|h| !Self::under(allowed, h) && !twice(h)).cloned().collect();
             list.sort_unstable();
             let name = if always_named || list.len() != set.len() {
                 format!("{name}-{}", fingerprint(&list))
@@ -375,6 +379,33 @@ pub struct BlockLog {
     by_site: Vec<(String, Vec<(String, u32)>)>,
     /// Per space (its id), what its tabs blocked: the sidebar counts the space shown.
     by_space: Vec<(u64, u32)>,
+}
+
+/// The hosts the engine said it refused, per tab, since its page started. On Windows the
+/// extensions (uBlock…) stop a request before the engine asks the Shields: what the page reports
+/// to a listed host is then counted, once for the same request.
+#[derive(Debug, Clone, Default)]
+pub struct EngineRefusals(std::collections::HashMap<u64, HashSet<String>>);
+
+impl EngineRefusals {
+    const MAX_HOSTS: usize = 200;
+
+    /// A page starts in `tab`, or the tab is gone.
+    pub fn clear(&mut self, tab: u64) {
+        self.0.remove(&tab);
+    }
+
+    pub fn add(&mut self, tab: u64, host: &str) {
+        let hosts = self.0.entry(tab).or_default();
+        if hosts.len() < Self::MAX_HOSTS {
+            hosts.insert(host.to_lowercase());
+        }
+    }
+
+    /// Whether a request of `tab` to `host`, reported by its page, was not counted yet.
+    pub fn misses(&self, tab: u64, host: &str) -> bool {
+        !self.0.get(&tab).is_some_and(|hosts| hosts.contains(&host.to_lowercase()))
+    }
 }
 
 /// A site's privacy grade from what it tried this session: A (nothing) to E (a lot). A tracker
@@ -759,6 +790,30 @@ mod tests {
     fn rejects_dangerous_schemes() {
         let url = Url::parse("file:///etc/passwd").unwrap();
         assert!(matches!(policy().evaluate(&url), PrivacyDecision::Block(_)));
+    }
+
+    #[test]
+    fn a_request_the_engine_told_of_is_not_counted_again() {
+        let mut seen = super::EngineRefusals::default();
+        assert!(seen.misses(1, "ads.test"));
+        seen.add(1, "Ads.test");
+        assert!(!seen.misses(1, "ads.test"));
+        assert!(seen.misses(2, "ads.test"), "each tab has its own");
+        assert!(seen.misses(1, "www.ads.test"));
+        seen.clear(1);
+        assert!(seen.misses(1, "ads.test"), "another page");
+    }
+
+    #[test]
+    fn a_host_is_in_one_native_list_only() {
+        let list = |s: &str| vec![s.to_owned()];
+        let p = super::PrivacyPolicy::with_ads(list("both.test"), ["both.test".to_owned(), "x.both.test".to_owned(), "ad.test".to_owned()]);
+        p.set_learned(list("y.both.test"), []);
+        let hosts = |p: &super::PrivacyPolicy| p.active_lists().into_iter().map(|(_, h)| h).collect::<Vec<_>>();
+        assert_eq!(hosts(&p), vec![list("both.test"), list("ad.test")]);
+        // Trackers off: the ad list has them all again.
+        p.set_blocking(false);
+        assert_eq!(hosts(&p)[0].len(), 3);
     }
 
     #[test]

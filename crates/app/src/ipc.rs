@@ -698,6 +698,8 @@ pub enum UiCommand {
         token: crate::features::passwords::Secret,
     },
     PulsarGithubDisconnect,
+    /// GitHub's page that authorizes the token for an organization.
+    PulsarGithubSso,
     PulsarGithubNew {
         kind: String,
         #[serde(default)]
@@ -1603,6 +1605,7 @@ mod tests {
             r#"{"cmd":"pulsar_form"}"#,
             r#"{"cmd":"pulsar_github_connect","token":"x"}"#,
             r#"{"cmd":"pulsar_github_disconnect"}"#,
+            r#"{"cmd":"pulsar_github_sso"}"#,
             r#"{"cmd":"pulsar_github_new","kind":"mine"}"#,
             r#"{"cmd":"set_pulsar_every","minutes":30}"#,
             r#"{"cmd":"pulsar_new","input":"blog.test"}"#,

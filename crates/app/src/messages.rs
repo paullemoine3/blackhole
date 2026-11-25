@@ -93,6 +93,7 @@ impl Running {
             Msg::Page(tab, PageEvent::Blocked { host }) => {
                 let site = self.site_of(tab);
                 let space = self.space_of_tab(tab);
+                self.refused.add(tab.0, &host);
                 self.on_blocked("", &host, &site, space);
             }
             Msg::Page(tab, PageEvent::Requests { list }) => self.tracker_requests(tab, list),
@@ -115,6 +116,7 @@ impl Running {
                 self.page_url(tab, url);
             }
             Msg::LoadStart(tab) => {
+                self.refused.clear(tab.0);
                 self.permissions_left(tab);
                 self.aborted.remove(&tab);
                 self.downloads.navs.remove(&tab);

@@ -7,7 +7,7 @@
 //!
 //! Never in a private window nor a black hole tab (the sites visited are not written down there).
 
-use blackhole_domain::TabId;
+use blackhole_domain::{is_third_party, PrivacyDecision, TabId};
 use blackhole_domain::trackers::Trackers;
 use blackhole_infrastructure::store::TrackerStore;
 use serde_json::{json, Value};
@@ -48,8 +48,41 @@ impl Running {
         self.svc.policy().set_learned(t.learned().iter().cloned(), t.allowed().iter().cloned());
     }
 
+    /// Windows: an extension (uBlock…) stops a request before WebView2 asks the Shields, so
+    /// nothing was counted. The ones to a host of the Shields' lists are, like on macOS where
+    /// WebKit tells of both; what only the extension refuses is not counted anywhere.
+    fn count_stopped_before(&mut self, tab: TabId, list: &[ResourceHit]) {
+        let Some(page) = self.tabs.get(&tab).and_then(|v| v.url().ok()).and_then(|raw| Url::parse(&raw).ok()) else {
+            return;
+        };
+        let page = page.host_str().unwrap_or_default().to_owned();
+        let policy = self.svc.policy();
+        let stopped: Vec<String> = list
+            .iter()
+            .take(50)
+            .filter_map(|hit| Url::parse(&hit.url).ok())
+            .filter(|url| {
+                let host = url.host_str().unwrap_or_default();
+                let decision = crate::tabs::errors::with_exceptions(policy.evaluate(url), url);
+                is_third_party(host, &page)
+                    && self.refused.misses(tab.0, host)
+                    && matches!(decision, PrivacyDecision::Block(_))
+            })
+            .filter_map(|url| url.host_str().map(str::to_owned))
+            .collect();
+        let (site, space) = (self.site_of(tab), self.space_of_tab(tab));
+        for host in stopped {
+            self.on_blocked("", &host, &site, space);
+        }
+    }
+
     /// A page reported requests to other hosts.
-    pub(crate) fn tracker_requests(&mut self, tab: TabId, list: Vec<ResourceHit>) {
+    pub(crate) fn tracker_requests(&mut self, tab: TabId, mut list: Vec<ResourceHit>) {
+        if cfg!(windows) {
+            self.count_stopped_before(tab, &list);
+        }
+        // Read from a tag: it says nothing of the request, which may never have left.
+        list.retain(|hit| hit.kind != "tag");
         if self.trackers.private || !self.svc.settings().tracker_learning || self.svc.workspace().is_burner(tab) {
             return;
         }

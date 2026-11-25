@@ -304,7 +304,7 @@
   select.pick { flex: 0 1 180px; color-scheme: dark; }
   select.pick option { background: #1b1a26; color: #eceaf5; }
   select.pick.small { flex: none; width: 130px; }
-  select.pick[hidden], #ghon[hidden], #ghoff[hidden] { display: none; }
+  select.pick[hidden], #ghon[hidden], #ghoff[hidden], #ghsso[hidden] { display: none; }
   .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--bh-space-6) var(--bh-space-14); font: var(--bh-text-body-small); }
   .kv dt { opacity: var(--bh-opacity-muted); }
   .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: var(--bh-space-8); flex-wrap: wrap; }
@@ -573,15 +573,16 @@
     <div class="card"><h2>GitHub</h2>
       <div id="ghoff">
         <div class="actions"><input class="field" id="ghtoken" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.github_token" data-i18n-aria="settings.github_token"><button class="btn" id="ghpage"><span data-i18n="settings.github_page">Create a token</span></button><button class="btn primary" id="ghsave"><span data-i18n="settings.github_connect">Connect</span></button></div>
-        <p class="note"><span data-i18n="settings.github_note">A personal access token that can read issues and pull requests is enough. It is encrypted on this computer, sent to GitHub only, and left out of backups.</span></p>
+        <p class="note"><span data-i18n="settings.github_note">A fine-grained token: under Repository permissions, give Pull requests and Issues in Read-only (GitHub adds Metadata by itself), nothing else. For an organization's repositories, choose it as the resource owner and pick the repositories. A classic token needs the repo scope, which also writes: prefer the first one. The token is encrypted on this computer, sent to GitHub only, and left out of backups.</span></p>
       </div>
       <div id="ghon">
         <div class="rows" id="ghaccount"></div>
         <div class="rows" id="ghkind"></div>
-        <div class="actions"><input class="field" id="ghrepo" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.github_repo" data-i18n-aria="settings.github_repo"><select class="field pick" id="ghspace" data-i18n-aria="settings.pulsar_space"></select><button class="btn primary" id="ghadd"><i data-icon="plus"></i><span data-i18n="palette.pulsar_make">Create</span></button></div>
+        <div class="actions"><input class="field" id="pulrepo" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.github_repo" data-i18n-aria="settings.github_repo"><select class="field pick" id="ghspace" data-i18n-aria="settings.pulsar_space"></select><button class="btn primary" id="ghadd"><i data-icon="plus"></i><span data-i18n="palette.pulsar_make">Create</span></button></div>
         <p class="note"><span data-i18n="settings.github_stay">A line stays until it is dealt with on GitHub; opened, it steps back until something new happens there.</span></p>
       </div>
-      <p class="fielderr" id="ghstatus" role="alert"></p></div>
+      <p class="fielderr" id="ghstatus" role="alert"></p>
+      <div class="actions" id="ghsso" hidden><button class="btn primary"><span data-i18n="settings.github_sso">Authorize on GitHub</span></button></div></div>
     <div class="card"><h2 data-i18n="settings.pulsar_mine">My Pulsars</h2><div class="list rows" id="pullist"></div></div>
   </section>
 
@@ -1558,6 +1559,7 @@ function renderPulsars(p) {
   $('ghoff').hidden = !!g.login; $('ghon').hidden = !g.login;
   $('ghsave').disabled = off || g.busy; $('ghadd').disabled = off;
   $('ghstatus').textContent = g.status || '';
+  $('ghsso').hidden = !(g.login && g.sso);
   if (g.login) {
     const row = el('div', 'opt'), text = el('span', 'grow');
     text.append(el('span', 'label', bhT('settings.github_as', { login: g.login })));
@@ -1570,7 +1572,7 @@ function renderPulsars(p) {
   put($('pullist'), ...((p.list || []).length ? p.list.map((x) => {
     const row = el('div', 'row');
     const text = el('div', 'grow');
-    const state = x.waits ? bhT('sidebar.pulsar_connect') : x.failed ? bhT('sidebar.pulsar_failed') : x.source;
+    const state = x.waits ? bhT('sidebar.pulsar_connect') : x.failed ? x.why || bhT(x.github ? 'sidebar.pulsar_refused' : 'sidebar.pulsar_failed') : x.source;
     text.append(el('div', 'name', x.name), el('div', 'sub', state));
     const acts = el('div', 'rowactions');
     if ((p.spaces || []).length > 1) {
@@ -1604,8 +1606,9 @@ $('puladd').onclick = () => { const v = $('puladdr').value.trim(); if (v) { send
 $('puladdr').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('puladd').click(); });
 $('ghsave').onclick = () => { send({ cmd: 'pulsar_github_connect', token: $('ghtoken').value }); $('ghtoken').value = ''; };
 $('ghtoken').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('ghsave').click(); });
-$('ghpage').onclick = () => send({ cmd: 'open', input: 'https://github.com/settings/personal-access-tokens/new' });
-$('ghadd').onclick = () => { send({ cmd: 'pulsar_github_new', kind: ghKind, repo: $('ghrepo').value, space: Number($('ghspace').value) || null }); $('ghrepo').value = ''; };
+$('ghsso').firstElementChild.onclick = () => send({ cmd: 'pulsar_github_sso' });
+$('ghpage').onclick = () => send({ cmd: 'open', input: 'https://github.com/settings/personal-access-tokens/new?name=BlackHole&pull_requests=read&issues=read' });
+$('ghadd').onclick = () => { send({ cmd: 'pulsar_github_new', kind: ghKind, repo: $('pulrepo').value, space: Number($('ghspace').value) || null }); $('pulrepo').value = ''; };
 function renderBackup(b) {
   for (const id of ['exp-html', 'exp-csv', 'bksave', 'bkrestore']) $(id).disabled = b.busy || b.private;
   $('bkstatus').textContent = b.private ? bhT('settings.backup_private') : b.status || '';

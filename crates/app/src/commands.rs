@@ -311,6 +311,7 @@ impl Running {
             | UiCommand::PulsarMove { .. }
             | UiCommand::PulsarGithubConnect { .. }
             | UiCommand::PulsarGithubDisconnect
+            | UiCommand::PulsarGithubSso
             | UiCommand::PulsarGithubNew { .. }
             | UiCommand::SetPulsarEvery { .. }
             | UiCommand::SetPulsarLines { .. }

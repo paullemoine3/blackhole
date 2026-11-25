@@ -113,10 +113,13 @@ fn guard_script(policy: &PrivacyPolicy) -> String {
     )
 }
 
+#[cfg(target_os = "macos")]
+const RULE_LIST_PREFIX: &str = "blackhole-";
+
 /// The name WebKit keeps a compiled blocklist under.
 #[cfg(target_os = "macos")]
 fn rule_list_id(name: &str) -> String {
-    format!("blackhole-{name}")
+    format!("{RULE_LIST_PREFIX}{name}")
 }
 
 /// Compiles the blocklists ahead of the first page view (see `block_natively`).
@@ -656,7 +659,12 @@ fn build_tab(
     let builder = {
         use wry::WebViewBuilderExtDarwin;
         let (s_blocked, blocked) = (slot.clone(), mailbox.clone());
-        builder.with_content_blocked_handler(move |raw| {
+        builder.with_content_blocked_handler(move |list, raw| {
+            // WebKit tells of the extensions' lists too (uBlock…): the Shields count their own,
+            // as on the other systems.
+            if !list.starts_with(RULE_LIST_PREFIX) {
+                return;
+            }
             let tab = id(&s_blocked);
             let host = Url::parse(&raw).ok().and_then(|u| u.host_str().map(str::to_owned));
             if let (true, Some(host)) = (tab.0 != 0, host) {
@@ -723,7 +731,10 @@ fn build_tab(
             true,
         )
         .with_initialization_script_for_main_only(HIGHLIGHTS_JS, true)
-        .with_initialization_script_for_main_only(TRACKER_WATCH_JS, true)
+        .with_initialization_script_for_main_only(
+            TRACKER_WATCH_JS.replace("__TAGS__", if cfg!(windows) { "true" } else { "false" }),
+            true,
+        )
         // Every frame: the extensions that serve passkeys run in frames too.
         .with_initialization_script_for_main_only(
             if cfg!(target_os = "macos") { PASSKEYS_JS } else { "" },

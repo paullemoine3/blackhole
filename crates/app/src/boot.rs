@@ -443,6 +443,7 @@ impl Running {
             sidebar,
             web_context,
             blocked: BlockLog::default(),
+            refused: Default::default(),
             settings_tab: None,
             imports: Imports::new(&data),
             favicons,

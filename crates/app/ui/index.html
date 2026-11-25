@@ -93,7 +93,8 @@
   .pn { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; background: var(--accent); color: #fff; }
   .pn:empty { display: none; }
   .pb { display: flex; flex-direction: column; gap: 1px; margin-left: 17px; padding-left: 8px; border-left: 1px dashed rgba(255,255,255,.22); }
-  .pulsar.collapsed .pb { display: none; }
+  /* Folded: the pages open under it stay, like in a folder. */
+  .pulsar.collapsed:not(.awake) .pb, .pulsar.collapsed .pl, .pulsar.collapsed .tab.asleep { display: none; }
   .pl { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; cursor: pointer; font-size: 12.5px; opacity: .85; }
   .pl:hover { background: rgba(255,255,255,.08); opacity: 1; }
   .pl .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -774,7 +775,8 @@ function pulsarMenu(p, x, y) {
     { icon: 'trash', label: bhT('menu.pulsar_remove'), danger: true, confirm: bhT('easel.delete_confirm'), run: { cmd: 'pulsar_remove', id: p.id } },
   ]);
 }
-function pulsarNode(p) {
+// `tabs`: the ones opened from its lines, until they are dragged out.
+function pulsarNode(p, tabs) {
   // It beats when its count grows, not at every render.
   const grew = pulsarSeen.has(p.id) && p.unread > pulsarSeen.get(p.id);
   pulsarSeen.set(p.id, p.unread);
@@ -786,7 +788,7 @@ function pulsarNode(p) {
   const star = el('span', 'star');
   star.append(bhIcon('pulsar', 'sm'));
   const name = el('span', 'fname', p.name);
-  h.title = p.name + ' — ' + (p.waits ? bhT('sidebar.pulsar_connect') : p.failed ? bhT('sidebar.pulsar_failed') : p.host || '');
+  h.title = p.name + ' — ' + (p.waits ? bhT('sidebar.pulsar_connect') : p.failed ? bhT(p.github ? 'sidebar.pulsar_refused' : 'sidebar.pulsar_failed') : p.host || '');
   h.append(chev, star, name, el('span', 'pn', p.unread ? (p.unread > 99 ? '99+' : String(p.unread)) : ''));
   h.tabIndex = 0;
   h.setAttribute('role', 'button');
@@ -800,8 +802,11 @@ function pulsarNode(p) {
     else return;
     e.preventDefault();
   };
+  box.classList.toggle('awake', tabs.some(t => !t.asleep));
   const body = el('div', 'pb');
-  body.append(...p.lines.map((l) => {
+  // A line whose page is open here is that tab (GitHub's lines stay once read).
+  const bare = (u) => String(u).split('#')[0], shown = new Set(tabs.map(t => bare(t.url)));
+  body.append(...tabs.map(tabNode), ...p.lines.filter(l => !shown.has(bare(l.url))).map((l) => {
     const n = el('div', 'pl' + (p.github && l.read ? ' seen' : ''));
     n.title = l.title + '\n' + (l.host || '');
     n.append(el('span', 'title', l.title), el('span', 'when', l.note || pulsarWhen(l.at)));
@@ -822,7 +827,7 @@ function pulsarNode(p) {
     };
     return n;
   }));
-  if (!p.lines.length) body.append(el('div', 'pl quiet', bhT(p.waits ? 'sidebar.pulsar_connect' : p.failed ? 'sidebar.pulsar_failed' : 'sidebar.pulsar_quiet')));
+  if (!p.lines.length && !tabs.length) body.append(el('div', 'pl quiet', bhT(p.waits ? 'sidebar.pulsar_connect' : p.failed ? (p.github ? 'sidebar.pulsar_refused' : 'sidebar.pulsar_failed') : 'sidebar.pulsar_quiet')));
   else if (p.more) body.append(el('div', 'pl quiet', bhT('sidebar.pulsar_more', { n: p.more })));
   box.append(h, body);
   pulsarNodes.set(p.id, { h, name, p });
@@ -1021,7 +1026,10 @@ function dropTarget(x, y) {
     const id = (sib && sib.classList.contains('folder')) ? Number(sib.querySelector('.fh').dataset.folder) : null;
     return { el: head, edge: after ? 'after' : 'before', before: id, parent, folder: null, pinned: false };
   }
-  const tab = node.closest('[data-tab]');
+  // Over its own Pulsar, a tab stays there; over another one, it goes among the open tabs.
+  const pulsar = node.closest('.pulsar');
+  if (pulsar && drag.id && state.tabs.some(t => t.id === drag.id && t.pulsar === Number(pulsar.dataset.pulsar))) return { el: pulsar, edge: 'into', stay: true };
+  const tab = pulsar ? null : node.closest('[data-tab]');
   if (tab && (drag.url || drag.easel || tab.dataset.tab !== String(drag.id))) {
     const r = tab.getBoundingClientRect();
     const pinned = !!tab.dataset.pinned;
@@ -1057,7 +1065,8 @@ function endDrag(commit, x, y, sx, sy) {
     drag.node.classList.remove('dragging');
     document.body.classList.remove('dragging');
     clearMarks();
-    if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, parent: target.parent ?? null, before: target.before });
+    if (target && target.stay) { /* where it was */ }
+    else if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, parent: target.parent ?? null, before: target.before });
     else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
     else if (target) send({ cmd: 'move_tab', id: drag.id, before: target.before, folder: target.folder, pinned: target.pinned });
@@ -1292,11 +1301,14 @@ window.bh = {
       return node;
     });
     const roots = build(null);
-    const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
+    const pulsars = s.pulsars || [], known = new Set(pulsars.map(p => p.id));
+    const free = s.tabs.filter(t => !t.pinned && t.folder == null);
+    // Pulsars switched off: their tabs are with the others.
+    const loose = free.filter(t => !known.has(t.pulsar)).map(tabNode);
+    const pulsarBox = (p) => pulsarNode(p, free.filter(t => t.pulsar === p.id));
     pulsarNodes.clear();
-    const pulsars = s.pulsars || [];
-    $('folders').replaceChildren(...roots.map(f => f.box), ...pulsars.filter(p => p.pinned).map(pulsarNode));
-    $('tabs').replaceChildren(...pulsars.filter(p => !p.pinned).map(pulsarNode), ...loose);
+    $('folders').replaceChildren(...roots.map(f => f.box), ...pulsars.filter(p => p.pinned).map(pulsarBox));
+    $('tabs').replaceChildren(...pulsars.filter(p => !p.pinned).map(pulsarBox), ...loose);
     if (s.activeTab !== shownTab) {
       shownTab = s.activeTab;
       const current = document.querySelector('.tab.active');

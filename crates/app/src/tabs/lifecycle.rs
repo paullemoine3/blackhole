@@ -495,6 +495,7 @@ impl Running {
             blackhole_macos_webext::delete_profile(view);
         }
         self.tabs.remove(&id);
+        self.refused.clear(id.0);
         // Like Arc: a quick access or folder tab that wandered wakes up at its own address.
         self.svc.go_home(id);
         self.marks_push(id, false);
