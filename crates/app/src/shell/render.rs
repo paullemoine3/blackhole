@@ -76,6 +76,9 @@ impl Running {
             })).collect::<Vec<_>>(),
         });
         // Apart: the macro above is at its recursion limit.
+        for (tab, t) in state["tabs"].as_array_mut().into_iter().flatten().zip(&space.tabs) {
+            tab["pulsar"] = json!(t.pulsar);
+        }
         state["pulsars"] = self.pulsars_json();
         state["pulsarsOn"] = json!(self.pulsars_on());
         if self.icons_for_ui.replace(false) {

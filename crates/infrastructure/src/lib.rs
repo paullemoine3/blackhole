@@ -262,6 +262,9 @@ struct TabDto {
     /// Its page is never put to sleep.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     anchored: bool,
+    /// The Pulsar it was opened from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pulsar: Option<u64>,
     // A former `locked` URL (removed feature) in older files is ignored on load.
 }
 
@@ -327,6 +330,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         home: t.home.as_ref().map(|h| h.url.to_string()),
                         home_title: t.home.as_ref().map(|h| h.title.clone()).unwrap_or_default(),
                         anchored: t.anchored,
+                        pulsar: t.pulsar,
                     })
                     .collect(),
                 folders: s
@@ -398,6 +402,7 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                                 .filter(|u| matches!(u.scheme(), "http" | "https"))
                                 .map(|url| blackhole_domain::Home { url, title: t.home_title }),
                             anchored: t.anchored,
+                            pulsar: t.pulsar,
                         })
                     })
                     .collect(),
@@ -1104,6 +1109,7 @@ mod tests {
         ws.set_folder_icon(folder, "📁");
         ws.set_split(a);
         ws.toggle_anchor(a);
+        ws.set_pulsar(a, 7);
         repo.save(&ws).unwrap();
         let loaded = repo.load().unwrap().unwrap();
         assert_eq!(loaded, ws);

@@ -63,6 +63,10 @@ struct Github {
     account: Option<Account>,
     busy: bool,
     status: String,
+    /// Where a token is authorized for an organization that asks for its sign-on.
+    sso: Option<Url>,
+    /// What GitHub last answered to a Pulsar it refused.
+    why: std::collections::HashMap<u64, String>,
 }
 
 /// GitHub's API; the scripted runs of the dev build have one of their own on this machine.
@@ -88,7 +92,7 @@ impl Pulsing {
             });
         }
         Self {
-            github: Github { store: keep, account: None, busy: false, status: String::new() },
+            github: Github { store: keep, account: None, busy: false, status: String::new(), sso: None, why: Default::default() },
             list,
             store,
             tx,
@@ -162,10 +166,12 @@ impl Running {
                 "login": g.account.as_ref().map(|a| a.login.clone()),
                 "busy": g.busy,
                 "status": i18n::render(&g.status),
+                "sso": g.sso.is_some(),
                 "kinds": GithubKind::ALL.map(GithubKind::id),
             },
             "list": self.pulsing.list.all().iter().map(|p| json!({
                 "id": p.id, "name": p.name, "failed": p.failures > 0, "waits": self.pulsar_waits(p),
+                "why": g.why.get(&p.id).map(|w| i18n::render(w)),
                 "source": p.github.as_ref().map_or_else(|| p.feed.to_string(), |g| format!("GitHub · {}", github_label(g))),
                 "github": p.github.is_some(), "unread": p.unread(), "pinned": p.pinned, "space": p.space,
                 "busy": self.pulsing.reading == Some(p.id),
@@ -177,6 +183,17 @@ impl Running {
     pub(crate) fn pulsar_form(&self) -> Value {
         let f = &self.pulsing.form;
         json!({"seq": f.seq, "prefill": f.prefill, "busy": f.busy, "error": i18n::render(&f.error)})
+    }
+
+    fn tab_ids(&self) -> std::collections::HashSet<blackhole_domain::TabId> {
+        self.svc.workspace().spaces().iter().flat_map(|s| s.tabs.iter().map(|t| t.id)).collect()
+    }
+
+    /// The tabs of a Pulsar that is gone, or in another space, are loose again (its id may be
+    /// given to a new one).
+    fn free_pulsar_tabs(&mut self) {
+        let known: Vec<(u64, u64)> = self.pulsing.list.all().iter().map(|p| (p.id, p.space)).collect();
+        self.svc.keep_pulsars(&known);
     }
 
     fn pulsars_changed(&mut self) {
@@ -211,6 +228,8 @@ impl Running {
                 let g = &mut self.pulsing.github;
                 if !private_mode() {
                     g.account = None;
+                    g.sso = None;
+                    g.why.clear();
                     g.status = g.store.remove().err().unwrap_or_default();
                 }
                 self.ui_state();
@@ -218,6 +237,9 @@ impl Running {
             }
             UiCommand::PulsarRemove { id } => {
                 if self.pulsing.list.remove(id) {
+                    // What was said of it goes with it.
+                    self.github_answered(id, None);
+                    self.free_pulsar_tabs();
                     self.pulsars_changed();
                 }
                 return;
@@ -238,6 +260,11 @@ impl Running {
                 self.pulsing.form = Form { seq, prefill, ..Form::default() };
                 self.open_palette("pulsar");
             }
+            UiCommand::PulsarGithubSso => {
+                if let Some(url) = self.pulsing.github.sso.clone() {
+                    self.open(url.as_str());
+                }
+            }
             UiCommand::PulsarGithubConnect { token } => self.github_connect(token.as_str()),
             UiCommand::PulsarGithubNew { kind, repo, space } => self.github_new(&kind, &repo, space),
             UiCommand::PulsarMove { id, space } => {
@@ -245,6 +272,7 @@ impl Running {
                     if !self.pulsing.list.move_to(id, space) {
                         self.toast(&t("toast.pulsar_there"));
                     }
+                    self.free_pulsar_tabs();
                     self.pulsars_changed();
                 }
             }
@@ -258,7 +286,13 @@ impl Running {
                 let space = space.unwrap_or_else(|| self.svc.workspace().active_space().id.0);
                 let (seq, tx) = (form.seq, self.pulsing.tx.clone());
                 std::thread::spawn(move || {
-                    let _ = tx.send(Done::Found(seq, space, Box::new(feeds::find(&input))));
+                    let found = feeds::find(&input).map_err(|why| {
+                        // A private repository has no public feed.
+                        let host = Url::parse(&input).or_else(|_| Url::parse(&format!("https://{input}")));
+                        let github = host.is_ok_and(|u| u.host_str() == Some("github.com"));
+                        if github { message("msg.github_private", &[]) } else { why }
+                    });
+                    let _ = tx.send(Done::Found(seq, space, Box::new(found)));
                 });
                 self.push_pulsar_form();
                 self.ui_settings();
@@ -289,12 +323,21 @@ impl Running {
             UiCommand::PulsarOpen { id, key, behind } => {
                 let Some(url) = self.pulsing.list.open(id, &key) else { return };
                 self.pulsing.save();
+                let before = self.tab_ids();
                 if behind {
                     self.open_in_background(url.as_str());
-                    self.ui_state();
                 } else {
                     self.open(url.as_str());
                 }
+                // A tab that was open already stays where the user has it.
+                let home = self.pulsing.list.get(id).map(|p| p.space);
+                let ws = self.svc.workspace();
+                let here = ws.spaces().iter().find(|s| Some(s.id.0) == home);
+                let made = here.and_then(|s| s.tabs.iter().map(|t| t.id).find(|t| !before.contains(t)));
+                if let Some(tab) = made {
+                    self.svc.set_pulsar(tab, id);
+                }
+                self.ui_state();
             }
             _ => {}
         }
@@ -344,6 +387,26 @@ impl Running {
         self.pulsars_changed();
     }
 
+    /// What GitHub answered to a Pulsar: the status shows what is still refused, if anything.
+    fn github_answered(&mut self, id: u64, failed: Option<github::Failed>) {
+        let g = &mut self.pulsing.github;
+        let Some(why) = failed else {
+            if let Some(was) = g.why.remove(&id) {
+                if g.status == was {
+                    g.status.clear();
+                    g.sso = None;
+                }
+            }
+            return;
+        };
+        g.status = why.text();
+        g.why.insert(id, why.text());
+        g.sso = match why {
+            github::Failed::Sso(_, url) => Some(url),
+            _ => None,
+        };
+    }
+
     /// New lines, said when the user asked for it.
     fn pulsar_tell(&mut self, id: u64, new: usize) {
         let Some(p) = self.pulsing.list.get(id).filter(|_| new > 0 && self.svc.settings().pulsar_notices) else {
@@ -362,6 +425,7 @@ impl Running {
     /// A space is made with an id a deleted one may have had: nothing of that one is left.
     pub(crate) fn pulsars_new_space(&mut self, space: u64) {
         if self.pulsing.list.forget_space(space) {
+            self.free_pulsar_tabs();
             self.pulsing.save();
         }
     }
@@ -380,12 +444,13 @@ impl Running {
                     self.pulsing.reading = None;
                     match answer {
                         Ok(entries) => {
+                            self.github_answered(id, None);
                             let new = self.pulsing.list.merge(id, entries, now());
                             self.pulsar_tell(id, new);
                         }
                         Err(why) => {
                             self.pulsing.list.failed(id, now());
-                            self.pulsing.github.status = why.text();
+                            self.github_answered(id, Some(why));
                         }
                     }
                     changed = true;
@@ -396,6 +461,7 @@ impl Running {
                         Ok(account) => {
                             self.pulsing.github.account = Some(account);
                             self.pulsing.github.status.clear();
+                            self.pulsing.github.sso = None;
                             let mine = self.pulsing.list.all().iter().filter(|p| p.github.is_some()).map(|p| p.id);
                             self.pulsing.wanted.extend(mine);
                             self.pulsing.look_at = Instant::now();

@@ -705,6 +705,20 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         ok
     }
 
+    /// Files a tab in the Pulsar it was opened from.
+    pub fn set_pulsar(&mut self, id: TabId, pulsar: u64) {
+        if self.workspace.set_pulsar(id, pulsar) {
+            self.persist();
+        }
+    }
+
+    /// The Pulsars there are (id, space): the tabs of the others are loose again.
+    pub fn keep_pulsars(&mut self, known: &[(u64, u64)]) {
+        if self.workspace.keep_pulsars(known) {
+            self.persist();
+        }
+    }
+
     /// ⌘W on a pinned or folder tab: it keeps its place in the sidebar, another tab is shown.
     pub fn release_tab(&mut self, id: TabId) -> bool {
         let ok = self.workspace.release_tab(id);

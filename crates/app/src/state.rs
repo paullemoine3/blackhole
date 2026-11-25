@@ -195,6 +195,8 @@ pub(crate) struct Running {
     pub(crate) sidebar: Sidebar,
     pub(crate) web_context: WebContext,
     pub(crate) blocked: BlockLog,
+    /// What the engine itself said it refused, by tab (see `features::trackers`).
+    pub(crate) refused: blackhole_domain::EngineRefusals,
     /// Section requested for the settings window; `settings_seq` changes with each request.
     pub(crate) settings_tab: Option<String>,
     /// Bookmarks kept by the profile, the browsers found to import from, and imports running.

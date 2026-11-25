@@ -30,6 +30,22 @@
     }
     if (queue.length && !timer) timer = setTimeout(flush, 2000);
   };
+  // An extension that answers in place of a tracker (uBlock's stand-in scripts) leaves no timing:
+  // the hosts of the script tags that were not heard of are told too, once each.
+  const tags = () => {
+    for (const s of document.scripts) {
+      if (total >= 200) return;
+      if (!s.src || (s.type && !/^(module|(text|application)\/(x-)?(java|ecma)script)$/i.test(s.type))) continue;
+      let u;
+      try { u = new URL(s.src); } catch (_) { continue; }
+      if (!/^https?:$/.test(u.protocol) || u.hostname === page || perHost.has(u.hostname)) continue;
+      perHost.set(u.hostname, 1);
+      total++;
+      queue.push({ url: s.src.slice(0, 400), kind: 'tag' });
+    }
+    if (queue.length && !timer) timer = setTimeout(flush, 2000);
+  };
+  if (__TAGS__) addEventListener('load', () => { setTimeout(tags, 1500); setTimeout(tags, 8000); });
   try {
     new PerformanceObserver((list) => seen(list.getEntries())).observe({ type: 'resource', buffered: true });
   } catch (_) {}

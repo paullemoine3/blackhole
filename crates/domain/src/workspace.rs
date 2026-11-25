@@ -24,6 +24,9 @@ pub struct Tab {
     /// Anchored: its page stays alive (never put to sleep by the idle delay or the cap on live
     /// tabs) and is woken at launch. For a mail, chat or music tab.
     pub anchored: bool,
+    /// The Pulsar (its id) whose line it was opened from: shown in its folder while loose, until
+    /// the user drags it out or files it elsewhere.
+    pub pulsar: Option<u64>,
 }
 
 /// The address a kept tab returns to, with the title it had there.
@@ -48,7 +51,10 @@ impl Tab {
     fn settle(&mut self) {
         if !self.kept() {
             self.home = None;
-        } else if self.home.is_none() {
+            return;
+        }
+        self.pulsar = None;
+        if self.home.is_none() {
             self.home = Some(Home { url: self.url.clone(), title: self.title.clone() });
         }
     }
@@ -417,10 +423,11 @@ impl Workspace {
         let space = self.active_space();
         let at = space.tabs.iter().position(|t| t.id == id)?;
         let original = &space.tabs[at];
-        let (url, title, loose) = (
+        let (url, title, loose, pulsar) = (
             original.url.clone(),
             original.title.clone(),
             !original.kept(),
+            original.pulsar,
         );
         let burner = self.is_burner(id);
         let copy = TabId(self.alloc());
@@ -445,6 +452,7 @@ impl Workspace {
                 renamed: false,
                 home: None,
                 anchored: false,
+                pulsar,
             },
         );
         space.active_tab = Some(copy);
@@ -485,6 +493,7 @@ impl Workspace {
                 renamed: false,
                 home: None,
                 anchored: false,
+                pulsar: None,
             },
         );
         space.active_tab = Some(id);
@@ -578,7 +587,7 @@ impl Workspace {
     }
 
     /// The tabs of the active space a reader sees, top to bottom: quick access, the tabs of
-    /// unfolded folders, then the other tabs.
+    /// unfolded folders, those of the Pulsars (in the order they were made), the other tabs.
     fn sidebar_order(&self) -> Vec<TabId> {
         let space = self.active_space();
         let unfolded = |f: Option<FolderId>| {
@@ -596,6 +605,8 @@ impl Workspace {
             }
             true
         };
+        let mut filed: Vec<&Tab> = space.tabs.iter().filter(|t| !t.kept() && t.pulsar.is_some()).collect();
+        filed.sort_by_key(|t| t.pulsar); // stable
         space
             .tabs
             .iter()
@@ -606,12 +617,8 @@ impl Workspace {
                     .iter()
                     .filter(|t| !t.pinned && t.folder.is_some() && unfolded(t.folder)),
             )
-            .chain(
-                space
-                    .tabs
-                    .iter()
-                    .filter(|t| !t.pinned && t.folder.is_none()),
-            )
+            .chain(filed)
+            .chain(space.tabs.iter().filter(|t| !t.kept() && t.pulsar.is_none()))
             .map(|t| t.id)
             .collect()
     }
@@ -692,6 +699,31 @@ impl Workspace {
         };
         tab.anchored = !tab.anchored;
         true
+    }
+
+    /// Files a loose tab in a Pulsar (the one its line belongs to). A black hole tab never is.
+    pub fn set_pulsar(&mut self, id: TabId, pulsar: u64) -> bool {
+        if self.is_burner(id) {
+            return false;
+        }
+        let Some(tab) = self.tab_mut(id).filter(|t| !t.kept()) else { return false };
+        tab.pulsar = Some(pulsar);
+        true
+    }
+
+    /// The Pulsars there are (id, space): the tabs of one that is gone, or that left for another
+    /// space, are loose again. True when one changed.
+    pub fn keep_pulsars(&mut self, known: &[(u64, u64)]) -> bool {
+        let mut changed = false;
+        for space in &mut self.spaces {
+            for tab in &mut space.tabs {
+                if tab.pulsar.is_some_and(|p| !known.contains(&(p, space.id.0))) {
+                    tab.pulsar = None;
+                    changed = true;
+                }
+            }
+        }
+        changed
     }
 
     /// The anchored tabs, all spaces mixed: their pages stay alive.
@@ -790,6 +822,7 @@ impl Workspace {
                 renamed: false,
                 home: None,
                 anchored: false,
+                pulsar: None,
             });
             if let Some(tab) = self.spaces[idx].tabs.last_mut() {
                 tab.settle();
@@ -914,6 +947,7 @@ impl Workspace {
         let mut tab = space.tabs.remove(pos);
         tab.pinned = pinned;
         tab.folder = folder;
+        tab.pulsar = None;
         tab.settle();
         let at = before
             .and_then(|b| space.tabs.iter().position(|t| t.id == b))
@@ -996,6 +1030,7 @@ impl Workspace {
         let mut tab = space.tabs.remove(pos);
         Self::hand_over(space, id, next);
         tab.folder = None;
+        tab.pulsar = None;
         let target = self
             .spaces
             .iter_mut()
@@ -1181,7 +1216,7 @@ impl Workspace {
     /// folder to make (or to fill, when a folder of that name exists), biggest first.
     pub fn tidy_suggestion(&self, min: usize) -> Vec<TidyGroup> {
         let mut groups: Vec<TidyGroup> = Vec::new();
-        let loose = |t: &&Tab| !t.pinned && t.folder.is_none() && !self.is_burner(t.id);
+        let loose = |t: &&Tab| !t.kept() && t.pulsar.is_none() && !self.is_burner(t.id);
         for tab in self.active_space().tabs.iter().filter(loose) {
             let Some(host) = tab.url.host_str() else { continue };
             let name = site_of_host(host);
@@ -1326,7 +1361,7 @@ impl Workspace {
                     let pos = tabs.iter().position(|t| !t.pinned).unwrap_or(tabs.len());
                     tabs.insert(
                         pos,
-                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false, home: None, anchored: false },
+                        Tab { id, title, url: url.clone(), pinned: *pinned, folder: None, renamed: false, home: None, anchored: false, pulsar: None },
                     );
                     tabs[pos].settle();
                 }
@@ -1406,6 +1441,39 @@ mod tests {
         assert!(!ws.toggle_anchor(TabId(999)));
         let copy = { ws.switch_space(ws.spaces()[0].id); ws.toggle_anchor(b); ws.duplicate_tab(b).unwrap() };
         assert_eq!(ws.anchored_tabs(), vec![b], "a copy is not anchored ({copy:?})");
+    }
+
+    #[test]
+    fn a_tab_of_a_pulsar_stays_there_until_it_is_moved() {
+        let mut ws = Workspace::new();
+        let space = ws.active_space().id.0;
+        let plain = ws.open_tab(u("https://plain.test"));
+        let tab = ws.open_tab(u("https://news.test/1"));
+        let of = |ws: &Workspace, id| ws.active_space().tabs.iter().find(|t| t.id == id).unwrap().pulsar;
+        assert!(ws.set_pulsar(tab, 4));
+        // Shown, gone elsewhere, reloaded: it stays.
+        ws.activate_tab(plain);
+        ws.activate_tab(tab);
+        ws.update_page(tab, Some(u("https://other.test")), Some("Other".into()));
+        assert_eq!(of(&ws, tab), Some(4));
+        assert_eq!(ws.nth_tab(1), Some(tab), "the Pulsars' tabs come before the loose ones");
+        // Its copy is with it; it is not tidied into a folder.
+        let copy = ws.duplicate_tab(tab).unwrap();
+        assert_eq!(of(&ws, copy), Some(4));
+        assert!(ws.tidy_suggestion(2).is_empty());
+        // Dragged out, filed, made a tile: it left.
+        assert!(ws.move_tab(copy, None, None, false));
+        assert_eq!(of(&ws, copy), None);
+        assert!(ws.set_pulsar(copy, 4));
+        ws.toggle_pin(copy);
+        assert_eq!(of(&ws, copy), None);
+        assert!(!ws.set_pulsar(copy, 4), "a tile is not filed in a Pulsar");
+        let hole = ws.open_burner(u("https://news.test/2"));
+        assert!(!ws.set_pulsar(hole, 4));
+        // The Pulsar leaves, for good or for another space.
+        assert!(!ws.keep_pulsars(&[(4, space)]));
+        assert!(ws.keep_pulsars(&[(4, space + 1)]));
+        assert_eq!(of(&ws, tab), None);
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub struct WryNavigationDelegateIvars {
   pub download_delegate: Option<Retained<WryDownloadDelegate>>,
   pub on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, Option<String>)>>,
   pub on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
-  pub content_blocked_handler: Option<Box<dyn Fn(String)>>,
+  pub content_blocked_handler: Option<Box<dyn Fn(String, String)>>,
   pub http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
   pub load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
   pub server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,
@@ -148,7 +148,7 @@ define_class!(
     fn content_rule_list_action(
       &self,
       _webview: &WKWebView,
-      _identifier: &objc2_foundation::NSString,
+      identifier: &objc2_foundation::NSString,
       action: &objc2::runtime::AnyObject,
       url: &objc2_foundation::NSURL,
     ) {
@@ -160,7 +160,7 @@ define_class!(
         known && msg_send![action, blockedLoad]
       };
       if let (true, Some(url)) = (blocked, url.absoluteString()) {
-        report(url.to_string());
+        report(identifier.to_string(), url.to_string());
       }
     }
   }
@@ -176,7 +176,7 @@ impl WryNavigationDelegate {
     download_delegate: Option<Retained<WryDownloadDelegate>>,
     on_page_load_handler: Option<Box<dyn Fn(PageLoadEvent, String)>>,
     on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
-    content_blocked_handler: Option<Box<dyn Fn(String)>>,
+    content_blocked_handler: Option<Box<dyn Fn(String, String)>>,
     http_auth_handler: Option<Box<dyn Fn(HttpAuthChallenge, HttpAuthResponder)>>,
     load_failure_handler: Option<Box<dyn Fn(LoadFailure)>>,
     server_trust_handler: Option<Box<dyn Fn(ServerTrustChallenge) -> bool>>,

@@ -1775,7 +1775,7 @@ pub(crate) struct PlatformSpecificWebViewAttributes {
   allow_link_preview: bool,
   on_web_content_process_terminate_handler: Option<Box<dyn Fn()>>,
   /// BlackHole: see [`WebViewBuilderExtDarwin::with_content_blocked_handler`].
-  content_blocked_handler: Option<Box<dyn Fn(String)>>,
+  content_blocked_handler: Option<Box<dyn Fn(String, String)>>,
   #[cfg(target_os = "ios")]
   input_accessory_view_builder: Option<Box<InputAccessoryViewBuilder>>,
   #[cfg(target_os = "ios")]
@@ -1827,10 +1827,10 @@ pub trait WebViewBuilderExtDarwin {
   fn with_allow_link_preview(self, allow_link_preview: bool) -> Self;
   /// Set a handler closure to respond to web content process termination. Available on macOS and iOS only.
   fn with_on_web_content_process_terminate_handler(self, handler: impl Fn() + 'static) -> Self;
-  /// BlackHole: called with the URL of each request a content rule list (`WKContentRuleList`)
-  /// of this view blocked. WebKit reports it through a private, optional delegate method;
+  /// BlackHole: called with the identifier of the content rule list (`WKContentRuleList`) and the
+  /// URL of each request one blocked in this view, those of the web extensions included. WebKit reports it through a private, optional delegate method;
   /// without it the handler is simply never called.
-  fn with_content_blocked_handler(self, handler: impl Fn(String) + 'static) -> Self;
+  fn with_content_blocked_handler(self, handler: impl Fn(String, String) + 'static) -> Self;
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -1857,7 +1857,7 @@ impl WebViewBuilderExtDarwin for WebViewBuilder<'_> {
     self
   }
 
-  fn with_content_blocked_handler(mut self, handler: impl Fn(String) + 'static) -> Self {
+  fn with_content_blocked_handler(mut self, handler: impl Fn(String, String) + 'static) -> Self {
     self.platform_specific.content_blocked_handler = Some(Box::new(handler));
     self
   }

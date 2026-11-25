@@ -64,6 +64,11 @@ impl AccountStore {
 pub enum Failed {
     /// The token is wrong, expired or revoked.
     Refused,
+    /// The organization asks for its single sign-on (SAML) and the token was not authorized for
+    /// it: the organization, and GitHub's page that does it.
+    Sso(String, Url),
+    /// Refused, with what GitHub answered.
+    Status(u16),
     Other(String),
 }
 
@@ -71,6 +76,10 @@ impl Failed {
     pub fn text(&self) -> String {
         match self {
             Self::Refused => message("msg.github_refused", &[]),
+            Self::Sso(org, _) => message("msg.github_sso", &[("org", org)]),
+            Self::Status(403 | 429) => message("msg.github_limited", &[]),
+            Self::Status(404 | 422) => message("msg.github_repo", &[]),
+            Self::Status(_) => message("msg.pulsar_unreachable", &[("host", "GitHub")]),
             Self::Other(why) => why.clone(),
         }
     }
@@ -103,11 +112,25 @@ fn get(base: &str, path: &str, query: &[(&str, &str)], token: &str) -> Result<Ve
     match req.call() {
         Ok(resp) if resp.status() == 200 => read_limited(resp, MAX_BYTES).map_err(|_| other()),
         Err(ureq::Error::Status(401, _)) => Err(Failed::Refused),
-        Err(ureq::Error::Status(403 | 429, _)) => Err(Failed::Other(message("msg.github_limited", &[]))),
-        // A repository the token cannot see.
-        Err(ureq::Error::Status(422, _)) => Err(Failed::Other(message("msg.github_repo", &[]))),
+        Err(ureq::Error::Status(code, resp)) => Err(match resp.header("X-GitHub-SSO").and_then(sso) {
+            Some((org, url)) => Failed::Sso(org, url),
+            None => Failed::Status(code),
+        }),
         _ => Err(other()),
     }
+}
+
+/// `X-GitHub-SSO: required; url=https://github.com/orgs/<org>/sso?…`. Only a page of GitHub: the
+/// user is sent there.
+fn sso(header: &str) -> Option<(String, Url)> {
+    let url = Url::parse(header.split_once("url=")?.1.trim()).ok()?;
+    let parts: Vec<&str> = url.path_segments()?.collect();
+    let org = match parts[..] {
+        ["orgs", org, "sso"] if !org.is_empty() => pulsar::clean(org, 60),
+        _ => return None,
+    };
+    (url.scheme() == "https" && url.host_str() == Some("github.com") && url.port().is_none() && url.username().is_empty())
+        .then_some((org, url))
 }
 
 /// Blocking: the login a token belongs to.
@@ -130,8 +153,23 @@ pub fn search(base: &str, token: &str, query: &GithubQuery) -> Result<Vec<Entry>
         "/search/issues",
         &[("q", &q), ("sort", "updated"), ("order", "desc"), ("per_page", "50")],
         token,
-    )?;
+    )
+    .map_err(|why| match why {
+        // The search only says it cannot: the repository itself says why.
+        Failed::Status(422) if !query.repo.is_empty() => hidden(base, token, &query.repo),
+        why => why,
+    })?;
     parse(&body).ok_or_else(|| Failed::Other(message("msg.pulsar_unreachable", &[("host", "GitHub")])))
+}
+
+/// Why a repository cannot be searched.
+fn hidden(base: &str, token: &str, repo: &str) -> Failed {
+    match get(base, &format!("/repos/{repo}"), &[], token) {
+        // Seen, yet not searched: its issues and pull requests are not allowed.
+        Ok(_) => Failed::Other(message("msg.github_scope", &[])),
+        Err(Failed::Status(404 | 422)) => Failed::Status(422),
+        Err(why) => why,
+    }
 }
 
 fn parse(body: &[u8]) -> Option<Vec<Entry>> {
@@ -179,6 +217,21 @@ mod tests {
         let e = &list[0];
         assert_eq!((e.title.as_str(), e.note.as_str(), e.at), ("Fix <b>it</b>", "wry #12", 1_782_892_800));
         assert!(parse(b"{}").is_none());
+    }
+
+    #[test]
+    fn the_sign_on_page_is_one_of_github() {
+        let (org, url) = sso("required; url=https://github.com/orgs/corp/sso?authorization_request=A1").unwrap();
+        assert_eq!((org.as_str(), url.host_str()), ("corp", Some("github.com")));
+        for bad in [
+            "partial-results; organizations=1,2",
+            "required; url=http://github.com/orgs/corp/sso",
+            "required; url=https://github.com.evil.test/orgs/corp/sso",
+            "required; url=https://x@github.com/orgs/corp/sso",
+            "required; url=https://github.com/login",
+        ] {
+            assert!(sso(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

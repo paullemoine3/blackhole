@@ -1,6 +1,15 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.32",
+        &[
+            "Pulsars: a tab opened from a line stays in the folder of its Pulsar, across restarts too, until you drag it out, file it in a folder or make it a tile. Folded, the Pulsar still shows its open pages. Delete the Pulsar and its tabs join the open tabs",
+            "Shields: the counter means the same thing on macOS and Windows when an ad-blocking extension is installed. macOS added what the extension refused to the Shields' own count, and Windows missed the trackers the extension stopped first. Only the hosts of the Shields' lists and the learned trackers are counted now, whoever stops them",
+            "Pulsars of GitHub say why a repository is refused: an organization that asks for its sign-on (SSO), with a button to authorize the token, a missing permission, or a token made for another owner. The address of a private repository given as a site points to the GitHub section. The help says which read-only permissions the token needs, and its button fills them in on GitHub",
+            "Adding an extension from GitHub reads its own address field again (it read the one of the Pulsars)",
+        ],
+    ),
+    (
         "0.8.31",
         &[
             "Pulsars: folders of the sidebar that fill themselves with what a site publishes (blogs, news, YouTube channels, GitHub releases). Right-click the sidebar to make one among the open tabs, right-click it to move it to the folders. Feeds are asked without cookies, pages only load when opened, and Settings > Pulsars sets or switches them off. With a GitHub token, a Pulsar gathers the pull requests to review, yours, what is assigned to you or mentions you, in every repository or one. The tour (Settings > General to replay it) shows them",
