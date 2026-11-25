@@ -666,6 +666,7 @@ impl InnerWebView {
         let delegate = WryDownloadDelegate::new(
           attributes.download_started_handler,
           attributes.download_completed_handler,
+          attributes.download_control_handler,
           mtm,
         );
         Some(delegate)
@@ -695,6 +696,7 @@ impl InnerWebView {
         mtm,
         attributes.new_window_req_handler,
         attributes.permission_handler,
+        attributes.site_permission_handler,
       );
       let proto_ui_delegate = ProtocolObject::from_ref(&*ui_delegate);
       webview.setUIDelegate(Some(proto_ui_delegate));
@@ -955,6 +957,31 @@ impl InnerWebView {
       let date = NSDate::dateWithTimeIntervalSince1970(0.0);
       let handler = block2::RcBlock::new(|| {});
       store.removeDataOfTypes_modifiedSince_completionHandler(&all_data_types, &date, &handler);
+    }
+    Ok(())
+  }
+
+  pub fn clear_site_data(
+    &self,
+    what: crate::SiteData,
+    since: Option<u64>,
+    done: Box<dyn FnOnce()>,
+  ) -> Result<()> {
+    unsafe {
+      let store = self.webview.configuration().websiteDataStore();
+      let wanted: Vec<_> = WKWebsiteDataStore::allWebsiteDataTypes(self.mtm)
+        .iter()
+        .filter(|t| if t.to_string().contains("Cache") { what.cache } else { what.cookies })
+        .collect();
+      let types = objc2_foundation::NSSet::from_retained_slice(&wanted);
+      let date = NSDate::dateWithTimeIntervalSince1970(since.unwrap_or(0) as f64);
+      let done = std::cell::Cell::new(Some(done));
+      let handler = block2::RcBlock::new(move || {
+        if let Some(done) = done.take() {
+          done();
+        }
+      });
+      store.removeDataOfTypes_modifiedSince_completionHandler(&types, &date, &handler);
     }
     Ok(())
   }

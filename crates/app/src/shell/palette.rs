@@ -36,6 +36,9 @@ impl Running {
                 self.reply_auth(id, None);
             }
         }
+        if mode != "permission" {
+            self.dismiss_permission();
+        }
         self.close_peek();
         self.flush_raise(true);
         self.palette.mode = mode.to_owned();
@@ -82,6 +85,9 @@ impl Running {
                 self.answer_auth(id, None);
             }
         }
+        if self.palette.mode == "permission" {
+            self.dismiss_permission();
+        }
     }
 
     // ---- HTTP authentication --------------------------------------------------------------
@@ -125,6 +131,9 @@ impl Running {
             json!({"id": "key:shift+n", "label": t("palette.new_private_window"), "keys": "mod+shift+n"}),
             json!({"id": "burner_tab", "label": t("palette.new_burner_tab"), "hint": t("palette.hint_burner")}),
         ];
+        if self.pulsars_on() {
+            actions.push(json!({"id": "new_pulsar", "label": t("palette.new_pulsar"), "hint": "Pulsar"}));
+        }
         // From a private window Mod+N opens a private one too: one entry is enough.
         if private_mode() {
             actions.retain(|a| a["id"] != "key:n");
@@ -233,6 +242,8 @@ impl Running {
             "color": space.color,
             "menu": self.palette.menu,
             "compare": self.comparing.result,
+            "permission": self.permission_prompt(),
+            "pulsar": self.pulsar_form(),
             "auth": self.auth.shown.and_then(|id| self.auth.prompts.get(id)).map(|c| json!({
                 "id": self.auth.shown,
                 "host": c.host,
@@ -277,6 +288,7 @@ impl Running {
                 });
             }
             "new_folder" => self.handle_ui(UiCommand::NewFolder { parent: None }),
+            "new_pulsar" => self.handle_pulsars(UiCommand::PulsarForm),
             "pip" => {
                 let _ = self.active_view().evaluate_script(views::PIP_TOGGLE_JS);
                 if let Some(id) = self.shown {

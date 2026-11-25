@@ -26,9 +26,9 @@ const WRAP_AAD: &[u8] = b"blackhole-wallet-key-v1";
 
 /// Argon2id cost: 64 MiB, 3 passes (OWASP's second recommended setting).
 #[cfg(not(test))]
-const KDF_COST: (u32, u32, u32) = (64 * 1024, 3, 1);
+pub(crate) const KDF_COST: (u32, u32, u32) = (64 * 1024, 3, 1);
 #[cfg(test)]
-const KDF_COST: (u32, u32, u32) = (256, 1, 1);
+pub(crate) const KDF_COST: (u32, u32, u32) = (256, 1, 1);
 
 /// How the data key is unlocked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,11 +59,11 @@ impl std::fmt::Display for OpenError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct Kdf {
-    m: u32,
-    t: u32,
-    p: u32,
-    salt: String,
+pub(crate) struct Kdf {
+    pub(crate) m: u32,
+    pub(crate) t: u32,
+    pub(crate) p: u32,
+    pub(crate) salt: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,11 +231,11 @@ fn from_dto(d: &mut EntryDto) -> Entry {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn unhex(s: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn unhex(s: &str) -> Result<Vec<u8>, String> {
     if s.len() % 2 == 1 || !s.is_ascii() {
         return Err("fichier de mots de passe corrompu".into());
     }
@@ -245,7 +245,7 @@ fn unhex(s: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-fn random<const N: usize>() -> [u8; N] {
+pub(crate) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     OsRng.fill_bytes(&mut b);
     b
@@ -263,7 +263,7 @@ pub fn random_password(recipe: Recipe) -> String {
     generate(recipe, || random::<1>()[0])
 }
 
-fn kdf(password: &str, k: &Kdf) -> Result<Zeroizing<[u8; 32]>, String> {
+pub(crate) fn kdf(password: &str, k: &Kdf) -> Result<Zeroizing<[u8; 32]>, String> {
     let params = argon2::Params::new(k.m, k.t, k.p, Some(32)).map_err(|e| e.to_string())?;
     let argon = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut out = Zeroizing::new([0u8; 32]);

@@ -115,6 +115,7 @@ impl Running {
                 self.page_url(tab, url);
             }
             Msg::LoadStart(tab) => {
+                self.permissions_left(tab);
                 self.aborted.remove(&tab);
                 self.downloads.navs.remove(&tab);
                 self.errors_load_start(tab);
@@ -186,6 +187,9 @@ impl Running {
                 self.errors_auth_asked(tab);
                 self.on_auth(tab, &challenge, reply);
             }
+            Msg::Permission(tab, request, reply) => self.on_permission(tab, &request, reply),
+            Msg::DataCleared(run) => self.on_data_cleared(run),
+            Msg::DownloadControl { path, control } => self.download_control(&path, control),
             Msg::Title(tab, _) if tab == PEEK_TAB => {}
             Msg::Title(tab, title) => {
                 self.svc.page_changed(tab, None, Some(title));

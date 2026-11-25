@@ -1012,3 +1012,40 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Test Windows : `scripts\test-0830.ps1` (faux SimpleLogin local ; vraies frappes par le port DevTools du moteur).
   Tests : `aliases::tests` (domain, infrastructure), `the_alias_account_and_the_aliases_are_sealed_with_the_rest`. Non
   vérifié avec de vrais comptes (Relay : API non documentée pour des tiers). macOS : non lancé. Android : sans alias.
+
+## 0.8.31 : permissions des sites, effacement, export, mots-clés, pause des téléchargements
+
+- Permissions (caméra, micro, position, notifications, presse-papiers) : règles `domain/permissions.rs` (`SitePermissions` par
+  origine, `Asks` : verdict, regroupement, `DISMISS_MAX` refus muet après 3 fermetures), app `tabs/permissions.rs`, invite = mode
+  `permission` de la palette (rien de focalisé, boutons inertes 500 ms ; jamais par-dessus la palette, Peek, les Réglages).
+  wry : `with_site_permission_handler` (réponse différée, `drop` = refus ; `builder()` refuse partout, `build_tab` demande).
+  Une question part avec sa page (`LoadStart`). Privé : `for_private` (les refus seulement) ; trou noir : rien de retenu.
+- Windows : `SetSavesInProfile(false)` et `reset_site_permissions` une fois par profil et par lancement (sinon la réponse gardée par le moteur
+  contourne l’app). WebView2 donne l’origine de la page, pas celle du cadre. macOS : caméra et micro seulement (avant : accordés sans
+  question). Linux : pas le presse-papiers. Popups du moteur (`window.open` dimensionné) : invite du moteur.
+- Bouton `#site` à gauche de l’adresse (`bar.html`, remplace le cadenas ; point = une décision existe) → `site_panel` : menu à `choices`
+  (contrôle segmenté qui laisse le menu ouvert). Aussi : menu du bouclier, Réglages > Privacy.
+- Effacer (Réglages > Privacy) : `domain/clearing.rs`, `features/clearing.rs`. Cookies et cache par le moteur, profil de chaque espace
+  (`clear_site_data`, vue temporaire si l’espace n’en a pas, réponse `Msg::DataCleared`) ; le reste par l’app. `History::forget_since`
+  garde les visites plus anciennes d’une page. Jamais les mots de passe, Easels ni onglets.
+- Export (Réglages > Import and export) : `infrastructure/backup.rs`. HTML, CSV (deux clics), `.bhbackup` (Argon2id + XChaCha20, coût du
+  KDF borné à la lecture). Restaurer = `stage` puis `apply_staged` au lancement, seule fenêtre ouverte ; l’ancien profil va dans
+  `before-restore` ; `sync.json` est écarté (sinon la synchro fermerait les onglets ailleurs). Les mots de passe passent par l’import.
+- Mots-clés : `domain/keywords.rs` (`gh x`, `!gh x`, `x !gh`) ; toute saisie passe par `Settings::resolve_input` (bureau et Android).
+  Le gabarit garde `%s` après l’hôte. La palette lit `keyword` de la réponse `suggest`.
+- Téléchargements : `wry::DownloadControl` (`with_download_control_handler`), `download_act`. WebView2 : une pause est un état
+  INTERRUPTED/USER_PAUSED, pas une fin. macOS : annulation avec données de reprise (non testé). Linux : pas de boutons. Un onglet qui
+  télécharge n’est pas mis en veille (`tabs_at_work`) ; au lancement, ce qui n’était pas fini est marqué échoué.
+- Pulsars (dossiers qui se remplissent d’un flux RSS/Atom) : règles `domain/pulsar.rs` (fusion, lignes lues qui partent, `FIRST`, délai
+  doublé à chaque échec), `infrastructure/feeds.rs` (lecture `quick-xml` sans entités du document, découverte du flux, `pulsars.json`),
+  app `features/pulsars.rs` (une lecture à la fois, hors du thread UI, sans cookies). Une ligne est une adresse, pas un onglet. Dans la barre
+  latérale : en tête des onglets ouverts (`#tabs`), ou après les dossiers (`#folders`) par son menu ; classes `.pulsar/.ph/.pb/.pl`, jamais
+  `.folder/.fh` (glisser-déposer). `Settings::pulsars` coupe l’affichage et les requêtes ; rien en privé ; hors synchro ; dans la sauvegarde.
+  Réglages > Pulsars (section à part) : options (`pulsar_every`, `pulsar_lines`, `pulsar_notices`), création, compte GitHub, liste.
+  GitHub : `GithubQuery` (domain, `repo` validé car il entre dans la recherche), `infrastructure/github_issues.rs` (jeton dans `github.bin` chiffré,
+  `redirects(0)`, jamais dans une page ni une sauvegarde ; l’adresse vient de la requête, pas du fichier). Une ligne GitHub reste jusqu’à ce que la
+  recherche ne la rende plus ; ouverte, elle s’estompe (`seen`) et redevient non lue si elle bouge. `BH_GITHUB_API` (devtools, 127.0.0.1) : faux service.
+  Visite d’accueil (première fois et Réglages › Général › Revoir) : étape `pulsars` de `onboarding.html` (`visPulsars`, figée remplie sans animations).
+  Un espace créé oublie les Pulsars de son identifiant. Test Windows : `scripts\test-pulsars.ps1`.
+- Test Windows : `scripts\test-0831.ps1`. macOS : compilation croisée seulement. Linux : code `webkitgtk` non compilé ici.
+

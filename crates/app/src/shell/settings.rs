@@ -85,6 +85,16 @@ impl Running {
         // Apart: the macro above is at serde_json's recursion limit.
         state["shields"]["fingerprinting"] = json!(settings.shields.fingerprinting);
         state["dns"] = self.dns_json();
+        state["permissions"] = self.permissions_json();
+        state["keywords"] = settings
+            .keyword_engines
+            .iter()
+            .map(|e| json!({"keyword": e.keyword, "name": e.name, "url": e.url}))
+            .collect();
+        state["pulsars"] = self.pulsars_settings();
+        state["backup"] = self.backup_json();
+        state["clearing"] = json!(self.clearing.busy);
+        state["spaces"] = json!(self.svc.workspace().spaces().len());
         state["privateExtensionSettings"] = json!(settings.private_extension_settings);
         state["tileSize"] = json!(settings.quick_access_size);
         state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
@@ -237,6 +247,26 @@ impl Running {
                     self.svc.set_search_engine(engine);
                     self.ui_state();
                 }
+            }
+            UiCommand::KeywordAdd { keyword, name, url } => {
+                let error = self.svc.add_keyword_engine(&keyword, &name, &url).err();
+                let error = error.map(|why| match why {
+                    blackhole_domain::keywords::Refused::Keyword => t("settings.kw_bad_keyword"),
+                    blackhole_domain::keywords::Refused::Url => t("settings.kw_bad_url"),
+                    blackhole_domain::keywords::Refused::Full => t("settings.kw_bad_full"),
+                });
+                self.ui_settings();
+                if let Some(view) = self.settings_view() {
+                    let _ = view.evaluate_script(&format!("window.bh&&bh.keywordSaved&&bh.keywordSaved({})", json!(error)));
+                }
+            }
+            UiCommand::KeywordRemove { keyword } => {
+                self.svc.remove_keyword_engine(&keyword);
+                self.ui_settings();
+            }
+            UiCommand::KeywordReset => {
+                self.svc.reset_keyword_engines();
+                self.ui_settings();
             }
             UiCommand::SetQuickAccessSize { size } => {
                 if self.svc.set_quick_access_size(&size) {

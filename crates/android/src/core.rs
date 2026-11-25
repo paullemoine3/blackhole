@@ -9,7 +9,7 @@ use blackhole_domain::error_page::{
     self, classify, classify_status, is_bare_error_body, is_engine_error_page, Bypasses, ErrorPage, Failure,
 };
 use blackhole_domain::{
-    privacy_grade, resolve_input, BlockLog, Removed, PrivacyDecision, PrivacyPolicy, SearchEngine, SpaceId,
+    privacy_grade, BlockLog, Removed, PrivacyDecision, PrivacyPolicy, SearchEngine, SpaceId,
     TabId,
 };
 use blackhole_infrastructure::{default_privacy_policy, flush_writes, write_later, JsonWorkspaceRepository};
@@ -536,7 +536,7 @@ impl Core {
         if input.is_empty() {
             return Vec::new();
         }
-        let asked = resolve_input(input, self.svc.settings().search_engine);
+        let asked = self.svc.settings().resolve_input(input);
         let url = match self.evaluate(&asked) {
             Ok(u) => u,
             Err(why) => return vec![Self::toast(&self.shields_text(why), false)],

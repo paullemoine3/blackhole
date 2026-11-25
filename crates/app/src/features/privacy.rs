@@ -58,6 +58,7 @@ impl Running {
                 items.push(json!({"icon": "shield", "label": tn("menu.requests_blocked", self.blocked.total() as usize, &[])}));
             }
         }
+        items.extend(self.permission_menu_items());
         if self.links_cleaned > 0 {
             items.push(json!({"icon": "link", "label": tn("menu.links_cleaned", self.links_cleaned as usize, &[])}));
         }

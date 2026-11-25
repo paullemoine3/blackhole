@@ -92,6 +92,8 @@ pub struct WryWebViewUIDelegateIvars {
   #[cfg(target_os = "macos")]
   closed_windows: Rc<RefCell<Vec<NewWindow>>>,
   permission_handler: Option<Box<dyn Fn(PermissionKind) -> PermissionResponse + Send + Sync>>,
+  /// BlackHole: camera and microphone, answered later by the user.
+  site_permission_handler: Option<crate::SitePermissionHandler>,
 }
 
 define_class!(
@@ -157,12 +159,40 @@ define_class!(
     #[unsafe(method(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:))]
     fn request_media_capture_permission(
       &self,
-      _webview: &WryWebView,
-      _origin: &WKSecurityOrigin,
+      webview: &WryWebView,
+      origin: &WKSecurityOrigin,
       _frame: &WKFrameInfo,
       capture_type: WKMediaCaptureType,
       decision_handler: &Block<dyn Fn(WKPermissionDecision)>,
     ) {
+      if let Some(handler) = &self.ivars().site_permission_handler {
+        let kinds = match capture_type {
+          WKMediaCaptureType::Camera => vec![PermissionKind::Camera],
+          WKMediaCaptureType::Microphone => vec![PermissionKind::Microphone],
+          _ => vec![PermissionKind::Camera, PermissionKind::Microphone],
+        };
+        let (origin, page) = unsafe {
+          let (scheme, host, port) = (origin.protocol(), origin.host(), origin.port());
+          let origin = if port == 0 {
+            format!("{scheme}://{host}")
+          } else {
+            format!("{scheme}://{host}:{port}")
+          };
+          let page = webview.URL().and_then(|u| u.absoluteString());
+          (origin, page.map(|p| p.to_string()).unwrap_or_default())
+        };
+        // The answer may come later (the user decides): keep the completion handler alive.
+        let decision = decision_handler.copy();
+        let responder = crate::SitePermissionResponder::new(move |allow| {
+          decision.call((if allow {
+            WKPermissionDecision::Grant
+          } else {
+            WKPermissionDecision::Deny
+          },));
+        });
+        handler(crate::SitePermissionRequest { kinds, origin, page }, responder);
+        return;
+      }
       // Call user's permission handler if set
       let decision = if let Some(handler) = &self.ivars().permission_handler {
         let translate_response = |res: PermissionResponse| match res {
@@ -383,6 +413,7 @@ impl WryWebViewUIDelegate {
     mtm: MainThreadMarker,
     new_window_req_handler: Option<Box<dyn Fn(String, NewWindowFeatures) -> NewWindowResponse>>,
     permission_handler: Option<Box<dyn Fn(PermissionKind) -> PermissionResponse + Send + Sync>>,
+    site_permission_handler: Option<crate::SitePermissionHandler>,
   ) -> Retained<Self> {
     #[cfg(target_os = "ios")]
     let _new_window_req_handler = new_window_req_handler;
@@ -397,6 +428,7 @@ impl WryWebViewUIDelegate {
         #[cfg(target_os = "macos")]
         closed_windows: Rc::new(RefCell::new(vec![])),
         permission_handler,
+        site_permission_handler,
       });
     unsafe { msg_send![super(delegate), init] }
   }

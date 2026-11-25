@@ -78,6 +78,32 @@
   .folder.collapsed:not(.awake) > .fb { display: none; }
   .folder.collapsed .fb > .tab.asleep, .folder.collapsed .fb > .tab.easel:not(.active),
   .folder.collapsed .fb > .folder:not(.awake) { display: none; }
+  /* Pulsars: folders fed by a site. Their lines are addresses, not tabs. */
+  .pulsar { display: flex; flex-direction: column; }
+  .ph { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; cursor: pointer; }
+  .ph:hover { background: rgba(255,255,255,.08); }
+  .ph .star { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; opacity: .55; }
+  .ph .fname { font-weight: 600; }
+  .pulsar.lit .star { opacity: 1; color: color-mix(in srgb, var(--accent) 45%, #fff); background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent), transparent 72%); }
+  .pulsar.beat .star { animation: pulsar-beat .9s ease-out 3; }
+  .pulsar.busy .star svg { animation: pulsar-turn 1.6s linear infinite; }
+  @keyframes pulsar-beat { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 80%, transparent); } to { box-shadow: 0 0 0 11px transparent; } }
+  @keyframes pulsar-turn { to { transform: rotate(360deg); } }
+  .pulsar.failed .fname { opacity: .6; }
+  .pn { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; background: var(--accent); color: #fff; }
+  .pn:empty { display: none; }
+  .pb { display: flex; flex-direction: column; gap: 1px; margin-left: 17px; padding-left: 8px; border-left: 1px dashed rgba(255,255,255,.22); }
+  .pulsar.collapsed .pb { display: none; }
+  .pl { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; cursor: pointer; font-size: 12.5px; opacity: .85; }
+  .pl:hover { background: rgba(255,255,255,.08); opacity: 1; }
+  .pl .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl .when { flex: none; font-size: 11px; opacity: .55; }
+  .pl.seen { opacity: .5; }
+  .pl .when { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl.quiet { cursor: default; opacity: .5; }
+  .pl.quiet:hover { background: none; }
+  .ph:focus-visible, .pl:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  body.noanim .pulsar * { animation: none !important; }
   body.dropping aside { outline: 2px dashed var(--accent); outline-offset: -4px; }
   .bm .dot { background: rgba(255,255,255,.14); }
   .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
@@ -214,6 +240,10 @@
   .dl:is(.ok, .bad) .cl { display: grid; }
   .dl.bad .cl.fo { display: none; }
   .dl .cl.fo { margin-right: -2px; }
+  .dl .cl.act, .dl:is(.ok, .bad) .cl.act { display: none; }
+  .dl .cl.act.on { display: grid; }
+  .dl .cl.act.on:not(:last-child) { margin-right: -2px; }
+  .dl.paused .fill { opacity: .5; }
   .dl .cl:hover { opacity: 1; background: var(--bh-fill-control); }
   .dl.out { pointer-events: none; animation: dl-out var(--bh-duration-spring) var(--bh-ease-standard) forwards; }
   @keyframes dl-out { to { opacity: 0; transform: translateY(8px) scale(.97); } }
@@ -656,6 +686,7 @@ function createMenu(x, y) {
     { icon: 'plus', label: bhT(state.private ? 'sidebar.new_private_tab' : 'sidebar.new_tab'), run: { cmd: 'new_tab' } },
     { icon: 'hole', label: bhT('palette.new_burner_tab'), run: { cmd: 'action', id: 'burner_tab' } },
     { icon: 'folder', label: bhT('palette.new_folder'), run: { cmd: 'new_folder' } },
+    ...(state.pulsarsOn ? [{ icon: 'pulsar', label: bhT('palette.new_pulsar'), run: { cmd: 'pulsar_form' } }] : []),
     { icon: 'space', label: bhT('palette.new_space'), run: { cmd: 'action', id: 'new_space' } },
     { icon: 'easel', label: bhT('menu.new_easel'), run: { cmd: 'action', id: 'new_easel' } },
     { icon: 'video', label: bhT('palette.new_meet'), run: { cmd: 'open_meet' } },
@@ -722,6 +753,99 @@ function folderNode(f, tabs, easels = [], subs = []) {
   body.append(...subs, ...tabs.map(tabNode), ...easels.map(easelNode));
   box.append(h, body);
   return { box, name, h, f };
+}
+// A Pulsar: a folder a site fills. Titles come from the feed: textContent only.
+const pulsarNodes = new Map(), pulsarSeen = new Map();
+const pulsarWhen = (at) => {
+  if (!at) return '';
+  const s = Math.max(0, Date.now() / 1000 - at);
+  return s < 3600 ? bhT('unit.min', { n: Math.max(1, Math.round(s / 60)) }) : s < 86400 ? bhT('sidebar.pulsar_hours', { n: Math.round(s / 3600) }) : bhT('sidebar.pulsar_days', { n: Math.round(s / 86400) });
+};
+function pulsarMenu(p, x, y) {
+  openMenu(x, y, [
+    { icon: p.pinned ? 'out' : 'pin', label: bhT(p.pinned ? 'menu.pulsar_unpin' : 'menu.pulsar_pin'), run: { cmd: 'pulsar_pin', id: p.id, pinned: !p.pinned } },
+    { icon: 'reload', label: bhT('menu.pulsar_refresh'), run: { cmd: 'pulsar_refresh', id: p.id } },
+    ...(p.unread ? [{ icon: 'check', label: bhT('menu.pulsar_read_all'), run: { cmd: 'pulsar_read_all', id: p.id } }] : []),
+    { icon: 'edit', label: bhT('menu.pulsar_rename'), run: { cmd: 'pulsar_edit', id: p.id } },
+    { sep: true },
+    { icon: 'pulsar', label: bhT('palette.new_pulsar'), run: { cmd: 'pulsar_form' } },
+    { icon: 'gear', label: bhT('menu.pulsar_settings'), run: { cmd: 'open_settings', tab: 'pulsars' } },
+    { sep: true },
+    { icon: 'trash', label: bhT('menu.pulsar_remove'), danger: true, confirm: bhT('easel.delete_confirm'), run: { cmd: 'pulsar_remove', id: p.id } },
+  ]);
+}
+function pulsarNode(p) {
+  // It beats when its count grows, not at every render.
+  const grew = pulsarSeen.has(p.id) && p.unread > pulsarSeen.get(p.id);
+  pulsarSeen.set(p.id, p.unread);
+  const box = el('div', 'pulsar' + (p.collapsed ? ' collapsed' : '') + (p.unread ? ' lit' : '') + (grew ? ' beat' : '') + (p.busy ? ' busy' : '') + (p.failed ? ' failed' : ''));
+  box.dataset.pulsar = p.id;
+  const h = el('div', 'ph');
+  const chev = el('span', 'chev');
+  chev.append(bhIcon(p.collapsed ? 'collapse' : 'expand', 'xs'));
+  const star = el('span', 'star');
+  star.append(bhIcon('pulsar', 'sm'));
+  const name = el('span', 'fname', p.name);
+  h.title = p.name + ' — ' + (p.waits ? bhT('sidebar.pulsar_connect') : p.failed ? bhT('sidebar.pulsar_failed') : p.host || '');
+  h.append(chev, star, name, el('span', 'pn', p.unread ? (p.unread > 99 ? '99+' : String(p.unread)) : ''));
+  h.tabIndex = 0;
+  h.setAttribute('role', 'button');
+  h.setAttribute('aria-expanded', String(!p.collapsed));
+  h.onclick = () => { if (!editing) send({ cmd: 'pulsar_toggle', id: p.id }); };
+  h.oncontextmenu = (e) => { e.preventDefault(); pulsarMenu(p, e.clientX, e.clientY); };
+  h.onkeydown = (e) => {
+    if (e.target !== h || editing) return;
+    if (e.key === 'Enter' || e.key === ' ') send({ cmd: 'pulsar_toggle', id: p.id });
+    else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { const r = h.getBoundingClientRect(); pulsarMenu(p, r.left + 12, r.bottom - 4); }
+    else return;
+    e.preventDefault();
+  };
+  const body = el('div', 'pb');
+  body.append(...p.lines.map((l) => {
+    const n = el('div', 'pl' + (p.github && l.read ? ' seen' : ''));
+    n.title = l.title + '\n' + (l.host || '');
+    n.append(el('span', 'title', l.title), el('span', 'when', l.note || pulsarWhen(l.at)));
+    n.tabIndex = 0;
+    n.setAttribute('role', 'link');
+    const open = (behind) => send({ cmd: 'pulsar_open', id: p.id, key: l.key, behind });
+    n.onclick = (e) => open(bhMac ? e.metaKey : e.ctrlKey);
+    n.onmousedown = (e) => { if (e.button === 1) e.preventDefault(); };
+    n.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); open(true); } };
+    n.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); open(false); } };
+    n.oncontextmenu = (e) => {
+      e.preventDefault();
+      openMenu(e.clientX, e.clientY, [
+        { icon: 'open', label: bhT('menu.open'), run: { cmd: 'pulsar_open', id: p.id, key: l.key, behind: false } },
+        { icon: 'plus', label: bhT('menu.pulsar_open_behind'), run: { cmd: 'pulsar_open', id: p.id, key: l.key, behind: true } },
+        { icon: 'link', label: bhT('menu.copy_link'), copy: l.url },
+      ]);
+    };
+    return n;
+  }));
+  if (!p.lines.length) body.append(el('div', 'pl quiet', bhT(p.waits ? 'sidebar.pulsar_connect' : p.failed ? 'sidebar.pulsar_failed' : 'sidebar.pulsar_quiet')));
+  else if (p.more) body.append(el('div', 'pl quiet', bhT('sidebar.pulsar_more', { n: p.more })));
+  box.append(h, body);
+  pulsarNodes.set(p.id, { h, name, p });
+  return box;
+}
+function editPulsarId(id) {
+  const n = pulsarNodes.get(id);
+  if (!n) return;
+  editing = true;
+  const input = el('input', 'fedit');
+  input.value = n.p.name;
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true; editing = false;
+    if (commit && input.value.trim() && input.value.trim() !== n.p.name) send({ cmd: 'pulsar_rename', id, name: input.value });
+    flush();
+    window.bh.render(state);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+  input.onblur = () => finish(true);
+  for (const ev of ['click', 'mousedown', 'dblclick']) input.addEventListener(ev, (e) => e.stopPropagation());
+  n.name.replaceWith(input);
+  input.focus(); input.select();
 }
 const folderNodes = new Map();
 function editFolderId(id) { const n = folderNodes.get(id); if (n) editFolder(n.h, n.name, n.f); }
@@ -796,7 +920,7 @@ function flush() { if (deferred && !drag && !sdrag && !editing) { const s = defe
 // What the lists of the sidebar are drawn from (see `render`).
 let listSig = '', listIcons = null, listsStale = false, spacesSig = '';
 function listSignature(s) {
-  return JSON.stringify([s.tabs, s.folders, s.easels, s.spaces, s.activeTab, s.activeSpace, s.collapsed,
+  return JSON.stringify([s.tabs, s.folders, s.pulsars, s.easels, s.spaces, s.activeTab, s.activeSpace, s.collapsed,
     (s.media || []).map(m => [m.id, !!m.playing, !!m.muted]), s.color, s.sidebarWidth, s.os]);
 }
 
@@ -1169,8 +1293,10 @@ window.bh = {
     });
     const roots = build(null);
     const loose = s.tabs.filter(t => !t.pinned && t.folder == null).map(tabNode);
-    $('folders').replaceChildren(...roots.map(f => f.box));
-    $('tabs').replaceChildren(...loose);
+    pulsarNodes.clear();
+    const pulsars = s.pulsars || [];
+    $('folders').replaceChildren(...roots.map(f => f.box), ...pulsars.filter(p => p.pinned).map(pulsarNode));
+    $('tabs').replaceChildren(...pulsars.filter(p => !p.pinned).map(pulsarNode), ...loose);
     if (s.activeTab !== shownTab) {
       shownTab = s.activeTab;
       const current = document.querySelector('.tab.active');
@@ -1221,6 +1347,7 @@ window.bh = {
   editSpace,
   editTab,
   editFolderId,
+  editPulsarId,
   // `action` ({ label, run }, or a list of them) adds buttons, e.g. Undo after a deletion or
   // Save / Never for a password; it stays longer.
   toast(m, action) { notice.show({ text: m, actions: action ? [].concat(action) : [] }); },
@@ -1252,7 +1379,7 @@ function renderDownloads(list) {
   (list || []).forEach((d, i) => {
     seen.add(d.id);
     const known = d.total > 0, pct = known ? Math.min(100, Math.round(d.received * 100 / d.total)) : 0;
-    const label = d.state === 'ok' ? bhT('sidebar.dl_done') : d.state === 'bad' ? bhT('library.failed') : known ? bhT('unit.percent', { n: pct }) : fmtBytes(d.received);
+    const label = d.state === 'ok' ? bhT('sidebar.dl_done') : d.state === 'bad' ? bhT('library.failed') : d.paused ? bhT('sidebar.dl_paused') : known ? bhT('unit.percent', { n: pct }) : fmtBytes(d.received);
     let c = dlNodes.get(d.id);
     if (!c) {
       c = el('div', 'dl');
@@ -1265,15 +1392,28 @@ function renderDownloads(list) {
       const f = el('button', 'cl fo');
       f.append(bhIcon('folder', 'xs'));
       f.onclick = (e) => { e.stopPropagation(); send({ cmd: 'reveal_download', id: d.id }); };
-      c.firstChild.append(el('span', 'nm'), el('span', 'pc'), f, x);
+      // Running: pause or resume, cancel (a download cut by the network can be resumed too).
+      const p = el('button', 'cl act');
+      p.onclick = (e) => { e.stopPropagation(); send({ cmd: 'download_act', id: d.id, act: p.dataset.act }); };
+      const k = el('button', 'cl act');
+      k.append(bhIcon('close', 'xs'));
+      k.onclick = (e) => { e.stopPropagation(); send({ cmd: 'download_act', id: d.id, act: 'cancel' }); };
+      c.firstChild.append(el('span', 'nm'), el('span', 'pc'), f, x, p, k);
       c.lastChild.append(el('div', 'fill'));
       // A download (finished or not) opens the Library on its Downloads section.
       c.onclick = () => send({ cmd: 'open_library', section: 'downloads' });
       dlNodes.set(d.id, c);
     }
-    const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known ? '' : ' unk');
+    const cls = 'dl' + (d.state === 'ok' ? ' ok' : d.state === 'bad' ? ' bad' : known || d.paused ? '' : ' unk') + (d.paused ? ' paused' : '');
     if (c.className !== cls && !c.classList.contains('out')) c.className = cls;
-    const [nm, pc, f, x] = c.firstChild.children;
+    const [nm, pc, f, x, p, k] = c.firstChild.children;
+    const acts = d.acts || [], act = acts.find((a) => a !== 'cancel') || '';
+    p.classList.toggle('on', !!act);
+    k.classList.toggle('on', acts.includes('cancel'));
+    if (p.dataset.act !== act) { p.dataset.act = act; p.replaceChildren(bhIcon(act === 'resume' ? 'play' : 'pause', 'xs')); }
+    const actName = act === 'resume' ? bhT('sidebar.dl_resume') : bhT('sidebar.dl_pause');
+    if (p.title !== actName) { p.title = actName; p.setAttribute('aria-label', actName); }
+    if (k.title !== bhT('sidebar.dl_cancel')) { k.title = bhT('sidebar.dl_cancel'); k.setAttribute('aria-label', k.title); }
     if (x.title !== bhT('sidebar.dl_dismiss')) { x.title = bhT('sidebar.dl_dismiss'); x.setAttribute('aria-label', x.title); }
     if (f.title !== bhT('library.show_in_folder')) { f.title = bhT('library.show_in_folder'); f.setAttribute('aria-label', f.title); }
     if (nm.textContent !== d.name) nm.textContent = d.name;
@@ -1283,7 +1423,7 @@ function renderDownloads(list) {
     } else if (pc.textContent !== label) pc.textContent = label;
     const width = known && !d.state ? pct + '%' : '';
     if (c.lastChild.firstChild.style.width !== width) c.lastChild.firstChild.style.width = width;
-    c.title = d.name + (known ? ' — ' + fmtBytes(d.received) + ' / ' + fmtBytes(d.total) : '');
+    c.title = d.name + ' — ' + fmtBytes(d.received) + (known ? ' / ' + fmtBytes(d.total) : '');
     if (box.children[i] !== c) box.insertBefore(c, box.children[i] || null);
   });
   for (const [id, c] of dlNodes) if (!seen.has(id)) { dlNodes.delete(id); c.classList.contains('out') ? c.remove() : dlLeave(c, () => c.remove()); }

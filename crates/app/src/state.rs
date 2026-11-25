@@ -41,8 +41,12 @@ use crate::shell::panels::LazyView;
 use crate::shell::peek::{Peek, PEEK_TAB};
 use crate::shell::sidebar::Sidebar;
 use crate::tabs::{errors, favicons};
+use crate::features::backup::Backups;
+use crate::features::pulsars::Pulsing;
+use crate::features::clearing::Clearing;
 use crate::tabs::auth::Auth;
 use crate::tabs::downloads::Downloads;
+use crate::tabs::permissions::Permits;
 use crate::tabs::media::MediaWatch;
 use crate::tabs::pip::Pip;
 
@@ -112,6 +116,14 @@ pub(crate) struct Running {
     pub(crate) errors: errors::Errors,
     /// HTTP authentication prompts waiting for the user, their engine answers, and the one shown.
     pub(crate) auth: Auth,
+    /// What pages ask for (camera, microphone…) and the prompt shown.
+    pub(crate) permits: Permits,
+    /// Browsing data being erased by the engine (its views go before the window).
+    pub(crate) clearing: Clearing,
+    /// Pulsars: folders fed by a site, and the reading of their feeds.
+    pub(crate) pulsing: Pulsing,
+    /// Exports and backups under way.
+    pub(crate) backups: Backups,
     /// Cards of the sidebar that stay until answered (`bridges.rs`, `domain::signals`).
     pub(crate) signals: blackhole_domain::signals::Signals,
     /// The last tab received from another device: from whom, its address, when (start page).

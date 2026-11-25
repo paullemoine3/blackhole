@@ -590,6 +590,50 @@ impl InnerWebView {
       });
     }
 
+    // BlackHole: asked to the user, answered later (the request object is kept until then).
+    if let Some(handler) = attributes.site_permission_handler.take() {
+      webview.connect_permission_request(move |webview, request| {
+        let kinds = if let Some(media) = request.downcast_ref::<UserMediaPermissionRequest>() {
+          let mut kinds = Vec::new();
+          if media.is_for_video_device() {
+            kinds.push(PermissionKind::Camera);
+          }
+          if media.is_for_audio_device() {
+            kinds.push(PermissionKind::Microphone);
+          }
+          kinds
+        } else if request.is::<GeolocationPermissionRequest>() {
+          vec![PermissionKind::Geolocation]
+        } else if request.is::<NotificationPermissionRequest>() {
+          vec![PermissionKind::Notifications]
+        } else {
+          Vec::new()
+        };
+        if kinds.is_empty() {
+          return false;
+        }
+        // WebKitGTK does not say which frame asks: the page answers for it.
+        let page = webview.uri().map(|u| u.to_string()).unwrap_or_default();
+        let request = request.clone();
+        let responder = crate::SitePermissionResponder::new(move |allow| {
+          if allow {
+            request.allow();
+          } else {
+            request.deny();
+          }
+        });
+        handler(
+          crate::SitePermissionRequest {
+            kinds,
+            origin: page.clone(),
+            page,
+          },
+          responder,
+        );
+        true
+      });
+    }
+
     // Permission handler
     if let Some(permission_handler) = attributes.permission_handler.take() {
       webview.connect_permission_request(move |_webview, request| {
@@ -941,6 +985,45 @@ impl InnerWebView {
       }
     }
 
+    Ok(())
+  }
+
+  pub fn clear_site_data(
+    &self,
+    what: crate::SiteData,
+    since: Option<u64>,
+    done: Box<dyn FnOnce()>,
+  ) -> Result<()> {
+    use webkit2gtk::WebsiteDataTypes as Types;
+    let cache = Types::MEMORY_CACHE | Types::DISK_CACHE;
+    let mut types = Types::empty();
+    if what.cookies {
+      types |= Types::ALL & !cache;
+    }
+    if what.cache {
+      types |= cache;
+    }
+    // WebKitGTK counts back from now; zero erases everything.
+    let span = since.map_or(0, |since| {
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |now| now.as_secs().saturating_sub(since))
+    });
+    let manager = self
+      .webview
+      .context()
+      .and_then(|context| context.website_data_manager());
+    // The binding wants a `Send` closure; GTK calls it back on this thread.
+    let done = gtk::glib::thread_guard::ThreadGuard::new(done);
+    match manager {
+      Some(manager) => manager.clear(
+        types,
+        gtk::glib::TimeSpan::from_seconds(span as i64),
+        None::<&Cancellable>,
+        move |_| (done.into_inner())(),
+      ),
+      None => (done.into_inner())(),
+    }
     Ok(())
   }
 

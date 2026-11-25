@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{
+  cell::RefCell,
+  collections::{HashMap, HashSet},
+  path::PathBuf,
+  rc::Rc,
+};
 
 use objc2::{MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
 use objc2_foundation::{
@@ -15,6 +20,12 @@ use crate::wkwebview::download::{download_did_fail, download_did_finish, downloa
 pub struct WryDownloadDelegateIvars {
   pub started: Option<RefCell<Box<dyn FnMut(String, &mut PathBuf) -> bool + 'static>>>,
   pub completed: Option<Rc<dyn Fn(String, Option<PathBuf>, bool) + 'static>>,
+  /// BlackHole: what pauses and resumes each download.
+  pub control: Option<crate::DownloadControlHandler>,
+  /// Downloads resumed (their address in memory) and where they go: no new download starts.
+  pub resumed: RefCell<HashMap<usize, PathBuf>>,
+  /// Downloads paused or cancelled here: their end is not reported by WebKit's failure.
+  pub stopped: RefCell<HashSet<usize>>,
 }
 
 define_class!(
@@ -53,6 +64,7 @@ impl WryDownloadDelegate {
   pub fn new(
     download_started_handler: Option<Box<dyn FnMut(String, &mut PathBuf) -> bool + 'static>>,
     download_completed_handler: Option<Rc<dyn Fn(String, Option<PathBuf>, bool) + 'static>>,
+    control: Option<crate::DownloadControlHandler>,
     mtm: MainThreadMarker,
   ) -> Retained<Self> {
     let delegate = mtm
@@ -60,6 +72,9 @@ impl WryDownloadDelegate {
       .set_ivars(WryDownloadDelegateIvars {
         started: download_started_handler.map(|handler| RefCell::new(handler)),
         completed: download_completed_handler,
+        control,
+        resumed: Default::default(),
+        stopped: Default::default(),
       });
 
     unsafe { msg_send![super(delegate), init] }

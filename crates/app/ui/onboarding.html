@@ -145,6 +145,34 @@
   .ob-count { position: absolute; left: 26px; bottom: 34px; text-align: left; }
   .ob-count b { display: block; font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
   .ob-count span { font-size: 11.5px; opacity: .6; }
+  /* Pulsars: the star beats, a signal crosses to the folder, its line appears; a line opened leaves. */
+  .ob-pu { position: relative; width: 100%; height: 100%; }
+  .ob-star { position: absolute; left: 196px; top: 104px; width: 0; height: 0; }
+  .ob-star > * { position: absolute; left: 0; top: 0; }
+  .ob-star .core { width: 30px; height: 30px; margin: -15px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff, #d9ccff 35%, var(--ob-accent) 100%); box-shadow: 0 0 26px 6px rgba(var(--ob-rgb),.75); }
+  .ob-star .beams { width: 300px; height: 26px; margin: -13px -150px; animation: ob-spin 3.6s linear infinite;
+    background: linear-gradient(90deg, transparent, rgba(var(--ob-rgb),.55) 38%, rgba(255,255,255,.9) 50%, rgba(var(--ob-rgb),.55) 62%, transparent); clip-path: polygon(0 0, 50% 46%, 100% 0, 100% 100%, 50% 54%, 0 100%); }
+  .ob-star .halo { width: 104px; height: 40px; margin: -20px -52px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.4); transform: rotate(-20deg); }
+  .ob-star .wave { width: 34px; height: 34px; margin: -17px; border-radius: 50%; border: 2px solid rgba(var(--ob-rgb),.9); opacity: 0; }
+  .ob-star.beat .wave { animation: ob-wave 1.3s ease-out; }
+  .ob-star.beat .wave + .wave { animation-delay: .16s; }
+  .ob-star.beat .core { animation: ob-kick .5s ease-out; }
+  @keyframes ob-wave { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(5.2); } }
+  .ob-sig { position: absolute; left: 0; top: 0; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; color: #fff; background: var(--c); box-shadow: 0 0 16px var(--c); opacity: 0;
+    offset-path: path('M 214 104 C 270 40 330 40 420 88'); offset-rotate: 0deg; }
+  .ob-sig.fly { animation: ob-sig .85s cubic-bezier(.45,.05,.4,1) both; }
+  @keyframes ob-sig { 0% { offset-distance: 0%; opacity: 0; transform: scale(.3); } 20% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; transform: scale(.6); } }
+  .ob-pf { position: absolute; left: 412px; top: 20px; width: 236px; padding: 8px; border-radius: 14px; text-align: left; background: rgba(22,20,32,.92); box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 20px 50px rgba(0,0,0,.55), 0 0 34px rgba(var(--ob-rgb),.22); }
+  .ob-pf .hd { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-weight: 600; font-size: 13px; }
+  .ob-pf .hd b { flex: 1; }
+  .ob-pf .hd em { min-width: 20px; padding: 0 6px; border-radius: 10px; font: 600 11px/20px inherit; font-style: normal; font-size: 11px; line-height: 20px; text-align: center; background: var(--ob-accent); }
+  .ob-pf ul { list-style: none; margin: 2px 0 0 14px; padding: 0 0 0 8px; border-left: 1px dashed rgba(255,255,255,.25); }
+  .ob-pf li { display: flex; align-items: center; gap: 8px; height: 0; padding: 0 6px; overflow: hidden; border-radius: 8px; font-size: 12px; opacity: 0; transform: translateX(-10px); transition: height .3s ease, opacity .3s ease, transform .3s cubic-bezier(.2,1.2,.4,1), background-color .2s; }
+  .ob-pf li.show { height: 26px; opacity: 1; transform: none; }
+  .ob-pf li.sel { background: rgba(var(--ob-rgb),.5); }
+  .ob-pf li i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--c); }
+  .ob-pf li span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ob-pf li small { opacity: .55; }
   .ob-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .ob-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; font-size: 12.5px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
   .ob-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #2fd4a0; box-shadow: 0 0 6px #2fd4a0; }
@@ -264,7 +292,7 @@
   .ob-tip { margin-top: 12px; font-size: 12.5px; opacity: .65; display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap; }
 
   body.noanim #ob *, body.noanim #ob *::before, body.noanim #ob *::after { animation-duration: .01s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
-  body.noanim .ob-tr, body.noanim .ob-ray, body.noanim .ob-fly, body.noanim .ob-lk { display: none; }
+  body.noanim .ob-sig, body.noanim .ob-tr, body.noanim .ob-ray, body.noanim .ob-fly, body.noanim .ob-lk { display: none; }
 </style>
 <div id="ob-veil"></div>
 <div id="ob" role="dialog" aria-modal="true" aria-labelledby="ob-title" hidden>
@@ -399,6 +427,43 @@ function visShields() {
   life.push(setInterval(() => { count += Math.ceil(Math.random() * 3); n.textContent = count.toLocaleString(bhI18n.lang); }, 140));
   return v;
 }
+function visPulsars() {
+  const v = h('div', 'ob-pu'), star = h('div', 'ob-star');
+  star.append(h('i', 'beams'), h('i', 'wave'), h('i', 'wave'), h('i', 'halo'), h('i', 'core'));
+  const card = h('div', 'ob-pf'), hd = h('div', 'hd'), n = h('em', null, '0'), list = h('ul');
+  hd.append(icon('pulsar', 'sm'), h('b', null, 'Pulsar'), n);
+  card.append(hd, list);
+  // The oldest first: each new one takes the top.
+  const ITEMS = [['pulsars_news', '#3aa0ff', '2 h'], ['pulsars_video', '#ff5c8a', '40 min'], ['pulsars_pr', '#2fd4a0', 'PR #12']];
+  const rows = ITEMS.map(([key, c, when]) => {
+    const li = h('li'), dot = h('i'); li.style.setProperty('--c', c);
+    li.append(dot, h('span', null, T(key)), h('small', null, when));
+    list.prepend(li);
+    return li;
+  });
+  const sigs = ITEMS.map(([key, c]) => { const s = h('span', 'ob-sig', T(key + '_tag')); s.style.setProperty('--c', c); return s; });
+  v.append(stars(60), star, ...sigs, card);
+  const count = () => { n.textContent = rows.filter((r) => r.classList.contains('show')).length; };
+  // Still: the folder as it is once filled.
+  if (calm()) { rows.forEach((r) => r.classList.add('show')); count(); return v; }
+  let t = -1;
+  const step = () => {
+    t = (t + 1) % 16;
+    if (t === 0) rows.forEach((r) => r.classList.remove('show', 'sel'));
+    const k = [1, 4, 7].indexOf(t), land = [3, 6, 9].indexOf(t);
+    if (k >= 0) {
+      for (const [el, cls] of [[star, 'beat'], [sigs[k], 'fly']]) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+    }
+    if (land >= 0) rows[land].classList.add('show');
+    // One is opened: it leaves the folder.
+    if (t === 11) rows[2].classList.add('sel');
+    if (t === 13) rows[2].classList.remove('show', 'sel');
+    count();
+  };
+  step();
+  life.push(setInterval(step, 420));
+  return v;
+}
 function visImport() {
   const v = h('div', 'ob-imp' + (S.importing ? ' run' : '')), src = h('div', 'ob-src');
   const names = [...new Set((S.d.sources || []).map((s) => s.browser))].slice(0, 3);
@@ -435,6 +500,11 @@ function bodyHello() {
 function bodyShields() {
   const c = h('div', 'ob-chips');
   for (const k of ['shields_https', 'shields_links', 'shields_learned', 'shields_telemetry']) c.append(h('span', 'ob-chip', T(k)));
+  return [c];
+}
+function bodyPulsars() {
+  const c = h('div', 'ob-chips');
+  for (const k of ['pulsars_c1', 'pulsars_c2', 'pulsars_c3', 'pulsars_c4']) c.append(h('span', 'ob-chip', T(k)));
   return [c];
 }
 function bodyMore() {
@@ -565,6 +635,7 @@ const STEPS = {
   spaces: { g: 'tour', vis: visSpaces, eye: 'spaces_eyebrow', title: 'spaces_title', text: 'spaces_text' },
   command: { g: 'tour', vis: visCommand, eye: 'cmd_eyebrow', title: () => T('cmd_title', { keys: bhKeys('mod+l') }), text: 'cmd_text' },
   shields: { g: 'tour', vis: visShields, eye: 'shields_eyebrow', title: 'shields_title', text: 'shields_text', body: bodyShields },
+  pulsars: { g: 'tour', vis: visPulsars, eye: 'pulsars_eyebrow', title: 'pulsars_title', text: 'pulsars_text', body: bodyPulsars },
   more: { g: 'tour', form: true, eye: 'more_eyebrow', title: 'more_title', text: 'more_text', body: bodyMore, next: () => (S.mode === 'tour' ? 'finish_tour' : 'next') },
   import: { g: 'import', form: true, slim: true, vis: visImport, eye: 'import_eyebrow', title: 'import_title', text: 'import_text', body: bodyImport,
     next: () => (S.src && !S.done[S.src] ? 'import_go' : 'next'), skip: 'later',
@@ -580,7 +651,7 @@ const STEPS = {
   ready: { g: 'ready', ready: true, vis: () => visHello(false), eye: 'ready_eyebrow', title: 'ready_title', body: bodyReady, next: () => 'go' },
 };
 function order() {
-  const tour = ['hello', 'spaces', 'command', 'shields', 'more'];
+  const tour = ['hello', 'spaces', 'command', 'shields', 'pulsars', 'more'];
   if (S.mode !== 'welcome') return tour;
   const list = [...tour, 'import'];
   if (S.d.os !== 'linux') list.push('default');

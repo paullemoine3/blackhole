@@ -143,7 +143,7 @@ impl Running {
         match self.svc.resolve(input) {
             NavigationOutcome::Blocked(why) => self.toast(why),
             NavigationOutcome::Go(url) => {
-                let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
+                let typed = self.svc.settings().resolve_input(input);
                 let tab = self.svc.open_tab(input);
                 if let (Some(tab), Some(kind)) = (tab, self.next_visit) {
                     self.svc.expect_visit(tab, kind);
@@ -165,7 +165,7 @@ impl Running {
             return self.open(input);
         }
         self.close_palette();
-        let typed = blackhole_domain::resolve_input(input, self.svc.settings().search_engine);
+        let typed = self.svc.settings().resolve_input(input);
         let active = if self.home_shown() {
             None
         } else {

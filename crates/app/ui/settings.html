@@ -300,6 +300,11 @@
     display: flex; flex-direction: column; gap: var(--bh-space-10); }
   .panel > h3 { font: var(--bh-text-section-label); letter-spacing: .09em; text-transform: uppercase; opacity: var(--bh-opacity-section); }
   .panel.warn { background: color-mix(in srgb, var(--bh-warning-text) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bh-warning-text) 35%, transparent); }
+  #bkready[hidden] { display: none; }
+  select.pick { flex: 0 1 180px; color-scheme: dark; }
+  select.pick option { background: #1b1a26; color: #eceaf5; }
+  select.pick.small { flex: none; width: 130px; }
+  select.pick[hidden], #ghon[hidden], #ghoff[hidden] { display: none; }
   .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--bh-space-6) var(--bh-space-14); font: var(--bh-text-body-small); }
   .kv dt { opacity: var(--bh-opacity-muted); }
   .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: var(--bh-space-8); flex-wrap: wrap; }
@@ -333,10 +338,11 @@
   <button role="tab" data-tab="passwords"><i data-icon="key"></i><span data-i18n="settings.passwords">Passwords</span></button>
   <button role="tab" data-tab="aliases"><i data-icon="mail"></i><span data-i18n="settings.aliases">Email aliases</span></button>
   <button role="tab" data-tab="extensions"><i data-icon="puzzle"></i><span data-i18n="settings.extensions">Extensions</span></button>
+  <button role="tab" data-tab="pulsars"><i data-icon="pulsar"></i><span>Pulsars</span></button>
   <div class="group" data-i18n="settings.group_connected">Connected</div>
   <button role="tab" data-tab="calendar"><i data-icon="calendar"></i><span data-i18n="settings.calendar">Calendar</span></button>
   <button role="tab" data-tab="devices"><i data-icon="devices"></i><span data-i18n="settings.devices">Devices</span></button>
-  <button role="tab" data-tab="import"><i data-icon="import"></i><span data-i18n="settings.import">Import</span></button>
+  <button role="tab" data-tab="import"><i data-icon="import"></i><span data-i18n="settings.import_export">Import and export</span></button>
   <div class="group" data-i18n="settings.group_help">Help</div>
   <button role="tab" data-tab="shortcuts"><i data-icon="keyboard"></i><span data-i18n="settings.shortcuts">Shortcuts</span></button>
   <div class="foot">BlackHole <span id="version"></span></div>
@@ -346,6 +352,10 @@
     <header class="sh"><span class="badge"><i data-icon="gear" data-size="md"></i></span><div><h1 data-i18n="settings.general">General</h1><p class="lead"><span data-i18n="settings.general_lead">How BlackHole looks, searches and saves memory.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.language">Language</h2><div class="rows" id="langs" role="radiogroup" data-i18n-aria="settings.language"></div></div>
     <div class="card"><h2 data-i18n="settings.search_engine">Default search engine</h2><div class="rows" id="engines" role="radiogroup" data-i18n-aria="settings.search_engine"></div></div>
+    <div class="card"><h2 data-i18n="settings.kw_title">Search by keyword</h2><div class="list rows" id="kwlist"></div>
+      <div class="actions"><input class="field" id="kwkey" style="flex:0 1 110px" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.kw_keyword" data-i18n-aria="settings.kw_keyword"><input class="field" id="kwname" style="flex:0 1 160px" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.kw_name" data-i18n-aria="settings.kw_name"><input class="field" id="kwurl" placeholder="https://example.com/search?q=%s" spellcheck="false" autocomplete="off" data-i18n-aria="settings.kw_url"><button class="btn" id="kwadd"><i data-icon="plus"></i><span data-i18n="settings.kw_add">Add</span></button><button class="btn" id="kwreset"><span data-i18n="settings.kw_reset">Default list</span></button></div>
+      <p class="fielderr" id="kwerr" role="alert"></p>
+      <p class="note"><span data-i18n="settings.kw_note">Type the keyword, then the words: gh rust. With an exclamation mark it works alone or at the end: !gh, rust !gh. In the address, %s stands for the words.</span></p></div>
     <div class="card"><h2 data-i18n="settings.appearance">Appearance</h2><div class="rows" id="style"></div><div class="rows" id="anim"></div><div class="rows" id="sbw"></div><div class="rows" id="tiles"></div></div>
     <div class="card"><h2 data-i18n="settings.home_sections">Start page</h2><div class="rows" id="homesections"></div></div>
     <div class="card"><h2 data-i18n="settings.tabs_memory">Tabs and memory</h2><div class="rows" id="sleep"></div><div class="rows" id="live"></div><div class="rows" id="spares"></div></div>
@@ -387,8 +397,15 @@
     <div class="card"><h2 data-i18n="menu.this_session">This session</h2><div class="stat"><b id="blocked">0</b><span data-i18n="settings.requests_blocked">requests blocked</span></div></div>
     <div class="card"><h2 data-i18n="menu.blocked_hosts">Blocked hosts</h2><div class="list rows" id="blocklist"></div>
       <div class="actions"><button class="btn" id="clearblocked"><i data-icon="reload"></i><span data-i18n="settings.reset_list">Reset list</span></button></div></div>
-    <div class="card"><h2 data-i18n="settings.data">Data</h2>
-      <div class="opt"><span class="grow"><span class="label" data-i18n="settings.history_label">Browsing history</span><span class="sub" data-i18n="settings.history_sub">Kept on this device only. Erasing it cannot be undone.</span></span><button class="btn danger" id="clear"><i data-icon="trash"></i><span data-i18n="settings.clear_history">Clear history</span></button></div>
+    <div class="card"><h2 data-i18n="permission.title">Site permissions</h2><div class="list rows" id="permlist"></div>
+      <div class="actions"><button class="btn" id="permreset"><i data-icon="reload"></i><span data-i18n="permission.reset_all">Reset every site</span></button></div>
+      <p class="note"><span data-i18n="permission.note">BlackHole asks before a site uses the camera, the microphone, your location, notifications or the clipboard, and remembers your answer. A change applies the next time the site asks.</span></p></div>
+    <div class="card"><h2 data-i18n="settings.clear_title">Erase browsing data</h2>
+      <div class="rows" id="clperiod"></div>
+      <div class="rows" id="clscope"></div>
+      <div class="rows" id="clkinds"></div>
+      <div class="actions"><button class="btn danger" id="clear"><i data-icon="trash"></i><span data-i18n="settings.clear_go">Erase</span></button></div>
+      <p class="note"><span data-i18n="settings.clear_note">This cannot be undone. Erasing cookies signs you out of sites. Pages already open keep running: reload them. Passwords, Easels and tabs are never erased from here.</span></p>
     </div>
   </section>
 
@@ -516,7 +533,7 @@
   </section>
 
   <section id="import" role="tabpanel">
-    <header class="sh"><span class="badge"><i data-icon="import" data-size="md"></i></span><div><h1 data-i18n="settings.import">Import</h1><p class="lead"><span data-i18n="settings.import_lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</span></p></div></header>
+    <header class="sh"><span class="badge"><i data-icon="import" data-size="md"></i></span><div><h1 data-i18n="settings.import_export">Import and export</h1><p class="lead"><span data-i18n="settings.import_lead">Bring your bookmarks and passwords from another browser. Nothing leaves this machine.</span></p></div></header>
     <div class="card"><h2 data-i18n="settings.detected">Detected browsers</h2><div class="list rows" id="sources"></div>
       <p class="note"><span data-i18n="settings.detected_note">Bookmarks are read straight from the browser’s profile (read-only). Imported bookmarks appear in the command bar search.</span></p></div>
     <div class="card"><h2 data-i18n="settings.from_file">From a file</h2>
@@ -527,9 +544,45 @@
       <p class="status" id="impmsg" aria-live="polite"></p>
       <p class="note"><span data-i18n="settings.csv_note">Passwords: export them from the other browser’s password manager (Chrome, Edge, Brave, Firefox, Waterfox, Safari, Bitwarden…) to a CSV file. They are added to Settings › Passwords (encrypted on this device). Delete the CSV afterwards, it is not encrypted.</span></p>
     </div>
+    <div class="card"><h2 data-i18n="settings.export_title">Export</h2>
+      <div class="actions">
+        <button class="btn" id="exp-html"><i data-icon="link"></i><span data-i18n="settings.export_bookmarks">Tabs and folders (HTML)…</span></button>
+        <button class="btn" id="exp-csv"><i data-icon="key"></i><span data-i18n="settings.export_passwords">Passwords (CSV)…</span></button>
+      </div>
+      <p class="note"><span data-i18n="settings.export_note">Files any browser can import. The CSV file holds your passwords unencrypted: delete it once imported elsewhere.</span></p>
+    </div>
+    <div class="card"><h2 data-i18n="settings.backup_title">Backup</h2>
+      <div class="actions"><input class="field" id="bkpass" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.backup_password" data-i18n-aria="settings.backup_password"><input class="field" id="bkpass2" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.pw_repeat_ph" data-i18n-aria="settings.pw_repeat"></div>
+      <div class="actions"><button class="btn primary" id="bksave"><i data-icon="lock"></i><span data-i18n="settings.backup_save">Save a backup…</span></button><button class="btn" id="bkrestore"><i data-icon="reload"></i><span data-i18n="settings.backup_restore">Restore a backup…</span></button></div>
+      <p class="status" id="bkstatus" aria-live="polite"></p>
+      <div class="opt" id="bkready" hidden><span class="grow"><span class="label" data-i18n="settings.backup_ready">Backup ready</span><span class="sub" data-i18n="settings.backup_ready_sub">It replaces this profile the next time BlackHole starts, once all its windows are closed. What you do until then is not kept.</span></span><button class="btn primary" id="bkquit"><span data-i18n="settings.backup_quit">Quit now</span></button></div>
+      <p class="note"><span data-i18n="settings.backup_note">One encrypted file with your spaces, tabs, settings, history, Easels, highlights, watched areas, archive and passwords. Without its password it cannot be opened. Not included: cookies, Recall, paired devices, extensions and email aliases.</span></p>
+    </div>
     <div class="card"><h2 data-i18n="settings.stored">Stored</h2>
       <div class="stats"><div class="stat"><b id="nbm">0</b><span data-i18n="settings.n_bookmarks">bookmarks</span></div><div class="stat"><b id="nlog">0</b><span data-i18n="settings.n_passwords">saved passwords</span></div></div>
     </div>
+  </section>
+
+  <section id="pulsars" role="tabpanel">
+    <header class="sh"><span class="badge"><i data-icon="pulsar" data-size="md"></i></span><div><h1>Pulsars</h1><p class="lead"><span data-i18n="settings.pulsar_lead">Folders of the sidebar that fill themselves with what a site publishes, or with your work on GitHub.</span></p></div></header>
+    <div class="card"><h2 data-i18n="settings.pulsar_options">Options</h2><div class="rows" id="pulopts"></div></div>
+    <div class="card"><h2 data-i18n="settings.pulsar_new_feed">Follow a site</h2>
+      <div class="actions"><input class="field" id="puladdr" spellcheck="false" autocomplete="off" data-i18n-placeholder="palette.pulsar_address" data-i18n-aria="palette.pulsar_address"><select class="field pick" id="pulspace" data-i18n-aria="settings.pulsar_space"></select><button class="btn primary" id="puladd"><i data-icon="plus"></i><span data-i18n="palette.pulsar_make">Create</span></button></div>
+      <p class="fielderr" id="pulerr" role="alert"></p>
+      <p class="note"><span data-i18n="settings.pulsar_note">Blogs, news, YouTube channels, GitHub releases: BlackHole finds the RSS or Atom feed of the address. Feeds are asked without cookies; the pages only load when you open them.</span></p></div>
+    <div class="card"><h2>GitHub</h2>
+      <div id="ghoff">
+        <div class="actions"><input class="field" id="ghtoken" type="password" autocomplete="off" spellcheck="false" data-i18n-placeholder="settings.github_token" data-i18n-aria="settings.github_token"><button class="btn" id="ghpage"><span data-i18n="settings.github_page">Create a token</span></button><button class="btn primary" id="ghsave"><span data-i18n="settings.github_connect">Connect</span></button></div>
+        <p class="note"><span data-i18n="settings.github_note">A personal access token that can read issues and pull requests is enough. It is encrypted on this computer, sent to GitHub only, and left out of backups.</span></p>
+      </div>
+      <div id="ghon">
+        <div class="rows" id="ghaccount"></div>
+        <div class="rows" id="ghkind"></div>
+        <div class="actions"><input class="field" id="ghrepo" spellcheck="false" autocomplete="off" data-i18n-placeholder="settings.github_repo" data-i18n-aria="settings.github_repo"><select class="field pick" id="ghspace" data-i18n-aria="settings.pulsar_space"></select><button class="btn primary" id="ghadd"><i data-icon="plus"></i><span data-i18n="palette.pulsar_make">Create</span></button></div>
+        <p class="note"><span data-i18n="settings.github_stay">A line stays until it is dealt with on GitHub; opened, it steps back until something new happens there.</span></p>
+      </div>
+      <p class="fielderr" id="ghstatus" role="alert"></p></div>
+    <div class="card"><h2 data-i18n="settings.pulsar_mine">My Pulsars</h2><div class="list rows" id="pullist"></div></div>
   </section>
 
   <section id="shortcuts" role="tabpanel">
@@ -719,6 +772,21 @@ function bhLaunch(from) {
   setTimeout(() => ship.remove(), 1600);
 }
 $('imp-html').onclick = () => send({ cmd: 'import_file', kind: 'bookmarks' });
+$('exp-html').onclick = () => send({ cmd: 'export_bookmarks' });
+$('bksave').onclick = () => {
+  const a = $('bkpass').value, b = $('bkpass2').value;
+  if (a !== b) { $('bkstatus').textContent = bhT('settings.backup_mismatch'); return; }
+  send({ cmd: 'backup_export', password: a });
+  $('bkpass').value = $('bkpass2').value = '';
+};
+$('bkrestore').onclick = () => {
+  if (!$('bkpass').value) { $('bkstatus').textContent = bhT('settings.backup_need_password'); $('bkpass').focus(); return; }
+  send({ cmd: 'backup_restore', password: $('bkpass').value });
+  $('bkpass').value = $('bkpass2').value = '';
+};
+$('bkquit').onclick = () => send({ cmd: 'quit_app' });
+$('kwadd').onclick = () => send({ cmd: 'keyword_add', keyword: $('kwkey').value, name: $('kwname').value, url: $('kwurl').value });
+for (const id of ['kwkey', 'kwname', 'kwurl']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('kwadd').click(); });
 $('imp-csv').onclick = () => send({ cmd: 'import_file', kind: 'logins' });
 
 let mac = true;
@@ -864,6 +932,11 @@ window.bh = {
     renderRecall(s.recall);
     renderTrackers(s.trackers);
     renderDns(s.dns);
+    renderPermissions(s.permissions || []);
+    renderKeywords(s.keywords || []);
+    renderPulsars(s.pulsars || {});
+    renderBackup(s.backup || {});
+    renderClear();
     const shield = (label, name, on) => option(label, on, () => send({ cmd: 'set_shield', name, on: !on }), true);
     put($('shields'), 
       shield(bhT('settings.block_ads'), 'ads', s.adBlocking),
@@ -1408,7 +1481,136 @@ function confirmClick(btn, question, run) {
     timer = setTimeout(reset, 3000);
   };
 }
-confirmClick($('clear'), 'home.clear_confirm', () => send({ cmd: 'clear_history' }));
+// Erase browsing data: the choices live in this page until the button is clicked twice.
+const CLEAR_KINDS = ['history', 'cookies', 'cache', 'downloads', 'archive', 'permissions'];
+const CLEAR_KEY = { history: 'settings.clear_k_history', cookies: 'settings.clear_k_cookies', cache: 'settings.clear_k_cache', downloads: 'settings.clear_k_downloads', archive: 'settings.clear_k_archive', permissions: 'settings.clear_k_permissions' };
+const PERIOD_KEY = { hour: 'settings.clear_hour', day: 'settings.clear_day', week: 'settings.clear_week', month: 'settings.clear_month', all: 'settings.clear_all' };
+const clear = { kinds: new Set(['history', 'cookies', 'cache']), period: 'hour', all: false };
+function renderClear() {
+  put($('clperiod'), choice(bhT('settings.clear_period'), null, Object.keys(PERIOD_KEY), clear.period, (p) => bhT(PERIOD_KEY[p]), (p) => { clear.period = p; renderClear(); }));
+  const spaces = (lastState && lastState.spaces) || 1;
+  put($('clscope'), ...(spaces > 1 ? [choice(bhT('settings.clear_scope'), bhT('settings.clear_scope_sub'), [false, true], clear.all, (v) => bhT(v ? 'settings.clear_every_space' : 'settings.clear_this_space'), (v) => { clear.all = v; renderClear(); })] : []));
+  put($('clkinds'), ...CLEAR_KINDS.map((k) => option(bhT(CLEAR_KEY[k]), clear.kinds.has(k), () => { clear.kinds.has(k) ? clear.kinds.delete(k) : clear.kinds.add(k); renderClear(); }, true, k === 'cookies' ? bhT('settings.clear_k_cookies_sub') : k === 'permissions' ? bhT('settings.clear_k_permissions_sub') : null)));
+  $('clear').disabled = !clear.kinds.size || !!(lastState && lastState.clearing);
+}
+confirmClick($('clear'), 'settings.clear_confirm', () => send({ cmd: 'clear_data', kinds: [...clear.kinds], period: clear.period, all_spaces: clear.all }));
+confirmClick($('permreset'), 'permission.reset_confirm', () => send({ cmd: 'permission_forget' }));
+confirmClick($('exp-csv'), 'settings.export_confirm', () => send({ cmd: 'export_passwords' }));
+confirmClick($('kwreset'), 'settings.kw_reset_confirm', () => send({ cmd: 'keyword_reset' }));
+function renderPermissions(list) {
+  put($('permlist'), ...(list.length ? list.map((site) => {
+    const row = el('div', 'row');
+    const text = el('div', 'grow');
+    text.append(el('div', 'host', site.host));
+    const chips = el('div', 'rowactions');
+    for (const p of site.list) {
+      const b = el('button', 'btn small' + (p.allowed ? '' : ' danger'));
+      b.append(bhIcon(p.icon, 'xs'), el('span', null, p.label + ' · ' + bhT(p.allowed ? 'permission.allowed' : 'permission.blocked')));
+      b.title = bhT(p.allowed ? 'permission.to_block' : 'permission.to_allow');
+      b.onclick = () => send({ cmd: 'permission_set', origin: site.origin, permission: p.id, allowed: !p.allowed });
+      chips.append(b);
+    }
+    const rm = iconBtn('btn small', 'close', bhT('permission.ask_again'));
+    rm.onclick = () => send({ cmd: 'permission_forget', origin: site.origin });
+    chips.append(rm);
+    row.append(tile(site.host), text, chips);
+    return row;
+  }) : [empty('shield', bhT('permission.none'))]));
+  $('permreset').disabled = !list.length;
+}
+bh.keywordSaved = (error) => {
+  $('kwerr').textContent = error || '';
+  if (!error) { for (const id of ['kwkey', 'kwname', 'kwurl']) $(id).value = ''; $('kwkey').focus(); }
+};
+function renderKeywords(list) {
+  put($('kwlist'), ...(list.length ? list.map((k) => {
+    const row = el('div', 'row');
+    const text = el('div', 'grow');
+    text.append(el('div', 'name', k.name), el('div', 'sub', k.url));
+    const rm = iconBtn('btn small', 'close', bhT('settings.kw_remove', { keyword: k.keyword }));
+    rm.onclick = () => send({ cmd: 'keyword_remove', keyword: k.keyword });
+    row.append(el('span', 'count', k.keyword), text, rm);
+    return row;
+  }) : [empty('search', bhT('settings.kw_none'))]));
+}
+// Settings > Pulsars. The kind and the space chosen live in this page until "Create".
+const GH_KEY = { reviews: 'pulsar.github_reviews', mine: 'pulsar.github_mine', assigned: 'pulsar.github_assigned', mentions: 'pulsar.github_mentions' };
+let ghKind = 'reviews', pulState = null, pulArmed = null;
+const spaceOptions = (p) => (p.spaces || []).map((s) => { const o = el('option', null, s.name); o.value = s.id; return o; });
+function fillSpaces(select, p) {
+  const sig = JSON.stringify(p.spaces);
+  if (select.dataset.sig !== sig) { select.dataset.sig = sig; const was = select.value; select.replaceChildren(...spaceOptions(p)); select.value = [...select.options].some((o) => o.value === was) ? was : String(p.space); }
+  select.hidden = (p.spaces || []).length < 2;
+}
+function renderPulsars(p) {
+  pulState = p;
+  put($('pulopts'),
+    option(bhT('settings.pulsar_on'), p.on, () => send({ cmd: 'set_pulsars', on: !p.on }), true, bhT(p.private ? 'settings.backup_private' : 'settings.pulsar_on_sub')),
+    choice(bhT('settings.pulsar_every'), null, p.everyChoices || [], p.every, (m) => m < 60 ? bhT('unit.min', { n: m }) : bhT('sidebar.pulsar_hours', { n: m / 60 }), (m) => send({ cmd: 'set_pulsar_every', minutes: m })),
+    choice(bhT('settings.pulsar_lines'), null, p.linesChoices || [], p.lines, String, (n) => send({ cmd: 'set_pulsar_lines', lines: n })),
+    option(bhT('settings.pulsar_notices'), p.notices, () => send({ cmd: 'set_pulsar_notices', on: !p.notices }), true));
+  fillSpaces($('pulspace'), p); fillSpaces($('ghspace'), p);
+  const off = !p.on || p.private;
+  $('puladd').disabled = off || p.busy;
+  $('puladd').querySelector('span').textContent = bhT(p.busy ? 'palette.pulsar_searching' : 'palette.pulsar_make');
+  $('pulerr').textContent = p.error || '';
+  const g = p.github || {};
+  $('ghoff').hidden = !!g.login; $('ghon').hidden = !g.login;
+  $('ghsave').disabled = off || g.busy; $('ghadd').disabled = off;
+  $('ghstatus').textContent = g.status || '';
+  if (g.login) {
+    const row = el('div', 'opt'), text = el('span', 'grow');
+    text.append(el('span', 'label', bhT('settings.github_as', { login: g.login })));
+    const b = el('button', 'btn danger', bhT('settings.github_disconnect'));
+    b.onclick = () => send({ cmd: 'pulsar_github_disconnect' });
+    row.append(text, b);
+    put($('ghaccount'), row);
+    put($('ghkind'), choice(bhT('settings.github_gather'), null, g.kinds || [], ghKind, (k) => bhT(GH_KEY[k]), (k) => { ghKind = k; renderPulsars(pulState); }));
+  }
+  put($('pullist'), ...((p.list || []).length ? p.list.map((x) => {
+    const row = el('div', 'row');
+    const text = el('div', 'grow');
+    const state = x.waits ? bhT('sidebar.pulsar_connect') : x.failed ? bhT('sidebar.pulsar_failed') : x.source;
+    text.append(el('div', 'name', x.name), el('div', 'sub', state));
+    const acts = el('div', 'rowactions');
+    if ((p.spaces || []).length > 1) {
+      const pick = el('select', 'field pick small');
+      pick.setAttribute('aria-label', bhT('settings.pulsar_space'));
+      for (const o of spaceOptions(p)) { if (Number(o.value) === x.space) o.setAttribute('selected', ''); pick.append(o); }
+      pick.setAttribute('data-id', x.id);
+      acts.append(pick);
+    }
+    const act = (icon, key, run) => { const b = el('button', 'btn small'); b.append(bhIcon(icon, 'xs')); b.title = bhT(key); b.setAttribute('aria-label', b.title); b.onclick = run; acts.append(b); };
+    act(x.pinned ? 'out' : 'pin', x.pinned ? 'menu.pulsar_unpin' : 'menu.pulsar_pin', () => send({ cmd: 'pulsar_pin', id: x.id, pinned: !x.pinned }));
+    act('reload', 'menu.pulsar_refresh', () => send({ cmd: 'pulsar_refresh', id: x.id }));
+    if (x.unread) act('check', 'menu.pulsar_read_all', () => send({ cmd: 'pulsar_read_all', id: x.id }));
+    // Two clicks within 3 s: nothing brings a Pulsar back.
+    const rm = el('button', 'btn small danger' + (pulArmed === x.id ? ' armed' : ''));
+    rm.append(bhIcon('trash', 'xs'), ...(pulArmed === x.id ? [el('span', null, bhT('easel.delete_confirm'))] : []));
+    rm.title = bhT('menu.pulsar_remove'); rm.setAttribute('aria-label', rm.title);
+    rm.onclick = () => {
+      if (pulArmed === x.id) { pulArmed = null; send({ cmd: 'pulsar_remove', id: x.id }); return; }
+      pulArmed = x.id; renderPulsars(pulState);
+      setTimeout(() => { if (pulArmed === x.id) { pulArmed = null; renderPulsars(pulState); } }, 3000);
+    };
+    acts.append(rm);
+    row.append(tile(x.name), text, el('span', 'count', x.unread || ''), acts);
+    return row;
+  }) : [empty('pulsar', bhT('settings.pulsar_none'))]));
+  for (const pick of $('pullist').querySelectorAll('select')) { const x = p.list.find((y) => y.id === Number(pick.dataset.id)); if (x) pick.value = String(x.space); }
+}
+$('pullist').addEventListener('change', (e) => { if (e.target.tagName === 'SELECT') send({ cmd: 'pulsar_move', id: Number(e.target.dataset.id), space: Number(e.target.value) }); });
+$('puladd').onclick = () => { const v = $('puladdr').value.trim(); if (v) { send({ cmd: 'pulsar_new', input: v, space: Number($('pulspace').value) || null }); $('puladdr').value = ''; } };
+$('puladdr').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('puladd').click(); });
+$('ghsave').onclick = () => { send({ cmd: 'pulsar_github_connect', token: $('ghtoken').value }); $('ghtoken').value = ''; };
+$('ghtoken').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('ghsave').click(); });
+$('ghpage').onclick = () => send({ cmd: 'open', input: 'https://github.com/settings/personal-access-tokens/new' });
+$('ghadd').onclick = () => { send({ cmd: 'pulsar_github_new', kind: ghKind, repo: $('ghrepo').value, space: Number($('ghspace').value) || null }); $('ghrepo').value = ''; };
+function renderBackup(b) {
+  for (const id of ['exp-html', 'exp-csv', 'bksave', 'bkrestore']) $(id).disabled = b.busy || b.private;
+  $('bkstatus').textContent = b.private ? bhT('settings.backup_private') : b.status || '';
+  $('bkready').hidden = !b.staged;
+}
 
 // Calendar: the secret addresses are never sent back to this page, only their calendar's name.
 // Recall: the switch, how many pages are remembered, the sites never remembered.

@@ -106,6 +106,8 @@ impl Running {
             UiCommand::Shortcut { key } => self.shortcut(&key),
             UiCommand::Passwords { action } => self.password_action(action),
             UiCommand::Aliases { action } => self.alias_action(action),
+            UiCommand::ClearData { kinds, period, all_spaces } => self.clear_data(&kinds, &period, all_spaces),
+            UiCommand::DownloadAct { id, act } => self.download_act(id, &act),
             // Everything else belongs to a module: each one handles its own commands.
             command @ (UiCommand::SignalAct { .. }
             | UiCommand::SignalDismiss { .. }
@@ -250,6 +252,9 @@ impl Running {
             | UiCommand::ClearHistory
             | UiCommand::DismissReleaseNotes
             | UiCommand::SetEngine { .. }
+            | UiCommand::KeywordAdd { .. }
+            | UiCommand::KeywordRemove { .. }
+            | UiCommand::KeywordReset
             | UiCommand::SetQuickAccessSize { .. }
             | UiCommand::SetHomeSection { .. }
             | UiCommand::SetHomeOrder { .. }
@@ -289,6 +294,33 @@ impl Running {
             | UiCommand::Forward
             | UiCommand::Reload
             | UiCommand::HardReload) => self.handle_tabs(command),
+            command @ (UiCommand::PermissionAnswer { .. }
+            | UiCommand::SitePanel { .. }
+            | UiCommand::PermissionSet { .. }
+            | UiCommand::PermissionForget { .. }) => self.handle_permissions(command),
+            command @ (UiCommand::PulsarForm
+            | UiCommand::PulsarNew { .. }
+            | UiCommand::PulsarToggle { .. }
+            | UiCommand::PulsarPin { .. }
+            | UiCommand::PulsarRename { .. }
+            | UiCommand::PulsarEdit { .. }
+            | UiCommand::PulsarReadAll { .. }
+            | UiCommand::PulsarRefresh { .. }
+            | UiCommand::PulsarRemove { .. }
+            | UiCommand::PulsarOpen { .. }
+            | UiCommand::PulsarMove { .. }
+            | UiCommand::PulsarGithubConnect { .. }
+            | UiCommand::PulsarGithubDisconnect
+            | UiCommand::PulsarGithubNew { .. }
+            | UiCommand::SetPulsarEvery { .. }
+            | UiCommand::SetPulsarLines { .. }
+            | UiCommand::SetPulsarNotices { .. }
+            | UiCommand::SetPulsars { .. }) => self.handle_pulsars(command),
+            command @ (UiCommand::ExportBookmarks
+            | UiCommand::ExportPasswords
+            | UiCommand::BackupExport { .. }
+            | UiCommand::BackupRestore { .. }
+            | UiCommand::QuitApp) => self.handle_backup(command),
             command @ (UiCommand::SetTrackerLearning { .. }
             | UiCommand::TrackerAllow { .. }
             | UiCommand::TrackerBlock { .. }

@@ -20,10 +20,38 @@ pub(crate) struct DownloadLive {
     pub(crate) received: u64,
     pub(crate) total: Option<u64>,
     pub(crate) finished: Option<(bool, Instant)>,
+    /// The tab it came from: its page stays alive until the end.
+    pub(crate) tab: Option<TabId>,
+    /// What pauses, resumes and cancels it (Windows, macOS).
+    pub(crate) control: Option<wry::DownloadControl>,
+    pub(crate) paused: bool,
+}
+
+impl DownloadLive {
+    /// What the buttons of its card offer.
+    fn acts(&self) -> serde_json::Value {
+        let Some(control) = &self.control else { return json!([]) };
+        match self.finished {
+            None if self.paused => json!(["resume", "cancel"]),
+            None => json!(["pause", "cancel"]),
+            // Cut by the network: it can go on from where it stopped.
+            Some((false, _)) if control.can_resume() => json!(["resume"]),
+            Some(_) => json!([]),
+        }
+    }
+
+    fn lingers(&self) -> Duration {
+        match self.finished {
+            Some((false, _)) if self.control.as_ref().is_some_and(wry::DownloadControl::can_resume) => RESUME_LINGER,
+            _ => DOWNLOAD_LINGER,
+        }
+    }
 }
 
 /// How long a finished download stays in the sidebar.
 const DOWNLOAD_LINGER: Duration = Duration::from_secs(8);
+/// How long a failed download that can go on keeps its card.
+const RESUME_LINGER: Duration = Duration::from_secs(300);
 
 pub(crate) const DOWNLOAD_POLL: Duration = Duration::from_millis(500);
 
@@ -95,6 +123,8 @@ pub(crate) struct Downloads {
     /// failure, which is no error to show.
     pub(crate) navs: HashMap<TabId, Instant>,
     pub(crate) polled: Instant,
+    /// Downloads the user cancelled: their end is no failure to report.
+    cancelled: std::collections::HashSet<String>,
     /// Sizes announced by the servers, read in the background: `(download id, bytes)`.
     pub(crate) size_tx: std::sync::mpsc::Sender<(u64, u64)>,
     pub(crate) size_rx: std::sync::mpsc::Receiver<(u64, u64)>,
@@ -103,26 +133,120 @@ pub(crate) struct Downloads {
 impl Downloads {
     pub(crate) fn new(data: &std::path::Path) -> Self {
         let (size_tx, size_rx) = std::sync::mpsc::channel();
+        let mut records = blackhole_infrastructure::store::DownloadStore::new(data).load();
+        // Left unfinished by the last run: the engine forgot them. Another window's go on.
+        if !crate::shell::windows::is_new_window() {
+            for d in records.iter_mut().filter(|d| !d.done) {
+                d.done = true;
+            }
+        }
         Self {
-            records: blackhole_infrastructure::store::DownloadStore::new(data).load(),
+            records,
             live: HashMap::new(),
             only_tabs: HashMap::new(),
             navs: HashMap::new(),
             polled: Instant::now(),
+            cancelled: std::collections::HashSet::new(),
             size_tx,
             size_rx,
         }
     }
 }
 
+impl Downloads {
+    /// Tabs whose page must stay alive for their downloads.
+    pub(crate) fn tabs_at_work(&self) -> Vec<TabId> {
+        self.live
+            .values()
+            .filter(|d| d.finished.is_none_or(|(ok, _)| !ok && d.control.as_ref().is_some_and(wry::DownloadControl::can_resume)))
+            .filter_map(|d| d.tab)
+            .collect()
+    }
+
+    /// What the buttons of a download offer (Library).
+    pub(crate) fn acts_of(&self, id: u64) -> serde_json::Value {
+        self.live.get(&id).map_or_else(|| json!([]), DownloadLive::acts)
+    }
+
+    pub(crate) fn paused(&self, id: u64) -> bool {
+        self.live.get(&id).is_some_and(|d| d.paused)
+    }
+}
+
 impl Running {
+    /// The engine hands over what controls a download just started.
+    pub(crate) fn download_control(&mut self, path: &std::path::Path, control: wry::DownloadControl) {
+        if let Some(d) = self.downloads.live.values_mut().find(|d| d.path == path && d.finished.is_none()) {
+            d.control = Some(control);
+            self.downloads_changed();
+        }
+    }
+
+    fn downloads_changed(&mut self) {
+        let list = self.downloads_json();
+        self.ui(format!("window.bh&&bh.downloads({list})"));
+        self.ui_library();
+    }
+
+    /// The buttons of a download: pause, resume, cancel.
+    pub(crate) fn download_act(&mut self, id: u64, act: &str) {
+        let Some(d) = self.downloads.live.get_mut(&id) else { return };
+        let Some(control) = d.control.clone() else { return };
+        match act {
+            "pause" if d.finished.is_none() && !d.paused => {
+                // Before the engine is asked: it may report the pause at once.
+                d.paused = true;
+                d.paused = control.pause();
+            }
+            "resume" if d.paused || d.finished.is_some() => {
+                if control.resume() {
+                    d.paused = false;
+                    d.finished = None;
+                    if let Some(rec) = self.downloads.records.iter_mut().find(|r| r.id == id) {
+                        rec.done = false;
+                        rec.ok = false;
+                    }
+                    self.save_downloads();
+                } else {
+                    self.toast(&t("toast.download_no_resume"));
+                }
+            }
+            "cancel" if d.finished.is_none() => {
+                let path = d.path.clone();
+                self.downloads.live.remove(&id);
+                let url = self.downloads.records.iter_mut().find(|r| r.id == id).map(|rec| {
+                    rec.done = true;
+                    rec.url.clone()
+                });
+                if let Some(url) = url {
+                    self.downloads.cancelled.insert(url.clone());
+                    control.cancel();
+                    // WebKit leaves what it wrote, at the path the shell chose for this file.
+                    #[cfg(target_os = "macos")]
+                    let _ = std::fs::remove_file(&path);
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = path;
+                    if let Some(tab) = self.downloads.only_tabs.remove(&url) {
+                        if self.tabs.contains_key(&tab) {
+                            self.handle_ui(UiCommand::Close { id: tab.0 });
+                        }
+                    }
+                }
+                self.save_downloads();
+                self.sync_bar_notice();
+            }
+            _ => {}
+        }
+        self.downloads_changed();
+    }
+
     pub(crate) fn downloads_json(&self) -> serde_json::Value {
         let mut live: Vec<_> = self.downloads.live.iter().collect();
         live.sort_by_key(|(id, _)| **id);
         json!(live
             .into_iter()
             .map(|(id, d)| json!({
-                "id": id, "name": d.name, "received": d.received, "total": d.total,
+                "id": id, "name": d.name, "acts": d.acts(), "paused": d.paused, "received": d.received, "total": d.total,
                 "state": d.finished.map(|(ok, _)| if ok { "ok" } else { "bad" }),
             }))
             .collect::<Vec<_>>())
@@ -143,7 +267,11 @@ impl Running {
         if self.downloads.polled.elapsed() >= DOWNLOAD_POLL {
             self.downloads.polled = Instant::now();
             for d in self.downloads.live.values_mut().filter(|d| d.finished.is_none()) {
-                let size = blackhole_infrastructure::partial_size(&d.path);
+                let size = d
+                    .control
+                    .as_ref()
+                    .and_then(wry::DownloadControl::received)
+                    .unwrap_or_else(|| blackhole_infrastructure::partial_size(&d.path));
                 if size != d.received {
                     d.received = size;
                     changed = true;
@@ -152,7 +280,7 @@ impl Running {
             let before = self.downloads.live.len();
             self.downloads.live.retain(|_, d| {
                 d.finished
-                    .is_none_or(|(_, at)| at.elapsed() < DOWNLOAD_LINGER)
+                    .is_none_or(|(_, at)| at.elapsed() < d.lingers())
             });
             changed |= before != self.downloads.live.len();
         }
@@ -175,6 +303,7 @@ impl Running {
     /// A navigation became a download: its card in the sidebar, its record, its size asked in the background.
     pub(crate) fn download_started(&mut self, tab: TabId, url: String, path: PathBuf) {
         trace(|| format!("download started tab={} {url}", tab.0));
+        self.downloads.cancelled.remove(&url);
         // The navigation became a download: the tab is not waiting for a page any more
         // (else "Site injoignable" after CONNECT_MAX). A tab opened for the file alone,
         // that never showed a page, closes once the file is done, as in other browsers.
@@ -217,6 +346,9 @@ impl Running {
                 received: 0,
                 total: None,
                 finished: None,
+                tab: Some(tab),
+                control: None,
+                paused: false,
             },
         );
         self.downloads.polled = Instant::now();
@@ -251,7 +383,7 @@ impl Running {
         self.save_downloads();
         self.downloads.live.insert(
             id,
-            DownloadLive { name, path, received: size, total: Some(size.max(1)), finished: Some((true, Instant::now())) },
+            DownloadLive { name, path, received: size, total: Some(size.max(1)), finished: Some((true, Instant::now())), tab: None, control: None, paused: false },
         );
         let list = self.downloads_json();
         self.ui(format!("window.bh&&bh.downloads({list})"));
@@ -267,6 +399,9 @@ impl Running {
             if self.tabs.contains_key(&tab) {
                 self.handle_ui(UiCommand::Close { id: tab.0 });
             }
+        }
+        if !ok && self.downloads.cancelled.remove(&url) {
+            return;
         }
         if let Some(d) = self
             .downloads.records

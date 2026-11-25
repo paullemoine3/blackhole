@@ -36,6 +36,13 @@ eval home 'ob8:' + (document.getElementById('ob-next').click(), 'next')
 wait 1600
 eval home 'ob9:' + document.getElementById('ob-title').textContent
 shot ob05-shields
+eval home 'ob50:' + (document.getElementById('ob-next').click(), 'next')
+wait 2900
+shot ob05b-pulsars-signal
+wait 2600
+eval home 'ob51:' + document.getElementById('ob-title').textContent + '|' + document.querySelectorAll('.ob-pf li.show').length + '|' + document.querySelector('.ob-pf .hd em').textContent
+shot ob05c-pulsars
+eval home 'ob52:' + (document.querySelector('.ob-step').scrollHeight <= document.querySelector('.ob-stage').clientHeight)
 eval home 'ob10:' + (document.getElementById('ob-skip').click(), 'skip')
 wait 1200
 eval home 'ob11:' + document.getElementById('ob-title').textContent + '|' + document.getElementById('ob-next').textContent
@@ -84,6 +91,9 @@ eval home 'ob26:' + (!document.getElementById('ob').hidden) + '|' + document.que
 eval chrome 'ob27:' + document.documentElement.classList.contains('bh-dimmed')
 eval home 'ob28:' + (document.getElementById('ob-next').click(), document.getElementById('ob-title').textContent)
 shot ob13-tour-still
+eval home 'ob53:' + (document.getElementById('ob-next').click(), document.getElementById('ob-next').click(), document.getElementById('ob-next').click(), document.getElementById('ob-title').textContent) + '|' + document.querySelectorAll('.ob-pf li.show').length
+wait 300
+shot ob13b-pulsars-still
 eval home 'ob29:' + (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), document.getElementById('ob').hidden)
 wait 300
 eval chrome 'ob30:' + document.documentElement.classList.contains('bh-dimmed')
@@ -102,6 +112,10 @@ eval home 'ob36:' + (document.getElementById('ob-next').click(), 'next')
 wait 1200
 eval home 'ob35:' + document.getElementById('ob-title').textContent
 shot ob15-shields-fr
+eval home 'ob54:' + (document.getElementById('ob-next').click(), 'next')
+wait 5500
+eval home 'ob55:' + (document.querySelector('.ob-step').scrollHeight <= document.querySelector('.ob-stage').clientHeight)
+shot ob16-pulsars-fr
 cmd {"cmd":"set_language","language":"en"}
 quit
 '@
@@ -121,12 +135,16 @@ $fail = $false
 function Check($ok, $name) {
     if ($ok) { Write-Host "ok   $name" } else { Write-Host "FAIL $name"; $script:fail = $true }
 }
-Check ((Ev ob1) -match 'ob1:true\|Welcome to BlackHole\|(9|10)"') 'first launch: the dialog opens over the start page after the splash'
+Check ((Ev ob1) -match 'ob1:true\|Welcome to BlackHole\|(10|11)"') 'first launch: the dialog opens over the start page after the splash'
 Check ((Ev ob2) -match 'ob2:true"') 'the sidebar is veiled under the dialog'
 Check ((Ev ob3) -match 'ob3:true\|2147483001"') 'the top bar is veiled, its window buttons stay above the veil'
 Check ((Ev ob5) -match 'ob5:true"') 'between two steps the hole swallows the card (mid-transition)'
 Check ((Ev ob6) -match 'ob6:A space for every context"') 'the hole brings the next step'
 Check ((Ev ob9) -match 'ob9:Not even light gets out"') 'the Shields step has its new title'
+Check ((Ev ob51) -match 'ob51:Folders that fill themselves\|[123]\|[123]"') 'the Pulsars step: the folder fills, its count follows'
+Check ((Ev ob52) -match 'ob52:true') 'it fits without scrolling'
+Check ((Ev ob53) -match 'ob53:Folders that fill themselves\|3') 'animations off: the folder is shown filled'
+Check ((Ev ob55) -match 'ob55:true') 'it fits in French too'
 Check ((Ev ob11) -match 'ob11:Bring your bookmarks\|') 'Skip the tour goes to the import'
 Check ((Ev ob13) -match 'ob13:Open your links in BlackHole\|') 'then the default browser'
 Check ((Ev ob13) -match 'installer|Click here to open Settings') 'the Windows text points to Settings (or to the installer for a cargo build)'
@@ -140,7 +158,7 @@ Check ((Ev ob21) -match 'ob21:Have a good trip to the edge of the horizon\|4\|tr
 Check ((Ev ob23) -match 'ob23:true\|false"') 'the end lets the start page come out of the hole'
 Check ((Ev ob24) -match 'ob24:false"') 'the sidebar veil is lifted'
 Check ((Ev ob25) -match 'ob25:false"') 'the top bar veil is lifted'
-Check ((Ev ob26) -match 'ob26:true\|5\|Close"') 'Settings replays the features only (five steps)'
+Check ((Ev ob26) -match 'ob26:true\|6\|Close"') 'Settings replays the features only (six steps)'
 Check ((Ev ob27) -match 'ob27:true"') 'the replay veils the sidebar too'
 Check ((Ev ob28) -match 'ob28:A space for every context"') 'animations off: the next step comes at once'
 Check ((Ev ob29) -match 'ob29:true"') 'Escape closes the tour'

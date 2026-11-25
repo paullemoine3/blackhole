@@ -9,5 +9,6 @@ pub(crate) mod lifecycle;
 pub(crate) mod media;
 pub(crate) mod navigation;
 pub(crate) mod organize;
+pub(crate) mod permissions;
 pub(crate) mod pip;
 pub(crate) mod zoom;

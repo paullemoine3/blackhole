@@ -296,6 +296,10 @@ impl Running {
             .filter(|id| ws.is_burner(**id) || anchored.contains(id))
             .copied()
             .collect();
+        // Closing the page ends its downloads, paused ones included.
+        for id in self.downloads.tabs_at_work() {
+            self.media.busy_seen.insert(id, now);
+        }
         for id in holes {
             self.media.busy_seen.insert(id, now);
         }

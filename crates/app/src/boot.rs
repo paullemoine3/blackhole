@@ -58,8 +58,12 @@ use crate::shell::windows::{
 };
 use crate::state::Running;
 use crate::tabs::{errors, favicons};
+use crate::features::backup::Backups;
+use crate::features::pulsars::Pulsing;
+use crate::features::clearing::Clearing;
 use crate::tabs::auth::Auth;
 use crate::tabs::downloads::Downloads;
+use crate::tabs::permissions::Permits;
 use crate::tabs::lifecycle::{ANCHORS_DELAY, SPARES_DELAY};
 use crate::tabs::media::MediaWatch;
 use crate::tabs::pip::Pip;
@@ -165,6 +169,9 @@ impl Running {
         crate::shell::windows::sweep_private();
         if private_mode() {
             blackhole_infrastructure::private::prepare(&profile, &data);
+        } else if !crate::shell::windows::is_new_window() {
+            // A restored backup takes its place while no other window holds the profile.
+            blackhole_infrastructure::backup::apply_staged(&data);
         }
         // A private window with extensions starts from a copy of what they keep in the main
         // profile (settings, first run done), before its engine opens the folder.
@@ -212,6 +219,9 @@ impl Running {
             )
         });
         trace_startup("session, icons and extensions read");
+        if private_mode() {
+            svc.seal_permissions();
+        }
         // Learned trackers are blocked from the first page; a private window reads the main
         // profile's and writes nothing.
         let learning = trackers::Learning::new(&profile, private_mode());
@@ -389,6 +399,10 @@ impl Running {
             pending: HashMap::new(),
             errors: errors::Errors::default(),
             auth: Auth::default(),
+            permits: Permits::default(),
+            clearing: Clearing::default(),
+            pulsing: Pulsing::new(&data),
+            backups: Backups::new(),
             signals: Default::default(),
             received: None,
             #[cfg(target_os = "macos")]

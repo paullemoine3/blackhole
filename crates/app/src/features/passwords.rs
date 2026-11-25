@@ -234,6 +234,15 @@ impl Passwords {
         true
     }
 
+    /// The saved logins, while the wallet is open; none when there is no wallet at all.
+    pub(crate) fn entries(&self) -> Option<&[Entry]> {
+        match &self.open {
+            Some(u) => Some(&u.data.entries),
+            None if !self.busy && self.protection.is_none() => Some(&[]),
+            None => None,
+        }
+    }
+
     pub(crate) fn read_only(&self) -> bool {
         self.read_only
     }

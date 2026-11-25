@@ -11,9 +11,12 @@ use url::Url;
 
 pub mod aliases;
 pub mod app_extensions;
+pub mod backup;
 pub mod catalog;
 pub mod ext_sync;
+pub mod feeds;
 pub mod github_ext;
+pub mod github_issues;
 pub mod handoff;
 pub mod history_sync;
 pub mod image_clip;
@@ -534,6 +537,36 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             } else {
                 blackhole_domain::dns::DEFAULT_RESOLVER.to_owned()
             },
+            pulsars: dto.pulsars,
+            pulsar_every: if blackhole_domain::pulsar::EVERY_CHOICES.contains(&dto.pulsar_every) {
+                dto.pulsar_every
+            } else {
+                blackhole_domain::pulsar::DEFAULT_EVERY
+            },
+            pulsar_lines: if blackhole_domain::pulsar::LINES_CHOICES.contains(&dto.pulsar_lines) {
+                dto.pulsar_lines
+            } else {
+                blackhole_domain::pulsar::DEFAULT_LINES
+            },
+            pulsar_notices: dto.pulsar_notices,
+            site_permissions: blackhole_domain::permissions::SitePermissions::restore(
+                dto.site_permissions
+                    .iter()
+                    .flat_map(|(o, s)| s.iter().map(move |(p, a)| (o.as_str(), p.as_str(), *a))),
+            ),
+            keyword_engines: match dto.keyword_engines {
+                // Absent before 0.8.31: the engines of a new profile.
+                None => blackhole_domain::keywords::defaults(),
+                Some(list) => {
+                    let mut out = Vec::new();
+                    for e in list {
+                        if let Ok(e) = blackhole_domain::keywords::clean(&e.keyword, &e.name, &e.url) {
+                            let _ = blackhole_domain::keywords::add(&mut out, e);
+                        }
+                    }
+                    out
+                }
+            },
         }))
     }
 
@@ -587,6 +620,24 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             extension_sync: settings.extension_sync,
             encrypted_dns: settings.encrypted_dns,
             dns_resolver: settings.dns_resolver.clone(),
+            pulsars: settings.pulsars,
+            pulsar_every: settings.pulsar_every,
+            pulsar_lines: settings.pulsar_lines,
+            pulsar_notices: settings.pulsar_notices,
+            site_permissions: {
+                let mut sites = std::collections::BTreeMap::<String, std::collections::BTreeMap<String, bool>>::new();
+                for (origin, permission, allowed) in settings.site_permissions.iter() {
+                    sites.entry(origin.to_owned()).or_default().insert(permission.id().to_owned(), allowed);
+                }
+                sites
+            },
+            keyword_engines: Some(
+                settings
+                    .keyword_engines
+                    .iter()
+                    .map(|e| KeywordDto { keyword: e.keyword.clone(), name: e.name.clone(), url: e.url.clone() })
+                    .collect(),
+            ),
         };
         let json = serde_json::to_string_pretty(&dto).map_err(|e| StorageError(e.to_string()))?;
         write_atomic(&self.path.with_file_name("settings.json"), &json)
@@ -781,6 +832,27 @@ struct SettingsDto {
     encrypted_dns: bool,
     #[serde(default)]
     dns_resolver: String,
+    /// origin -> permission -> allowed (0.8.31).
+    #[serde(default)]
+    site_permissions: std::collections::BTreeMap<String, std::collections::BTreeMap<String, bool>>,
+    #[serde(default = "default_true")]
+    pulsars: bool,
+    #[serde(default)]
+    pulsar_every: u32,
+    #[serde(default)]
+    pulsar_lines: u32,
+    #[serde(default)]
+    pulsar_notices: bool,
+    #[serde(default)]
+    keyword_engines: Option<Vec<KeywordDto>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct KeywordDto {
+    keyword: String,
+    #[serde(default)]
+    name: String,
+    url: String,
 }
 
 fn default_language() -> String {
@@ -1105,6 +1177,12 @@ mod tests {
             extension_sync: false,
             encrypted_dns: true,
             dns_resolver: "https://dns.nextdns.io/abc".to_owned(),
+            site_permissions: blackhole_domain::permissions::SitePermissions::restore([("https://meet.test", "camera", true), ("https://meet.test", "location", false)]),
+            pulsars: false,
+            pulsar_every: 60,
+            pulsar_lines: 12,
+            pulsar_notices: true,
+            keyword_engines: vec![blackhole_domain::keywords::clean("x", "X", "https://x.test/?q=%s").unwrap()],
         };
         repo.save_settings(&s).unwrap();
         assert_eq!(repo.load_settings().unwrap().unwrap(), s);
@@ -1115,6 +1193,8 @@ mod tests {
         .unwrap();
         let old = repo.load_settings().unwrap().unwrap();
         assert_eq!(old.search_engine, SearchEngine::Qwant);
+        assert!(old.site_permissions.is_empty(), "every site asks in older files");
+        assert_eq!(old.keyword_engines, blackhole_domain::keywords::defaults(), "the default keywords in older files");
         assert_eq!(old.sidebar_width, Settings::DEFAULT_SIDEBAR_WIDTH);
         assert!(old.animations && old.hardware_acceleration && old.depth);
         assert!(old.password_manager && old.tracker_learning, "on in older files");

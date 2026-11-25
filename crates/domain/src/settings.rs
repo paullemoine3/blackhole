@@ -1,3 +1,5 @@
+use crate::keywords::{self, KeywordEngine};
+use crate::permissions::SitePermissions;
 use crate::{SearchEngine, Shields, SpaceId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,6 +99,17 @@ pub struct Settings {
     pub encrypted_dns: bool,
     /// A resolver of `dns::RESOLVERS` (its id) or the `https://` address of another one.
     pub dns_resolver: String,
+    /// What sites were allowed or refused (camera, microphone…), by origin (0.8.31).
+    pub site_permissions: SitePermissions,
+    /// Search engines reached by a keyword in the command bar (0.8.31).
+    pub keyword_engines: Vec<KeywordEngine>,
+    /// Pulsars (folders that fill themselves from a feed) are shown and read (0.8.31).
+    pub pulsars: bool,
+    /// Minutes between two readings of a Pulsar, lines shown under it, and whether a toast says
+    /// what is new.
+    pub pulsar_every: u32,
+    pub pulsar_lines: u32,
+    pub pulsar_notices: bool,
 }
 
 /// Quick access tile sizes, smallest first (`medium` is the default: four tiles a row).
@@ -171,6 +184,11 @@ pub fn overflow_to_release<K: Copy + PartialEq, T: Ord>(
 }
 
 impl Settings {
+    /// What the user typed, as a navigable address (keywords included).
+    pub fn resolve_input(&self, input: &str) -> url::Url {
+        keywords::resolve(input, &self.keyword_engines, self.search_engine)
+    }
+
     /// The zoom of `host`'s site in percent (100 when it has none).
     pub fn zoom_of(&self, host: &str) -> u32 {
         self.site_zoom.get(&site_key(host)).copied().unwrap_or(100)
@@ -250,6 +268,12 @@ impl Default for Settings {
             extension_sync: true,
             encrypted_dns: false,
             dns_resolver: crate::dns::DEFAULT_RESOLVER.to_owned(),
+            site_permissions: SitePermissions::default(),
+            keyword_engines: keywords::defaults(),
+            pulsars: true,
+            pulsar_every: crate::pulsar::DEFAULT_EVERY,
+            pulsar_lines: crate::pulsar::DEFAULT_LINES,
+            pulsar_notices: false,
         }
     }
 }
