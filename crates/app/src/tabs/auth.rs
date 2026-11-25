@@ -22,7 +22,7 @@ impl Running {
     /// A server asks for a user name and password. The tab is not unreachable: it waits for
     /// the prompt, shown once the tab is on screen.
     pub(crate) fn on_auth(&mut self, tab: TabId, challenge: &wry::HttpAuthChallenge, reply: wry::HttpAuthResponder) {
-        if !self.auth_tab_alive(tab) {
+        if !self.prompt_tab_alive(tab) {
             return; // `reply` dropped: cancelled.
         }
         self.awaiting.remove(&tab);
@@ -47,12 +47,12 @@ impl Running {
 
     /// Peek has no prompt (the palette would close it): its page gets the 401, opening it as
     /// a tab asks.
-    fn auth_tab_alive(&self, tab: TabId) -> bool {
+    pub(crate) fn prompt_tab_alive(&self, tab: TabId) -> bool {
         tab.0 != 0 && tab != PEEK_TAB && self.tabs.contains_key(&tab)
     }
 
     /// Tabs whose page is on screen: the active one and the other pane of a split.
-    fn auth_tabs_shown(&self) -> Vec<TabId> {
+    pub(crate) fn tabs_on_screen(&self) -> Vec<TabId> {
         let mut shown = Vec::new();
         if !self.home_shown() {
             shown.extend(self.svc.workspace().active_tab().map(|t| t.id));
@@ -70,7 +70,7 @@ impl Running {
             .auth.replies
             .keys()
             .filter_map(|id| self.auth.prompts.get(*id).map(|c| c.tab))
-            .filter(|tab| !self.auth_tab_alive(*tab))
+            .filter(|tab| !self.prompt_tab_alive(*tab))
             .collect();
         for tab in gone {
             for id in self.auth.prompts.drop_tab(tab) {
@@ -86,7 +86,7 @@ impl Running {
         if self.auth.shown.is_some() {
             return;
         }
-        let Some((id, _)) = self.auth.prompts.next_for(&self.auth_tabs_shown()) else {
+        let Some((id, _)) = self.auth.prompts.next_for(&self.tabs_on_screen()) else {
             return;
         };
         self.auth.shown = Some(id);

@@ -179,7 +179,8 @@ impl Running {
                 } else {
                     name
                 };
-                self.svc.add_space(&name, &color);
+                let made = self.svc.add_space(&name, &color);
+                self.pulsars_new_space(made.0);
                 self.sync();
             }
             _ => {}

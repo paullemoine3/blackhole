@@ -336,7 +336,7 @@ impl PrivacyPolicy {
 
 /// Hosts that cannot serve a public https certificate: loopback, private/link-local IPs,
 /// single-label names and `.local`/`.lan` names. They stay on plain http.
-pub(crate) fn is_local(url: &Url) -> bool {
+pub fn is_local(url: &Url) -> bool {
     use url::Host;
     match url.host() {
         Some(Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),

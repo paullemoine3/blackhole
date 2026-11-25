@@ -173,6 +173,32 @@ impl History {
         self.entries.len() != before
     }
 
+    /// Forgets the pages visited at or after `since`, and remembers it for paired devices. A page
+    /// also visited before keeps those visits. Returns the pages that are gone.
+    pub fn forget_since(&mut self, since: u64, now: u64) -> Vec<Url> {
+        let mut gone = Vec::new();
+        for e in &mut self.entries {
+            if e.visited_at < since {
+                continue;
+            }
+            let before = e.recent.len();
+            e.recent.retain(|v| v.at < since);
+            e.visits = e.visits.saturating_sub(u32::try_from(before - e.recent.len()).unwrap_or(u32::MAX));
+            match e.recent.first() {
+                Some(last) if e.visits > 0 => {
+                    e.visited_at = last.at;
+                    e.changed = now;
+                }
+                _ => gone.push(e.url.clone()),
+            }
+        }
+        for url in &gone {
+            self.forget(url, now);
+        }
+        self.entries.sort_by_key(|e| std::cmp::Reverse(e.visited_at));
+        gone
+    }
+
     /// Clears everything and remembers when (for paired devices).
     pub fn clear_at(&mut self, now: u64) {
         self.entries.clear();
@@ -416,6 +442,20 @@ fn merge_entry(mine: &mut HistoryEntry, theirs: &HistoryEntry) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn erasing_the_last_hour_keeps_the_older_visits_of_a_page() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        let mut h = History::default();
+        h.visit(&url("https://old.test/"), 100);
+        h.visit(&url("https://both.test/"), 200);
+        h.visit(&url("https://both.test/"), 5_000);
+        h.visit(&url("https://new.test/"), 5_100);
+        assert_eq!(h.forget_since(5_000, 6_000), [url("https://new.test/")]);
+        let left: Vec<_> = h.entries().iter().map(|e| (e.url.as_str(), e.visited_at, e.visits)).collect();
+        assert_eq!(left, [("https://both.test/", 200, 1), ("https://old.test/", 100, 1)]);
+        assert_eq!(h.forgotten().len(), 1, "paired devices drop it too");
+    }
 
     #[test]
     fn an_address_from_quick_access_or_a_bookmark_is_a_bookmark_visit() {

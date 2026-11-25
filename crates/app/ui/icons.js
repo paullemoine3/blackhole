@@ -52,6 +52,10 @@
     alert: '<path d="M8 2.5l6 10.5H2zM8 6.8v3"/>' + dot(8, 11.6),
     // Media
     play: '<path d="M5 3.3v9.4L12.4 8z" fill="currentColor"/>',
+    bell: '<path d="M4 11V7.2a4 4 0 0 1 8 0V11l1 1.3H3zM6.7 14h2.6"/>',
+    stop: '<rect x="4" y="4" width="8" height="8" rx="1.2"/>',
+    sliders: '<path d="M2.5 5h5M11 5h2.5M2.5 11H5M8.5 11h5"/><circle cx="9.2" cy="5" r="1.7"/><circle cx="6.8" cy="11" r="1.7"/>',
+    pulsar: '<circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/><ellipse cx="8" cy="8" rx="6.6" ry="2.9" transform="rotate(-22 8 8)"/><path d="M6.9 4.2L6 .9M9.1 11.8l.9 3.3"/>',
     pause: '<path d="M5.5 3.5v9M10.5 3.5v9"/>',
     sound: '<path d="M2.5 6v4h2.5l3.5 3V3L5 6zM11 5.5a3.5 3.5 0 0 1 0 5"/>',
     mute: '<path d="M2.5 6v4h2.5l3.5 3V3L5 6zM11 6l3 4M14 6l-3 4"/>',

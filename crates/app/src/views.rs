@@ -220,7 +220,10 @@ pub fn encrypted_dns_at_launch() -> Option<&'static str> {
 
 /// Every view comes from here so they all share the same engine flags (WebView2 requires it).
 fn builder(ctx: &mut WebContext) -> WebViewBuilder<'_> {
-    let builder = WebViewBuilder::new_with_web_context(ctx);
+    // Nothing is granted to a view without a tab behind it (a live area, a popup): pages say
+    // otherwise in `build_tab`.
+    let builder =
+        WebViewBuilder::new_with_web_context(ctx).with_site_permission_handler(|_, reply| drop(reply));
     // Browser extensions are a property of the engine: every view must agree on it.
     #[cfg(windows)]
     let builder = {
@@ -593,6 +596,7 @@ fn build_tab(
     let id = |slot: &TabSlot| TabId(slot.load(Ordering::Relaxed));
     let (s_ipc, s_nav, s_title, s_load) = (slot.clone(), slot.clone(), slot.clone(), slot.clone());
     let (s_auth, auth) = (slot.clone(), mailbox.clone());
+    let (s_perm, perm, dl_control) = (slot.clone(), mailbox.clone(), mailbox.clone());
     let s_pop = slot.clone();
     let (s_fail, fail, s_trust, trust) = (slot.clone(), mailbox.clone(), slot.clone(), mailbox.clone());
     let guard = guard_script(policy);
@@ -830,6 +834,9 @@ fn build_tab(
             });
             true
         })
+        .with_download_control_handler(move |path, control| {
+            dl_control.push(Msg::DownloadControl { path, control });
+        })
         .with_download_completed_handler(move |url, path, ok| {
             dl_done.push(Msg::DownloadDone { url, path, ok });
         })
@@ -860,6 +867,10 @@ fn build_tab(
                 load.push(Msg::Url(tab, url));
             }
         })
+        // The camera, the microphone…: the shell asks, and remembers for the site.
+        .with_site_permission_handler(move |request, reply| {
+            perm.push(Msg::Permission(id(&s_perm), request, reply));
+        })
         // HTTP authentication (a NAS, a router): the shell asks for the credentials.
         .with_http_auth_handler(move |challenge, responder| {
             auth.push(Msg::Auth(id(&s_auth), challenge, responder));
@@ -885,6 +896,14 @@ fn build_tab(
     block_natively(&view, &native_policy);
     #[cfg(windows)]
     {
+        // Once per profile: what the engine remembered by itself would bypass the shell.
+        static RESET: std::sync::Mutex<Vec<Store>> = std::sync::Mutex::new(Vec::new());
+        if let Ok(mut reset) = RESET.lock() {
+            if !matches!(store, Store::Burner(_)) && !reset.contains(&store) {
+                reset.push(store);
+                view.reset_site_permissions();
+            }
+        }
         let (s_blocked, blocked) = (slot.clone(), mailbox.clone());
         block_natively(&view, &native_policy, move |host| {
             let tab = id(&s_blocked);

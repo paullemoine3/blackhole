@@ -348,6 +348,7 @@ mod error;
 #[cfg(any(target_os = "android", test))]
 mod inject_initialization_scripts;
 mod permissions;
+mod site_data;
 mod proxy;
 #[cfg(any(target_os = "macos", target_os = "android", target_os = "ios"))]
 mod util;
@@ -410,6 +411,10 @@ pub use dpi;
 pub use error::*;
 pub use http;
 pub use permissions::{PermissionKind, PermissionResponse};
+pub use site_data::{
+  DownloadControl, DownloadControlHandler, SiteData, SitePermissionHandler, SitePermissionRequest,
+  SitePermissionResponder,
+};
 pub use proxy::{ProxyConfig, ProxyEndpoint};
 pub use web_context::WebContext;
 
@@ -927,6 +932,10 @@ struct WebViewAttributes<'a> {
   ///     });
   /// ```
   pub permission_handler: Option<Box<dyn Fn(PermissionKind) -> PermissionResponse + Send + Sync>>,
+  /// BlackHole: see [`WebViewBuilder::with_site_permission_handler`].
+  pub site_permission_handler: Option<SitePermissionHandler>,
+  /// BlackHole: see [`WebViewBuilder::with_download_control_handler`].
+  pub download_control_handler: Option<DownloadControlHandler>,
   /// Controls the WebView's browser-level general autofill behavior.
   ///
   /// **This option does not disable password or credit card autofill.**
@@ -990,6 +999,8 @@ impl Default for WebViewAttributes<'_> {
       background_throttling: None,
       javascript_disabled: false,
       permission_handler: None,
+      site_permission_handler: None,
+      download_control_handler: None,
       general_autofill_enabled: true,
     }
   }
@@ -1503,6 +1514,32 @@ impl<'a> WebViewBuilder<'a> {
     handler: impl Fn(HttpAuthChallenge, HttpAuthResponder) + 'static,
   ) -> Self {
     self.attrs.http_auth_handler = Some(Box::new(handler));
+    self
+  }
+
+  /// BlackHole: called when a web page asks for the camera, the microphone, the location, the
+  /// notifications or to read the clipboard, with the origin that asks. Answer through the
+  /// responder, now or later on the main thread; dropping it denies.
+  ///
+  /// - **Windows**: the answer is never kept by the engine's profile. Other origins than
+  ///   http(s) and other kinds keep the engine's own behavior.
+  /// - **macOS**: camera and microphone only (without a handler WebKit's are granted).
+  /// - **Linux**: camera, microphone, location, notifications. **Android**: unsupported.
+  pub fn with_site_permission_handler(
+    mut self,
+    handler: impl Fn(SitePermissionRequest, SitePermissionResponder) + 'static,
+  ) -> Self {
+    self.attrs.site_permission_handler = Some(Box::new(handler));
+    self
+  }
+
+  /// BlackHole: called right after the started handler accepted a download, with what pauses,
+  /// resumes or cancels it. Windows and macOS only.
+  pub fn with_download_control_handler(
+    mut self,
+    handler: impl Fn(PathBuf, DownloadControl) + 'static,
+  ) -> Self {
+    self.attrs.download_control_handler = Some(Rc::new(handler));
     self
   }
 
@@ -2418,6 +2455,33 @@ impl WebView {
   /// Clear all browsing data
   pub fn clear_all_browsing_data(&self) -> Result<()> {
     self.webview.clear_all_browsing_data()
+  }
+
+  /// BlackHole: erases part of the profile's data, changed since a date (seconds since the Unix
+  /// epoch, `None`: all of it). `done` runs on the main thread once erased.
+  #[cfg(any(
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+  ))]
+  pub fn clear_site_data(
+    &self,
+    what: SiteData,
+    since: Option<u64>,
+    done: impl FnOnce() + 'static,
+  ) -> Result<()> {
+    self.webview.clear_site_data(what, since, Box::new(done))
+  }
+
+  /// BlackHole: forgets the answers the engine itself kept for the permissions handled by
+  /// [`WebViewBuilder::with_site_permission_handler`] (they would bypass the handler).
+  #[cfg(target_os = "windows")]
+  pub fn reset_site_permissions(&self) {
+    self.webview.reset_site_permissions();
   }
 
   pub fn bounds(&self) -> Result<Rect> {

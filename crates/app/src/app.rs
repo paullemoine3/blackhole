@@ -91,6 +91,10 @@ impl ApplicationHandler<Wake> for App {
             }
             app.service_calendar();
             app.service_auth();
+            app.service_permissions();
+            app.service_clearing();
+            app.service_backup();
+            app.service_pulsars();
             app.service_nearby();
             app.service_watches();
             app.service_signals();

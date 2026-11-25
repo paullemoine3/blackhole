@@ -52,6 +52,7 @@ impl Running {
             "accent": active.color,
             "media": media,
             "downloads": downloads.iter().map(|d| json!({
+                "acts": self.downloads.acts_of(d.id), "paused": self.downloads.paused(d.id),
                 "id": d.id, "name": d.name, "url": d.url, "at": d.at,
                 "done": d.done, "ok": d.ok, "exists": exists(d),
             })).collect::<Vec<_>>(),

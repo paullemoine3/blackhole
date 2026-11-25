@@ -108,6 +108,13 @@
   body.menuing.leaving #menu > * { animation: none; }
   @keyframes menuout { to { opacity: 0; transform: scale(.96); } }
   #menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .mchoice { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 10px; font-size: 13px; }
+  .mchoice .nm { flex: 1; min-width: 130px; }
+  #menu:has(.mchoice) { max-width: 460px; }
+  .mchoice .seg { flex: none; display: flex; padding: 2px; border-radius: 8px; background: rgba(255,255,255,.08); }
+  #menu .mchoice .seg button { width: auto; white-space: nowrap; overflow-wrap: normal; padding: 4px 9px; font-size: 12px; border-radius: 6px; opacity: .7; }
+  #menu .mchoice .seg button[aria-checked="true"] { background: var(--accent); color: #fff; opacity: 1; }
+  .mnote { padding: 4px 10px 6px; font-size: 12px; opacity: .65; max-width: 340px; }
   #menu button:hover { background: var(--sel); color: #fff; }
   #menu button.danger { color: #ff8a8a; }
   #menu button.danger:hover { background: rgba(255,90,90,.85); color: #fff; }
@@ -172,6 +179,27 @@
   #ctable td:first-child, #ctable th:first-child { width: 150px; opacity: .6; font-weight: 500; cursor: default; text-decoration: none; }
   #ctable .best { color: #6ee7a8; font-weight: 600; }
   #ctable small { display: block; opacity: .55; font-weight: 400; }
+  /* A new Pulsar: the address of a site, or of its feed. */
+  #pulsar { display: none; padding: 18px 20px 16px; }
+  body.pulsing #pulsar { display: block; }
+  body.pulsing .search, body.pulsing #list, body.pulsing .foot { display: none; }
+  #pulsar h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  #pulsar p { font-size: 12.5px; opacity: .6; }
+  #pulsar p.warn { opacity: 1; color: #ffb86b; margin-top: 8px; }
+  #pulsar p:empty { display: none; }
+  #pulsar input { width: 100%; margin-top: 12px; font: inherit; font-size: 14px; color: inherit; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; outline: none; user-select: text; -webkit-user-select: text; }
+  #pulsar input:focus { border-color: var(--accent); }
+  /* What a page asks for: the camera, the microphone… */
+  #perm { display: none; padding: 18px 20px 16px; outline: none; }
+  body.permitting #perm { display: block; }
+  body.permitting .search, body.permitting #list, body.permitting .foot { display: none; }
+  #perm h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; overflow-wrap: anywhere; }
+  #perm ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  #perm li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  #perm p { font-size: 12.5px; opacity: .6; margin-top: 10px; overflow-wrap: anywhere; }
+  #perm p.warn { opacity: 1; color: #ffb86b; }
+  #perm p:empty { display: none; }
+  #perm .actions { flex-wrap: wrap; }
   /* HTTP authentication (a NAS, a router): the server asks for a user name and password. */
   #auth { display: none; padding: 18px 20px 16px; }
   body.authing #auth { display: block; }
@@ -218,6 +246,20 @@
       <h2><span data-i18n="palette.compare_title">Compare tabs</span><button class="btn" id="ckeep" type="button"><i data-icon="easel" data-size="xs"></i> <span data-i18n="palette.compare_keep">Add to the Easel</span></button></h2>
       <div id="cpick"></div>
       <div id="cwrap"><table id="ctable"></table></div>
+    </div>
+    <form id="pulsar" autocomplete="off">
+      <h2><i data-icon="pulsar"></i><span data-i18n="palette.new_pulsar">New Pulsar</span></h2>
+      <p data-i18n="palette.pulsar_hint">A folder that fills itself with what a site publishes.</p>
+      <input id="puaddr" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="palette.pulsar_address" data-i18n-aria="palette.pulsar_address">
+      <p id="puerr" class="warn" role="alert"></p>
+      <div class="actions"><button type="button" class="btn" id="pugh" data-i18n="palette.pulsar_github">GitHub…</button><button type="button" class="btn" id="pucancel" data-i18n="common.cancel">Cancel</button><button type="submit" class="btn primary" id="puok"></button></div>
+    </form>
+    <div id="perm" role="dialog" aria-labelledby="ptitle" tabindex="-1">
+      <h2 id="ptitle"></h2>
+      <ul id="pwanted"></ul>
+      <p id="pframe" class="warn"></p>
+      <p id="pwarn" class="warn"></p>
+      <div class="actions"><button type="button" class="btn" id="pblock" data-i18n="permission.block">Block</button><button type="button" class="btn" id="ponce" data-i18n="permission.once">Allow this time</button><button type="button" class="btn primary" id="pallow" data-i18n="permission.allow">Always allow</button></div>
     </div>
     <form id="auth" autocomplete="off">
       <h2><span data-i18n="error.login">Sign in</span> · <span id="ahost"></span></h2>
@@ -380,8 +422,12 @@ function build() {
   const out = [];
   const enter = (input) => send({ cmd: S.mode === 'url' ? 'navigate' : 'open', input });
   if (q) {
-    const c = completion();
-    out.push(c
+    // A keyword names its engine (domain::keywords, said by the shell with the rows).
+    const kw = suggested.query === q ? suggested.keyword : null;
+    const c = kw ? null : completion();
+    out.push(kw
+      ? { glyph: 'search', title: kw.words || kw.name, sub: kw.words ? bhT('palette.search_with', { engine: kw.name }) : bhT('palette.go_to_site'), hint: bhT(kw.words ? 'palette.search' : 'menu.open'), run: () => enter(q) }
+      : c
       // The field completes an address: the first row opens it.
       ? { glyph: 'go', title: c.text, sub: bhT('palette.go_to_site'), hint: bhT('menu.open'), run: () => { chosen(c.key); enter(c.url); } }
       : looksLikeUrl(q)
@@ -667,6 +713,29 @@ function showMenu(m) {
     const dots = (el, text) => { el.replaceChildren(...text.split(/(?<=\.)(?=\S)/).flatMap((part, n) => n ? [document.createElement('wbr'), part] : [part])); return el; };
     if (it.head) return dots(Object.assign(document.createElement('div'), { className: 'mhead' }), it.head);
     if (it.picker) return colorPicker(it.picker);
+    // A short choice (allow, block, ask): the menu stays open, the choice moves.
+    if (it.choices) {
+      const row = document.createElement('div');
+      row.className = 'mchoice';
+      const name = document.createElement('span');
+      name.className = 'nm'; name.textContent = it.label;
+      const seg = document.createElement('span');
+      seg.className = 'seg'; seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', it.label);
+      seg.append(...it.choices.map((c) => {
+        const o = document.createElement('button');
+        o.type = 'button'; o.textContent = c.label; o.setAttribute('role', 'radio');
+        o.setAttribute('aria-checked', String(!!c.on));
+        o.onclick = () => {
+          if (o.getAttribute('aria-checked') === 'true') return;
+          for (const x of seg.children) x.setAttribute('aria-checked', String(x === o));
+          send(c.run);
+        };
+        return o;
+      }));
+      row.append(menuIcon(it.icon), name, seg);
+      return row;
+    }
+    if (it.note) return Object.assign(document.createElement('div'), { className: 'mnote', textContent: it.note });
     const b = document.createElement('button');
     if (it.danger) b.className = 'danger';
     const label = document.createElement('span');
@@ -800,6 +869,43 @@ function showAuth(a) {
   if (fresh && !a.retry) $('auser').value = '';
   ($('auser').value ? $('apass') : $('auser')).focus();
 }
+// A new Pulsar. The field is only filled when the form opens (a search in progress or an error
+// draws the same form again).
+let pulsarSeq = null;
+function showPulsar(f) {
+  if (pulsarSeq !== f.seq) { pulsarSeq = f.seq; $('puaddr').value = f.prefill; $('puaddr').focus(); $('puaddr').select(); }
+  $('puerr').textContent = f.error || '';
+  $('puok').disabled = $('puaddr').readOnly = f.busy;
+  $('puok').textContent = bhT(f.busy ? 'palette.pulsar_searching' : 'palette.pulsar_make');
+}
+$('pulsar').addEventListener('submit', (e) => { e.preventDefault(); if ($('puaddr').value.trim()) send({ cmd: 'pulsar_new', input: $('puaddr').value.trim() }); });
+$('pugh').onclick = () => close(() => send({ cmd: 'open_settings', tab: 'pulsars' }));
+$('pucancel').onclick = () => close();
+// A page asks for something. Nothing is focused and the buttons wait a moment: a key or a click
+// meant for the page never answers for the user.
+let permSeq = null, permAt = 0;
+function showPerm(p) {
+  if (permSeq !== p.seq) { permSeq = p.seq; permAt = Date.now(); }
+  $('ptitle').textContent = bhT('permission.ask', { host: p.host });
+  $('pwanted').replaceChildren(...p.wanted.map((w) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = w.label;
+    li.append(bhIcon(w.icon, 'sm'), name);
+    return li;
+  }));
+  $('pframe').textContent = p.frame ? bhT('permission.frame', { host: p.frame }) : '';
+  $('pwarn').textContent = p.insecure ? bhT('permission.insecure') : '';
+  // Never kept for a frame of another site, nor in a black hole tab.
+  $('pallow').hidden = !p.keep;
+  $('ponce').classList.toggle('primary', !p.keep);
+  $('perm').dataset.keep = p.keep ? '1' : '';
+  $('perm').focus();
+}
+function answerPerm(allow, keep) {
+  if (permSeq == null || Date.now() - permAt < 500) return;
+  send({ cmd: 'permission_answer', seq: permSeq, allow, keep: keep && !!$('perm').dataset.keep });
+}
 function clearAuth() { $('apass').value = ''; $('apass').blur(); $('auser').blur(); }
 
 window.bh = {
@@ -828,6 +934,20 @@ window.bh = {
     document.body.classList.add('open');
     document.body.classList.toggle('noanim', !s.animations);
     document.body.classList.toggle('flat', s.depth === false);
+    const pulsing = s.mode === 'pulsar';
+    document.body.classList.toggle('pulsing', pulsing);
+    if (pulsing) {
+      document.body.classList.remove('menuing', 'comparing', 'boosting', 'picking', 'intro', 'pop', 'pre', 'authing', 'permitting');
+      showPulsar(s.pulsar);
+      return;
+    }
+    const permitting = s.mode === 'permission' && !!s.permission;
+    document.body.classList.toggle('permitting', permitting);
+    if (permitting) {
+      document.body.classList.remove('menuing', 'comparing', 'boosting', 'picking', 'intro', 'pop', 'pre', 'authing');
+      showPerm(s.permission);
+      return;
+    }
     const authing = s.mode === 'auth' && !!s.auth;
     document.body.classList.toggle('authing', authing);
     if (authing) {
@@ -883,7 +1003,7 @@ window.bh = {
     $('q').focus();
     if (pristine) $('q').select();
   },
-  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'leaving', 'comparing', 'authing'); $('q').blur(); $('eq').blur(); clearAuth(); },
+  hide() { document.body.classList.remove('open', 'boosting', 'picking', 'intro', 'pop', 'pre', 'menuing', 'leaving', 'comparing', 'authing', 'permitting', 'pulsing'); $('puaddr').blur(); $('perm').blur(); $('q').blur(); $('eq').blur(); clearAuth(); },
 };
 
 $('q').addEventListener('input', (e) => {
@@ -900,7 +1020,7 @@ document.addEventListener('keydown', (e) => {
   if (!document.body.classList.contains('open')) return;
   if (e.key === 'Escape') { e.preventDefault(); close(); return; }
   if (document.body.classList.contains('menuing') || document.body.classList.contains('comparing')) return;
-  if (document.body.classList.contains('authing')) return;
+  if (document.body.classList.contains('authing') || document.body.classList.contains('permitting') || document.body.classList.contains('pulsing')) return;
   if (document.body.classList.contains('picking')) {
     if (e.key === 'Enter') { e.preventDefault(); applyIcon($('eq').value); }
     return;
@@ -926,6 +1046,9 @@ $('auth').addEventListener('submit', (e) => {
   send({ cmd: 'auth_answer', id: authId, user: $('auser').value, password: $('apass').value });
   clearAuth();
 });
+$('pblock').onclick = () => answerPerm(false, true);
+$('ponce').onclick = () => answerPerm(true, false);
+$('pallow').onclick = () => answerPerm(true, true);
 $('acancel').onclick = () => { if (authId != null) send({ cmd: 'auth_cancel', id: authId }); clearAuth(); };
 $('eok').onclick = () => applyIcon($('eq').value);
 $('eclear').onclick = () => applyIcon('');

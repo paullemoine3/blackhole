@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.31",
+        &[
+            "Pulsars: folders of the sidebar that fill themselves with what a site publishes (blogs, news, YouTube channels, GitHub releases). Right-click the sidebar to make one among the open tabs, right-click it to move it to the folders. Feeds are asked without cookies, pages only load when opened, and Settings > Pulsars sets or switches them off. With a GitHub token, a Pulsar gathers the pull requests to review, yours, what is assigned to you or mentions you, in every repository or one. The tour (Settings > General to replay it) shows them",
+            "Site permissions: BlackHole asks before a site uses the camera, the microphone, your location, notifications or the clipboard, for this time or for good, and remembers your answer. A button at the left of the address shows what the site may use and changes it; the shield's menu and Settings > Privacy list them too. On macOS pages no longer get the camera and microphone without a question. Answers the Windows engine kept on its own are asked again once",
+            "Private windows and black hole tabs get nothing of what you allowed elsewhere",
+            "Erase browsing data (Settings > Privacy): history, cookies and site data, cache, downloads list, archive, site permissions, for the last hour, day, week, four weeks or everything, in this space or every space",
+            "Export (Settings > Import and export): your tabs and folders as a bookmark file, your passwords as CSV, and a whole backup sealed with a password, which another computer can restore",
+            "Search by keyword: gh rust, !gh rust or rust !gh searches GitHub from the command bar. Wikipedia, YouTube, GitHub, MDN, OpenStreetMap and Stack Overflow to start with, yours to add in Settings > General",
+            "Downloads can be paused, resumed and cancelled, from the sidebar card and the Library (Windows and macOS). A tab stays awake while its download runs, and one left unfinished by the last run no longer says it is downloading",
+        ],
+    ),
+    (
         "0.8.30",
         &[
             "Email aliases: connect SimpleLogin, Addy.io, Firefox Relay, Fastmail or Forward Email in Settings > Email aliases, and the email field of a sign-up form offers to create an address for that site alone. Nothing is sent before a service is connected, nor without your click",

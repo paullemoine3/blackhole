@@ -157,7 +157,11 @@ impl Running {
             let key = suggest::key(&c.url);
             json!({"text": c.text, "url": c.url.as_str(), "key": key})
         });
-        let answer = json!({"seq": seq, "query": query, "rows": out, "complete": complete});
+        let engines = &self.svc.settings().keyword_engines;
+        let keyword = blackhole_domain::keywords::find(query, engines).map(|h| {
+            json!({"name": h.engine.name, "words": h.words, "url": h.url.as_str()})
+        });
+        let answer = json!({"keyword": keyword, "seq": seq, "query": query, "rows": out, "complete": complete});
         if let Some(palette) = &self.palette.view {
             let _ = palette.evaluate_script(&format!("window.bh&&bh.suggested&&bh.suggested({answer})"));
         }

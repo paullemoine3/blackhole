@@ -20,7 +20,11 @@
   .ext img { width: 18px; height: 18px; border-radius: 4px; }
   .ext .badge { position: absolute; right: 0; bottom: 1px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--accent); color: #fff; font-size: 9px; line-height: 14px; font-weight: 700; }
   .center { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: min(640px, 46vw, var(--room, 100vw)); min-width: 120px; }
-  .lock { position: absolute; left: 12px; top: 9px; opacity: .55; pointer-events: none; }
+  /* What the site shown may use (0.8.31): the dot says something was decided for it. */
+  #site { position: absolute; left: 4px; top: 3px; width: 26px; height: 24px; border-radius: 7px; z-index: 1; }
+  #site[hidden] { display: none; }
+  #site .dot { position: absolute; right: 3px; top: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: none; }
+  #site.set .dot { display: block; }
   #omni { width: 100%; height: 30px; padding: 0 14px; border-radius: 10px; color: inherit; font: inherit; text-align: center; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); opacity: 1; display: flex; align-items: center; overflow: hidden; transition: background .15s; }
   #omni:hover { background: rgba(255,255,255,.14); }
   /* The address is cut inside the field, whatever its length. */
@@ -37,17 +41,15 @@
   #progress.on { opacity: 1; transition: none; }
   #progress.on i { width: 30%; transition: width 8s cubic-bezier(.1,.7,.2,1); }
   #zoom .x { opacity: .6; }
-  body.secure #omni { padding-left: 30px; padding-right: 30px; }
-  body.secure .lock { display: block; }
-  .lock { display: none; }
-  #insecure { position: absolute; left: 6px; top: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; line-height: 20px;
+  body.site #omni { padding-left: 36px; padding-right: 36px; }
+  #insecure { position: absolute; left: 34px; top: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; line-height: 20px;
     color: #ffb3bd; background: rgba(220,40,70,.22); border: 1px solid rgba(255,96,110,.4); pointer-events: none; white-space: nowrap; }
   #insecure[hidden] { display: none; }
-  body.insecure #omni { padding-left: 108px; }
+  body.insecure #omni { padding-left: 136px; }
   /* The zoom badge sits inside the field, on the right: the address keeps clear of it (the same
      space on both sides, so it stays centred; --zw is the badge's width, measured). */
-  body.zoomed #omni { padding-left: max(30px, var(--zw, 96px)); padding-right: var(--zw, 96px); }
-  body.zoomed.insecure #omni { padding-left: max(108px, var(--zw, 96px)); padding-right: max(108px, var(--zw, 96px)); }
+  body.zoomed #omni { padding-left: max(36px, var(--zw, 96px)); padding-right: var(--zw, 96px); }
+  body.zoomed.insecure #omni { padding-left: max(136px, var(--zw, 96px)); padding-right: max(136px, var(--zw, 96px)); }
   .priv { flex: none; align-self: center; margin-left: 8px; margin-right: 0; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: rgba(255,255,255,.14); }
   .priv[hidden] { display: none; }
   .win { display: none; flex: none; align-self: stretch; margin-right: -12px; margin-left: 6px; }
@@ -113,8 +115,8 @@
     <button id="home" data-i18n-title="bar.start_page"><i data-icon="home"></i></button>
   </div>
   <div class="center">
-    <i data-icon="lock" data-size="xs" class="lock"></i>
     <button id="omni" type="button"><span id="url"></span></button>
+    <button id="site" type="button" hidden data-i18n-title="bar.site" data-i18n-aria="bar.site" aria-haspopup="menu"><i data-icon="sliders" data-size="sm"></i><i class="dot"></i></button>
     <span id="insecure" hidden data-i18n-title="bar.insecure_hint" data-i18n="bar.insecure">Not secure</span>
     <button id="zoom" type="button" hidden><i data-icon="search" data-size="xs"></i><span id="zoomn"></span><i data-icon="close" data-size="xs" class="x"></i></button>
     <div id="notice" role="status"></div>
@@ -225,7 +227,10 @@ window.bh = {
     $('zoomn').textContent = zoom + '%';
     document.body.classList.toggle('zoomed', zoom !== 100);
     if (zoom !== 100) document.documentElement.style.setProperty('--zw', Math.ceil($('zoom').offsetWidth + 16) + 'px');
-    document.body.classList.toggle('secure', s.url.startsWith('https:') && !s.insecure);
+    const web = /^https?:/.test(s.url);
+    $('site').hidden = !web;
+    $('site').classList.toggle('set', !!s.sitePermissions);
+    document.body.classList.toggle('site', web);
     document.body.classList.toggle('insecure', !!s.insecure);
     $('insecure').hidden = !s.insecure;
     document.body.classList.toggle('noanim', s.animations === false);
@@ -279,6 +284,7 @@ const mix = (hex, r) => {
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map((c, i) => Math.round(b[i] + (c - b[i]) * r).toString(16).padStart(2, '0')).join('');
 };
 $('omni').onclick = () => send({ cmd: 'palette', mode: 'url' });
+$('site').onclick = () => { const r = $('site').getBoundingClientRect(); send({ cmd: 'site_panel', x: r.left, y: r.bottom + 4 }); };
 $('zoom').onclick = () => send({ cmd: 'shortcut', key: 'zoom_reset' });
 $('sidebar').onclick = () => send({ cmd: 'lock' });
 $('back').onclick = () => send({ cmd: 'back' });

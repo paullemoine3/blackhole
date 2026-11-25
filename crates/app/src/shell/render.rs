@@ -75,6 +75,9 @@ impl Running {
                 }, Verb::Send),
             })).collect::<Vec<_>>(),
         });
+        // Apart: the macro above is at its recursion limit.
+        state["pulsars"] = self.pulsars_json();
+        state["pulsarsOn"] = json!(self.pulsars_on());
         if self.icons_for_ui.replace(false) {
             state["favicons"] = json!(self.favicons.all());
         }
@@ -159,6 +162,7 @@ impl Running {
             // A typed address waits for its server: the bar's line until the page starts.
             "serverWait": asked.is_some(),
             "zoom": zoom,
+            "sitePermissions": self.site_has_permissions(),
             "canBack": nav(WebView::can_go_back),
             "canForward": nav(WebView::can_go_forward),
             "os": std::env::consts::OS,

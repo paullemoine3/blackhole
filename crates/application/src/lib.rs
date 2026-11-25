@@ -1,7 +1,9 @@
 //! Use cases and ports. Depends only on the domain.
 
+use blackhole_domain::keywords::{self, Refused};
+use blackhole_domain::permissions::Permission;
 use blackhole_domain::{
-    resolve_input, site_key, Extension, FolderId, History, HistoryEntry, Injection,
+    site_key, Extension, FolderId, History, HistoryEntry, Injection,
     PrivacyDecision, PrivacyPolicy, SearchEngine, Settings, SpaceId, TabId, Workspace,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -202,6 +204,79 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     pub fn clear_history(&mut self) {
         self.history.clear_at(now_secs());
         let _ = self.repo.save_history(&self.history);
+    }
+
+    /// Forgets the pages visited since a date; returns those that are gone.
+    pub fn clear_history_since(&mut self, since: u64) -> Vec<Url> {
+        let gone = self.history.forget_since(since, now_secs());
+        let _ = self.repo.save_history(&self.history);
+        gone
+    }
+
+    /// What a site may use: allowed, blocked, or asked again (`None`).
+    pub fn set_site_permission(&mut self, origin: &str, permission: Permission, allowed: Option<bool>) {
+        if self.settings.site_permissions.set(origin, permission, allowed) {
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
+    /// A site (or every site) asks again for everything.
+    pub fn forget_site_permissions(&mut self, origin: Option<&str>) {
+        match origin {
+            Some(origin) => {
+                self.settings.site_permissions.forget_site(origin);
+            }
+            None => self.settings.site_permissions.clear(),
+        }
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    /// A private window keeps only what the profile blocks (see `SitePermissions::for_private`).
+    pub fn seal_permissions(&mut self) {
+        self.settings.site_permissions = self.settings.site_permissions.for_private();
+    }
+
+    /// Adds a keyword engine, or replaces the one with its keyword.
+    pub fn add_keyword_engine(&mut self, keyword: &str, name: &str, url: &str) -> Result<(), Refused> {
+        let engine = keywords::clean(keyword, name, url)?;
+        keywords::add(&mut self.settings.keyword_engines, engine)?;
+        let _ = self.repo.save_settings(&self.settings);
+        Ok(())
+    }
+
+    /// Pulsars shown and read, or not (Settings > General).
+    pub fn set_pulsars(&mut self, on: bool) {
+        self.settings.pulsars = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    pub fn set_pulsar_every(&mut self, minutes: u32) {
+        if blackhole_domain::pulsar::EVERY_CHOICES.contains(&minutes) {
+            self.settings.pulsar_every = minutes;
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
+    pub fn set_pulsar_lines(&mut self, lines: u32) {
+        if blackhole_domain::pulsar::LINES_CHOICES.contains(&lines) {
+            self.settings.pulsar_lines = lines;
+            let _ = self.repo.save_settings(&self.settings);
+        }
+    }
+
+    pub fn set_pulsar_notices(&mut self, on: bool) {
+        self.settings.pulsar_notices = on;
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    pub fn remove_keyword_engine(&mut self, keyword: &str) {
+        self.settings.keyword_engines.retain(|e| e.keyword != keyword);
+        let _ = self.repo.save_settings(&self.settings);
+    }
+
+    pub fn reset_keyword_engines(&mut self) {
+        self.settings.keyword_engines = keywords::defaults();
+        let _ = self.repo.save_settings(&self.settings);
     }
 
     /// What changed in the history after `since` (this device's clock), for a paired device.
@@ -578,7 +653,7 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     pub fn resolve(&self, input: &str) -> NavigationOutcome {
-        self.evaluate(&resolve_input(input, self.settings.search_engine))
+        self.evaluate(&self.settings.resolve_input(input))
     }
 
     pub fn open_tab(&mut self, input: &str) -> Option<TabId> {

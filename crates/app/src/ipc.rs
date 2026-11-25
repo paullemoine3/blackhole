@@ -644,6 +644,128 @@ pub enum UiCommand {
     ApplyUpdate,
     /// Settings > Updates: looks for a new release now.
     CheckAppUpdate,
+    /// The permission prompt numbered `seq` (palette). `keep`: remembered for the site.
+    PermissionAnswer {
+        seq: u64,
+        allow: bool,
+        #[serde(default)]
+        keep: bool,
+    },
+    /// Pulsars (0.8.31): the form of a new one, then its answer (a site or a feed).
+    PulsarForm,
+    PulsarNew {
+        input: String,
+        #[serde(default)]
+        space: Option<u64>,
+    },
+    PulsarToggle {
+        id: u64,
+    },
+    /// With the folders (`pinned`) or with the open tabs.
+    PulsarPin {
+        id: u64,
+        pinned: bool,
+    },
+    PulsarRename {
+        id: u64,
+        name: String,
+    },
+    PulsarEdit {
+        id: u64,
+    },
+    PulsarReadAll {
+        id: u64,
+    },
+    PulsarRefresh {
+        id: u64,
+    },
+    PulsarRemove {
+        id: u64,
+    },
+    /// A line: opened, and gone from its Pulsar. `behind`: in a background tab.
+    PulsarOpen {
+        id: u64,
+        key: String,
+        #[serde(default)]
+        behind: bool,
+    },
+    PulsarMove {
+        id: u64,
+        space: u64,
+    },
+    /// The GitHub account of the Pulsars, and a new one (`kind` of `GithubKind`, `repo` or all).
+    PulsarGithubConnect {
+        token: crate::features::passwords::Secret,
+    },
+    PulsarGithubDisconnect,
+    PulsarGithubNew {
+        kind: String,
+        #[serde(default)]
+        repo: String,
+        #[serde(default)]
+        space: Option<u64>,
+    },
+    SetPulsarEvery {
+        minutes: u32,
+    },
+    SetPulsarLines {
+        lines: u32,
+    },
+    SetPulsarNotices {
+        on: bool,
+    },
+    SetPulsars {
+        on: bool,
+    },
+    /// The button at the left of the address: what the site shown may use.
+    SitePanel {
+        x: f64,
+        y: f64,
+    },
+    /// What a site may use: allowed, blocked, or asked again (`allowed` absent).
+    PermissionSet {
+        origin: String,
+        permission: String,
+        #[serde(default)]
+        allowed: Option<bool>,
+    },
+    /// A site (or every site) asks again for everything.
+    PermissionForget {
+        #[serde(default)]
+        origin: Option<String>,
+    },
+    /// Settings > Privacy > Data: `kinds` of `DataKind`, `period` of `Period`.
+    ClearData {
+        kinds: Vec<String>,
+        period: String,
+        #[serde(default)]
+        all_spaces: bool,
+    },
+    ExportBookmarks,
+    ExportPasswords,
+    BackupExport {
+        password: crate::features::passwords::Secret,
+    },
+    BackupRestore {
+        password: crate::features::passwords::Secret,
+    },
+    QuitApp,
+    /// Settings > General > Search by keyword.
+    KeywordAdd {
+        keyword: String,
+        #[serde(default)]
+        name: String,
+        url: String,
+    },
+    KeywordRemove {
+        keyword: String,
+    },
+    KeywordReset,
+    /// A download: `act` is `pause`, `resume` or `cancel`.
+    DownloadAct {
+        id: u64,
+        act: String,
+    },
     /// Toolbar click on an extension: opens its popup under the button (window coordinates).
     ExtAction {
         id: String,
@@ -1050,6 +1172,15 @@ pub enum Msg {
     BlockedPage(TabId, Url, &'static str),
     /// The server asks for a user name and password (HTTP Basic or Digest).
     Auth(TabId, wry::HttpAuthChallenge, wry::HttpAuthResponder),
+    /// The page asks for the camera, the microphone, the location…
+    Permission(TabId, wry::SitePermissionRequest, wry::SitePermissionResponder),
+    /// The engine erased a profile's data (the erasing it belongs to).
+    DataCleared(u64),
+    /// What pauses, resumes and cancels the download that goes to `path`.
+    DownloadControl {
+        path: std::path::PathBuf,
+        control: wry::DownloadControl,
+    },
     Title(TabId, String),
     /// A page asked for a new window (`target=_blank`, `window.open`).
     OpenTab(Url),
@@ -1454,6 +1585,40 @@ mod tests {
             r#"{"cmd":"close_other_tabs","id":1}"#,
             r##"{"cmd":"set_space_color","id":1,"color":"#ff5c8a"}"##,
             r#"{"cmd":"undo_removal"}"#,
+        ];
+        for raw in cases {
+            assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");
+            assert!(serde_json::from_str::<PageEvent>(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn site_control_commands_parse_and_pages_cannot_send_them() {
+        let cases = [
+            r#"{"cmd":"permission_answer","seq":1,"allow":true,"keep":true}"#,
+            r#"{"cmd":"permission_set","origin":"https://a.test","permission":"camera","allowed":true}"#,
+            r#"{"cmd":"permission_set","origin":"https://a.test","permission":"camera"}"#,
+            r#"{"cmd":"permission_forget"}"#,
+            r#"{"cmd":"site_panel","x":1,"y":2}"#,
+            r#"{"cmd":"pulsar_form"}"#,
+            r#"{"cmd":"pulsar_github_connect","token":"x"}"#,
+            r#"{"cmd":"pulsar_github_disconnect"}"#,
+            r#"{"cmd":"pulsar_github_new","kind":"mine"}"#,
+            r#"{"cmd":"set_pulsar_every","minutes":30}"#,
+            r#"{"cmd":"pulsar_new","input":"blog.test"}"#,
+            r#"{"cmd":"pulsar_open","id":1,"key":"k"}"#,
+            r#"{"cmd":"pulsar_remove","id":1}"#,
+            r#"{"cmd":"set_pulsars","on":false}"#,
+            r#"{"cmd":"clear_data","kinds":["cookies"],"period":"all","all_spaces":true}"#,
+            r#"{"cmd":"export_bookmarks"}"#,
+            r#"{"cmd":"export_passwords"}"#,
+            r#"{"cmd":"backup_export","password":"x"}"#,
+            r#"{"cmd":"backup_restore","password":"x"}"#,
+            r#"{"cmd":"quit_app"}"#,
+            r#"{"cmd":"keyword_add","keyword":"x","url":"https://x.test/%s"}"#,
+            r#"{"cmd":"keyword_remove","keyword":"x"}"#,
+            r#"{"cmd":"keyword_reset"}"#,
+            r#"{"cmd":"download_act","id":1,"act":"pause"}"#,
         ];
         for raw in cases {
             assert!(serde_json::from_str::<UiCommand>(raw).is_ok(), "{raw}");

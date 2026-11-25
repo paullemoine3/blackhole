@@ -406,7 +406,7 @@ const VIEWS = {
       const state = !d.done ? 'live' : d.ok ? (d.exists ? 'ok' : '') : 'bad';
       const ico = tile(state, !d.done ? 'spinner' : d.ok ? (d.exists ? 'check' : 'download') : 'alert');
       const title = el('b', null, d.name);
-      const status = !d.done ? bhT('library.downloading') : !d.ok ? bhT('library.failed') : !d.exists ? bhT('library.file_gone') : null;
+      const status = !d.done ? bhT(d.paused ? 'sidebar.dl_paused' : 'library.downloading') : !d.ok ? bhT('library.failed') : !d.exists ? bhT('library.file_gone') : null;
       const sub = el('i', null, [host(d.url), status, d.at ? ago(d.at, S.now) : null].filter(Boolean).join(' · '));
       const del = iconButton('close', bhT('library.remove'), () => send({ cmd: 'library_delete_download', id: d.id }));
       // A file that is there can go to a paired device (the Wormhole), like a text or a link.
@@ -421,6 +421,8 @@ const VIEWS = {
         });
         acts.push(share);
       }
+      const ACTS = { pause: ['pause', 'sidebar.dl_pause'], resume: ['play', 'sidebar.dl_resume'], cancel: ['stop', 'sidebar.dl_cancel'] };
+      for (const a of d.acts || []) acts.push(iconButton(ACTS[a][0], bhT(ACTS[a][1]), () => send({ cmd: 'download_act', id: d.id, act: a })));
       card.append(row(ico, title, sub, () => send({ cmd: 'library_open_file', id: d.id }), [...acts, del]));
     }
     return [...out, card];

@@ -589,6 +589,60 @@ impl InnerWebView {
       }
     }
 
+    if let Some(handler) = attributes.site_permission_handler.take() {
+      unsafe {
+        webview.add_PermissionRequested(
+          &PermissionRequestedEventHandler::create(Box::new(move |webview, args| {
+            let Some(args) = args else { return Ok(()) };
+            let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+            args.PermissionKind(&mut kind)?;
+            let Some(kind) = site_permission(kind) else {
+              return Ok(());
+            };
+            let origin = {
+              let mut uri = PWSTR::null();
+              args.Uri(&mut uri)?;
+              take_pwstr(uri)
+            };
+            if !origin.starts_with("https://") && !origin.starts_with("http://") {
+              return Ok(());
+            }
+            let mut page = PWSTR::null();
+            let page = match &webview {
+              Some(webview) => {
+                webview.Source(&mut page)?;
+                take_pwstr(page)
+              }
+              None => String::new(),
+            };
+            // Only the app remembers answers.
+            if let Ok(args) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
+              let _ = args.SetSavesInProfile(false);
+            }
+            let deferral = args.GetDeferral()?;
+            let responder = crate::SitePermissionResponder::new(move |allow| {
+              let _ = args.SetState(if allow {
+                COREWEBVIEW2_PERMISSION_STATE_ALLOW
+              } else {
+                COREWEBVIEW2_PERMISSION_STATE_DENY
+              });
+              let _ = deferral.Complete();
+            });
+            handler(
+              crate::SitePermissionRequest {
+                kinds: vec![kind],
+                origin,
+                page,
+              },
+              responder,
+            );
+            Ok(())
+          })),
+          &mut token,
+        )?;
+      }
+    }
+
     if let Some(auth_handler) = attributes.http_auth_handler.take() {
       let webview_10: ICoreWebView2_10 = webview.cast()?;
       unsafe {
@@ -1001,6 +1055,7 @@ impl InnerWebView {
       {
         let mut download_started_handler = attributes.download_started_handler.take();
         let download_completed_handler = attributes.download_completed_handler.take();
+        let download_control_handler = attributes.download_control_handler.take();
 
         let webview4: ICoreWebView2_4 = webview.cast()?;
         webview4.add_DownloadStarting(
@@ -1027,7 +1082,13 @@ impl InnerWebView {
                   let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
                   download_operation.State(&mut state)?;
 
-                  if state != COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS {
+                  // BlackHole: a download paused by the user is not over.
+                  let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+                  let paused = state == COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED
+                    && download_operation.InterruptReason(&mut reason).is_ok()
+                    && reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_PAUSED;
+
+                  if state != COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS && !paused {
                     let uri = {
                       let mut uri = PWSTR::null();
                       download_operation.Uri(&mut uri)?;
@@ -1062,6 +1123,14 @@ impl InnerWebView {
               };
 
               if download_started_handler(uri, &mut path) {
+                if let Some(control) = &download_control_handler {
+                  control(
+                    path.clone(),
+                    crate::DownloadControl {
+                      ops: Rc::new(args.DownloadOperation()?),
+                    },
+                  );
+                }
                 let simplified = dunce::simplified(&path);
                 let path = HSTRING::from(simplified);
                 args.SetResultFilePath(&path)?;
@@ -2031,6 +2100,87 @@ impl InnerWebView {
     }
   }
 
+  pub fn clear_site_data(
+    &self,
+    what: crate::SiteData,
+    since: Option<u64>,
+    done: Box<dyn FnOnce()>,
+  ) -> Result<()> {
+    let mut kinds = 0;
+    if what.cookies {
+      kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_COOKIES.0
+        | COREWEBVIEW2_BROWSING_DATA_KINDS_ALL_DOM_STORAGE.0;
+    }
+    if what.cache {
+      kinds |= COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE.0;
+    }
+    let kinds = COREWEBVIEW2_BROWSING_DATA_KINDS(kinds);
+    let handler = ClearBrowsingDataCompletedHandler::create(Box::new(move |_| {
+      done();
+      Ok(())
+    }));
+    unsafe {
+      let profile = self
+        .webview
+        .cast::<ICoreWebView2_13>()?
+        .Profile()?
+        .cast::<ICoreWebView2Profile2>()?;
+      match since {
+        // The end lies ahead: what is written while it runs goes too.
+        Some(since) => profile.ClearBrowsingDataInTimeRange(
+          kinds,
+          since as f64,
+          std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(f64::from(i32::MAX), |d| d.as_secs_f64() + 60.0),
+          &handler,
+        )?,
+        None => profile.ClearBrowsingData(kinds, &handler)?,
+      }
+    }
+    Ok(())
+  }
+
+  pub fn reset_site_permissions(&self) {
+    let profile = unsafe {
+      self
+        .webview
+        .cast::<ICoreWebView2_13>()
+        .and_then(|w| w.Profile())
+        .and_then(|p| p.cast::<ICoreWebView2Profile4>())
+    };
+    let Ok(profile) = profile else { return };
+    let owner = profile.clone();
+    let handler =
+      GetNonDefaultPermissionSettingsCompletedHandler::create(Box::new(move |_, list| unsafe {
+        let Some(list) = list else { return Ok(()) };
+        let mut count = 0;
+        list.Count(&mut count)?;
+        for i in 0..count {
+          let setting = list.GetValueAtIndex(i)?;
+          let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+          setting.PermissionKind(&mut kind)?;
+          if site_permission(kind).is_none() {
+            continue;
+          }
+          let mut origin = PWSTR::null();
+          setting.PermissionOrigin(&mut origin)?;
+          let origin = take_pwstr(origin);
+          if !origin.starts_with("http") {
+            continue;
+          }
+          let _ = owner.SetPermissionState(
+            kind,
+            &HSTRING::from(origin),
+            COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+            &SetPermissionStateCompletedHandler::create(Box::new(|_| Ok(()))),
+          );
+        }
+        Ok(())
+      }));
+    let _ = unsafe { profile.GetNonDefaultPermissionSettings(&handler) };
+  }
+
   pub fn set_theme(&self, theme: Theme) -> Result<()> {
     unsafe { set_theme(&self.webview, theme) }
   }
@@ -2159,6 +2309,39 @@ fn is_windows_7() -> bool {
 }
 
 /// Host of an absolute URL (without user info or port), and whether it is https.
+/// BlackHole: the permissions the app answers for itself.
+fn site_permission(kind: COREWEBVIEW2_PERMISSION_KIND) -> Option<PermissionKind> {
+  Some(match kind {
+    COREWEBVIEW2_PERMISSION_KIND_MICROPHONE => PermissionKind::Microphone,
+    COREWEBVIEW2_PERMISSION_KIND_CAMERA => PermissionKind::Camera,
+    COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION => PermissionKind::Geolocation,
+    COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS => PermissionKind::Notifications,
+    COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ => PermissionKind::ClipboardRead,
+    _ => return None,
+  })
+}
+
+impl crate::site_data::DownloadOps for ICoreWebView2DownloadOperation {
+  fn pause(&self) -> bool {
+    unsafe { self.Pause().is_ok() }
+  }
+  fn resume(&self) -> bool {
+    unsafe { self.Resume().is_ok() }
+  }
+  fn cancel(&self) {
+    let _ = unsafe { self.Cancel() };
+  }
+  fn can_resume(&self) -> bool {
+    let mut can = BOOL::default();
+    unsafe { self.CanResume(&mut can).is_ok() && can.as_bool() }
+  }
+  fn received(&self) -> Option<u64> {
+    let mut bytes = 0;
+    unsafe { self.BytesReceived(&mut bytes).ok()? };
+    u64::try_from(bytes).ok()
+  }
+}
+
 fn host_of(url: &str) -> (String, bool) {
   let Some((scheme, rest)) = url.split_once("://") else {
     return (String::new(), false);
