@@ -1180,10 +1180,14 @@ const motion = {
       return null;
     };
     const GLIDE = 'cubic-bezier(.2,.85,.25,1)';
+    // Where each row stands now, read before any of them is animated: a rect read later counts
+    // the row's FLIP offset (the highlight then aimed at the row's old place, one row lower).
+    const now = new Map();
     for (const n of document.querySelectorAll(this.SEL)) {
       const k = this.key(n), r = n.getBoundingClientRect();
       if (!r.width || !r.height) continue;
       seen.add(k);
+      now.set(k, r);
       const old = before.get(k);
       if (!old) {
         if (r.bottom < view.top || r.top > view.bottom) continue;
@@ -1222,11 +1226,14 @@ const motion = {
     // The tab that became active lights up briefly.
     // The highlight glides from the tab left to the tab shown (rows of the list); a tile, or
     // a tab that was not on screen, lights up briefly instead.
-    if (s.activeTab != null && s.activeTab !== prev.activeTab) {
+    // A tab closed while shown: its row fades out with its highlight (above) and the tab shown
+    // next is simply the active one, no glide from a row that is gone.
+    const closed = prev.activeTab != null && !seen.has('t' + prev.activeTab);
+    if (s.activeTab != null && s.activeTab !== prev.activeTab && !closed) {
       const a = document.querySelector(`#scroll .tab[data-tab="${s.activeTab}"]`);
       const from = before.get('t' + prev.activeTab);
-      if (a && from && !a.dataset.pinned && !from.node.dataset.pinned) {
-        const r = a.getBoundingClientRect();
+      const r = now.get('t' + s.activeTab);
+      if (a && from && r && !a.dataset.pinned && !from.node.dataset.pinned) {
         const g = el('div', 'tab-glide');
         Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
         document.body.append(g);

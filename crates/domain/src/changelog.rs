@@ -9,6 +9,8 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A Pulsar can be dragged by its title among the folders, and back to the open tabs",
             "Watched areas on the start page: each one says when it was last checked (or that its area was not found), and a button reads it again now, or all of them at once",
             "Screen sharing in Meet and other calls stays sharp on macOS: the shared screen keeps its resolution and lowers its frame rate instead when the connection or the computer is busy",
+            "Find in page (Cmd/Ctrl+F) keeps the keyboard: what you type no longer sets off the site's own shortcuts (a search field that takes over on S or /), and a page that grabs the focus gives it back to the bar",
+            "Closing the tab shown with its cross: its highlight fades out with it, instead of sliding past the tab shown next",
         ],
     ),
     (

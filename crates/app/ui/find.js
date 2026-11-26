@@ -11,6 +11,7 @@
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'SELECT']);
   const MAX = 2000;
   let host = null;
+  let shadow = null;
   let input = null;
   let info = null;
   let ranges = [];
@@ -190,7 +191,7 @@
   const close = () => {
     if (!host) return;
     host.remove();
-    host = input = info = null;
+    host = shadow = input = info = null;
     if (watcher) watcher.disconnect();
     watcher = null;
     index = null;
@@ -210,7 +211,7 @@
     }
     host = document.createElement('div');
     host.style.cssText = 'all:initial;position:fixed;top:12px;right:16px;z-index:2147483647';
-    const root = host.attachShadow({ mode: 'closed' });
+    const root = (shadow = host.attachShadow({ mode: 'closed' }));
     // No `innerHTML`: pages under Trusted Types reject it (see autofill.js).
     const CSS_TEXT = `      .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(32,32,40,.96);
         box-shadow:0 6px 24px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.12);font:13px -apple-system,Segoe UI,sans-serif;color:#eee}
@@ -246,32 +247,31 @@
       node('button', { 'data-x': '', title: T('window.close') }, '\u2715'),
     );
     root.appendChild(bar);
-    // Each search reads the whole page: wait for a pause in the typing.
-    let typing = 0;
-    input.addEventListener('input', () => {
-      clearTimeout(typing);
-      typing = setTimeout(() => {
-        if (!input) return;
-        if (!HL) getSelection().removeAllRanges();
-        last = '';
-        run(false);
-      }, 80);
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        clearTimeout(typing);
-        run(e.shiftKey);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-      }
+    // The bar keeps the focus: a page that takes it back (a field focused by a timer, a search
+    // that refocuses itself) gives it back, unless the user clicked or tabbed away.
+    let taken = 0;
+    let takenAt = 0;
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        // The window left (another app): the field stays the focused one inside the root.
+        if (!input || shadow.activeElement) return;
+        const t = performance.now();
+        if (t - leftAt < 400) return;
+        // A page that fights for the focus wins after a few rounds: no endless tug of war.
+        if (t - takenAt > 1000) taken = 0;
+        if (++taken > 3) return;
+        takenAt = t;
+        input.focus({ preventScroll: true });
+      }, 0);
     });
     root.querySelector('.bar').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
       if ('x' in b.dataset) close();
-      else run(b.dataset.d === '1');
+      else {
+        run(b.dataset.d === '1');
+        input.focus({ preventScroll: true });
+      }
     });
     document.documentElement.appendChild(host);
     // The page changed (a log that streams, a list that scrolls): the next search reads it again.
@@ -280,6 +280,52 @@
       watcher.observe(document.body || document.documentElement, { childList: true, subtree: true, characterData: true });
     } catch (e) {}
   };
+
+  // Each search reads the whole page: wait for a pause in the typing.
+  let typing = 0;
+  const onInput = () => {
+    clearTimeout(typing);
+    typing = setTimeout(() => {
+      if (!input) return;
+      if (!HL) getSelection().removeAllRanges();
+      last = '';
+      run(false);
+    }, 80);
+  };
+  const mac = /mac/i.test(navigator.platform);
+  const onKey = (e) => {
+    const mod = mac ? e.metaKey : e.ctrlKey;
+    if (e.key === 'Enter' || (mod && !e.altKey && e.key.toLowerCase() === 'g')) {
+      e.preventDefault();
+      clearTimeout(typing);
+      run(e.shiftKey);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      // Mod+F again: the word is selected, the page's own search stays closed.
+      e.preventDefault();
+      input.select();
+    } else if (e.key === 'Tab') leftAt = performance.now();
+  };
+  // A click or Tab out of the bar is the user's: the focus is not taken back then.
+  let leftAt = -1e9;
+  addEventListener('pointerdown', (e) => { if (host && !e.composedPath().includes(host)) leftAt = performance.now(); }, true);
+  // Keys typed in the bar never reach the page. Seen from the page, they come from a plain
+  // `div` (the bar's host, outside its closed shadow root), not from a field: single-key
+  // shortcuts of sites (`/` or `s` to search, `j`/`k`) fired and took the focus away. Registered
+  // before the page's own scripts, at the top of the window, so no listener of the page runs.
+  // The app's own shortcuts (shortcuts.js) are registered earlier still and keep working.
+  for (const type of ['keydown', 'keypress', 'keyup', 'beforeinput', 'input', 'paste', 'copy', 'cut', 'compositionstart', 'compositionupdate', 'compositionend']) {
+    addEventListener(type, (e) => {
+      if (!host || !e.composedPath().includes(host)) return;
+      e.stopImmediatePropagation();
+      // The shadow root is closed: from out here the path stops at the host, so the field is
+      // told by the focus inside the root.
+      if (type === 'keydown' && input && shadow.activeElement === input) onKey(e);
+      else if (type === 'input') onInput();
+    }, true);
+  }
 
   window.__bhFind = (action) => {
     if (action === 'next' || action === 'prev') {
