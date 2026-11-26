@@ -11,6 +11,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "Screen sharing in Meet and other calls stays sharp on macOS: the shared screen keeps its resolution and lowers its frame rate instead when the connection or the computer is busy",
             "Find in page (Cmd/Ctrl+F) keeps the keyboard: what you type no longer sets off the site's own shortcuts (a search field that takes over on S or /), and a page that grabs the focus gives it back to the bar",
             "Closing the tab shown with its cross: its highlight fades out with it, instead of sliding past the tab shown next",
+            "Anchored tabs no longer take room in the tabs kept ready: with a cap of 4 and three anchored tabs, four other tabs stay ready in the space. The counter at the bottom of the sidebar still counts every open tab",
         ],
     ),
     (

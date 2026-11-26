@@ -342,9 +342,13 @@ impl Running {
             .chain(self.split_tab())
             .collect();
         visible.extend(&busy);
+        // Anchored tabs stay alive outside the cap: with three of them, a cap of four still keeps
+        // four other tabs alive in the space (the counter of the sidebar still counts them all).
+        let anchored = self.svc.workspace().anchored_tabs();
         idle.extend(blackhole_domain::overflow_per_group(
             &live,
             &visible,
+            &anchored,
             self.svc.settings().max_live_tabs as usize,
         ));
         if idle.is_empty() {

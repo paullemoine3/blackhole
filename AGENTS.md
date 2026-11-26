@@ -1399,7 +1399,10 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
 - Favoris (`home.html`) : glissés au pointeur (FLIP, `.fav.lifted`, `favDrag`, le clic de fin n’ouvre rien) ou Alt+←/→ ;
   `UiCommand::SetFavoriteOrder { order }` (sites). Un lien déposé sur la section : place dans l’ordre puis `pin_site` (ouvre la page).
 - Plafond d’onglets vivants par espace : `domain::overflow_per_group` (groupe = espace, onglets trou noir ensemble) dans
-  `discard_idle_tabs` ; un espace ne libère jamais les onglets d’un autre.
+  `discard_idle_tabs` ; un espace ne libère jamais les onglets d’un autre. Les onglets ancrés sont hors plafond (`exempt` de
+  `overflow_per_group`, test `anchored_tabs_stay_out_of_the_live_tabs_cap`) : vivants sans prendre de place (limite 4, trois
+  ancrés → quatre autres vivants) ; `protected` (affichés, en appel) restent vivants mais comptent. Le compteur de la barre
+  latérale compte toujours tous les onglets ouverts.
 - Pulsar glissé par son en-tête (`.ph`, `down.pulsar`) : au-dessus de `#foldsep` → avec les dossiers, en dessous → en tête des
   onglets (`pulsar_pin`) ; même place = rien. Pas de réordonnancement entre Pulsars.
 - Partage d’écran sous WebKit (`media_devices.js`, `window.webkit.messageHandlers` sans `window.chrome`) : piste de
