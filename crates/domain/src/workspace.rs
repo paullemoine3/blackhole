@@ -86,6 +86,8 @@ pub struct Space {
     pub active_tab: Option<TabId>,
     /// Second pane of the split view, shown next to the active tab.
     pub split: Option<TabId>,
+    /// Its own start page (0.8.33); `None`: the one of the settings, as before.
+    pub home: Option<Box<crate::SpaceHome>>,
 }
 
 /// `id` plus every folder nested below it.
@@ -306,8 +308,20 @@ impl Workspace {
             folders: Vec::new(),
             active_tab: None,
             split: None,
+            home: None,
         });
         id
+    }
+
+    /// Gives a space its own start page (`SpaceHome`). Returns whether anything changed.
+    pub fn set_space_home(&mut self, id: SpaceId, home: crate::SpaceHome) -> bool {
+        match self.spaces.iter_mut().find(|s| s.id == id) {
+            Some(space) if space.home.as_deref() != Some(&home) => {
+                space.home = Some(Box::new(home));
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Deletes a space and returns the ids of its tabs. The last space cannot be deleted; when

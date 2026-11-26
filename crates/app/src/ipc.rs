@@ -217,6 +217,8 @@ pub enum UiCommand {
     WatchCheck {
         id: u64,
     },
+    /// Every watched area read again (the refresh button of the start page's section).
+    WatchCheckAll,
     WatchesSeen,
     /// Recall (see `recall.rs`): the command bar looks for the pages read that match `query`
     /// (answered with the same `seq`); the setting; a site never remembered (or remembered
@@ -519,6 +521,10 @@ pub enum UiCommand {
     },
     /// New order of the start page sections, dragged by their title (names of `SetHomeSection`).
     SetHomeOrder {
+        order: Vec<String>,
+    },
+    /// New order of the favorites of the space's start page, dragged there (their sites).
+    SetFavoriteOrder {
         order: Vec<String>,
     },
     Palette {
@@ -1500,6 +1506,8 @@ mod tests {
             r#"{"cmd":"tab_anchor","id":3}"#,
             r#"{"cmd":"set_quick_access_size","size":"large"}"#,
             r#"{"cmd":"set_home_section","section":"downloads","shown":false}"#,
+            r#"{"cmd":"set_favorite_order","order":["github.com","proton.me"]}"#,
+            r#"{"cmd":"watch_check_all"}"#,
             r#"{"cmd":"passwords","action":{"op":"enabled","on":false}}"#,
             r#"{"cmd":"aliases","action":{"op":"connect","provider":"addy","key":"k"}}"#,
             r#"{"cmd":"aliases","action":{"op":"delete","id":"a"}}"#,

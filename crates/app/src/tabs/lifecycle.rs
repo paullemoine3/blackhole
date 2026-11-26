@@ -320,13 +320,18 @@ impl Running {
             })
             .copied()
             .collect();
-        // Cap on live views, independent of the delay: each one is a renderer process.
-        // Tabs never shown sort first, then the least recently used.
-        let live: Vec<(TabId, Option<Instant>)> = self
+        // Cap on live views, independent of the delay: each one is a renderer process. It holds
+        // per space, so a space full of tabs never puts another one's to sleep (black hole tabs
+        // count together). Tabs never shown sort first, then the least recently used.
+        let spaces = self.svc.workspace().spaces();
+        let live: Vec<(TabId, Option<blackhole_domain::SpaceId>, Option<Instant>)> = self
             .tabs
             .keys()
             .filter(|id| !idle.contains(id))
-            .map(|id| (*id, self.last_active.get(id).copied()))
+            .map(|id| {
+                let space = spaces.iter().find(|s| s.tabs.iter().any(|t| t.id == *id)).map(|s| s.id);
+                (*id, space, self.last_active.get(id).copied())
+            })
             .collect();
         let mut visible: Vec<TabId> = self
             .svc
@@ -337,7 +342,7 @@ impl Running {
             .chain(self.split_tab())
             .collect();
         visible.extend(&busy);
-        idle.extend(blackhole_domain::overflow_to_release(
+        idle.extend(blackhole_domain::overflow_per_group(
             &live,
             &visible,
             self.svc.settings().max_live_tabs as usize,

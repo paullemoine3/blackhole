@@ -51,9 +51,58 @@
       return stream;
     };
   }
-  // Screen shares are left to the page and the engine (0.8.27): the old `setParameters`
-  // wrapper forced 3 Mb/s and full resolution on every layer, against the call's own
-  // congestion control (lost packets, a blurry or blocky share on the other side).
+  // Screen shares: the old `setParameters` wrapper (until 0.8.27) forced 3 Mb/s and full
+  // resolution on every layer, against the call's own congestion control. Bitrate and layers
+  // stay the page's. WebKit only (macOS, 0.8.33): it does not tell its encoder that a screen is
+  // shared, so under load it lowers the resolution like for a camera and the text comes out
+  // blocky whatever the page asks (Meet at 720p). A shared screen keeps its resolution and drops
+  // frames instead, as Chromium does on its own: `contentHint` "detail" and
+  // `degradationPreference` "maintain-resolution", unless the page chose them.
+  const screens = new WeakSet();
+  const webkit = !!(window.webkit && window.webkit.messageHandlers) && !window.chrome;
+  const Sender = window.RTCRtpSender && RTCRtpSender.prototype;
+  const screenOf = (sender) => {
+    try { return !!(sender && sender.track && screens.has(sender.track)); } catch (_) { return false; }
+  };
+  const keepSharp = (params) => (params && !params.degradationPreference ? { ...params, degradationPreference: 'maintain-resolution' } : params);
+  const setParams = Sender && Sender.setParameters;
+  // Each sender once per screen track it carries.
+  const tuned = new WeakMap();
+  const tune = (sender) => {
+    if (!screenOf(sender) || tuned.get(sender) === sender.track || !Sender.getParameters) return;
+    tuned.set(sender, sender.track);
+    try {
+      const params = sender.getParameters();
+      if (params && !params.degradationPreference) setParams.call(sender, keepSharp(params)).catch(() => {});
+    } catch (_) {}
+  };
+  const tuneAll = () => {
+    for (const pc of peers) {
+      try { pc.getSenders().forEach(tune); } catch (_) {}
+    }
+  };
+  if (webkit && md && md.getDisplayMedia && setParams) {
+    const display = md.getDisplayMedia.bind(md);
+    md.getDisplayMedia = async (constraints) => {
+      const stream = await display(constraints);
+      stream.getVideoTracks().forEach((t) => {
+        screens.add(t);
+        try { if (!t.contentHint) t.contentHint = 'detail'; } catch (_) {}
+      });
+      // The page attaches it to its call right after: looked for a few times.
+      for (const wait of [0, 1000, 3000]) setTimeout(tuneAll, wait);
+      return stream;
+    };
+    Sender.setParameters = function setParameters(params, ...rest) {
+      return setParams.call(this, screenOf(this) ? keepSharp(params) : params, ...rest);
+    };
+    if (Sender.replaceTrack) {
+      const replaceTrack = Sender.replaceTrack;
+      Sender.replaceTrack = function (track, ...rest) {
+        return replaceTrack.call(this, track, ...rest).then((r) => { tune(this); return r; });
+      };
+    }
+  }
   const live = (kind) => {
     for (const t of tracks) if (t.readyState === 'ended') tracks.delete(t);
     return [...tracks].filter((t) => t.kind === kind);

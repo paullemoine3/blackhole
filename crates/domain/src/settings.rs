@@ -19,8 +19,8 @@ pub struct Settings {
     pub hardware_acceleration: bool,
     /// Minutes a background tab may sit unused before its engine view is released.
     pub tab_sleep_minutes: u32,
-    /// Tabs allowed to keep a live engine view at once (one of `LIVE_TABS_CHOICES`); the least
-    /// recently used are released.
+    /// Tabs of each space allowed to keep a live engine view at once (one of
+    /// `LIVE_TABS_CHOICES`); the least recently used of that space are released.
     pub max_live_tabs: u32,
     /// Blank hidden views kept ready so the next tab opens instantly (one of `SPARE_CHOICES`);
     /// each costs a renderer's worth of memory.
@@ -149,6 +149,62 @@ pub fn home_order(stored: &[String]) -> Vec<&'static str> {
     out
 }
 
+/// The start page of one space (0.8.33): its sections (hidden, order) and its favorites (hidden
+/// sites, order dragged on the page). A space without one shows the start page as `Settings`
+/// had it before (`SpaceHome::of_settings`); its first change gives it its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpaceHome {
+    /// Sections hidden (names of `HOME_SECTIONS`).
+    pub hidden: BTreeSet<String>,
+    /// Order of the sections; empty: the default. Read through `home_order`.
+    pub order: Vec<String>,
+    /// Favorites removed from the page, by site (`site_key`).
+    pub hidden_favorites: BTreeSet<String>,
+    /// Favorites in the order dragged on the page, by site (`site_key`); the others follow.
+    pub favorites: Vec<String>,
+}
+
+/// Sites kept in the order of a space's favorites at most.
+pub const MAX_FAVORITE_ORDER: usize = 64;
+
+impl SpaceHome {
+    /// What a space without its own start page shows: the choices made before 0.8.33.
+    pub fn of_settings(settings: &Settings) -> Self {
+        Self {
+            hidden: settings.hidden_home_sections.clone(),
+            order: settings.home_order.clone(),
+            hidden_favorites: settings.hidden_favorites.clone(),
+            favorites: Vec::new(),
+        }
+    }
+
+    /// Keeps the order dragged on the page: each site once, at most `MAX_FAVORITE_ORDER`.
+    pub fn set_favorite_order(&mut self, sites: &[String]) -> bool {
+        let mut order: Vec<String> = Vec::new();
+        for site in sites.iter().map(|s| site_key(s)) {
+            if !site.is_empty() && !order.contains(&site) && order.len() < MAX_FAVORITE_ORDER {
+                order.push(site);
+            }
+        }
+        if order == self.favorites {
+            return false;
+        }
+        self.favorites = order;
+        true
+    }
+
+    /// `items` (each with its site) in the order of the space: the sites dragged first, in
+    /// their order, then the others where they were.
+    pub fn sort_favorites<T>(&self, items: &mut [T], site: impl Fn(&T) -> String) {
+        let rank = |item: &T| {
+            let key = site(item);
+            self.favorites.iter().position(|s| *s == key).unwrap_or(usize::MAX)
+        };
+        // Stable: the sites not dragged keep their order after the others.
+        items.sort_by_key(rank);
+    }
+}
+
 /// Page zoom steps in percent, like the other browsers (100% is the fifth).
 pub const ZOOM_STEPS: [u32; 12] = [50, 67, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300];
 /// Sites whose zoom is remembered at most: past this count a new site is not stored (its
@@ -181,6 +237,28 @@ pub fn overflow_to_release<K: Copy + PartialEq, T: Ord>(
     let kept = live.len() - candidates.len();
     let excess = (kept + candidates.len()).saturating_sub(max.max(kept));
     candidates.iter().take(excess).map(|(id, _)| *id).collect()
+}
+
+/// `overflow_to_release` in each group on its own (a space): at most `max` live entries per
+/// group, so the tabs of one space never push out those of another.
+pub fn overflow_per_group<K: Copy + PartialEq, G: PartialEq, T: Ord + Copy>(
+    live: &[(K, G, T)],
+    protected: &[K],
+    max: usize,
+) -> Vec<K> {
+    let mut groups: Vec<&G> = Vec::new();
+    for (_, g, _) in live {
+        if !groups.contains(&g) {
+            groups.push(g);
+        }
+    }
+    groups
+        .into_iter()
+        .flat_map(|g| {
+            let part: Vec<(K, T)> = live.iter().filter(|(_, o, _)| o == g).map(|(k, _, t)| (*k, *t)).collect();
+            overflow_to_release(&part, protected, max)
+        })
+        .collect()
 }
 
 impl Settings {
@@ -324,7 +402,39 @@ mod tests {
         assert!(s.set_zoom("s0.test", 110), "a known site still changes");
     }
 
-    use super::overflow_to_release;
+    use super::{overflow_per_group, overflow_to_release};
+
+    #[test]
+    fn a_space_orders_its_favorites_by_site() {
+        let mut home = super::SpaceHome::default();
+        let own = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert!(home.set_favorite_order(&own(&["www.GitHub.com", "proton.me", "github.com", ""])));
+        assert_eq!(home.favorites, own(&["github.com", "proton.me"]));
+        assert!(!home.set_favorite_order(&own(&["github.com", "proton.me"])), "unchanged");
+        let mut items = own(&["a.test", "proton.me", "b.test", "github.com"]);
+        home.sort_favorites(&mut items, |s| s.clone());
+        assert_eq!(items, own(&["github.com", "proton.me", "a.test", "b.test"]));
+    }
+
+    #[test]
+    fn a_space_without_its_own_start_page_shows_the_former_one() {
+        let mut settings = super::Settings::default();
+        settings.hidden_home_sections.insert("recent".to_owned());
+        settings.hidden_favorites.insert("proton.me".to_owned());
+        let home = super::SpaceHome::of_settings(&settings);
+        assert!(home.hidden.contains("recent"));
+        assert!(home.hidden_favorites.contains("proton.me"));
+        assert!(home.favorites.is_empty());
+    }
+
+    #[test]
+    fn each_space_keeps_its_own_live_tabs() {
+        // Space 1 has four tabs, space 2 two older ones: a cap of 3 releases only in space 1.
+        let live = [(1, 1, 50), (2, 1, 40), (3, 1, 30), (4, 1, 45), (5, 2, 1), (6, 2, 2)];
+        assert_eq!(overflow_per_group(&live, &[1], 3), vec![3]);
+        assert_eq!(overflow_per_group(&live, &[1], 1), vec![3, 2, 4, 5]);
+        assert!(overflow_per_group(&live, &[], 4).is_empty());
+    }
 
     #[test]
     fn releases_oldest_unprotected_tabs_over_budget() {

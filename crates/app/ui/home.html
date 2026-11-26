@@ -47,10 +47,28 @@
   .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; opacity: .5; font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
   .card h2 button { font: inherit; text-transform: none; letter-spacing: 0; color: inherit; opacity: .8; background: transparent; border: 0; cursor: pointer; border-radius: 6px; padding: 2px 6px; }
   .card h2 button:hover { background: rgba(255,255,255,.1); }
+  /* Watched areas: read again on demand, the whole section or one row; the icon turns meanwhile. */
+  .card h2 .acts { display: inline-flex; align-items: center; gap: 2px; }
+  .card h2 .checkall { display: inline-grid; place-items: center; padding: 3px; }
+  /* The section's button turns once per click; the rows being read shimmer behind their content,
+     a band of the space's colour sweeping across the card (still tint when animations are off). */
+  .card h2 .checkall.spun svg { animation: spin-once .6s cubic-bezier(.3,1.3,.5,1); }
+  @keyframes spin-once { to { transform: rotate(360deg); } }
+  .card h2 .checkall:disabled { cursor: default; opacity: .4; }
+  .item.checking { isolation: isolate; overflow: hidden; border-color: color-mix(in srgb, var(--accent, #7c5cff) 35%, transparent); }
+  .item.checking::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--accent, #7c5cff) 26%, transparent) 50%, transparent 80%);
+    background-size: 220% 100%; animation: watch-shimmer 1.6s ease-in-out var(--sh, 0ms) infinite; }
+  @keyframes watch-shimmer { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+  body.noanim .item.checking::before { animation: none; background: color-mix(in srgb, var(--accent, #7c5cff) 12%, transparent); }
+  @media (prefers-reduced-motion: reduce) { .item.checking::before { background: color-mix(in srgb, var(--accent, #7c5cff) 12%, transparent); } }
+  .meta .s .missing { color: #ff9f6b; }
   .customize { display: flex; justify-content: center; }
   #customize { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: inherit; opacity: .55; background: transparent; border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
   #customize:hover, #customize:focus-visible { opacity: .9; background: rgba(255,255,255,.08); }
   .card h2 button.armed, .card h2 button.armed:hover { background: rgba(255,90,90,.9); color: #fff; opacity: 1; }
+  #favorites.linkover { outline: 1px dashed var(--accent); outline-offset: 4px; }
+  .fav.lifted { z-index: 2; transition: none !important; background: rgba(255,255,255,.12); box-shadow: 0 14px 30px -12px rgba(0,0,0,.7); cursor: grabbing; }
   #favs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
   .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
   .fav, .item { position: relative; }
@@ -76,6 +94,8 @@
   /* Now: the next meeting, the areas that changed, the tab sent from another device. */
   .now[hidden] { display: none; }
   #nowlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  /* Watched areas and downloads: one card a line, spaced like the other sections' cards. */
+  #watchlist, #dllist { display: flex; flex-direction: column; gap: 10px; }
   .item.live { border-color: rgba(124,92,255,.45); background: rgba(124,92,255,.1); }
   .tile.glyph { background: rgba(124,92,255,.28) !important; color: #e6defe; }
   .news h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
@@ -184,7 +204,7 @@
   <div id="sections">
   <section class="card now" id="now" data-name="now" hidden><h2><span class="ttl" data-i18n="home.now">Now</span></h2><div id="nowlist"></div></section>
   <section class="card" id="favorites" data-name="favorites"><h2><span class="ttl" data-i18n="home.favorites">Favorites</span></h2><div id="favs"></div></section>
-  <section class="card" id="watches" data-name="watches" hidden><h2><span class="ttl" data-i18n="home.watches">Watched areas</span> <button class="lib" data-section="watches" data-i18n="home.see_all">See all</button></h2><div id="watchlist"></div></section>
+  <section class="card" id="watches" data-name="watches" hidden><h2><span class="ttl" data-i18n="home.watches">Watched areas</span> <span class="acts"><button class="checkall" id="checkall" data-i18n-title="home.check_all" data-i18n-aria="home.check_all"></button><button class="lib" data-section="watches" data-i18n="home.see_all">See all</button></span></h2><div id="watchlist"></div></section>
   <section class="card" id="downloads" data-name="downloads" hidden><h2><span class="ttl" data-i18n="home.downloads">Downloads</span> <button class="lib" data-section="downloads" data-i18n="home.see_all">See all</button></h2><div id="dllist"></div></section>
   <section class="card" id="recent-card" data-name="recent"><h2><span class="ttl" data-i18n="home.recent">Recent activity</span> <button id="clear" data-i18n-title="palette.clear_history" data-i18n="home.clear">Clear</button></h2><div id="recent"></div></section>
   </div>
@@ -285,20 +305,36 @@ function renderNow(now) {
   $('now').hidden = !rows.length;
   $('nowlist').replaceChildren(...rows);
 }
-// Watched areas: the last value read of each (text from pages: textContent only).
+// Watched areas: the last value read of each (text from pages: textContent only), when it last
+// changed and when it was last read (or that the area was not found). A row being read shimmers;
+// the section's button (or a row's menu) reads them again now.
 function renderWatches(list) {
   $('watches').hidden = !list.length;
+  $('checkall').disabled = list.some(w => w.checking);
   $('watchlist').replaceChildren(...list.map(w => {
     const value = (w.value || '').replace(/\s+/g, ' ').trim();
-    const sub = [value.length > 80 ? value.slice(0, 79) + '…' : value, w.changed ? ago(w.changed) : null].filter(Boolean).join(' · ');
     const open = () => send({ cmd: 'open', input: w.url });
-    return nowRow(tile(w.url), w.title || host(w.url), sub || host(w.url), open, [
+    const n = nowRow(tile(w.url), w.title || host(w.url), '', open, [
       { icon: 'open', label: bhT('menu.open'), run: { cmd: 'open', input: w.url } },
       { icon: 'reload', label: bhT('home.check_now'), run: { cmd: 'watch_check', id: w.id } },
       { icon: 'library', label: bhT('home.show_library'), run: { cmd: 'open_library', section: 'watches' } },
     ], !!w.unread);
+    const sub = n.querySelector('.meta .s');
+    const parts = [value.length > 80 ? value.slice(0, 79) + '…' : value || host(w.url)];
+    if (w.changed) parts.push(bhT('home.watch_changed', { when: ago(w.changed) }));
+    sub.replaceChildren(parts.filter(Boolean).join(' · '));
+    if (w.missing && !w.checking) sub.append(' · ', el('span', 'missing', bhT('home.watch_missing')));
+    if (w.checked > 0) sub.append(' · ', bhT('home.watch_checked', { when: ago(w.checked) }));
+    sub.title = sub.textContent;
+    n.classList.toggle('checking', !!w.checking);
+    // On the clock's phase: a row redrawn meanwhile does not restart its sweep.
+    n.style.setProperty('--sh', -(Date.now() % 1600) + 'ms');
+    n.setAttribute('aria-busy', String(!!w.checking));
+    return n;
   }));
 }
+// Times said in words ("checked 3 min ago") follow the clock while the page stays open.
+setInterval(() => { if (last && !document.hidden && !$('watches').hidden) renderWatches(last.watches || []); }, 30000);
 // The last files downloaded that are still there: a click opens the file.
 function renderDownloads(list) {
   $('downloads').hidden = !list.length;
@@ -319,7 +355,7 @@ function applyHidden(s) {
 }
 function customizeMenu(x, y) {
   const s = last || {};
-  menu(x, y, [{ head: bhT('home.sections') }, ...(s.sections || []).map(name => {
+  menu(x, y, [{ head: s.space ? bhT('home.sections_space', { space: s.space }) : bhT('home.sections') }, ...(s.sections || []).map(name => {
     const shown = !(s.hidden || []).includes(name);
     return { icon: shown ? 'check' : 'minus', label: bhT(SECTION_KEY[name]), run: { cmd: 'set_home_section', section: name, shown: !shown } };
   })]);
@@ -416,9 +452,135 @@ const drop = (e) => {
 };
 addEventListener('pointerup', drop);
 addEventListener('pointercancel', drop);
+// Favorites of the space: dragged among themselves (pointer, FLIP) or moved with Alt+←/→; a
+// link dropped on the section joins the space's quick access where it was dropped. The order
+// is kept by site for this space (`set_favorite_order`).
+let favDrag = null, favMoved = false;
+const favSites = () => [...$('favs').children].map(n => n.dataset.site);
+const favTops = () => new Map([...$('favs').children].map(c => { const r = c.getBoundingClientRect(); return [c, [r.left, r.top]]; }));
+function favSlide(before, except) {
+  if (calm()) return;
+  for (const [n, [x, y]] of before) {
+    if (n === except) continue;
+    const r = n.getBoundingClientRect(), dx = x - r.left, dy = y - r.top;
+    if (!dx && !dy) continue;
+    n.style.transition = 'none';
+    n.style.transform = `translate(${dx}px, ${dy}px)`;
+    void n.offsetWidth;
+    n.style.transition = '';
+    n.style.transform = '';
+  }
+}
+function favSave() {
+  const order = favSites();
+  if (last && order.join() !== (last.favorites || []).map(f => f.site).join()) send({ cmd: 'set_favorite_order', order });
+}
+// The favorite under the point, and whether the point is on its right half.
+function favAt(x, y, except) {
+  for (const n of $('favs').children) {
+    if (n === except) continue;
+    const r = n.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return { n, after: x > r.left + r.width / 2 };
+  }
+  return null;
+}
+function favGrab(n) {
+  n.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    favMoved = false;
+    favDrag = { n, id: e.pointerId, x0: e.clientX, y0: e.clientY, left0: n.offsetLeft, top0: n.offsetTop, on: false };
+  });
+  n.addEventListener('keydown', (e) => {
+    if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.target !== n) return;
+    e.preventDefault();
+    const to = e.key === 'ArrowLeft' ? n.previousElementSibling : n.nextElementSibling;
+    if (!to) return;
+    const before = favTops();
+    $('favs').insertBefore(n, e.key === 'ArrowLeft' ? to : to.nextSibling);
+    favSlide(before, null);
+    n.focus();
+    favSave();
+  });
+}
+addEventListener('pointermove', (e) => {
+  if (!favDrag || e.pointerId !== favDrag.id) return;
+  const { n } = favDrag;
+  if (!favDrag.on) {
+    if (Math.hypot(e.clientX - favDrag.x0, e.clientY - favDrag.y0) < 5) return;
+    favDrag.on = favMoved = true;
+    try { n.setPointerCapture(e.pointerId); } catch (_) {}
+    n.classList.add('lifted');
+    document.body.classList.add('dragging');
+  }
+  const hit = favAt(e.clientX, e.clientY, n);
+  if (hit) {
+    const want = hit.after ? hit.n.nextSibling : hit.n;
+    if (want !== n && want !== n.nextSibling) {
+      const before = favTops();
+      $('favs').insertBefore(n, want);
+      favSlide(before, n);
+    }
+  }
+  // Follows the pointer from wherever the grid now places it.
+  const dx = e.clientX - favDrag.x0 - (n.offsetLeft - favDrag.left0), dy = e.clientY - favDrag.y0 - (n.offsetTop - favDrag.top0);
+  n.style.transform = `translate(${dx}px, ${dy}px) scale(1.04)`;
+});
+const favDrop = (e) => {
+  if (!favDrag || (e && e.pointerId !== favDrag.id)) return;
+  const { n, on } = favDrag;
+  favDrag = null;
+  if (!on) return;
+  document.body.classList.remove('dragging');
+  n.classList.remove('lifted');
+  n.style.transform = '';
+  favSave();
+  // The click that ends the drag does not open the favorite.
+  setTimeout(() => { favMoved = false; }, 0);
+};
+addEventListener('pointerup', favDrop);
+addEventListener('pointercancel', favDrop);
+{
+  const zone = $('favorites');
+  const link = (dt) => {
+    const raw = (dt.getData('text/uri-list') || dt.getData('text/plain') || '').split(/\r?\n/).map(l => l.trim()).find(l => /^https?:\/\//i.test(l));
+    return raw || null;
+  };
+  zone.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].some(t => t === 'text/uri-list' || t === 'text/plain')) return;
+    e.preventDefault();
+    zone.classList.add('linkover');
+  });
+  zone.addEventListener('dragleave', (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('linkover'); });
+  zone.addEventListener('drop', (e) => {
+    zone.classList.remove('linkover');
+    const url = link(e.dataTransfer);
+    if (!url) return;
+    e.preventDefault();
+    let site = '';
+    try { site = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch (_) { return; }
+    // Its place first (where it was dropped), then it joins the quick access of the space.
+    const order = favSites().filter(s => s !== site);
+    const hit = favAt(e.clientX, e.clientY, null);
+    const at = hit ? order.indexOf(hit.n.dataset.site) + (hit.after ? 1 : 0) : order.length;
+    order.splice(Math.max(0, at), 0, site);
+    send({ cmd: 'set_favorite_order', order });
+    send({ cmd: 'pin_site', url });
+  });
+}
 $('customize').prepend(bhIcon('gear', 'xs'));
 $('customize').onclick = () => { const r = $('customize').getBoundingClientRect(); customizeMenu(r.left, r.bottom + 4); };
 for (const b of document.querySelectorAll('.card h2 .lib')) b.onclick = () => send({ cmd: 'open_library', section: b.dataset.section });
+$('checkall').append(bhIcon('reload', 'xs'));
+$('checkall').onclick = (e) => {
+  e.stopPropagation();
+  // One turn per click, then back at rest for the next one.
+  const b = $('checkall');
+  b.classList.remove('spun');
+  void b.offsetWidth;
+  b.classList.add('spun');
+  setTimeout(() => b.classList.remove('spun'), 650);
+  send({ cmd: 'watch_check_all' });
+};
 let focused = false;
 let riseAt = 0;
 function splash() {
@@ -478,10 +640,12 @@ window.bh = {
     renderNow(s.now);
     renderWatches(s.watches || []);
     renderDownloads(s.downloads || []);
-    $('favs').replaceChildren(...s.favorites.map(f => {
-      const n = el('div', 'fav'); n.title = f.url;
+    if (!(favDrag && favDrag.on)) $('favs').replaceChildren(...s.favorites.map(f => {
+      const n = el('div', 'fav'); n.title = f.url + '\n' + bhT('home.fav_hint', { keys: bhKeys('alt+left') + ' / ' + bhKeys('alt+right') });
+      n.dataset.site = f.site || host(f.url);
       n.append(tile(f.url), el('div', 'name', f.name));
-      n.onclick = () => send({ cmd: 'open', input: f.url });
+      n.onclick = () => { if (!favMoved) send({ cmd: 'open', input: f.url }); };
+      favGrab(n);
       n.oncontextmenu = (e) => { e.preventDefault(); favMenu(f, e.clientX, e.clientY); };
       n.append(more((x, y) => favMenu(f, x, y)));
       return activable(n, n.onclick, (x, y) => favMenu(f, x, y));

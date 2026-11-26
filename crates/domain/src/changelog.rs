@@ -1,6 +1,17 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.33",
+        &[
+            "Each space has its own start page: its favorites come from its own quick access, and the sections you hide or move, the favorites you remove and Recent activity stay with that space",
+            "Favorites can be arranged on the start page: drag one to its place (or Alt+Left / Alt+Right), or drop a link on the section to add it to the space's quick access",
+            "Tabs kept ready in memory now count per space: a space full of tabs no longer puts another space's tabs to sleep",
+            "A Pulsar can be dragged by its title among the folders, and back to the open tabs",
+            "Watched areas on the start page: each one says when it was last checked (or that its area was not found), and a button reads it again now, or all of them at once",
+            "Screen sharing in Meet and other calls stays sharp on macOS: the shared screen keeps its resolution and lowers its frame rate instead when the connection or the computer is busy",
+        ],
+    ),
+    (
         "0.8.32",
         &[
             "Pulsars: a tab opened from a line stays in the folder of its Pulsar, across restarts too, until you drag it out, file it in a folder or make it a tile. Folded, the Pulsar still shows its open pages. Delete the Pulsar and its tabs join the open tabs",

@@ -915,7 +915,7 @@ window.bh = {
     put($('tiles'), choice(bhT('settings.tile_size'), null, s.tileSizes || [], s.tileSize, v => bhT(TILE_KEY[v]), v => send({ cmd: 'set_quick_access_size', size: v })));
     const SECTION_KEY = { now: 'home.now', favorites: 'home.favorites', watches: 'home.watches', downloads: 'home.downloads', recent: 'home.recent' };
     put($('homesections'), ...(s.homeSections || []).map((h, i) => option(bhT(SECTION_KEY[h.id]), h.shown,
-      () => send({ cmd: 'set_home_section', section: h.id, shown: !h.shown }), true, i === 0 ? bhT('settings.home_sections_sub') : null)));
+      () => send({ cmd: 'set_home_section', section: h.id, shown: !h.shown }), true, i === 0 ? bhT('settings.home_sections_sub', { space: s.homeSpace || '' }) : null)));
     put($('sleep'), choice(bhT('settings.sleep_after'), null, s.tabSleepChoices, s.tabSleep, m => bhT('unit.min', { n: m }), m => send({ cmd: 'set_tab_sleep', minutes: m })));
     put($('live'), choice(bhT('settings.live_tabs'), bhT('settings.live_tabs_sub'),
       s.maxLiveTabsChoices, s.maxLiveTabs, String, n => send({ cmd: 'set_max_live_tabs', tabs: n })));

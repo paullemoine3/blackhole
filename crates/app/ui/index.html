@@ -793,7 +793,9 @@ function pulsarNode(p, tabs) {
   h.tabIndex = 0;
   h.setAttribute('role', 'button');
   h.setAttribute('aria-expanded', String(!p.collapsed));
-  h.onclick = () => { if (!editing) send({ cmd: 'pulsar_toggle', id: p.id }); };
+  h.onclick = () => { if (!editing && !justDragged) send({ cmd: 'pulsar_toggle', id: p.id }); };
+  // Dragged by its header: among the folders (pinned) or at the head of the open tabs.
+  h.onmousedown = (e) => { if (e.button === 0 && !editing) down = { pulsar: p.id, pinned: p.pinned, node: box, x: e.clientX, y: e.clientY }; };
   h.oncontextmenu = (e) => { e.preventDefault(); pulsarMenu(p, e.clientX, e.clientY); };
   h.onkeydown = (e) => {
     if (e.target !== h || editing) return;
@@ -1011,6 +1013,14 @@ document.addEventListener('wheel', (e) => {
 function dropTarget(x, y) {
   const node = document.elementFromPoint(x, y);
   if (!node) return null;
+  if (drag.pulsar) {
+    // Above the line under the folders: their section; below it: the open tabs.
+    if (!node.closest('#scroll')) return null;
+    const sep = $('foldsep').getBoundingClientRect();
+    const pin = y < sep.top + sep.height / 2;
+    const box = pin ? ($('folders').offsetHeight ? $('folders') : $('foldsep')) : $('tabs');
+    return { el: box, edge: 'into', pin, stay: pin === drag.pinned };
+  }
   if (drag.folder) {
     const box = node.closest('#folders .folder');
     if (!box) return null;
@@ -1066,6 +1076,7 @@ function endDrag(commit, x, y, sx, sy) {
     document.body.classList.remove('dragging');
     clearMarks();
     if (target && target.stay) { /* where it was */ }
+    else if (target && drag.pulsar) send({ cmd: 'pulsar_pin', id: drag.pulsar, pinned: target.pin });
     else if (target && drag.folder) send({ cmd: 'move_folder', id: drag.folder, parent: target.parent ?? null, before: target.before });
     else if (target && drag.easel) send({ cmd: 'move_easel', id: drag.easel, folder: target.folder });
     else if (target && drag.url) send({ cmd: 'open_at', url: drag.url, before: target.before, folder: target.folder, pinned: target.pinned });
@@ -1080,10 +1091,10 @@ function endDrag(commit, x, y, sx, sy) {
 
 document.addEventListener('mousemove', (e) => {
   if (down && !drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) {
-    const ghost = (down.folder ? down.node.querySelector('.fh') : down.node).cloneNode(true);
+    const ghost = (down.folder ? down.node.querySelector('.fh') : down.pulsar ? down.node.querySelector('.ph') : down.node).cloneNode(true);
     ghost.classList.add('ghost');
     document.body.append(ghost);
-    drag = { id: down.id, url: down.url, easel: down.easel, folder: down.folder, node: down.node, ghost };
+    drag = { id: down.id, url: down.url, easel: down.easel, folder: down.folder, pulsar: down.pulsar, pinned: down.pinned, node: down.node, ghost };
     down.node.classList.add('dragging');
     document.body.classList.add('dragging');
   }
