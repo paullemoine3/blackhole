@@ -1076,7 +1076,10 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - Favoris (`home.html`) : glissés au pointeur (FLIP, `.fav.lifted`, `favDrag`, le clic de fin n’ouvre rien) ou Alt+←/→ ;
   `UiCommand::SetFavoriteOrder { order }` (sites). Un lien déposé sur la section : place dans l’ordre puis `pin_site` (ouvre la page).
 - Plafond d’onglets vivants par espace : `domain::overflow_per_group` (groupe = espace, onglets trou noir ensemble) dans
-  `discard_idle_tabs` ; un espace ne libère jamais les onglets d’un autre.
+  `discard_idle_tabs` ; un espace ne libère jamais les onglets d’un autre. Les onglets ancrés sont hors plafond (`exempt` de
+  `overflow_per_group`, test `anchored_tabs_stay_out_of_the_live_tabs_cap`) : vivants sans prendre de place (limite 4, trois
+  ancrés → quatre autres vivants) ; `protected` (affichés, en appel) restent vivants mais comptent. Le compteur de la barre
+  latérale compte toujours tous les onglets ouverts.
 - Pulsar glissé par son en-tête (`.ph`, `down.pulsar`) : au-dessus de `#foldsep` → avec les dossiers, en dessous → en tête des
   onglets (`pulsar_pin`) ; même place = rien. Pas de réordonnancement entre Pulsars.
 - Partage d’écran sous WebKit (`media_devices.js`, `window.webkit.messageHandlers` sans `window.chrome`) : piste de
@@ -1093,7 +1096,17 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
   `Watch::wanted` (demandé, passe en premier dans `due`, non gardé) remplace l’ancien `checked_at = 0` qui effaçait l’heure de la
   dernière lecture ; `Watch::missing` (`watches.json`, `#[serde(default)]`) = dernière lecture sans l’élément. `checking` de
   `watches_json` = demandé, en lecture ou jamais lu ; l’accueil est redessiné au début et à la fin d’une lecture.
+- Barre de recherche (`find.js`) : les touches, la saisie, le presse-papiers et la composition tapés dans la barre s’arrêtent au
+  `window` en capture (écouteurs posés au démarrage du document, avant ceux de la page ; `shortcuts.js` passe encore avant). Vue
+  de la page, la cible était l’hôte de la racine fermée, un `div` : les raccourcis à une touche des sites (`s`, `/`, `j`/`k`)
+  partaient et prenaient le focus. Racine fermée : le champ se reconnaît à `shadow.activeElement`. Mod+F dans la barre
+  resélectionne le mot, Mod+G / Mod+Maj+G et Entrée y passent d’un résultat à l’autre. Une page qui prend le focus le rend
+  (`blur` → `focus` au tour suivant), sauf clic hors de la barre ou Tab dans les 400 ms, et pas plus de trois fois par seconde.
+- Surlignage de l’onglet actif (`motion.play`) : les positions finales sont lues avant toute animation FLIP (lues après, elles
+  comptaient le décalage de départ : le surlignage visait l’ancienne place de l’onglet suivant, une ligne trop bas). Onglet affiché
+  fermé : pas de glissement, sa ligne s’efface avec son surlignage.
 - Test macOS : `bash scripts/test-0833.sh` (Pulsar glissé, accueil des deux espaces, Alt+→, `liveTabs` 4 pour 2 × 2, zones
-  surveillées pré-enregistrées : « Tout vérifier », reflet des lignes lues, zone introuvable, une ligne relue). Tests :
+  surveillées pré-enregistrées : « Tout vérifier », reflet des lignes lues, zone introuvable, une ligne relue ; surlignage au
+  changement et à la fermeture d’onglet, barre de recherche gardée). Tests :
   `each_space_has_its_own_start_page`, `each_space_keeps_its_own_start_page`, `each_space_keeps_its_own_live_tabs`,
   `a_space_orders_its_favorites_by_site`, `a_reading_asked_for_says_when_it_was_done_and_whether_it_found_the_area`. Windows : code commun non rejoué (`scripts\test-pulsars.ps1` toujours valable).

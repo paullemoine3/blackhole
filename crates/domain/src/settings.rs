@@ -240,14 +240,18 @@ pub fn overflow_to_release<K: Copy + PartialEq, T: Ord>(
 }
 
 /// `overflow_to_release` in each group on its own (a space): at most `max` live entries per
-/// group, so the tabs of one space never push out those of another.
+/// group, so the tabs of one space never push out those of another. `exempt` entries (anchored
+/// tabs) stay alive outside the budget: they take no place from the others, unlike `protected`
+/// ones (the tabs shown, in a call), which stay alive but count.
 pub fn overflow_per_group<K: Copy + PartialEq, G: PartialEq, T: Ord + Copy>(
     live: &[(K, G, T)],
     protected: &[K],
+    exempt: &[K],
     max: usize,
 ) -> Vec<K> {
+    let live: Vec<&(K, G, T)> = live.iter().filter(|(k, _, _)| !exempt.contains(k)).collect();
     let mut groups: Vec<&G> = Vec::new();
-    for (_, g, _) in live {
+    for (_, g, _) in live.iter().copied() {
         if !groups.contains(&g) {
             groups.push(g);
         }
@@ -431,9 +435,24 @@ mod tests {
     fn each_space_keeps_its_own_live_tabs() {
         // Space 1 has four tabs, space 2 two older ones: a cap of 3 releases only in space 1.
         let live = [(1, 1, 50), (2, 1, 40), (3, 1, 30), (4, 1, 45), (5, 2, 1), (6, 2, 2)];
-        assert_eq!(overflow_per_group(&live, &[1], 3), vec![3]);
-        assert_eq!(overflow_per_group(&live, &[1], 1), vec![3, 2, 4, 5]);
-        assert!(overflow_per_group(&live, &[], 4).is_empty());
+        assert_eq!(overflow_per_group(&live, &[1], &[], 3), vec![3]);
+        assert_eq!(overflow_per_group(&live, &[1], &[], 1), vec![3, 2, 4, 5]);
+        assert!(overflow_per_group(&live, &[], &[], 4).is_empty());
+    }
+
+    #[test]
+    fn anchored_tabs_stay_out_of_the_live_tabs_cap() {
+        // A cap of 4, six tabs of which three are anchored (1, 2, 3): one place is still free.
+        let live = [(1, 1, 1), (2, 1, 2), (3, 1, 3), (4, 1, 40), (5, 1, 50), (6, 1, 60)];
+        assert!(overflow_per_group(&live, &[6], &[1, 2, 3], 4).is_empty());
+        // A seventh tab takes it, an eighth puts the oldest unanchored one to sleep, never an
+        // anchored one.
+        let seven = [(1, 1, 1), (2, 1, 2), (3, 1, 3), (4, 1, 40), (5, 1, 50), (6, 1, 60), (7, 1, 70)];
+        assert!(overflow_per_group(&seven, &[7], &[1, 2, 3], 4).is_empty());
+        let eight = [(1, 1, 1), (2, 1, 2), (3, 1, 3), (4, 1, 40), (5, 1, 50), (6, 1, 60), (7, 1, 70), (8, 1, 80)];
+        assert_eq!(overflow_per_group(&eight, &[8], &[1, 2, 3], 4), vec![4]);
+        // Counted as protected (the old behaviour), they took three of the four places.
+        assert_eq!(overflow_per_group(&live, &[1, 2, 3, 6], &[], 4), vec![4, 5]);
     }
 
     #[test]
