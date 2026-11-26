@@ -150,12 +150,45 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     }
 
     /// Pinned tabs first, then the built-in defaults, one per host.
-    pub fn favorites(&self) -> Vec<Favorite> {
-        let pinned = self
-            .workspace
+    /// The start page of `space` (its own, or the settings' one as before 0.8.33).
+    pub fn home_of(&self, space: SpaceId) -> blackhole_domain::SpaceHome {
+        self.workspace
             .spaces()
             .iter()
-            .flat_map(|s| s.tabs.iter().filter(|t| t.pinned))
+            .find(|s| s.id == space)
+            .and_then(|s| s.home.as_deref().cloned())
+            .unwrap_or_else(|| blackhole_domain::SpaceHome::of_settings(&self.settings))
+    }
+
+    /// The start page of the space shown.
+    pub fn home(&self) -> blackhole_domain::SpaceHome {
+        self.home_of(self.workspace.active_space().id)
+    }
+
+    /// Changes the start page of the space shown (it gets its own from then on).
+    fn edit_home(&mut self, change: impl FnOnce(&mut blackhole_domain::SpaceHome) -> bool) -> bool {
+        let id = self.workspace.active_space().id;
+        let mut home = self.home_of(id);
+        if !change(&mut home) {
+            return false;
+        }
+        let changed = self.workspace.set_space_home(id, home);
+        if changed {
+            self.persist();
+        }
+        changed
+    }
+
+    /// The favorites of the space shown: its quick access, then the built-in sites, without
+    /// the ones removed from its start page, in the order dragged there.
+    pub fn favorites(&self) -> Vec<Favorite> {
+        let home = self.home();
+        let pinned = self
+            .workspace
+            .active_space()
+            .tabs
+            .iter()
+            .filter(|t| t.pinned)
             .map(|t| Favorite {
                 name: if t.title.trim().is_empty() {
                     t.url.host_str().unwrap_or_default().to_owned()
@@ -181,13 +214,19 @@ impl<R: WorkspaceRepository> BrowserService<R> {
                 .unwrap_or_default()
                 .trim_start_matches("www.")
                 .to_owned();
-            if !seen.contains(&host) && !self.settings.hidden_favorites.contains(&host) {
+            if !seen.contains(&host) && !home.hidden_favorites.contains(&host) {
                 seen.push(host);
                 out.push(fav);
             }
         }
+        home.sort_favorites(&mut out, |f| blackhole_domain::site_key(f.url.host_str().unwrap_or_default()));
         out.truncate(MAX_FAVORITES);
         out
+    }
+
+    /// Order of the favorites of the space shown, dragged on its start page (sites).
+    pub fn set_favorite_order(&mut self, sites: &[String]) -> bool {
+        self.edit_home(|home| home.set_favorite_order(sites))
     }
 
     pub fn recent_activity(&self, n: usize) -> &[HistoryEntry] {
@@ -387,12 +426,13 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         if !blackhole_domain::is_home_section(name) {
             return false;
         }
-        if shown {
-            self.settings.hidden_home_sections.remove(name);
-        } else {
-            self.settings.hidden_home_sections.insert(name.to_owned());
-        }
-        let _ = self.repo.save_settings(&self.settings);
+        self.edit_home(|home| {
+            if shown {
+                home.hidden.remove(name)
+            } else {
+                home.hidden.insert(name.to_owned())
+            }
+        });
         true
     }
 
@@ -401,8 +441,8 @@ impl<R: WorkspaceRepository> BrowserService<R> {
     pub fn set_home_order(&mut self, order: &[String]) {
         let order: Vec<String> = blackhole_domain::home_order(order).into_iter().map(str::to_owned).collect();
         let default = order.iter().map(String::as_str).eq(blackhole_domain::HOME_SECTIONS);
-        self.settings.home_order = if default { Vec::new() } else { order };
-        let _ = self.repo.save_settings(&self.settings);
+        let order = if default { Vec::new() } else { order };
+        self.edit_home(|home| std::mem::replace(&mut home.order, order.clone()) != order);
     }
 
     /// Calendar options by name: `reminders` (a toast when a meeting starts) or `card` (the next
@@ -901,15 +941,11 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         Some(removed)
     }
 
-    /// Removes a site from the start page grid; a pinned tab for it stays in the sidebar.
+    /// Removes a site from the start page grid of the space shown; a pinned tab for it stays
+    /// in the sidebar.
     pub fn hide_favorite(&mut self, url: &Url) {
-        let host = url
-            .host_str()
-            .unwrap_or_default()
-            .trim_start_matches("www.")
-            .to_owned();
-        self.settings.hidden_favorites.insert(host);
-        let _ = self.repo.save_settings(&self.settings);
+        let host = blackhole_domain::site_key(url.host_str().unwrap_or_default());
+        self.edit_home(|home| home.hidden_favorites.insert(host));
     }
 
     pub fn set_space_icon(&mut self, id: SpaceId, icon: &str) -> bool {
@@ -1272,6 +1308,26 @@ mod tests {
         assert_eq!(svc2.workspace().spaces().len(), 1);
         let last = svc.workspace().active_space().id;
         assert_eq!(svc.delete_space(last), None);
+    }
+
+    #[test]
+    fn each_space_has_its_own_start_page() {
+        let mut svc = BrowserService::start(Memory::default(), PrivacyPolicy::default());
+        let id = svc.open_tab("https://rust-lang.org/learn").unwrap();
+        svc.toggle_pin(id);
+        let first = svc.workspace().active_space().id;
+        assert!(svc.set_home_section("recent", false));
+        let other = svc.add_space("Work", "#336699");
+        svc.switch_space(other);
+        assert!(svc.favorites().iter().all(|f| f.url.host_str() != Some("rust-lang.org")), "only this space's quick access");
+        assert!(!svc.home().hidden.contains("recent"), "the other space keeps its sections");
+        let sites: Vec<String> = svc.favorites().iter().rev().map(|f| f.url.host_str().unwrap().to_owned()).collect();
+        assert!(svc.set_favorite_order(&sites));
+        let shown: Vec<String> = svc.favorites().iter().map(|f| f.url.host_str().unwrap().to_owned()).collect();
+        assert_eq!(shown[0], sites[0], "dragged order");
+        svc.switch_space(first);
+        assert_eq!(svc.favorites()[0].url.host_str(), Some("rust-lang.org"));
+        assert!(svc.home().hidden.contains("recent"));
     }
 
     #[test]

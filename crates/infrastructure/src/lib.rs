@@ -292,6 +292,42 @@ struct SpaceDto {
     tabs: Vec<TabDto>,
     #[serde(default)]
     folders: Vec<FolderDto>,
+    /// Its own start page (0.8.33); absent: the one of the settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    home: Option<SpaceHomeDto>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct SpaceHomeDto {
+    #[serde(default)]
+    hidden: Vec<String>,
+    #[serde(default)]
+    order: Vec<String>,
+    #[serde(default)]
+    hidden_favorites: Vec<String>,
+    #[serde(default)]
+    favorites: Vec<String>,
+}
+
+impl SpaceHomeDto {
+    fn of(home: &blackhole_domain::SpaceHome) -> Self {
+        Self {
+            hidden: home.hidden.iter().cloned().collect(),
+            order: home.order.clone(),
+            hidden_favorites: home.hidden_favorites.iter().cloned().collect(),
+            favorites: home.favorites.clone(),
+        }
+    }
+
+    /// Unknown sections are dropped (a later version may have more).
+    fn into_home(self) -> blackhole_domain::SpaceHome {
+        blackhole_domain::SpaceHome {
+            hidden: self.hidden.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
+            order: self.order.into_iter().filter(|s| blackhole_domain::is_home_section(s)).collect(),
+            hidden_favorites: self.hidden_favorites.into_iter().collect(),
+            favorites: self.favorites.into_iter().take(blackhole_domain::MAX_FAVORITE_ORDER).collect(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -344,6 +380,7 @@ fn to_dto(ws: &Workspace) -> WorkspaceDto {
                         parent: f.parent.map(|p| p.0),
                     })
                     .collect(),
+                home: s.home.as_deref().map(SpaceHomeDto::of),
             })
             .collect(),
     }
@@ -407,6 +444,7 @@ fn from_dto(dto: WorkspaceDto) -> Workspace {
                     })
                     .collect(),
                 folders,
+                home: s.home.map(|h| Box::new(h.into_home())),
             }
         })
         .collect();
@@ -1094,6 +1132,28 @@ mod tests {
         let left = |name: &str| engine.join(name).exists();
         assert!(!left("BlackHole-burn-1-4"));
         assert!(left("BlackHole-burn-2-9") && left("BlackHole-space-3") && left("Default"));
+    }
+
+    #[test]
+    fn each_space_keeps_its_own_start_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = JsonWorkspaceRepository::new(dir.path().into());
+        let mut ws = Workspace::new();
+        let other = ws.add_space("Work", "#336699");
+        let home = blackhole_domain::SpaceHome {
+            hidden: ["recent".to_owned()].into(),
+            order: vec!["favorites".to_owned(), "now".to_owned(), "nope".to_owned()],
+            hidden_favorites: ["proton.me".to_owned()].into(),
+            favorites: vec!["github.com".to_owned()],
+        };
+        assert!(ws.set_space_home(other, home));
+        repo.save(&ws).unwrap();
+        let back = repo.load().unwrap().unwrap();
+        assert!(back.active_space().home.is_none(), "the first space keeps the settings' one");
+        let got = back.spaces().iter().find(|s| s.id == other).unwrap().home.clone().unwrap();
+        assert!(got.hidden.contains("recent") && got.hidden_favorites.contains("proton.me"));
+        assert_eq!(got.order, ["favorites", "now"], "unknown sections dropped");
+        assert_eq!(got.favorites, ["github.com"]);
     }
 
     #[test]

@@ -34,6 +34,8 @@ impl Onboarding {
 
 impl Running {
     pub(crate) fn ui_home(&self) {
+        // Each space has its own start page (0.8.33): sections, favorites and their order.
+        let home = self.svc.home();
         let mut state = json!({
             "engine": self.svc.settings().search_engine.label(),
             "animations": self.svc.settings().animations,
@@ -42,6 +44,8 @@ impl Running {
             "favorites": self.svc.favorites().iter()
                 .map(|f| json!({
                     "name": f.name, "url": f.url.as_str(),
+                    // What its place is remembered by (`SetFavoriteOrder`).
+                    "site": blackhole_domain::site_key(f.url.host_str().unwrap_or_default()),
                     // Only tabs of the current space can be unpinned from here.
                     "tab": f.tab.filter(|id| self.svc.workspace().active_space().tabs.iter().any(|t| t.id == *id)).map(|id| id.0),
                 }))
@@ -49,9 +53,10 @@ impl Running {
             "recent": self.home_recent_json(),
             "releaseNotes": self.release_notes,
             "now": self.home_now_json(),
-            "hidden": self.svc.settings().hidden_home_sections,
+            "hidden": home.hidden,
             // In the user's order (dragged on the page).
-            "sections": blackhole_domain::home_order(&self.svc.settings().home_order),
+            "sections": blackhole_domain::home_order(&home.order),
+            "space": self.svc.workspace().active_space().name,
             "watches": self.home_watches_json(),
             "downloads": self.home_downloads_json(),
             "onboarding": self.onboarding_json(),
@@ -139,12 +144,15 @@ impl Running {
     /// The interface language changed: every open page of BlackHole gets the new catalog and
     /// re-renders, the shell's own texts (menus, titles, state) follow. Error pages already
     /// shown keep their language until the next error.
-    /// The last pages of the start page, each once (domain::suggest::key), without sign-in steps.
+    /// The last pages of the start page, each once (domain::suggest::key), without sign-in steps:
+    /// the ones seen in the space shown (and those of older files, which do not say where).
     fn home_recent_json(&self) -> Vec<serde_json::Value> {
         let mut seen = std::collections::HashSet::new();
+        let space = self.svc.workspace().active_space().id.0;
         self.svc
-            .recent_activity(200)
+            .recent_activity(400)
             .iter()
+            .filter(|e| e.spaces.is_empty() || e.spaces.contains(&space))
             .filter(|e| !suggest::is_noise(&e.url) && seen.insert(suggest::key(&e.url)))
             .take(12)
             .map(|e| json!({"title": e.title, "url": e.url.as_str(), "at": e.visited_at}))

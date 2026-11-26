@@ -98,10 +98,13 @@ impl Running {
         state["privateExtensionSettings"] = json!(settings.private_extension_settings);
         state["tileSize"] = json!(settings.quick_access_size);
         state["tileSizes"] = json!(blackhole_domain::QUICK_ACCESS_SIZES);
-        state["homeSections"] = blackhole_domain::home_order(&settings.home_order)
+        // The start page of the space shown (each space has its own, 0.8.33).
+        let home = self.svc.home();
+        state["homeSections"] = blackhole_domain::home_order(&home.order)
             .iter()
-            .map(|s| json!({"id": s, "shown": !settings.hidden_home_sections.contains(*s)}))
+            .map(|s| json!({"id": s, "shown": !home.hidden.contains(*s)}))
             .collect();
+        state["homeSpace"] = json!(self.svc.workspace().active_space().name);
         // General > Language: the setting, the languages in their own words, and what "System"
         // gives on this computer.
         state["recall"] = self.recall_state();
@@ -284,6 +287,11 @@ impl Running {
                 self.svc.set_home_order(&order);
                 self.ui_home();
                 self.ui_settings();
+            }
+            UiCommand::SetFavoriteOrder { order } => {
+                if self.svc.set_favorite_order(&order) {
+                    self.ui_home();
+                }
             }
             UiCommand::OpenSettings { tab } => {
                 self.settings_tab = tab;

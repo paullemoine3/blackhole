@@ -199,6 +199,9 @@ impl Running {
                     Ok(view) => {
                         self.watching.probe = Some((w.id, view, Instant::now(), false, false));
                         self.ui_library();
+                        if self.home_shown() {
+                            self.ui_home();
+                        }
                     }
                     Err(_) => {
                         self.watching.list.record(w.id, None, now());
@@ -234,7 +237,9 @@ impl Running {
             .map(|w| json!({
                 "id": w.id, "url": w.url, "title": w.title, "value": w.value, "previous": w.previous,
                 "checked": w.checked_at, "changed": w.changed_at, "unread": w.unread,
-                "checking": w.checked_at == 0 || reading == Some(w.id),
+                // Asked for, being read, or never read yet: the time of the last reading stays.
+                "checking": w.wanted || reading == Some(w.id) || (w.value.is_empty() && !w.missing),
+                "missing": w.missing,
             }))
             .collect::<Vec<_>>())
     }
@@ -270,6 +275,12 @@ impl Running {
                 }
                 self.watching.list.check_soon(id);
             }
+            UiCommand::WatchCheckAll => {
+                if self.watching.probe.as_ref().is_some_and(|p| p.4) {
+                    self.watching.probe = None;
+                }
+                self.watching.list.check_all_soon();
+            }
             UiCommand::WatchesSeen => {
                 self.watching.list.mark_read();
                 self.signals_forget_kind(Kind::AreaChanged);
@@ -279,5 +290,8 @@ impl Running {
         self.watching.save();
         self.ui_library();
         self.ui_easel();
+        if self.home_shown() {
+            self.ui_home();
+        }
     }
 }

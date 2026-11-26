@@ -258,6 +258,7 @@ impl Running {
             | UiCommand::SetQuickAccessSize { .. }
             | UiCommand::SetHomeSection { .. }
             | UiCommand::SetHomeOrder { .. }
+            | UiCommand::SetFavoriteOrder { .. }
             | UiCommand::OpenSettings { .. }
             | UiCommand::ClearBlocked
             | UiCommand::CloseSettings
@@ -328,6 +329,7 @@ impl Running {
             | UiCommand::TrackersForget) => self.handle_trackers(command),
             command @ (UiCommand::WatchRemove { .. }
             | UiCommand::WatchCheck { .. }
+            | UiCommand::WatchCheckAll
             | UiCommand::WatchesSeen) => self.handle_watch(command),
         }
     }

@@ -1063,3 +1063,37 @@ le Wormhole y est absent, couvert par le test en boucle locale de `handoff`). ma
 - GitHub des Pulsars : la recherche ne répond que 422 pour un dépôt invisible ; `hidden` relit `/repos/<dépôt>` pour dire pourquoi (SSO par l’en-tête
   `X-GitHub-SSO`, adresse vérifiée, `pulsar_github_sso` ; permission ; propriétaire du jeton). `#pulrepo` (Pulsars) ≠ `#ghrepo` (extension depuis GitHub).
 - Tests Windows : `scripts\test-0832.ps1` (réseau), `scripts\test-pulsars.ps1`. macOS : compilation croisée seulement, comptage non vérifié.
+
+## 0.8.33 : accueil par espace, favoris réordonnables, plafond d’onglets par espace, Pulsar glissé, partage d’écran WebKit
+
+- Accueil par espace : `domain::SpaceHome` (`hidden`, `order`, `hidden_favorites`, `favorites` = ordre par site `site_key`,
+  `MAX_FAVORITE_ORDER`) dans `Space::home` (`workspace.json`, `SpaceHomeDto`, absent = `SpaceHome::of_settings`, les anciens
+  champs `Settings::hidden_home_sections` / `home_order` / `hidden_favorites` ne servent plus que de modèle). `BrowserService::home`,
+  `home_of`, `edit_home` (le premier changement donne à l’espace le sien) ; `set_home_section`, `set_home_order`, `hide_favorite`,
+  `set_favorite_order` agissent sur l’espace affiché. `favorites()` = accès rapide de l’espace affiché + sites intégrés, triés par
+  `SpaceHome::sort_favorites` (palette, suggestions et Android suivent). « Activité récente » : pages vues dans l’espace
+  (`HistoryEntry::spaces`, ou sans espace pour les anciens fichiers). Réglages > Général : sections de l’espace affiché (`homeSpace`).
+- Favoris (`home.html`) : glissés au pointeur (FLIP, `.fav.lifted`, `favDrag`, le clic de fin n’ouvre rien) ou Alt+←/→ ;
+  `UiCommand::SetFavoriteOrder { order }` (sites). Un lien déposé sur la section : place dans l’ordre puis `pin_site` (ouvre la page).
+- Plafond d’onglets vivants par espace : `domain::overflow_per_group` (groupe = espace, onglets trou noir ensemble) dans
+  `discard_idle_tabs` ; un espace ne libère jamais les onglets d’un autre.
+- Pulsar glissé par son en-tête (`.ph`, `down.pulsar`) : au-dessus de `#foldsep` → avec les dossiers, en dessous → en tête des
+  onglets (`pulsar_pin`) ; même place = rien. Pas de réordonnancement entre Pulsars.
+- Partage d’écran sous WebKit (`media_devices.js`, `window.webkit.messageHandlers` sans `window.chrome`) : piste de
+  `getDisplayMedia` en `contentHint = 'detail'` et ses expéditeurs en `degradationPreference: 'maintain-resolution'` (à la pose,
+  `replaceTrack`, `setParameters` de la page), sauf choix de la page ; débit et couches jamais touchés (cf. 0.8.27). WebKit ne dit
+  pas à son encodeur qu’un écran est partagé : sous charge il baissait la résolution (texte pixelisé dans Meet même en 720p).
+  WebKit n’offre aucune capture à une page `http:` (127.0.0.1 compris) : non vérifié dans un vrai appel.
+- Zones surveillées de l’accueil : `#checkall` dans le titre de la section (`UiCommand::WatchCheckAll`,
+  `Watches::check_all_soon`), un tour d’icône par clic (`.spun`, `spin-once`), désactivé tant qu’une lecture court ; une ligne se
+  relit par son menu (`watch_check`). Ligne en lecture : `.item.checking`, reflet de la couleur de l’espace qui balaie la carte
+  derrière son contenu (`::before`, `watch-shimmer`, phase sur l’horloge `--sh` pour ne pas repartir à chaque rendu ; teinte fixe
+  sans animations), `aria-busy`. Ligne : valeur · « modifié … » · « zone introuvable » · « vérifié … » (`home.watch_*`), redessinée
+  toutes les 30 s.
+  `Watch::wanted` (demandé, passe en premier dans `due`, non gardé) remplace l’ancien `checked_at = 0` qui effaçait l’heure de la
+  dernière lecture ; `Watch::missing` (`watches.json`, `#[serde(default)]`) = dernière lecture sans l’élément. `checking` de
+  `watches_json` = demandé, en lecture ou jamais lu ; l’accueil est redessiné au début et à la fin d’une lecture.
+- Test macOS : `bash scripts/test-0833.sh` (Pulsar glissé, accueil des deux espaces, Alt+→, `liveTabs` 4 pour 2 × 2, zones
+  surveillées pré-enregistrées : « Tout vérifier », reflet des lignes lues, zone introuvable, une ligne relue). Tests :
+  `each_space_has_its_own_start_page`, `each_space_keeps_its_own_start_page`, `each_space_keeps_its_own_live_tabs`,
+  `a_space_orders_its_favorites_by_site`, `a_reading_asked_for_says_when_it_was_done_and_whether_it_found_the_area`. Windows : code commun non rejoué (`scripts\test-pulsars.ps1` toujours valable).

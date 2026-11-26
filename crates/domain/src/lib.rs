@@ -54,7 +54,7 @@ pub use meetings::Meeting;
 pub use omnibox::{is_extension_page, is_extension_popout, resolve_input, SearchEngine};
 pub use privacy::{is_third_party, privacy_grade, BlockLog, BlockedHost, EngineRefusals, PrivacyDecision, PrivacyPolicy, Shields};
 pub use settings::{
-    is_home_section, is_quick_access_size, next_zoom, overflow_to_release, site_key, Settings,
+    is_home_section, is_quick_access_size, next_zoom, overflow_per_group, overflow_to_release, site_key, Settings, SpaceHome, MAX_FAVORITE_ORDER,
     home_order, HOME_SECTIONS, QUICK_ACCESS_SIZES, ZOOM_STEPS,
 };
 pub use workspace::{

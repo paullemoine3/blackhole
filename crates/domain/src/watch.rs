@@ -19,6 +19,11 @@ pub struct Watch {
     pub changed_at: i64,
     /// Changed since the user last looked.
     pub unread: bool,
+    /// The last reading did not find the element (page changed, signed out…): `value` is older.
+    pub missing: bool,
+    /// A reading was asked for ("Check now", 0.8.33): it goes first, `checked_at` keeps the time
+    /// of the last one meanwhile. Not kept across launches.
+    pub wanted: bool,
 }
 
 /// What a reading found.
@@ -69,6 +74,8 @@ impl Watches {
             checked_at: now - 1_000_000_000,
             changed_at: 0,
             unread: false,
+            missing: false,
+            wanted: false,
         });
         Some(id)
     }
@@ -98,18 +105,26 @@ impl Watches {
         self.list.iter().find(|w| w.id == id)
     }
 
-    /// The watch to read next: the one read longest ago, once `every` seconds have passed.
+    /// The watch to read next: one asked for, else the one read longest ago once `every`
+    /// seconds have passed.
     pub fn due(&self, now: i64, every: i64) -> Option<&Watch> {
         self.list
             .iter()
-            .filter(|w| w.checked_at + every <= now)
-            .min_by_key(|w| w.checked_at)
+            .filter(|w| w.wanted || w.checked_at + every <= now)
+            .min_by_key(|w| (!w.wanted, w.checked_at))
     }
 
-    /// Asks for a reading at the next opportunity.
+    /// Asks for a reading at the next opportunity; the time of the last one stays known.
     pub fn check_soon(&mut self, id: u64) {
         if let Some(w) = self.list.iter_mut().find(|w| w.id == id) {
-            w.checked_at = 0;
+            w.wanted = true;
+        }
+    }
+
+    /// Asks for a reading of every watch (the start page's refresh of the section).
+    pub fn check_all_soon(&mut self) {
+        for w in &mut self.list {
+            w.wanted = true;
         }
     }
 
@@ -119,9 +134,12 @@ impl Watches {
             return Reading::Missing;
         };
         w.checked_at = now;
+        w.wanted = false;
         let Some(text) = text.map(normalize).filter(|t| !t.is_empty()) else {
+            w.missing = true;
             return Reading::Missing;
         };
+        w.missing = false;
         if w.value.is_empty() {
             w.value = text;
             return Reading::First;
@@ -212,7 +230,26 @@ mod tests {
         w.record(2, Some("read"), 100);
         assert!(w.due(200, 1800).is_some_and(|x| x.id != 2), "the ones never read come first");
         w.check_soon(2);
-        assert_eq!(w.get(2).unwrap().checked_at, 0, "due at the next opportunity");
+        assert_eq!(w.get(2).unwrap().checked_at, 100, "the last reading's time stays known");
+        assert_eq!(w.due(150, 1800).map(|x| x.id), Some(2), "asked for: first, before its time");
+    }
+
+    #[test]
+    fn a_reading_asked_for_says_when_it_was_done_and_whether_it_found_the_area() {
+        let mut w = Watches::default();
+        let a = w.add("https://a.test/", "#x", "A", 0).unwrap();
+        let b = w.add("https://b.test/", "#y", "B", 0).unwrap();
+        w.record(a, Some("1"), 10);
+        w.record(b, Some("1"), 10);
+        assert!(w.due(20, 1800).is_none());
+        w.check_all_soon();
+        assert!(w.all().iter().all(|x| x.wanted));
+        assert_eq!(w.record(a, None, 30), Reading::Missing);
+        let got = w.get(a).unwrap();
+        assert!(got.missing && !got.wanted && got.checked_at == 30 && got.value == "1");
+        assert_eq!(w.due(31, 1800).map(|x| x.id), Some(b), "the other one still asked for");
+        w.record(a, Some("1"), 40);
+        assert!(!w.get(a).unwrap().missing, "found again");
     }
 
     #[test]

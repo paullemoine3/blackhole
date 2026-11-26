@@ -402,6 +402,8 @@ struct WatchDto {
     changed_at: i64,
     #[serde(default)]
     unread: bool,
+    #[serde(default)]
+    missing: bool,
 }
 
 impl WatchStore {
@@ -426,6 +428,8 @@ impl WatchStore {
                     checked_at: d.checked_at,
                     changed_at: d.changed_at,
                     unread: d.unread,
+                    missing: d.missing,
+                    wanted: false,
                 })
                 .collect(),
         )
@@ -445,6 +449,7 @@ impl WatchStore {
                 checked_at: w.checked_at,
                 changed_at: w.changed_at,
                 unread: w.unread,
+                missing: w.missing,
             })
             .collect();
         save_list(&self.path, &dtos)
