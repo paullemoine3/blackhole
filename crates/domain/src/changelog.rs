@@ -9,6 +9,7 @@ pub const RELEASES: &[(&str, &[&str])] = &[
             "A tab dragged out of the sidebar stays in sight: over a page, the half under the pointer slides in and takes it (split view, or the pane it replaces); over the Favorites of the start page, it goes into the favorites; outside the window, it follows the pointer and says whether it opens a new window, moves into the window below or is refused (private and normal windows stay apart). Escape cancels",
             "A dragged tab is now a pane of glass that leans with the speed of the pointer, and each drop shows where it went: taken in by its pane or the favorites with a spreading ring, off to the other window, refused with a shake, or landing lit at its new place in the sidebar",
             "Refresh on a Pulsar (right-click) now shows its star turning while the feed is read, and a short glow when nothing new came; hovering its header says when it was read and when it is read next",
+            "Settings > Calendar: choose how often the calendars are read again (5 minutes to an hour, 10 by default). Each reading asks Google for the calendar as it is now, without a cached copy, so meetings added after the first sync show up",
         ],
     ),
     (

@@ -1486,6 +1486,12 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
 - Tests : `a_tab_dropped_on_a_half_of_the_page_opens_there_beside_the_other`, `the_half_under_the_pointer_takes_the_tab`,
   `a_refusal_is_said_as_one`. macOS : `bash scripts/test-0834.sh` (20 vérifications, jamais de lâcher hors fenêtre, garde
   à trois instances). Windows : code commun, fenêtre extérieure non vue (fond plein, pas de transparence).
+- Agendas relus au rythme choisi : `Settings::calendar_sync_minutes` (`CALENDAR_SYNC_CHOICES` 5, 10, 15, 30, 60 ;
+  10 par défaut et pour une valeur inconnue ou absente), Réglages > Calendrier (`choice`, `set_calendar_sync`). Le délai
+  part de la dernière lecture demandée (`Calendar::asked`) ; raccourci en dessous du temps écoulé, la lecture part aussitôt.
+  `calendar::fetch` envoie `Cache-Control: no-cache` et `Pragma: no-cache` pour qu’aucune copie en cache ne masque les
+  nouveaux événements. L’adresse iCal secrète de Google peut publier un événement nouveau avec du retard : non maîtrisé.
+  Test `the_calendars_are_read_again_at_a_chosen_pace` ; Windows : code commun.
 - Vu, non changé : un processus WebContent par minute pour les service workers MV3 des extensions (réveil par alarme, arrêt
   après 30 s), comportement de WebKit.
 - Tests : `a_second_call_beside_an_open_one_is_told_once`, `a_call_that_drops_for_a_moment_is_still_the_same_call`,

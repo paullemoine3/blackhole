@@ -306,6 +306,10 @@ pub enum UiCommand {
         index: usize,
     },
     CalendarSync,
+    /// Settings > Calendar: minutes between two readings of the calendars.
+    SetCalendarSync {
+        minutes: u32,
+    },
     /// Settings > Calendar: `reminders` or `card`.
     SetMeetingOption {
         name: String,
@@ -1465,6 +1469,7 @@ mod tests {
             r#"{"cmd":"calendar_add","url":"https://calendar.google.com/calendar/ical/a/private-b/basic.ics"}"#,
             r#"{"cmd":"calendar_remove","index":0}"#,
             r#"{"cmd":"calendar_sync"}"#,
+            r#"{"cmd":"set_calendar_sync","minutes":30}"#,
             r#"{"cmd":"set_meeting_option","name":"card","on":false}"#,
             r#"{"cmd":"live_capture_to","easel":null}"#,
             r#"{"cmd":"live_capture_to","easel":4}"#,

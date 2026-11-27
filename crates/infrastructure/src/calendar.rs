@@ -117,7 +117,12 @@ pub fn fetch(raw: &str) -> Result<String, String> {
         .timeout(Duration::from_secs(20))
         .redirects(0)
         .build();
-    let response = agent.get(raw).call().map_err(|e| match e {
+    // Read it as it is now: no copy kept on the way, so new events show at the next reading.
+    let response = agent
+        .get(raw)
+        .set("Cache-Control", "no-cache")
+        .set("Pragma", "no-cache")
+        .call().map_err(|e| match e {
         ureq::Error::Status(404, _) => message("msg.calendar_not_found", &[]),
         ureq::Error::Status(code, _) => format!("HTTP {code}"),
         ureq::Error::Transport(t) => t.to_string(),

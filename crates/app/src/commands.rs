@@ -124,6 +124,7 @@ impl Running {
             | UiCommand::CalendarAdd { .. }
             | UiCommand::CalendarRemove { .. }
             | UiCommand::CalendarSync
+            | UiCommand::SetCalendarSync { .. }
             | UiCommand::SetMeetingOption { .. }) => self.handle_calendar(command),
             command @ (UiCommand::DeviceShowCode
             | UiCommand::DeviceJoin { .. }

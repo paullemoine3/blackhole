@@ -1660,7 +1660,8 @@ function renderCalendar(c) {
   }) : [empty('calendar', bhT('settings.no_calendar'))]));
   $('calstatus').textContent = c.status || '';
   $('calsync').disabled = c.busy || !c.sources.length;
-  put($('calopts'), 
+  put($('calopts'),
+    choice(bhT('settings.cal_every'), bhT('settings.cal_every_sub'), c.everyChoices || [], c.every, (m) => m >= 60 ? bhT('unit.hour', { n: m / 60 }) : bhT('unit.min', { n: m }), (m) => send({ cmd: 'set_calendar_sync', minutes: m })),
     option(bhT('settings.cal_remind'), c.reminders, () => send({ cmd: 'set_meeting_option', name: 'reminders', on: !c.reminders }), true, bhT('settings.cal_remind_sub')),
     option(bhT('settings.cal_card'), c.card, () => send({ cmd: 'set_meeting_option', name: 'card', on: !c.card }), true),
     option(bhT('settings.cal_notes'), c.notes, () => send({ cmd: 'set_meeting_option', name: 'notes', on: !c.notes }), true, bhT('settings.cal_notes_sub')),

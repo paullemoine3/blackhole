@@ -533,6 +533,11 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_reminders: dto.meeting_reminders,
             meeting_card: dto.meeting_card,
             meeting_notes: dto.meeting_notes,
+            calendar_sync_minutes: if Settings::CALENDAR_SYNC_CHOICES.contains(&dto.calendar_sync_minutes) {
+                dto.calendar_sync_minutes
+            } else {
+                Settings::DEFAULT_CALENDAR_SYNC
+            },
             password_lock_minutes: dto.password_lock_minutes,
             collapsed_sections: dto.collapsed_sections.into_iter().collect(),
             language: if blackhole_domain::i18n::is_choice(&dto.language) {
@@ -645,6 +650,7 @@ impl WorkspaceRepository for JsonWorkspaceRepository {
             meeting_reminders: settings.meeting_reminders,
             meeting_card: settings.meeting_card,
             meeting_notes: settings.meeting_notes,
+            calendar_sync_minutes: settings.calendar_sync_minutes,
             password_lock_minutes: settings.password_lock_minutes,
             collapsed_sections: settings.collapsed_sections.iter().cloned().collect(),
             language: settings.language.clone(),
@@ -835,6 +841,8 @@ struct SettingsDto {
     meeting_card: bool,
     #[serde(default = "default_true")]
     meeting_notes: bool,
+    #[serde(default)]
+    calendar_sync_minutes: u32,
     #[serde(default = "default_lock_minutes")]
     password_lock_minutes: u32,
     #[serde(default)]
@@ -1225,6 +1233,7 @@ mod tests {
             meeting_reminders: false,
             meeting_card: true,
             meeting_notes: false,
+            calendar_sync_minutes: 30,
             password_lock_minutes: 5,
             collapsed_sections: ["pinned".to_owned()].into(),
             language: "fr".to_owned(),
@@ -1281,6 +1290,7 @@ mod tests {
         assert_eq!(odd.quick_access_size, "medium", "an unknown size falls back");
         assert_eq!(odd.hidden_home_sections, ["now".to_owned()].into(), "unknown sections dropped");
         assert_eq!(old.tab_sleep_minutes, 10);
+        assert_eq!(old.calendar_sync_minutes, Settings::DEFAULT_CALENDAR_SYNC, "calendars read every 10 minutes in older files");
         assert_eq!(old.max_live_tabs, Settings::DEFAULT_LIVE_TABS);
         assert_eq!(old.spare_views, Settings::DEFAULT_SPARES);
         assert!(old.boosts.is_empty() && old.routes.is_empty());
