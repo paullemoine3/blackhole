@@ -37,6 +37,10 @@ pub struct Dev {
 
 impl Dev {
     pub fn load() -> Option<Self> {
+        // A window opened by another one never replays the script: each would open more.
+        if std::env::args().any(|a| a == "--new-window" || a == "--private") {
+            return None;
+        }
         let raw = fs::read_to_string(scratch().join("bh_script.txt")).ok()?;
         let steps = raw
             .lines()
@@ -108,6 +112,13 @@ impl Running {
                         None => return delay,
                     },
                     "chrome" => &self.chrome,
+                    "drag" | "dragfloat" => match if target == "drag" { self.tab_drag.views().0 } else { self.tab_drag.views().1 } {
+                        Some(view) => view,
+                        None => {
+                            eprintln!("[dev] eval -> \"no {target}\"");
+                            return delay;
+                        }
+                    },
                     "flyout" => self.flyout.as_ref().unwrap_or(&self.home),
                     "bar" => &self.bar,
                     "home" => &self.home,
@@ -181,6 +192,11 @@ impl Running {
                     "easelWindow": self.easel.is_some(),
                     "current": self.easel_current.and_then(|id| self.easels.get(id)).map(|e| &e.name),
                     "split": self.split_tab().is_some(),
+                    "panes": [ws.active_tab().map(|t| t.id.0), self.split_tab().map(|t| t.0)],
+                    "dragFloat": self.tab_drag.float_at().map(|(x, y)| [x.round(), y.round()]),
+                    "inner": self.window.inner_position().ok().map(|p| { let p = p.to_logical::<f64>(self.window.scale_factor()); [p.x, p.y] }),
+                    "outer": self.screen_rect().map(|(x, y, w, h)| [x, y, w, h]),
+                    "dragAt": self.tab_drag.at(),
                     "paneMotion": self.panes.moving(),
                     "splitOpened": self.split_opened,
                     "pilotSent": self.pilot_sent.0,

@@ -191,6 +191,9 @@
         }
       }
     };
+    const inCall = () => {
+      try { return !!(window.__bhRtc && window.__bhRtc.state().call); } catch (_) { return false; }
+    };
     let due = 0;
     let quiet = 0;
     const soon = () => {
@@ -198,7 +201,10 @@
       due = setTimeout(() => {
         due = 0;
         quiet = Date.now();
-        if (!document.hidden) collapse();
+        // A page in a call (Meet, Teams…) changes its document all the time (tiles, captions,
+        // sound levels) and shows no ads: the scan of its boxes is left out while the call
+        // lasts, it cost the page every two seconds for hours (0.8.34).
+        if (!document.hidden && !inCall()) collapse();
       }, Math.max(300, 2000 - (Date.now() - quiet)));
     };
     const start = () => {

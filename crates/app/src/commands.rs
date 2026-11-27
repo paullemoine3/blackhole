@@ -124,6 +124,7 @@ impl Running {
             | UiCommand::CalendarAdd { .. }
             | UiCommand::CalendarRemove { .. }
             | UiCommand::CalendarSync
+            | UiCommand::SetCalendarSync { .. }
             | UiCommand::SetMeetingOption { .. }) => self.handle_calendar(command),
             command @ (UiCommand::DeviceShowCode
             | UiCommand::DeviceJoin { .. }
@@ -290,6 +291,11 @@ impl Running {
             | UiCommand::OpenAt { .. }
             | UiCommand::MoveTab { .. }
             | UiCommand::TabDropOut { .. }
+            | UiCommand::TabDrag { .. }
+            | UiCommand::TabDragEnd
+            | UiCommand::TabDragReady
+            | UiCommand::TabDragGone
+            | UiCommand::TabDragArea { .. }
             | UiCommand::MediaCtl { .. }
             | UiCommand::Back
             | UiCommand::Forward

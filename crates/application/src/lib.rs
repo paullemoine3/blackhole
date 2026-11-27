@@ -458,6 +458,16 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         true
     }
 
+    /// Minutes between two readings of the calendars; false (unchanged) for another value.
+    pub fn set_calendar_sync(&mut self, minutes: u32) -> bool {
+        if !Settings::CALENDAR_SYNC_CHOICES.contains(&minutes) {
+            return false;
+        }
+        self.settings.calendar_sync_minutes = minutes;
+        let _ = self.repo.save_settings(&self.settings);
+        true
+    }
+
     /// Interface language: a supported code or `i18n::SYSTEM`; false (unchanged) otherwise.
     /// Remembers the page zoom of `host`'s site (percent, 100 forgets it).
     pub fn set_site_zoom(&mut self, host: &str, percent: u32) {
@@ -971,6 +981,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         self.persist();
     }
 
+    /// A tab dropped on a half of the page (see `Workspace::split_drop`).
+    pub fn drop_into_split(&mut self, id: TabId, left: bool) -> bool {
+        let ok = self.workspace.drop_into_split(id, left);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
     pub fn add_space(&mut self, name: &str, color: &str) -> SpaceId {
         let id = self.workspace.add_space(name, color);
         self.workspace.switch_space(id);
@@ -1151,6 +1170,17 @@ mod tests {
         assert!(again.settings().encrypted_dns);
         assert_eq!(again.settings().dns_resolver, "mullvad");
         assert!(!again.settings().shields.fingerprinting);
+    }
+
+    #[test]
+    fn the_calendars_are_read_again_at_a_chosen_pace() {
+        let repo = Memory::default();
+        let mut svc = BrowserService::start(repo.clone(), PrivacyPolicy::default());
+        assert_eq!(svc.settings().calendar_sync_minutes, Settings::DEFAULT_CALENDAR_SYNC);
+        assert!(svc.set_calendar_sync(30));
+        assert!(!svc.set_calendar_sync(7), "only one of the choices");
+        let again = BrowserService::start(repo, PrivacyPolicy::default());
+        assert_eq!(again.settings().calendar_sync_minutes, 30);
     }
 
     #[test]

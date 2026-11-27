@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use blackhole_domain::TabId;
 use serde_json::json;
 
+use crate::i18n::{t, tf};
 use crate::views;
 use crate::state::Running;
 use crate::tabs::pip::DISMISS_GRACE;
@@ -121,6 +122,8 @@ pub(crate) struct MediaWatch {
     pub(crate) dismissed: HashMap<u64, Instant>,
     /// Last time a tab was seen in a call or playing media: it keeps its page for a while after.
     pub(crate) busy_seen: HashMap<TabId, Instant>,
+    /// Tabs in a call, to tell a call joined while another tab is still in one (0.8.34).
+    pub(crate) calls: blackhole_domain::calls::Calls,
     /// Tabs in a call whose page runs at full speed while hidden (macOS, `service_calls`).
     #[cfg(target_os = "macos")]
     pub(crate) awake: std::collections::HashSet<u64>,
@@ -137,6 +140,7 @@ impl MediaWatch {
             hold: Linger::new(LINGER),
             dismissed: HashMap::new(),
             busy_seen: HashMap::new(),
+            calls: Default::default(),
             #[cfg(target_os = "macos")]
             awake: Default::default(),
         }
@@ -214,6 +218,7 @@ impl Running {
             }
         }
         self.service_calls();
+        self.tell_parallel_calls();
         let now = Instant::now();
         if let Ok(probes) = self.media.probes.lock() {
             // A probe sent before the card was closed still says "playing": only a later one
@@ -245,6 +250,45 @@ impl Running {
             self.media.seen = now;
             self.ui_state();
         }
+    }
+
+    /// A tab joined a call while another tab is still in one (a meeting room left open, a call
+    /// that came back on its own after the engine restarted its media process): both keep the
+    /// microphone, the echo cancelling and the videos running. Said once, with a button that
+    /// leaves the other call (`media_ctl` "close" hangs it up).
+    fn tell_parallel_calls(&mut self) {
+        let in_call: Vec<u64> = self.media.probes.lock().map_or_else(
+            |_| Vec::new(),
+            |probes| {
+                let mut ids: Vec<u64> = probes
+                    .iter()
+                    .filter(|(id, p)| p.in_call() && self.tabs.contains_key(&TabId(**id)))
+                    .map(|(id, _)| *id)
+                    .collect();
+                ids.sort_unstable();
+                ids
+            },
+        );
+        let tabs = &self.tabs;
+        self.media.calls.retain(|id| tabs.contains_key(&TabId(id)));
+        let Some((_joined, other)) = self.media.calls.update(&in_call, Instant::now()) else {
+            return;
+        };
+        let title = self
+            .svc
+            .workspace()
+            .spaces()
+            .iter()
+            .flat_map(|s| s.tabs.iter())
+            .find(|t| t.id == TabId(other))
+            .map(|t| if t.title.trim().is_empty() { t.url.host_str().unwrap_or_default().to_owned() } else { t.title.clone() })
+            .unwrap_or_default();
+        self.notify_action(
+            crate::shell::notices::Notice::Meeting,
+            &tf("toast.call_beside", &[("title", &title)]),
+            &t("toast.leave_call"),
+            json!({"cmd": "media_ctl", "id": other, "action": "close"}),
+        );
     }
 
     /// WebKit slows the scripts of a hidden page down to a crawl: in a call, what the page draws

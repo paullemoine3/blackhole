@@ -299,6 +299,8 @@ pub(crate) struct Running {
     /// loop. Dropping a winit window while AppKit still treats it as the key window crashes on
     /// the next change of key window (macOS, `resignKeyWindow` on a freed delegate).
     pub(crate) closed_windows: Vec<Window>,
+    /// A tab dragged out of the sidebar, kept in sight.
+    pub(crate) tab_drag: crate::shell::tab_drag::TabDragging,
     pub(crate) capture_tx: std::sync::mpsc::Sender<Capture>,
     pub(crate) capture_rx: std::sync::mpsc::Receiver<Capture>,
     #[cfg(target_os = "macos")]

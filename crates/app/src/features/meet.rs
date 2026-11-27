@@ -14,8 +14,6 @@ use serde_json::{json, Value};
 use crate::{ipc::UiCommand, state::Running};
 use crate::i18n::{message, t, tf};
 
-/// How often the calendars are read again.
-const SYNC_EVERY: Duration = Duration::from_secs(10 * 60);
 /// Meetings kept: those not over 12 hours ago, up to a week ahead.
 const KEEP_BEFORE: i64 = 12 * 3600;
 const KEEP_AFTER: i64 = 7 * 24 * 3600;
@@ -33,6 +31,8 @@ pub struct Calendar {
     meetings: Vec<Meeting>,
     status: String,
     busy: bool,
+    /// The last reading asked, and the next one (setting `calendar_sync_minutes`).
+    asked: Option<Instant>,
     due: Instant,
     tx: Sender<SyncResult>,
     rx: Receiver<SyncResult>,
@@ -52,6 +52,7 @@ impl Calendar {
             meetings: Vec::new(),
             status: String::new(),
             busy: false,
+            asked: None,
             due: Instant::now(),
             tx,
             rx,
@@ -76,7 +77,9 @@ fn now() -> i64 {
 impl Running {
     /// Reads every calendar again, on a thread.
     pub(crate) fn calendar_sync(&mut self) {
-        self.calendar.due = Instant::now() + SYNC_EVERY;
+        let at = Instant::now();
+        self.calendar.asked = Some(at);
+        self.calendar.due = at + self.calendar_every();
         if self.calendar.busy {
             return;
         }
@@ -103,6 +106,11 @@ impl Running {
             }
             let _ = tx.send((all, errors));
         });
+    }
+
+    /// How often the calendars are read again.
+    fn calendar_every(&self) -> Duration {
+        Duration::from_secs(u64::from(self.svc.settings().calendar_sync_minutes.max(1)) * 60)
     }
 
     /// Called every turn of the event loop: results of a sync, the next sync, reminders and
@@ -341,6 +349,8 @@ impl Running {
             "reminders": settings.meeting_reminders,
             "card": settings.meeting_card,
             "notes": settings.meeting_notes,
+            "every": settings.calendar_sync_minutes,
+            "everyChoices": blackhole_domain::Settings::CALENDAR_SYNC_CHOICES,
             "upcoming": meetings::upcoming(&self.calendar.meetings, now(), KEEP_AFTER)
                 .iter()
                 .take(8)
@@ -386,6 +396,12 @@ impl Running {
             }
             UiCommand::CalendarSync => {
                 self.calendar_sync();
+                self.ui_settings();
+            }
+            // The next reading comes that long after the last one (at once when already late).
+            UiCommand::SetCalendarSync { minutes } if self.svc.set_calendar_sync(minutes) => {
+                let every = self.calendar_every();
+                self.calendar.due = self.calendar.asked.map_or_else(Instant::now, |at| at + every);
                 self.ui_settings();
             }
             UiCommand::SetMeetingOption { name, on } if self.svc.set_meeting_option(&name, on) => {

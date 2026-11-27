@@ -302,6 +302,11 @@ impl Running {
                 self.ui_state();
             }
             UiCommand::TabDropOut { id, x, y } => self.drop_tab_out(TabId(id), x, y),
+            UiCommand::TabDrag { id, x, y, card } => self.tab_drag(TabId(id), x, y, card),
+            UiCommand::TabDragEnd => self.tab_drag_end(),
+            UiCommand::TabDragReady => self.tab_drag_ready(),
+            UiCommand::TabDragGone => self.tab_drag_gone(),
+            UiCommand::TabDragArea { area } => self.tab_drag_area(area),
             UiCommand::MediaCtl { id, action } => self.media_ctl(TabId(id), &action),
             UiCommand::Back => {
                 // On our error page, "back" is the page seen before the failure (the entry

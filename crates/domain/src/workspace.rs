@@ -398,6 +398,41 @@ impl Workspace {
         self.active_space_mut().split = None;
     }
 
+    /// The panes once tab `id` is dropped on the left (or right) half of the page: the tab
+    /// shown and the one beside it. `None` when nothing would change (it is already there,
+    /// or it is not a tab of the space).
+    pub fn split_drop(&self, id: TabId, left: bool) -> Option<(TabId, TabId)> {
+        let space = self.active_space();
+        let active = space.active_tab?;
+        if !space.tabs.iter().any(|t| t.id == id) {
+            return None;
+        }
+        let split = self.split_tab();
+        let pair = match (left, split) {
+            // The page shown, dropped on itself: nothing.
+            (_, None) if id == active => return None,
+            (true, None) => (id, active),
+            (false, None) => (active, id),
+            (true, Some(_)) if id == active => return None,
+            (true, Some(s)) if id == s => (s, active),
+            (true, Some(s)) => (id, s),
+            (false, Some(s)) if id == s => return None,
+            (false, Some(s)) if id == active => (s, active),
+            (false, Some(_)) => (active, id),
+        };
+        Some(pair)
+    }
+
+    /// Drops tab `id` on a half of the page (see `split_drop`); true when the panes changed.
+    pub fn drop_into_split(&mut self, id: TabId, left: bool) -> bool {
+        let Some((shown, beside)) = self.split_drop(id, left) else { return false };
+        let space = self.active_space_mut();
+        space.active_tab = Some(shown);
+        space.split = Some(beside);
+        self.touch(shown);
+        true
+    }
+
     pub fn switch_space(&mut self, id: SpaceId) -> bool {
         let found = self.spaces.iter().any(|s| s.id == id);
         if found {
@@ -1455,6 +1490,30 @@ mod tests {
         assert!(!ws.toggle_anchor(TabId(999)));
         let copy = { ws.switch_space(ws.spaces()[0].id); ws.toggle_anchor(b); ws.duplicate_tab(b).unwrap() };
         assert_eq!(ws.anchored_tabs(), vec![b], "a copy is not anchored ({copy:?})");
+    }
+
+    #[test]
+    fn a_tab_dropped_on_a_half_of_the_page_opens_there_beside_the_other() {
+        let mut ws = Workspace::new();
+        let a = ws.open_tab(u("https://a.test"));
+        let b = ws.open_tab(u("https://b.test"));
+        let c = ws.open_tab(u("https://c.test"));
+        ws.activate_tab(a);
+        assert_eq!(ws.split_drop(a, true), None, "the page shown, on itself");
+        assert_eq!(ws.split_drop(a, false), None);
+        assert_eq!(ws.split_drop(TabId(999), true), None);
+        // No split yet: the tab goes on the side it was dropped, the page shown on the other.
+        assert_eq!(ws.split_drop(b, true), Some((b, a)));
+        assert!(ws.drop_into_split(b, false));
+        assert_eq!((ws.active_tab().map(|t| t.id), ws.split_tab()), (Some(a), Some(b)));
+        // A split: the pane under it is replaced; a pane of the split goes to the other side.
+        assert_eq!(ws.split_drop(c, true), Some((c, b)));
+        assert_eq!(ws.split_drop(c, false), Some((a, c)));
+        assert_eq!(ws.split_drop(b, false), None, "already on the right");
+        assert_eq!(ws.split_drop(a, true), None, "already on the left");
+        assert_eq!(ws.split_drop(b, true), Some((b, a)), "the two swap");
+        assert!(ws.drop_into_split(c, true));
+        assert_eq!((ws.active_tab().map(|t| t.id), ws.split_tab()), (Some(c), Some(b)));
     }
 
     #[test]

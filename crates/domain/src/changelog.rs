@@ -1,6 +1,18 @@
 /// Release notes shown once on the start page after an update, newest first.
 pub const RELEASES: &[(&str, &[&str])] = &[
     (
+        "0.8.34",
+        &[
+            "Two calls at once: when a tab joins a call while another tab is still in one (a meeting room left open since the morning, a call that came back on its own after the engine restarted), a notice says so, with a button to leave the other call. Both kept the microphone, the echo cancelling and the videos running, enough to make a long day of calls lag",
+            "Pages in a call (Meet, Teams…) no longer have their boxes scanned for ads every two seconds by the Shields: they change all the time and show none",
+            "BlackHole no longer keeps alive the microphone tracks a call page lets go of: it held every one Meet asked for before the call, for as long as the call lasted",
+            "A tab dragged out of the sidebar stays in sight: over a page, the half under the pointer slides in and takes it (split view, or the pane it replaces); over the Favorites of the start page, it goes into the favorites; outside the window, it follows the pointer and says whether it opens a new window, moves into the window below or is refused (private and normal windows stay apart). Escape cancels",
+            "A dragged tab is now a pane of glass that leans with the speed of the pointer, and each drop shows where it went: taken in by its pane or the favorites with a spreading ring, off to the other window, refused with a shake, or landing lit at its new place in the sidebar",
+            "Refresh on a Pulsar (right-click) now shows its star turning while the feed is read, and a short glow when nothing new came; hovering its header says when it was read and when it is read next",
+            "Settings > Calendar: choose how often the calendars are read again (5 minutes to an hour, 10 by default). Each reading asks Google for the calendar as it is now, without a cached copy, so meetings added after the first sync show up",
+        ],
+    ),
+    (
         "0.8.33",
         &[
             "Each space has its own start page: its favorites come from its own quick access, and the sections you hide or move, the favorites you remove and Recent activity stay with that space",

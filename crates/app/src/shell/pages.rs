@@ -13,6 +13,8 @@ pub(crate) const SPLITBAR_HTML: &str = include_str!("../../ui/splitbar.html");
 
 pub(crate) const PEEK_HTML: &str = include_str!("../../ui/peek.html");
 
+pub(crate) const DRAG_HTML: &str = include_str!("../../ui/drag.html");
+
 pub(crate) const HOTZONE_HTML: &str = include_str!("../../ui/hotzone.html");
 
 #[cfg(windows)]

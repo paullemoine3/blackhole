@@ -89,6 +89,9 @@
   .pulsar.busy .star svg { animation: pulsar-turn 1.6s linear infinite; }
   @keyframes pulsar-beat { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 80%, transparent); } to { box-shadow: 0 0 0 11px transparent; } }
   @keyframes pulsar-turn { to { transform: rotate(360deg); } }
+  /* Read by hand and nothing new: a short glow says it was read. */
+  .pulsar.calm .star { animation: pulsar-calm .7s ease-out; }
+  @keyframes pulsar-calm { from { opacity: 1; transform: scale(1.25); color: color-mix(in srgb, var(--accent) 60%, #fff); } }
   .pulsar.failed .fname { opacity: .6; }
   .pn { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; background: var(--accent); color: #fff; }
   .pn:empty { display: none; }
@@ -109,7 +112,13 @@
   .bm .dot { background: rgba(255,255,255,.14); }
   .tab.asleep .dot, .tab.asleep .title { opacity: .45; }
   .tab.dragging { opacity: .35; }
-  .ghost { position: fixed; z-index: 50; width: 220px; box-sizing: border-box; pointer-events: none; background: #2a2838; box-shadow: 0 8px 24px rgba(0,0,0,.5); border-radius: 9px; }
+  /* The dragged row: a pane of glass leaning with the pointer's speed (`--lean`), like drag.html. */
+  .ghost { position: fixed; z-index: 50; width: 220px; box-sizing: border-box; pointer-events: none; border-radius: 12px;
+    background: rgba(60, 52, 137, .42) !important; -webkit-backdrop-filter: blur(12px) saturate(1.3); backdrop-filter: blur(12px) saturate(1.3);
+    border: 1px solid rgba(206, 203, 246, .45) !important; color: #f3f1ff; transform-origin: 20% 50%;
+    transform: rotate(calc(-2deg + var(--lean, 0deg))) scale(1.04); }
+  .tab.landed { animation: tab-land .7s ease-out; }
+  @keyframes tab-land { from { background: color-mix(in srgb, var(--accent) 34%, transparent); box-shadow: inset 0 0 0 1px rgba(206, 203, 246, .55), 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent); } }
   .ghost .x { opacity: 0; }
   .drop-before, .drop-after, #pinned .drop-before, #pinned .drop-after { box-shadow: none; }
   .drop-into { background: rgba(255,255,255,.1); outline: 1px dashed var(--accent); }
@@ -394,7 +403,7 @@
   body:not(.flat) .tab:hover:not(.active, .split), body:not(.flat) .new:hover, body:not(.flat) .fh:hover { box-shadow: var(--bh-relief-row); }
   body:not(.flat) .tab.active, body:not(.flat) .tab-glide { box-shadow: var(--bh-relief-row); }
   body:not(.flat) .tab.split.active { box-shadow: inset 3px 0 0 var(--accent), var(--bh-relief-row); }
-  body:not(.flat) .tab.ghost { box-shadow: var(--bh-relief-row), 0 8px 24px rgba(0,0,0,.5); }
+  .ghost, body:not(.flat) .tab.ghost { box-shadow: 5px 5px 0 -1px rgba(38, 33, 92, .55), 5px 5px 0 0 rgba(206, 203, 246, .2), 0 12px 30px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .2); }
   body:not(.flat) :is(.tab, .new, .fh):active:not(.dragging) { box-shadow: var(--bh-relief-sunk); }
   body:not(.flat) .tab .dot, body:not(.flat) .mc .dot { box-shadow: 0 1px 2px #00000059; }
   body:not(.flat) .fb { border-left-color: #00000059; box-shadow: inset 1px 0 0 #ffffff14; }
@@ -757,11 +766,50 @@ function folderNode(f, tabs, easels = [], subs = []) {
 }
 // A Pulsar: a folder a site fills. Titles come from the feed: textContent only.
 const pulsarNodes = new Map(), pulsarSeen = new Map();
-const pulsarWhen = (at) => {
-  if (!at) return '';
-  const s = Math.max(0, Date.now() / 1000 - at);
+const pulsarWhen = (at) => (at ? pulsarSpan(Date.now() / 1000 - at) : '');
+const pulsarSpan = (secs) => {
+  const s = Math.max(0, secs);
   return s < 3600 ? bhT('unit.min', { n: Math.max(1, Math.round(s / 60)) }) : s < 86400 ? bhT('sidebar.pulsar_hours', { n: Math.round(s / 3600) }) : bhT('sidebar.pulsar_days', { n: Math.round(s / 86400) });
 };
+// Its star turns while it is read, at least SPIN_MIN so a quick feed is seen being read.
+const pulsarSpin = new Map(), SPIN_MIN = 800;
+function pulsarSpinning(p) {
+  const now = Date.now();
+  let s = pulsarSpin.get(p.id);
+  if (p.busy) {
+    if (!s || s.done) pulsarSpin.set(p.id, (s = { since: now, unread: p.unread, asked: !!p.asked }));
+    else s.asked = s.asked || !!p.asked;
+    return ' busy';
+  }
+  if (!s) return '';
+  if (!s.done) {
+    s.done = true;
+    s.calm = s.asked && !p.failed && p.unread <= s.unread;
+  }
+  const left = s.since + SPIN_MIN - now;
+  if (left > 0) {
+    clearTimeout(s.timer);
+    s.timer = setTimeout(() => pulsarSettle(p.id), left);
+    return ' busy';
+  }
+  pulsarSpin.delete(p.id);
+  return s.calm ? ' calm' : '';
+}
+function pulsarSettle(id) {
+  const s = pulsarSpin.get(id), n = pulsarNodes.get(id);
+  if (!s || !s.done || !n || !n.h.parentElement) return;
+  pulsarSpin.delete(id);
+  n.h.parentElement.classList.remove('busy');
+  if (s.calm) n.h.parentElement.classList.add('calm');
+}
+// When it was read, and when it is read next by itself.
+function pulsarTimes(p) {
+  if (p.waits) return '';
+  const now = Date.now() / 1000;
+  const read = p.checked ? bhT('sidebar.pulsar_read_ago', { ago: pulsarWhen(p.checked) }) : bhT('sidebar.pulsar_never_read');
+  const next = !p.next || p.next <= now ? bhT('sidebar.pulsar_next_soon') : bhT('sidebar.pulsar_next', { in: pulsarSpan(p.next - now) });
+  return '\n' + read + ' · ' + next;
+}
 function pulsarMenu(p, x, y) {
   openMenu(x, y, [
     { icon: p.pinned ? 'out' : 'pin', label: bhT(p.pinned ? 'menu.pulsar_unpin' : 'menu.pulsar_pin'), run: { cmd: 'pulsar_pin', id: p.id, pinned: !p.pinned } },
@@ -780,7 +828,7 @@ function pulsarNode(p, tabs) {
   // It beats when its count grows, not at every render.
   const grew = pulsarSeen.has(p.id) && p.unread > pulsarSeen.get(p.id);
   pulsarSeen.set(p.id, p.unread);
-  const box = el('div', 'pulsar' + (p.collapsed ? ' collapsed' : '') + (p.unread ? ' lit' : '') + (grew ? ' beat' : '') + (p.busy ? ' busy' : '') + (p.failed ? ' failed' : ''));
+  const box = el('div', 'pulsar' + (p.collapsed ? ' collapsed' : '') + (p.unread ? ' lit' : '') + (grew ? ' beat' : '') + pulsarSpinning(p) + (p.failed ? ' failed' : ''));
   box.dataset.pulsar = p.id;
   const h = el('div', 'ph');
   const chev = el('span', 'chev');
@@ -788,7 +836,10 @@ function pulsarNode(p, tabs) {
   const star = el('span', 'star');
   star.append(bhIcon('pulsar', 'sm'));
   const name = el('span', 'fname', p.name);
-  h.title = p.name + ' — ' + (p.waits ? bhT('sidebar.pulsar_connect') : p.failed ? bhT(p.github ? 'sidebar.pulsar_refused' : 'sidebar.pulsar_failed') : p.host || '');
+  const hint = () => p.name + ' — ' + (p.waits ? bhT('sidebar.pulsar_connect') : p.failed ? bhT(p.github ? 'sidebar.pulsar_refused' : 'sidebar.pulsar_failed') : p.host || '') + pulsarTimes(p);
+  h.title = hint();
+  // The times move: said again when the pointer comes.
+  h.onmouseenter = () => { h.title = hint(); };
   h.append(chev, star, name, el('span', 'pn', p.unread ? (p.unread > 99 ? '99+' : String(p.unread)) : ''));
   h.tabIndex = 0;
   h.setAttribute('role', 'button');
@@ -1068,9 +1119,65 @@ function clearMarks() {
   hideCard();
 }
 
+// A tab off the sidebar (this view spans the window, behind the page): the shell draws it over
+// the page or outside the window, and says where it would go (`tab_drag`, screen points). One
+// message per frame.
+const dragsOut = () => drag && drag.id && !drag.url && !drag.easel && !drag.folder && !drag.pulsar;
+function dragOut(e) {
+  const side = document.querySelector('aside').getBoundingClientRect();
+  const out = dragsOut() && (e.clientX < 0 || e.clientY < 0 || e.clientX >= Math.min(innerWidth, side.right) || e.clientY >= innerHeight);
+  if (!out) {
+    if (drag && drag.out) { drag.out = false; drag.ghost.style.visibility = ''; send({ cmd: 'tab_drag_end' }); }
+    return false;
+  }
+  drag.ghost.style.visibility = 'hidden';
+  const m = { cmd: 'tab_drag', id: drag.id, x: e.screenX, y: e.screenY };
+  if (!drag.out) {
+    drag.out = true;
+    const t = state.tabs.find(x => x.id === drag.id) || {};
+    const icon = (state.favicons || {})[host(t.url || '')] || '';
+    m.card = { title: t.title || host(t.url || ''), icon, letter: (t.title || host(t.url || '') || '?').trim().charAt(0).toUpperCase() };
+    send(m);
+    return true;
+  }
+  drag.sendOut = m;
+  if (!drag.raf) drag.raf = requestAnimationFrame(() => { if (drag) { drag.raf = 0; if (drag.out && drag.sendOut) send(drag.sendOut); drag.sendOut = null; } });
+  return true;
+}
+document.addEventListener('keydown', (e) => { if (drag && e.key === 'Escape') { e.preventDefault(); endDrag(false); } }, true);
+
+// The ghost leans with the pointer's speed, then rights itself.
+function ghostLean(x) {
+  const now = performance.now();
+  if (drag.lx != null && !motion.calm()) {
+    const v = (x - drag.lx) / Math.max(8, now - drag.lt);
+    drag.lean = Math.max(-11, Math.min(11, (drag.lean || 0) * 0.6 + v * 5));
+    if (!drag.leanRaf) {
+      const settle = () => {
+        if (!drag) return;
+        drag.lean *= 0.86;
+        drag.ghost.style.setProperty('--lean', drag.lean.toFixed(2) + 'deg');
+        drag.leanRaf = Math.abs(drag.lean) < 0.05 ? 0 : requestAnimationFrame(settle);
+      };
+      drag.leanRaf = requestAnimationFrame(settle);
+    }
+    drag.ghost.style.setProperty('--lean', drag.lean.toFixed(2) + 'deg');
+  }
+  drag.lx = x; drag.lt = now;
+}
+// A row dropped in the sidebar glides from where its ghost was let go, and lights up (`motion.play`).
+let landing = null;
+
 function endDrag(commit, x, y, sx, sy) {
   if (drag) {
     const target = commit ? dropTarget(x, y) : null;
+    if (drag.leanRaf) cancelAnimationFrame(drag.leanRaf);
+    if (target && !target.stay && drag.id && !drag.url && !drag.out) {
+      landing = { key: 't' + drag.id, r: drag.ghost.getBoundingClientRect(), at: Date.now() };
+    }
+    if (drag.raf) cancelAnimationFrame(drag.raf);
+    // Released out: the shell ends the drawing with the drop; cancelled: now.
+    if (drag.out && !(commit && !target)) send({ cmd: 'tab_drag_end' });
     drag.ghost.remove();
     drag.node.classList.remove('dragging');
     document.body.classList.remove('dragging');
@@ -1101,7 +1208,9 @@ document.addEventListener('mousemove', (e) => {
   if (!drag) return;
   drag.ghost.style.left = (e.clientX + 10) + 'px';
   drag.ghost.style.top = (e.clientY - 14) + 'px';
+  ghostLean(e.clientX);
   clearMarks();
+  if (dragOut(e)) return;
   const t = dropTarget(e.clientX, e.clientY);
   if (t) { t.el.classList.add('drop-' + t.edge); showCard(t, !!t.el.closest('#pinned') && t.el.id !== 'pinned'); }
 });
@@ -1188,7 +1297,13 @@ const motion = {
       if (!r.width || !r.height) continue;
       seen.add(k);
       now.set(k, r);
-      const old = before.get(k);
+      const landed = landing && landing.key === k && Date.now() - landing.at < 1500;
+      const old = landed ? { r: landing.r } : before.get(k);
+      if (landed) {
+        landing = null;
+        n.classList.add('landed');
+        n.addEventListener('animationend', () => n.classList.remove('landed'), { once: true });
+      }
       if (!old) {
         if (r.bottom < view.top || r.top > view.bottom) continue;
         const top = header(n, true);
