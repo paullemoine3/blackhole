@@ -80,6 +80,18 @@ pub(crate) fn open_window(private: bool, url: Option<&str>) -> bool {
 }
 
 fn spawn_window(private: bool, url: Option<&str>) -> bool {
+    // Dev builds: three windows at most, and one opened by each, so a script gone wrong cannot
+    // fill the machine.
+    #[cfg(feature = "devtools")]
+    {
+        static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if peers::peers(&peers_dir(), std::process::id()).len() >= 2
+            || OPENED.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            eprintln!("[dev] window not opened: dev builds open three at most");
+            return false;
+        }
+    }
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
@@ -151,10 +163,14 @@ impl Running {
 
     /// A tab released outside its sidebar: hands it to the window under the pointer, if any.
     pub(crate) fn drop_tab_out(&mut self, id: TabId, x: f64, y: f64) {
-        if self
-            .screen_rect()
-            .is_some_and(|(wx, wy, w, h)| x >= wx && x < wx + w && y >= wy && y < wy + h)
+        self.tab_drag_land(id, x, y);
+        // Over this window: the page beside the sidebar (favorites, split view).
+        if self.window_point(x, y).is_some()
+            || self
+                .screen_rect()
+                .is_some_and(|(wx, wy, w, h)| x >= wx && x < wx + w && y >= wy && y < wy + h)
         {
+            self.drop_tab_on_page(id, x, y);
             return;
         }
         let dir = peers_dir();

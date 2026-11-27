@@ -15,4 +15,5 @@ pub(crate) mod peek;
 pub(crate) mod render;
 pub(crate) mod settings;
 pub(crate) mod sidebar;
+pub(crate) mod tab_drag;
 pub(crate) mod windows;

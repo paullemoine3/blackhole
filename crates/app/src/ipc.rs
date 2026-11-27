@@ -869,6 +869,26 @@ pub enum UiCommand {
         x: f64,
         y: f64,
     },
+    /// The tab dragged from the sidebar is out of its view, at this point of the screen; the
+    /// first move brings its card (`title`, `icon`, `letter`).
+    TabDrag {
+        id: u64,
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        card: Option<serde_json::Value>,
+    },
+    /// Back over the sidebar, cancelled (Escape) or released.
+    TabDragEnd,
+    /// drag.html is loaded.
+    TabDragReady,
+    /// drag.html has played the drop.
+    TabDragGone,
+    /// The start page's Favorites section (its pixels), asked at the start of a tab drag.
+    TabDragArea {
+        #[serde(default)]
+        area: Option<(f64, f64, f64, f64)>,
+    },
     /// Controls the audio/video of a tab from the sidebar card: toggle, mute, pip, cam, mic or close.
     MediaCtl {
         id: u64,
@@ -1302,6 +1322,11 @@ mod tests {
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"tab_drop_out","id":4,"x":1500.5,"y":30}"#).unwrap();
         assert!(matches!(c, UiCommand::TabDropOut { id: 4, .. }));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"tab_drag","id":4,"x":10,"y":-3,"card":{"title":"A"}}"#).unwrap();
+        assert!(matches!(c, UiCommand::TabDrag { id: 4, card: Some(_), .. }));
+        let c: UiCommand = serde_json::from_str(r#"{"cmd":"tab_drag","id":4,"x":10,"y":3}"#).unwrap();
+        assert!(matches!(c, UiCommand::TabDrag { card: None, .. }));
+        assert!(matches!(serde_json::from_str(r#"{"cmd":"tab_drag_end"}"#).unwrap(), UiCommand::TabDragEnd));
         let c: UiCommand =
             serde_json::from_str(r#"{"cmd":"media_ctl","id":4,"action":"mute"}"#).unwrap();
         assert!(matches!(c, UiCommand::MediaCtl { id: 4, .. }));

@@ -155,10 +155,19 @@ impl Pulsar {
         if self.github.is_some() { self.lines.len() } else { self.unread() }
     }
 
+    /// Seconds between two readings: the user's delay, doubled at each failure in a row.
+    fn wait(&self, every_minutes: u32) -> i64 {
+        ((i64::from(every_minutes.max(1)) * 60) << self.failures.min(10)).min(EVERY_MAX)
+    }
+
     pub fn due(&self, now: i64, every_minutes: u32) -> bool {
-        let every = ((i64::from(every_minutes.max(1)) * 60) << self.failures.min(10)).min(EVERY_MAX);
         // A clock set back does not stop it.
-        now < self.checked_at || now - self.checked_at >= every
+        now < self.checked_at || now - self.checked_at >= self.wait(every_minutes)
+    }
+
+    /// When it is read next by itself; 0 if never read (it is then read soon).
+    pub fn next_at(&self, every_minutes: u32) -> i64 {
+        if self.checked_at == 0 { 0 } else { self.checked_at + self.wait(every_minutes) }
     }
 }
 
@@ -448,6 +457,17 @@ mod tests {
         assert!(p.get(id).unwrap().due(5, 30), "a clock set back does not stop it");
         p.unchanged(id, 3_000_000);
         assert!(p.get(id).unwrap().due(3_000_000 + EVERY, 30));
+    }
+
+    #[test]
+    fn the_next_reading_is_said_and_waits_longer_after_a_failure() {
+        const EVERY: i64 = 30 * 60;
+        let (mut p, id) = one();
+        assert_eq!(p.get(id).unwrap().next_at(30), 0, "never read");
+        p.unchanged(id, 1_000_000);
+        assert_eq!(p.get(id).unwrap().next_at(30), 1_000_000 + EVERY);
+        p.failed(id, 2_000_000);
+        assert_eq!(p.get(id).unwrap().next_at(30), 2_000_000 + 2 * EVERY);
     }
 
     #[test]

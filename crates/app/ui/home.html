@@ -69,6 +69,12 @@
   .card h2 button.armed, .card h2 button.armed:hover { background: rgba(255,90,90,.9); color: #fff; opacity: 1; }
   #favorites.linkover { outline: 1px dashed var(--accent); outline-offset: 4px; }
   .fav.lifted { z-index: 2; transition: none !important; background: rgba(255,255,255,.12); box-shadow: 0 14px 30px -12px rgba(0,0,0,.7); cursor: grabbing; }
+  .fav.arrive { animation: fav-arrive .62s cubic-bezier(.2,.9,.3,1.2) both; }
+  .fav.arrive .tile { animation: fav-ring .9s ease-out .12s both; }
+  @keyframes fav-arrive { from { opacity: 0; transform: scale(.3) rotate(-14deg); } 60% { opacity: 1; } }
+  @keyframes fav-ring { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #7c5cff) 70%, transparent), 0 0 18px color-mix(in srgb, var(--accent, #7c5cff) 60%, transparent); } to { box-shadow: 0 0 0 16px transparent, 0 0 0 transparent; } }
+  body.noanim .fav.arrive, body.noanim .fav.arrive .tile { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .fav.arrive, .fav.arrive .tile { animation: none; } }
   #favs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
   .fav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 10px; border-radius: 12px; cursor: pointer; min-width: 0; }
   .fav, .item { position: relative; }
@@ -616,7 +622,15 @@ function gripTitles() {
 }
 gripTitles();
 addEventListener('bhlang', () => { gripTitles(); if (last) bh.render(last); });
+// The favorites of the last render: a new one arrives with a ring.
+let favKnown = null;
 window.bh = {
+  // A tab dragged from the sidebar: where the Favorites section is (none when hidden).
+  favoritesArea() {
+    const c = document.getElementById('favorites'), r = c.getBoundingClientRect();
+    const area = c.hidden || !r.width ? null : [r.left, r.top, r.width, r.height];
+    window.ipc.postMessage(JSON.stringify({ cmd: 'tab_drag_area', area }));
+  },
   wait(site) {
     document.body.classList.toggle('waiting', !!site);
     if (!site) return;
@@ -640,9 +654,13 @@ window.bh = {
     renderNow(s.now);
     renderWatches(s.watches || []);
     renderDownloads(s.downloads || []);
+    const favBefore = favKnown;
+    favKnown = new Set(s.favorites.map(f => f.site || host(f.url)));
     if (!(favDrag && favDrag.on)) $('favs').replaceChildren(...s.favorites.map(f => {
       const n = el('div', 'fav'); n.title = f.url + '\n' + bhT('home.fav_hint', { keys: bhKeys('alt+left') + ' / ' + bhKeys('alt+right') });
       n.dataset.site = f.site || host(f.url);
+      // Just added (a tab dropped on the section, a site pinned): it settles in with a ring.
+      if (favBefore && !favBefore.has(n.dataset.site)) n.classList.add('arrive');
       n.append(tile(f.url), el('div', 'name', f.name));
       n.onclick = () => { if (!favMoved) send({ cmd: 'open', input: f.url }); };
       favGrab(n);

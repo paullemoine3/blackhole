@@ -50,6 +50,8 @@ pub(crate) struct Pulsing {
     tx: Sender<Done>,
     rx: Receiver<Done>,
     reading: Option<u64>,
+    /// The one being read was asked by hand: the sidebar says when nothing came.
+    by_hand: bool,
     /// Asked by hand, before the ones that are due.
     wanted: Vec<u64>,
     look_at: Instant,
@@ -98,6 +100,7 @@ impl Pulsing {
             tx,
             rx,
             reading: None,
+            by_hand: false,
             wanted: Vec::new(),
             look_at: Instant::now() + FIRST_LOOK,
             form: Form::default(),
@@ -135,7 +138,11 @@ impl Running {
                     "id": p.id, "name": p.name, "pinned": p.pinned, "collapsed": p.collapsed,
                     "host": p.feed.host_str(), "unread": p.unread(), "failed": p.failures > 0 || self.pulsar_waits(p),
                     "github": p.github.is_some(), "more": p.total().saturating_sub(max), "waits": self.pulsar_waits(p),
-                    "busy": self.pulsing.reading == Some(p.id),
+                    // Asked by hand, it turns at once, before its turn comes.
+                    "busy": self.pulsing.reading == Some(p.id) || self.pulsing.wanted.contains(&p.id),
+                    "asked": self.pulsing.wanted.contains(&p.id) || (self.pulsing.by_hand && self.pulsing.reading == Some(p.id)),
+                    "checked": p.checked_at,
+                    "next": if self.pulsar_waits(p) { 0 } else { p.next_at(self.svc.settings().pulsar_every) },
                     "lines": p.shown(max).map(|l| json!({"key": l.entry.key, "title": l.entry.title, "host": l.entry.url.host_str(), "url": l.entry.url.as_str(), "at": l.entry.at, "note": l.entry.note, "read": l.read})).collect::<Vec<_>>(),
                 })
             })
@@ -315,10 +322,13 @@ impl Running {
                 self.pulsars_changed();
             }
             UiCommand::PulsarRefresh { id } => {
-                if !self.pulsing.wanted.contains(&id) {
-                    self.pulsing.wanted.push(id);
+                // Being read already: that reading is the answer.
+                if self.pulsing.reading == Some(id) || self.pulsing.wanted.contains(&id) {
+                    return;
                 }
+                self.pulsing.wanted.push(id);
                 self.pulsing.look_at = Instant::now();
+                self.ui_state();
             }
             UiCommand::PulsarOpen { id, key, behind } => {
                 let Some(url) = self.pulsing.list.open(id, &key) else { return };
@@ -491,31 +501,44 @@ impl Running {
             return;
         }
         self.pulsing.look_at = Instant::now() + LOOK_EVERY;
-        let id = match self.pulsing.wanted.pop() {
-            Some(id) => Some(id),
-            None => self
-                .pulsing
-                .list
-                .next_due(now(), self.svc.settings().pulsar_every, self.pulsing.github.account.is_some())
-                .map(|p| p.id),
+        let (id, by_hand) = match self.pulsing.wanted.pop() {
+            Some(id) => (Some(id), true),
+            None => (
+                self.pulsing
+                    .list
+                    .next_due(now(), self.svc.settings().pulsar_every, self.pulsing.github.account.is_some())
+                    .map(|p| p.id),
+                false,
+            ),
         };
         let Some(p) = id.and_then(|id| self.pulsing.list.get(id)) else { return };
         let tx = self.pulsing.tx.clone();
         if let Some(query) = p.github.clone() {
             let (id, account) = (p.id, self.pulsing.github.account.clone());
-            let Some(account) = account else { return };
+            let Some(account) = account else {
+                // Asked by hand with no account: its star stops.
+                if by_hand {
+                    self.ui_state();
+                }
+                return;
+            };
             self.pulsing.reading = Some(id);
+            self.pulsing.by_hand = by_hand;
             std::thread::spawn(move || {
                 let _ = tx.send(Done::Github(id, github::search(&api(), &account.token, &query)));
             });
+            // The sidebar turns its star while it reads.
+            self.ui_state();
             return;
         }
         let (id, feed) = (p.id, p.feed.clone());
         let (etag, modified) = (p.etag.clone(), p.modified.clone());
         self.pulsing.reading = Some(id);
+        self.pulsing.by_hand = by_hand;
         std::thread::spawn(move || {
             let _ = tx.send(Done::Read(id, feeds::refresh(&feed, &etag, &modified)));
         });
+        self.ui_state();
     }
 
     fn pulsar_answer(&mut self, id: u64, answer: Result<Answer, String>) {

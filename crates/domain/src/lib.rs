@@ -2,6 +2,7 @@
 //! `zeroize` to wipe secrets.
 
 pub mod aliases;
+pub mod calls;
 pub mod changelog;
 pub mod clean_link;
 pub mod clearing;

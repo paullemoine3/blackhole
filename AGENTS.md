@@ -191,7 +191,7 @@ Pour une modification d'interface, ajouter ou adapter les scénarios du harnais
   `scripts\test-0828.ps1` (récapitulatif des Shields de la Bibliothèque),
   `scripts\test-0830.ps1` (alias email, faux service local),
   `scripts\test-0831.ps1` (permissions, effacement, mots-clés, pause des téléchargements), `scripts\test-pulsars.ps1`, `scripts/test-0832.ps1` (compteur avec uBlock, réseau) ;
-  macOS : `bash scripts/test-0833.sh` (Pulsar glissé, accueil par espace, plafond d’onglets par espace).
+  macOS : `bash scripts/test-0833.sh` (Pulsar glissé, accueil par espace, plafond d’onglets par espace), `bash scripts/test-0834.sh` (onglet glissé : écran partagé, favoris, hors fenêtre).
 
 Ces scripts lancent une application graphique, utilisent des profils temporaires
 qu'ils peuvent effacer et certains nécessitent le réseau. Garder la fenêtre
@@ -1433,6 +1433,64 @@ Module `app/src/features/bridges.rs` ; règles pures dans `domain/verbs.rs` et `
   changement et à la fermeture d’onglet, barre de recherche gardée). Tests :
   `each_space_has_its_own_start_page`, `each_space_keeps_its_own_start_page`, `each_space_keeps_its_own_live_tabs`,
   `a_space_orders_its_favorites_by_site`, `a_reading_asked_for_says_when_it_was_done_and_whether_it_found_the_area`. Windows : code commun non rejoué (`scripts\test-pulsars.ps1` toujours valable).
+
+## 0.8.34 : appels en parallèle, boucliers en pause pendant un appel, Pulsar actualisé à la main, onglet glissé visible
+
+- Constaté (un seul appel Meet, 3 personnes, un partage d’écran reçu depuis 10:47) : après 2 h 30, WebKit a tué son processus
+  GPU (« Graphics and Media », `GPUProcessProxy::didBecomeUnresponsive`), précédé d’erreurs du traitement vocal de CoreAudio
+  (`failed to run downlink DSP`). Avant : la cadence de la vidéo reçue (1080p) de plus en plus instable
+  (`RealtimeIncomingVideoSource::setFrameRate`, ~20 → 420 par 10 min, chacun relance `updateSessionState` /
+  `AudioSession::tryToSetActive`), effondrée à 3 i/s vers 11:50. Rien de BlackHole ne croissait (sonde média à 1,5 s constante,
+  3 rendus vidéo, mémoire de la page ~1 Go stable). Le blocage relève de WebKit. Après le redémarrage, l’onglet s’est reconnecté
+  seul et un autre onglet a rejoint une autre réunion : deux appels ensemble, d’où le garde-fou ci-dessous.
+- `media_devices.js` : pistes de `getUserMedia` tenues par `WeakRef` (`hold`, `held`) ; l’ancien `Set` gardait vivantes toutes
+  celles demandées avant l’appel (WebKit comptait `AudioCapture(7)` pour un micro, du début à la fin).
+- `domain::calls::Calls` : onglets en appel (`MediaProbe::in_call`), début et dernière fois vus ; un appel absent moins de
+  `LEFT_AFTER` (30 s, reconnexion) reste le même. `update` rend `(rejoint, autre)` une fois quand un onglet entre en appel
+  alors qu’un autre l’est encore (l’autre = le plus ancien) ; deux appels trouvés au même tour ne disent rien. `retain` oublie
+  les onglets fermés. `Running::tell_parallel_calls` (après `service_calls` dans `service_media`, les deux OS) : notice
+  `Meeting` `toast.call_beside` + bouton `toast.leave_call` → `media_ctl` `close` de l’autre onglet (raccroche via `hangUp`).
+- `shields.js` : la passe `collapse` (boîtes de pub, jusqu’à 4 000 éléments) saute tant que `__bhRtc.state().call` ; une page
+  en appel change son document sans arrêt et la relançait toutes les 2 s pendant tout l’appel.
+- Pulsar actualisé à la main (menu natif `pulsar_refresh`, la page ne voit pas le clic) : `PulsarRefresh` pousse `ui_state` aussitôt,
+  `busy` vaut aussi pour un Pulsar dans `wanted`, et `service_pulsars` pousse `ui_state` au début de chaque lecture (avant, `busy`
+  n’était jamais affiché : la barre n’était prévenue qu’à la fin). Déjà lu ou en attente : rien de plus. `asked` (lecture demandée,
+  `Pulsing::by_hand`) ; `index.html` `pulsarSpinning` garde l’étoile qui tourne au moins `SPIN_MIN` (800 ms), puis `.calm` (éclat)
+  si demandé, sans échec ni ligne nouvelle (le battement `beat` reste pour les nouvelles). Infobulle de `.ph` : `checked`, `next`
+  (`Pulsar::next_at`, délai doublé à chaque échec), relue au survol. Test `the_next_reading_is_said_and_waits_longer_after_a_failure`.
+- Onglet glissé hors de la barre latérale : la vue `chrome` couvre toute la fenêtre (derrière la page), donc la sortie se
+  lit sur le cadre de `<aside>`, pas sur `innerWidth`. `index.html` `dragOut` → `tab_drag {id, x, y, card}` (points écran,
+  une fois par image, `card` au premier envoi), `tab_drag_end` (retour sur la barre, Échap), puis `tab_drop_out` au lâcher.
+  `shell/tab_drag.rs` : `drag_zone` (accueil devant, seulement sur la section Favoris : `bh.favoritesArea()` de
+  `home.html` → `tab_drag_area`, placée par `card_rect` car `bounds()` de WKWebView compte y depuis le bas ; `Favorite`
+  Add/Already/Burner, le cadre et le message dans la section ; page → `Split` par `half_at` et
+  `Workspace::split_drop`, rien si rien ne change ; Bibliothèque, Réglages, Easel → rien ; hors fenêtre →
+  `peers::drop_target`, relu toutes les 700 ms). `drag.html` (`bhDrag.start/at/stop`) : en vue `ui_view` transparente
+  au-dessus de la page (créée au premier glisser, gardée cachée, `raise_views` à chaque glisser), et dans une petite
+  fenêtre hors de BlackHole (`service_tab_drag`, sans bord, `AlwaysOnTop`, `with_active(false)`, `set_cursor_hittest(false)`,
+  transparente sur macOS, carte pleine sous Windows). Cette fenêtre n’est jamais re-montrée : sur macOS `set_visible(true)`
+  appelle `makeKeyAndOrderFront` et finirait le glisser ; elle part à −20000 quand le pointeur revient, puis est retirée.
+  Dépôt : `drop_tab_on_page` (`toggle_pin` pour les favoris = accès rapide, `drop_into_split` puis l’animation `pane-in`
+  du split). Hors fenêtre : inchangé (`Drop::Into`/`Refused`/`Nowhere`, même sorte de fenêtre).
+- Fantôme « verre » (choix C, avec l’inclinaison de A) : `.ghost` de `index.html` et `#card` de `drag.html` (fond translucide,
+  bord clair, pile décalée en `box-shadow`, `rotate(-2deg + --lean)`, `scale(1.04)`) ; `--lean` suit la vitesse du pointeur
+  (`ghostLean`, et `sx` envoyé par `drag_show`) puis revient à zéro. `backdrop-filter` ne floute que dans la même vue (la page
+  est une autre vue). Dépôt : `tab_drag_land` (avant tout changement) fait jouer `bhDrag.drop(pane|fav|away|refused)` (volet et
+  favoris : même anneau qui s’étend au point de lâcher, la carte s’y résorbe ; pas de spirale ni de bord qui pulse), puis
+  `tab_drag_gone` cache la couche ou retire la fenêtre extérieure (900 ms au plus ; un nouveau glisser nettoie aussi). Rien
+  à jouer sans animations (Réglages ou système). Barre latérale : `landing` fait partir la ligne de la place du fantôme dans
+  `motion.play`, puis `.tab.landed` (éclat d’accent). Accueil : un favori nouveau (`favKnown`) arrive avec `.fav.arrive` (anneau).
+- Devtools : une fenêtre ouverte par une autre (`--new-window`, `--private`) ne rejoue jamais `bh_script.txt`, et une
+  version de dev n’ouvre que trois fenêtres au plus (une par processus) : un lâcher hors fenêtre dans un script avait
+  ouvert des fenêtres en chaîne. `eval drag|dragfloat`, `state` (`panes`, `dragFloat`, `dragAt`, `inner`, `outer`).
+- Tests : `a_tab_dropped_on_a_half_of_the_page_opens_there_beside_the_other`, `the_half_under_the_pointer_takes_the_tab`,
+  `a_refusal_is_said_as_one`. macOS : `bash scripts/test-0834.sh` (20 vérifications, jamais de lâcher hors fenêtre, garde
+  à trois instances). Windows : code commun, fenêtre extérieure non vue (fond plein, pas de transparence).
+- Vu, non changé : un processus WebContent par minute pour les service workers MV3 des extensions (réveil par alarme, arrêt
+  après 30 s), comportement de WebKit.
+- Tests : `a_second_call_beside_an_open_one_is_told_once`, `a_call_that_drops_for_a_moment_is_still_the_same_call`,
+  `calls_that_begin_together_or_alone_say_nothing`, `the_other_call_is_the_oldest_one`, `a_closed_tab_ends_its_call`. Notice
+  non rejouée dans un vrai appel ; Windows : code commun, non rejoué.
 
 ## Livraison et entretien
 

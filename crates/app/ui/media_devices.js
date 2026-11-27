@@ -40,13 +40,27 @@
     document.addEventListener(type, hint, true);
   }
 
+  // Held weakly (0.8.34): a track the page lets go of without stopping it (Meet asks for the
+  // microphone several times before a call, WebKit counted 7 capture sessions for one microphone
+  // during a whole call) is the engine's to collect, not kept alive here for hours.
   const tracks = new Set();
+  const Weak = window.WeakRef;
+  const hold = (t) => tracks.add(Weak ? new Weak(t) : { deref: () => t });
+  const held = () => {
+    const list = [];
+    for (const ref of tracks) {
+      const t = ref.deref();
+      if (!t || t.readyState === 'ended') tracks.delete(ref);
+      else list.push(t);
+    }
+    return list;
+  };
   const md = navigator.mediaDevices;
   if (md && md.getUserMedia) {
     const original = md.getUserMedia.bind(md);
     md.getUserMedia = async (constraints) => {
       const stream = await original(constraints);
-      stream.getTracks().forEach((t) => tracks.add(t));
+      stream.getTracks().forEach(hold);
       hint();
       return stream;
     };
@@ -103,10 +117,7 @@
       };
     }
   }
-  const live = (kind) => {
-    for (const t of tracks) if (t.readyState === 'ended') tracks.delete(t);
-    return [...tracks].filter((t) => t.kind === kind);
-  };
+  const live = (kind) => held().filter((t) => t.kind === kind);
   const peers = new Set();
   const NativePeer = window.RTCPeerConnection;
   if (NativePeer) {
@@ -150,7 +161,7 @@
       if (button) button.click();
       setTimeout(() => {
         if (!inCall() && !live('audio').length && !live('video').length) return;
-        for (const t of tracks) t.stop();
+        for (const t of held()) t.stop();
         tracks.clear();
         for (const pc of peers) try { pc.close(); } catch (_) {}
         peers.clear();

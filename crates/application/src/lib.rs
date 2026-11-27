@@ -971,6 +971,15 @@ impl<R: WorkspaceRepository> BrowserService<R> {
         self.persist();
     }
 
+    /// A tab dropped on a half of the page (see `Workspace::split_drop`).
+    pub fn drop_into_split(&mut self, id: TabId, left: bool) -> bool {
+        let ok = self.workspace.drop_into_split(id, left);
+        if ok {
+            self.persist();
+        }
+        ok
+    }
+
     pub fn add_space(&mut self, name: &str, color: &str) -> SpaceId {
         let id = self.workspace.add_space(name, color);
         self.workspace.switch_space(id);

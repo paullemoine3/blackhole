@@ -227,6 +227,7 @@ impl Running {
             self.open_easel(event_loop);
             self.ui_easel();
         }
+        self.service_tab_drag(event_loop);
     }
 
     fn pump(&mut self) {

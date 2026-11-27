@@ -511,6 +511,7 @@ impl Running {
             easel: None,
             easel_wanted: false,
             closed_windows: Vec::new(),
+            tab_drag: Default::default(),
             capture_tx,
             capture_rx,
             #[cfg(target_os = "macos")]
