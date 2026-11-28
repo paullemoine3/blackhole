@@ -12,17 +12,17 @@
       },
       "homepage": "https://github.com/uBlockOrigin/uBOL-home",
       "category": "blocking",
-      "version": "2026.1122.1948",
+      "version": "2026.1127.1828",
       "platforms": {
         "macos": {
-          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1122.1948/uBOLite_2026.1122.1948.chromium.zip",
-          "sha256": "7cd72ae78fe6fa007193de633d2dec085a0da50f53283e821918a77978d105fb",
-          "size": 9192442
+          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1127.1828/uBOLite_2026.1127.1828.chromium.zip",
+          "sha256": "bb9a7ef1babbd981259ef59bd12015462edc32161e6caf05b3c35b42a33108ff",
+          "size": 9198103
         },
         "windows": {
-          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1122.1948/uBOLite_2026.1122.1948.chromium.zip",
-          "sha256": "7cd72ae78fe6fa007193de633d2dec085a0da50f53283e821918a77978d105fb",
-          "size": 9192442
+          "url": "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.1127.1828/uBOLite_2026.1127.1828.chromium.zip",
+          "sha256": "bb9a7ef1babbd981259ef59bd12015462edc32161e6caf05b3c35b42a33108ff",
+          "size": 9198103
         }
       },
       "permissions": [
@@ -170,17 +170,17 @@
       },
       "homepage": "https://github.com/ghostery/ghostery-extension",
       "category": "blocking",
-      "version": "10.6.13",
+      "version": "10.6.14",
       "platforms": {
         "macos": {
-          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.13/ghostery-chromium-10.6.13.zip",
-          "sha256": "151b5bc713e15c6ac6c9d29411eb72b2fef6503a425d305d1291358c18c6d6ff",
-          "size": 8261922
+          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.14/ghostery-chromium-10.6.14.zip",
+          "sha256": "544ec5c2aed77dc684dbaf30adee66b1a6b73089d1c9c3ba4c65e4ff15a953e5",
+          "size": 8303274
         },
         "windows": {
-          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.13/ghostery-chromium-10.6.13.zip",
-          "sha256": "151b5bc713e15c6ac6c9d29411eb72b2fef6503a425d305d1291358c18c6d6ff",
-          "size": 8261922
+          "url": "https://github.com/ghostery/ghostery-extension/releases/download/v10.6.14/ghostery-chromium-10.6.14.zip",
+          "sha256": "544ec5c2aed77dc684dbaf30adee66b1a6b73089d1c9c3ba4c65e4ff15a953e5",
+          "size": 8303274
         }
       },
       "permissions": [
